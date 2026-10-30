@@ -14,6 +14,8 @@ import { ResearchPanel } from './panels/ResearchPanel.js';
 import { QuestPanel } from './panels/QuestPanel.js';
 import { SettingsPanel } from './panels/SettingsPanel.js';
 import { CLOUD_EVT } from '../cloud/CloudSync.js';
+import { APP_VERSION } from '../config/version.js';
+import { showChangelog } from './ChangelogView.js';
 
 const TABS = [
   { id: 'map', icon: '🗺️', name: '地圖' },
@@ -86,6 +88,7 @@ export class UIManager {
       if (action === 'openRates') this.showRates();
       if (action === 'openCloud') this.switchTab('settings');
       if (action === 'openCiv') this.switchTab('shelter');
+      if (action === 'openChangelog') showChangelog(this);
     });
 
     bus.on(EVT.TOAST, ({ msg, type }) => this.toastEl.show(msg, type));
@@ -185,6 +188,7 @@ export class UIManager {
           <div><b>第 ${g.time.day()} 天 ${g.time.clockText()}</b><small>${phase.name}・${phase.desc}</small></div>
         </div>
         ${this.cloudBadge()}
+        <button class="ver-badge" data-action="openChangelog" title="查看更新內容">v${APP_VERSION}</button>
         <button class="civ-badge" data-action="openCiv" title="文明度：建築、玩家等級、裝備越高，屍潮越強">${tier.icon} 文明 ${g.civilization.value()}</button>
         <div class="wallhp" title="主要據點圍牆耐久">🧱${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', hasBase ? `${Math.floor(g.shelter.wallHp())}/${g.shelter.wallMax()}` : '—')}</div>
       </div>

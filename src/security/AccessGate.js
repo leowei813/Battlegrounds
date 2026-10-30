@@ -1,6 +1,7 @@
 import { hashAccessCode } from './accessHash.js';
 import { GAME_TITLE } from '../config/constants.js';
 import { COPYRIGHT } from '../config/legal.js';
+import { APP_VERSION } from '../config/version.js';
 
 const STORE_KEY = 'jdqs_access_v1';
 /** 建置時注入的通行碼雜湊；未設定時不啟用通行碼 */
@@ -43,7 +44,7 @@ export function requireAccess(root) {
         <label class="toggle"><input type="checkbox" name="remember" checked> 記住這台裝置</label>
         <p class="status" aria-live="polite"></p>
         <button type="submit" class="btn btn-danger wide big">進入</button>
-        <p class="copyright">${COPYRIGHT}</p>
+        <p class="copyright">${COPYRIGHT}・v${APP_VERSION}</p>
       </form>`;
     root.classList.add('show');
     const form = root.querySelector('form');

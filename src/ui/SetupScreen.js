@@ -2,6 +2,8 @@ import { CLASSES } from '../config/survivors.js';
 import { GAME_TITLE } from '../config/constants.js';
 import { SaveManager } from '../core/SaveManager.js';
 import { COPYRIGHT } from '../config/legal.js';
+import { APP_VERSION, CHANGELOG } from '../config/version.js';
+import { versionHtml } from './ChangelogView.js';
 
 const PRESETS = [
   { name: '台北 101', lat: 25.0339, lon: 121.5645 },
@@ -125,7 +127,9 @@ export class SetupScreen {
     return `
     <div class="setup-card">
       <h1 class="logo">${GAME_TITLE}<small>ZOMBIE OUTBREAK · IDLE SURVIVAL</small></h1>
+      <div class="home-version"><span class="ver-tag">v${APP_VERSION}</span></div>
       <p class="lore">病毒在一夜之間席捲全球。城市淪陷、通訊中斷……<br>你是少數的倖存者之一。在真實世界的街道上建立避難所，活下去。</p>
+      <div class="home-news">${CHANGELOG[0] ? versionHtml(CHANGELOG[0], { open: false, label: '🆕 最新更新' }) : ''}</div>
       <form id="setup-form">
         <label>倖存者名稱<input id="in-name" maxlength="16" placeholder="輸入你的名字" autocomplete="off"></label>
         <div class="label">選擇你的職業</div>
@@ -142,7 +146,7 @@ export class SetupScreen {
         ${this.cloud?.available ? '<button type="button" id="btn-cloud" class="btn btn-primary wide">☁️ 用同步碼讀取雲端存檔</button>' : ''}
         <button type="button" id="btn-import" class="btn btn-ghost wide">📥 匯入存檔</button>
       </form>
-      <p class="copyright">${COPYRIGHT}</p>
+      <p class="copyright">${COPYRIGHT}・v${APP_VERSION}</p>
     </div>`;
   }
 }
