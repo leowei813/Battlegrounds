@@ -98,7 +98,7 @@ sequenceDiagram
   end
 ```
 
-- **邏輯迴圈**（1 秒）與**渲染迴圈**（Phaser 60fps）分離；屍潮防守因需要平滑動畫而在渲染迴圈中推進。
+- **邏輯迴圈**（1 秒）與**屍潮迴圈**（`Game.startSiegeLoop()`，requestAnimationFrame）分離；屍潮迴圈不依賴任何畫面，Phaser 場景與地圖的 `SiegeMapLayer`（單一 canvas）只負責繪製。
 - 若分頁被背景節流超過 60 秒，下一次 tick 自動以「靜默離線模式」結算。
 
 ## 3. 離線結算流程
@@ -158,7 +158,8 @@ flowchart LR
 | `cloud:status` / `cloud:locked` | CloudSync | UIManager | 雲端狀態徽章、鎖定畫面 |
 | `ui:openDefenseSlot` | ShelterScene | ShelterPanel | 點槽位開建造窗 |
 | `ui:openPoi` / `ui:openZombie` | MapService | MapPanel | 地圖互動 |
-| `siege:breach` | SiegeSystem | （擴充用） | 防線失守 |
+| `siege:fx` | SiegeSystem（每幀） | ShelterScene、SiegeMapLayer | 屍潮特效（射擊、傷害、擊殺），附 `baseId` |
+| `siege:breach` | SiegeSystem | SiegeMapLayer | 防線失守（地圖衝擊波） |
 
 ## 6. 擴充指引
 - **新增敵人**：在 `config/enemies.js` 加一筆，並加入 `poiTypes.js` 的 `enemies` 權重即可。

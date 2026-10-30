@@ -12,12 +12,14 @@ export function fillPois(pois, lat, lon) {
   Object.entries(POI_MIN_PER_TYPE).forEach(([type, min]) => {
     const have = out.filter((p) => p.type === type).length;
     for (let i = have; i < min; i += 1) {
-      const far = type === 'military' ? [1200, 2200] : POI_TYPES[type].danger >= 4 ? [500, 1300] : [120, 1000];
-      const pos = offsetLatLon(lat, lon, randFloat(...far), randFloat(0, Math.PI * 2));
+      const [min, max] = type === 'military' ? [1200, 2200] : POI_TYPES[type].danger >= 4 ? [500, 1300] : [120, 1150];
+      // 以面積均勻分布（距離取平方根），避免地點都擠在中心
+      const dist = Math.sqrt(randFloat(min * min, max * max));
+      const pos = offsetLatLon(lat, lon, dist, randFloat(0, Math.PI * 2));
       out.push({
         id: `gen_${type}_${i}_${Math.random().toString(36).slice(2, 7)}`,
         type,
-        name: `${pick(RUIN_PREFIX)}${POI_TYPES[type].name}`,
+        name: `${pick(RUIN_PREFIX)}${POI_TYPES[type].name} ${i + 1}號`,
         lat: pos.lat,
         lon: pos.lon,
         osm: false,

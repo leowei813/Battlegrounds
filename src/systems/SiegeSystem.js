@@ -386,15 +386,20 @@ export class SiegeSystem {
     return this.sieges.get(id);
   }
 
+  /**
+   * 推進所有據點的屍潮，並把本幀的特效以 `siege:fx` 事件廣播
+   * （避難所場景與地圖圖層各自取用需要的據點）。
+   */
   update(dt) {
     const ids = new Set(this.game.state.bases.map((b) => b.id));
     this.sieges.forEach((_, id) => { if (!ids.has(id)) this.sieges.delete(id); });
-    ids.forEach((id) => this.of(id).update(dt));
-  }
-
-  /** 背景據點不繪製：丟棄其特效佇列避免累積 */
-  drainOthers(viewId) {
-    this.sieges.forEach((s, id) => { if (id !== viewId) s.drainFx(); });
+    const fx = [];
+    ids.forEach((id) => {
+      const s = this.of(id);
+      s.update(dt);
+      s.drainFx().forEach((e) => fx.push({ ...e, baseId: id }));
+    });
+    if (fx.length) this.game.bus.emit('siege:fx', fx);
   }
 
   /**

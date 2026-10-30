@@ -5,17 +5,24 @@ import { ALL_ENEMIES } from '../config/enemies.js';
 import { POI_SCAN_RADIUS } from '../config/constants.js';
 import { bus, EVT } from '../core/EventBus.js';
 import { escapeHtml } from '../utils/dom.js';
+import { SiegeMapLayer } from './SiegeMapLayer.js';
 
 /**
  * 真實地圖（Leaflet + OpenStreetMap 圖磚）。
  * 只負責呈現與互動；點擊事件透過 EventBus 交給 UI 層處理。
  */
 export class MapService {
-  constructor(container) {
+  /**
+   * @param {HTMLElement} container
+   * @param {import('../core/Game.js').Game} game 用於即時屍潮圖層
+   */
+  constructor(container, game) {
     this.container = container;
+    this.game = game;
     this.map = null;
     this.layers = {};
-    this.poiMarkers = new Map();
+    this.poiKey = '';
+    this.zombieKey = '';
   }
 
   init(lat, lon) {
@@ -33,6 +40,14 @@ export class MapService {
     this.layers.routes = L.layerGroup().addTo(this.map);
     this.layers.zombies = L.layerGroup().addTo(this.map);
     this.layers.shelter = L.layerGroup().addTo(this.map);
+    this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
+  }
+
+  /** 地圖可見時才逐幀繪製屍潮 */
+  setLive(on) {
+    if (!this.siegeLayer) return;
+    if (on) this.siegeLayer.start();
+    else this.siegeLayer.stop();
   }
 
   invalidate() {
@@ -57,20 +72,29 @@ export class MapService {
     const basePoiIds = new Set(state.bases.map((b) => b.poiId));
     const sh = state.bases.find((b) => b.id === state.primaryBaseId) || state.bases[0] || null;
 
-    this.layers.pois.clearLayers();
-    pois.forEach((p) => {
-      if (basePoiIds.has(p.id)) return;
-      const pt = POI_TYPES[p.type];
-      const dep = p.depletion ? ` style="opacity:${1 - p.depletion * 0.8}"` : '';
-      const m = L.marker([p.lat, p.lon], {
-        icon: this.icon(`<div class="poi-pin" style="--c:${pt.color}"${dep}>${pt.icon}</div>`, 'poi-icon'),
-        title: p.name,
-        riseOnHover: true,
+    // 建築與殭屍群數量多，只有內容變動時才重建標記
+    const poiKey = pois.map((p) => `${p.id}:${basePoiIds.has(p.id) ? 'b' : Math.round((p.depletion || 0) * 10)}`).join(',');
+    if (poiKey !== this.poiKey) {
+      this.poiKey = poiKey;
+      this.layers.pois.clearLayers();
+      pois.forEach((p) => {
+        if (basePoiIds.has(p.id)) return;
+        const pt = POI_TYPES[p.type];
+        const dep = p.depletion ? ` style="opacity:${1 - p.depletion * 0.8}"` : '';
+        const small = p.type === 'residential' ? ' sm' : '';
+        const m = L.marker([p.lat, p.lon], {
+          icon: this.icon(`<div class="poi-pin${small}" style="--c:${pt.color}"${dep}>${pt.icon}</div>`, 'poi-icon', small ? 26 : 32),
+          title: p.name,
+          riseOnHover: true,
+        });
+        m.on('click', () => bus.emit(EVT.OPEN_POI, { poiId: p.id }));
+        m.addTo(this.layers.pois);
       });
-      m.on('click', () => bus.emit(EVT.OPEN_POI, { poiId: p.id }));
-      m.addTo(this.layers.pois);
-    });
+    }
 
+    const zombieKey = zombieGroups.map((g) => `${g.id}:${g.count}`).join(',');
+    if (zombieKey !== this.zombieKey) this.zombieKey = zombieKey;
+    else return this.renderBases(state, sh);
     this.layers.zombies.clearLayers();
     zombieGroups.forEach((g) => {
       const e = ALL_ENEMIES[g.enemyId];
@@ -82,6 +106,12 @@ export class MapService {
       m.on('click', () => bus.emit('ui:openZombie', { groupId: g.id }));
       m.addTo(this.layers.zombies);
     });
+    return this.renderBases(state, sh);
+  }
+
+  /** 據點、探索範圍、補給線與探索路線（數量少，每次重建） */
+  renderBases(state, sh) {
+    const { pois } = state.map;
 
     this.layers.shelter.clearLayers();
     this.layers.range.clearLayers();

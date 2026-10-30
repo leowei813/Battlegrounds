@@ -62,6 +62,7 @@ export class Game {
     this.lastPhase = this.time.phaseId();
     this.started = true;
     this.timers.push(setInterval(() => this.tick(), TICK_MS));
+    this.startSiegeLoop();
     this.timers.push(setInterval(() => this.save(), AUTOSAVE_MS));
     const flush = () => this.save(true);
     document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
@@ -73,6 +74,21 @@ export class Game {
   stop() {
     this.timers.forEach(clearInterval);
     this.timers = [];
+    cancelAnimationFrame(this.siegeRaf);
+  }
+
+  /**
+   * 屍潮即時模擬迴圈（每幀）。獨立於畫面：不論目前在地圖或避難所頁面，
+   * 所有據點都持續承受屍潮。分頁切到背景時瀏覽器會暫停 requestAnimationFrame。
+   */
+  startSiegeLoop() {
+    let last = performance.now();
+    const loop = (t) => {
+      this.siege.update(Math.min(Math.max(0, (t - last) / 1000), 1));
+      last = t;
+      this.siegeRaf = requestAnimationFrame(loop);
+    };
+    this.siegeRaf = requestAnimationFrame(loop);
   }
 
   /** 每秒更新 */

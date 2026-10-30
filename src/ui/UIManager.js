@@ -120,6 +120,7 @@ export class UIManager {
 
   switchTab(id) {
     if (!this.panels[id]) return;
+    if (this.tab === 'map' && id !== 'map') this.panels.map.onHide();
     this.tab = id;
     this.lastHtml = '';
     this.panelEl.scrollTop = 0;
