@@ -101,13 +101,12 @@ async function boot() {
     }
   }
 
-  if (!game.state.map.pois.length) {
+  // 第一次進入：先快速抓主要設施（最多等 12 秒）讓遊戲立刻開始，一般建築在背景補齊
+  const needFullScan = !game.state.map.pois.length;
+  if (needFullScan) {
     setLoading('📡 正在掃描附近的真實建築（OpenStreetMap）…');
     const { lat, lon } = game.state.map.center;
-    const r = await game.scanMap(lat, lon, (done, total) => {
-      setLoading(`📡 正在分區掃描附近的真實建築（OpenStreetMap）… ${done}/${total}`);
-    });
-    setLoading(r.source === 'overpass' ? `找到 ${r.count} 個地點` : '');
+    await game.scanMap(lat, lon, null, { quick: true, maxWaitMs: 12000 });
   }
   setLoading('');
 
@@ -120,6 +119,15 @@ async function boot() {
   // 多人互動（與雲端存檔共用後端）
   game.world = new WorldSync(game, cloud.provider);
   game.world.start();
+
+  if (needFullScan) {
+    const { lat, lon } = game.state.map.center;
+    ui.toastEl.show('📡 背景載入附近所有建築中，可以先開始遊戲…', 'info', 5000);
+    game.scanMap(lat, lon).then((r) => {
+      if (r.source === 'overpass') ui.toastEl.show(`🏙️ 附近建築載入完成：${r.count} 個地點`, 'success');
+      game.save();
+    });
+  }
 
   if (fresh) {
     markVersionSeen(); // 新玩家不需要看更新內容

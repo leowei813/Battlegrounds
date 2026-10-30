@@ -69,7 +69,7 @@ const fmt = (b) => b.map((v) => v.toFixed(6)).join(',');
 function amenityQuery(bbox, bigBbox) {
   const a = `(${fmt(bbox)})`;
   const big = `(${fmt(bigBbox)})`;
-  return `[out:json][timeout:90];
+  return `[out:json][timeout:40];
 (
   nwr["shop"]${a};
   nwr["amenity"~"^(hospital|clinic|doctors|school|university|college|kindergarten|library|fuel|charging_station|police|fire_station|restaurant|cafe|fast_food|food_court|marketplace|pharmacy|bank|bar|pub)$"]${a};
@@ -85,7 +85,7 @@ out center tags qt;`;
 
 /** 查詢二：一個區塊內的所有建築輪廓（含未標註用途的一般建築） */
 function buildingQuery(bbox) {
-  return `[out:json][timeout:90];
+  return `[out:json][timeout:40];
 way["building"](${fmt(bbox)});
 out center tags qt;`;
 }
@@ -128,12 +128,16 @@ export function spreadPick(list, cap, lat0, cellM = POI_SPREAD_CELL_M) {
   return picked.concat(rest.slice(0, Math.max(0, cap - picked.length)));
 }
 
-/** 依序嘗試各端點；伺服器回報 runtime error（結果被截斷）時拋出 TRUNCATED */
-async function runQuery(query) {
+/**
+ * 依序嘗試各端點；伺服器回報 runtime error（結果被截斷）時拋出 TRUNCATED。
+ * @param {number} start 從第幾個端點開始（平行查詢時分散到不同伺服器）
+ */
+async function runQuery(query, start = 0) {
   let lastErr = null;
-  for (const url of ENDPOINTS) {
+  for (let k = 0; k < ENDPOINTS.length; k += 1) {
+    const url = ENDPOINTS[(start + k) % ENDPOINTS.length];
     try {
-      const data = await fetchWithTimeout(url, query, 100000);
+      const data = await fetchWithTimeout(url, query, 45000);
       if (/runtime error/i.test(data.remark || '')) {
         const err = new Error(`TRUNCATED: ${data.remark}`);
         err.truncated = true;
@@ -151,45 +155,43 @@ async function runQuery(query) {
 }
 
 /** 查詢一個建築區塊；被截斷時再切成 4 塊重抓（最多切兩層） */
-async function fetchBuildings(bbox, depth = 0) {
+async function fetchBuildings(bbox, start, depth = 0) {
   try {
-    return await runQuery(buildingQuery(bbox));
+    return await runQuery(buildingQuery(bbox), start);
   } catch (err) {
     if (!err.truncated) throw err;
     if (depth >= 2) return err.partial;
     console.warn('[Overpass] 區塊結果被截斷，切小重抓', err.message);
-    const parts = [];
-    for (const sub of splitBbox(bbox, 2)) parts.push(...await fetchBuildings(sub, depth + 1));
-    return parts;
+    const subs = await Promise.all(splitBbox(bbox, 2).map((b, i) => fetchBuildings(b, start + i, depth + 1).catch(() => [])));
+    return subs.flat();
   }
 }
 
 /**
  * 查詢附近建築並轉為遊戲 POI。
- * 分成「設施」與 4 個「建築區塊」依序查詢（公共伺服器每個 IP 同時只允許少量請求）。
+ * 「設施」與 4 個「建築區塊」同時查詢，並分散到不同的公共伺服器以縮短等待時間。
  * @param {(done:number,total:number)=>void} [onProgress]
+ * @param {{buildings?:boolean}} [opts] buildings=false 只查設施（快速掃描）
  * @returns {Promise<Array<{id,type,name,lat,lon,osm:true}>>}
  */
-export async function fetchPois(lat, lon, radius, onProgress = () => {}) {
+export async function fetchPois(lat, lon, radius, onProgress = () => {}, { buildings = true } = {}) {
   const bbox = bboxAround(lat, lon, radius);
-  const tiles = splitBbox(bbox, 2);
+  const tiles = buildings ? splitBbox(bbox, 2) : [];
   const total = tiles.length + 1;
-  onProgress(0, total);
-  const elements = await runQuery(amenityQuery(bbox, bboxAround(lat, lon, radius * 2))).catch((err) => {
-    if (err.truncated) return err.partial;
-    throw err;
-  });
-  onProgress(1, total);
-  let buildingErr = null;
-  for (let i = 0; i < tiles.length; i += 1) {
-    try {
-      elements.push(...await fetchBuildings(tiles[i]));
-    } catch (err) {
-      buildingErr = err; // 某區塊失敗不影響其他區塊
-    }
-    onProgress(i + 2, total);
+  let done = 0;
+  const report = onProgress || (() => {});
+  const tick = () => report(++done, total);
+  report(0, total);
+  const amenity = runQuery(amenityQuery(bbox, bboxAround(lat, lon, radius * 2)))
+    .catch((err) => { if (err.truncated) return err.partial; throw err; })
+    .finally(tick);
+  const parts = tiles.map((t, i) => fetchBuildings(t, i + 1).finally(tick));
+  const results = await Promise.allSettled([amenity, ...parts]);
+  const elements = results.filter((r) => r.status === 'fulfilled').flatMap((r) => r.value);
+  if (!elements.length) {
+    const failed = results.find((r) => r.status === 'rejected');
+    if (failed) throw failed.reason; // 某區塊失敗不影響其他區塊；全部失敗才拋出
   }
-  if (!elements.length && buildingErr) throw buildingErr;
 
   const byType = {};
   const seen = new Set();

@@ -2,6 +2,7 @@ import { MapService } from '../../map/MapService.js';
 import { POI_TYPES } from '../../config/poiTypes.js';
 import { ALL_ENEMIES } from '../../config/enemies.js';
 import { RESOURCES } from '../../config/constants.js';
+import { BASE_SIZES, FACILITY_COUNT } from '../../config/civilization.js';
 import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
 import { stockOf, msToReset } from '../../systems/LootStock.js';
@@ -79,16 +80,13 @@ export class MapPanel {
     }
   }
 
-  /** 多人互動狀態：附近玩家數，或提示開啟 */
+  /** 多人互動狀態：附近玩家數與隊伍數 */
   worldChip() {
     const w = this.game.world;
     if (!w?.available) return '';
     const n = w.others.length;
     const trips = w.others.reduce((s, p) => s + p.trips.filter((t) => t.endAt > Date.now()).length, 0);
-    if (this.game.state.settings.shareWorld === undefined) {
-      return `<button class="world-chip invite" data-action="worldSettings">👥 多人互動：附近 ${n} 位玩家・點此設定是否公開你的據點</button>`;
-    }
-    return `<button class="world-chip" data-action="worldSettings">👥 附近玩家 ${n}・隊伍 ${trips}${w.sharing ? '・已公開' : '・未公開'}</button>`;
+    return `<button class="world-chip" data-action="worldSettings">👥 附近玩家 ${n}・隊伍 ${trips}</button>`;
   }
 
   /** 其他玩家資訊 */
@@ -166,7 +164,8 @@ export class MapPanel {
 
   showLegend() {
     const rows = Object.values(POI_TYPES).map((p) => `<div class="legend-row"><span class="poi-pin" style="--c:${p.color}">${p.icon}</span> ${p.name} <span class="danger">${stars(p.danger)}</span><small>${Object.keys(p.loot).map((k) => RESOURCES[k].icon).join('')}</small></div>`).join('');
-    this.ui.modal.open({ title: '🧾 圖例', body: `${rows}<p class="muted">☠ 越多越危險；距離避難所越遠危險度越高。紅框為探索範圍。</p>` });
+    const sizes = Object.entries(BASE_SIZES).map(([k, z]) => `<div class="legend-row"><span class="shelter-pin size-${k}" style="--d:${z.pin}px">${z.icon}<i class="size-tag">${z.name[0]}</i></span> ${z.name}據點 <small>可建 ${FACILITY_COUNT + z.slots} 棟</small></div>`).join('');
+    this.ui.modal.open({ title: '🧾 圖例', body: `${rows}<h4>據點規模</h4>${sizes}<p class="muted">金框是你的據點（⭐ 為主要據點），青框是其他玩家的據點。</p><p class="muted">☠ 越多越危險；距離避難所越遠危險度越高。紅框為探索範圍。</p>` });
   }
 
   poiBody(poi) {

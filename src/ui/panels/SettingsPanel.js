@@ -35,9 +35,8 @@ export class SettingsPanel {
     }
     const status = { online: '🟢 已連線', offline: '🔴 無法連線', error: `❌ ${escapeHtml(w.error || '')}`, idle: '連線中…' }[w.status] || w.status;
     return `<div class="card">
-      <p>在地圖上可以看見附近 5 公里內其他玩家公開的<b>據點</b>與<b>探索隊伍</b>（${status}・目前 ${w.others.length} 位）。</p>
-      <label class="toggle"><input type="checkbox" data-world="share" ${w.sharing ? 'checked' : ''}> 公開我的據點與探索隊伍</label>
-      <small class="muted block">⚠️ 據點是真實地圖上的建築，公開後附近玩家會看到它的位置與你的玩家名稱「${escapeHtml(this.game.state.player.name)}」。若據點設在住家附近，請考慮是否公開。關閉後會立即從其他玩家的地圖上移除。</small>
+      <p>在地圖上可以看見附近 5 公里內其他玩家的<b>據點</b>與<b>探索隊伍</b>（${status}・目前 ${w.others.length} 位）。</p>
+      <small class="muted block">⚠️ 所有玩家的據點與探索隊伍都會公開：附近玩家會看到據點位置與你的玩家名稱「${escapeHtml(this.game.state.player.name)}」。據點是真實地圖上的建築，建議不要設在住家。</small>
     </div>`;
   }
 
@@ -170,13 +169,6 @@ export class SettingsPanel {
   }
 
   afterRender(root) {
-    root.querySelectorAll('[data-world]').forEach((el) => {
-      el.addEventListener('change', async () => {
-        await this.game.world.setSharing(el.checked);
-        this.ui.toastEl.show(el.checked ? '👥 已公開你的據點與探索隊伍' : '已停止公開', 'success');
-        this.ui.refresh(true);
-      });
-    });
     root.querySelectorAll('[data-setting]').forEach((el) => {
       el.addEventListener('change', () => {
         this.game.state.settings[el.dataset.setting] = el.checked;
