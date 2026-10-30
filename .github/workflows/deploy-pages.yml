@@ -1,0 +1,69 @@
+# 部署到 GitHub Pages：推送到 main 或手動執行時，檢查 → 建置 → 發佈。
+#
+# 首次使用前：repo Settings → Pages → Build and deployment → Source 選「GitHub Actions」。
+#
+# 雲端存檔（選用）：GitHub Pages 只能放靜態檔，沒有內建的存檔伺服器。
+# 要啟用跨裝置存檔，請到 Settings → Secrets and variables → Actions → Variables 設定：
+#   VITE_CLOUD_PROVIDER = selfhost 並設定 VITE_CLOUD_URL（自架 server/ 的網址），或
+#   VITE_CLOUD_PROVIDER = supabase 並設定 VITE_SUPABASE_URL、VITE_SUPABASE_ANON_KEY
+# 未設定時預設為 none（關閉雲端存檔，其餘功能正常）。
+name: 部署到 GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一時間只保留一個部署；進行中的部署不取消，避免網站半更新
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 檢查與建置
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安裝相依套件
+        run: npm ci
+
+      - name: 資料檢查與邏輯模擬
+        run: npm run check
+
+      - name: 雲端存檔整合測試
+        run: npm run test:cloud
+
+      - name: 建置
+        run: npm run build
+        env:
+          VITE_CLOUD_PROVIDER: ${{ vars.VITE_CLOUD_PROVIDER || 'none' }}
+          VITE_CLOUD_URL: ${{ vars.VITE_CLOUD_URL }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: 發佈
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

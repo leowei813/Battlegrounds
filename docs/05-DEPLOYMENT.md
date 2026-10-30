@@ -50,39 +50,24 @@ npm run build
 ## 4. 部署方式
 
 ### A. GitHub Pages（GitHub Actions）
-建立 `.github/workflows/deploy.yml`：
+專案已內建 [`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml)：每次推送到 `main`（或在 Actions 頁手動執行），會依序跑資料檢查、雲端存檔測試、建置，然後發佈。
 
-```yaml
-name: Deploy
-on:
-  push:
-    branches: [main]
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
-      - run: npm ci
-      - run: npm run check
-      - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
-        with: { path: dist }
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: { name: github-pages, url: '${{ steps.d.outputs.page_url }}' }
-    steps:
-      - id: d
-        uses: actions/deploy-pages@v4
-```
+首次設定：
+1. repo **Settings → Pages → Build and deployment → Source** 選 **GitHub Actions**。
+2. 到 **Actions** 頁重新執行「部署到 GitHub Pages」（或推送任一 commit 到 `main`）。
+3. 網址為 `https://<帳號>.github.io/<repo>/`。
 
-到 GitHub repo → Settings → Pages → Source 選 **GitHub Actions**。
+> **私有 repo**：GitHub 免費方案只能為**公開** repo 開啟 Pages；私有 repo 需要 GitHub Pro / Team / Enterprise。另外，除了 Enterprise 之外，私有 repo 發佈的 Pages 網站本身仍是**公開**的。
+
+**雲端存檔**：Pages 只有靜態檔，預設建置時會關閉雲端存檔（`VITE_CLOUD_PROVIDER=none`）。要啟用時，請到 **Settings → Secrets and variables → Actions → Variables** 新增：
+
+| 變數 | 值 |
+|---|---|
+| `VITE_CLOUD_PROVIDER` | `selfhost` 或 `supabase` |
+| `VITE_CLOUD_URL` | 自架 `server/` 的 HTTPS 網址（selfhost） |
+| `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY` | Supabase 專案設定（supabase） |
+
+自架伺服器時，伺服器的 `CORS_ORIGIN` 請設為 `https://<帳號>.github.io`。
 
 ### B. Vercel / Netlify / Cloudflare Pages
 | 設定 | 值 |
