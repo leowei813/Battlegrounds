@@ -51,6 +51,8 @@ export class SurvivorSystem {
   }
 
   growthMul(sv) {
+    // 主角沒有品級，成長比照最高品級「稀有」
+    if (sv.isLeader) return SURVIVOR_RARITY.legendary.growth;
     return SURVIVOR_RARITY[sv.rarity]?.growth ?? 1;
   }
 

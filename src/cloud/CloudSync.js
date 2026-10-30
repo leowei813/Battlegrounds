@@ -198,6 +198,8 @@ export class CloudSync {
 
   /** 清空雲端進度（保留帳號），下次登入會重新建立角色 */
   async resetProgress() {
+    // 先從其他玩家的地圖上移除舊的據點與探索隊伍
+    await this.game?.world?.clear();
     const { id, token } = this.creds();
     this.detach();
     this.locked = true;

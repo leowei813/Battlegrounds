@@ -2,7 +2,7 @@
 
 export const GAME_TITLE = '絕地求生';
 export const SAVE_KEY = 'jdqs_save_v1';
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 export const TICK_MS = 1000;
 export const AUTOSAVE_MS = 30 * 1000;
