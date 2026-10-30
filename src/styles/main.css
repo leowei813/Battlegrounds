@@ -56,7 +56,7 @@ h4 { margin: 14px 0 6px; font-size: 14px; color: #c5e1a5; }
 .res b { font-variant-numeric: tabular-nums; }
 .res small { color: #9ccc65; font-size: 10px; }
 .res.full { border-color: var(--accent); }
-.res.empty { border-color: var(--danger); animation: pulse 1s infinite; }
+.res.empty { border-color: var(--danger); animation: pulse 1s infinite; padding: 2px 6px; line-height: normal; text-align: left; }
 .res.cur b { color: var(--accent); }
 
 /* ---------- Stage ---------- */
@@ -417,4 +417,31 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .cl-section ul { margin: 4px 0 0; padding-left: 20px; line-height: 1.7; }
 @media (max-width: 600px) {
   .hud-left .ver-badge { align-self: center; }
+}
+
+/* ---------- Survivor rarity / vitals ---------- */
+.sv-card { border: 2px solid var(--rc, var(--line)); border-left: 4px solid var(--cc); }
+.sv-card.r-epic, .sv-card.r-legendary { box-shadow: 0 0 10px color-mix(in srgb, var(--rc) 50%, transparent); }
+.sv-card.severe { background: linear-gradient(135deg, #b71c1c33, var(--card) 60%); }
+.sv-card .tags, .sv-detail .tags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.bar.hp .bar-fill { background: linear-gradient(90deg, #c62828, #ef5350); }
+.blink { animation: pulse 1s infinite; }
+.starve-badge { border: 1px solid #ef5350; background: #b71c1c; color: #fff; border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; align-self: flex-start; animation: pulse 1s infinite; }
+@media (max-width: 600px) { .hud-left .starve-badge { align-self: center; } }
+
+/* ---------- Multiplayer ---------- */
+.other-pin { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 15px; border-radius: 50%; background: #006064e6; border: 2px solid #4dd0e1; box-shadow: 0 0 8px #00acc188; }
+.other-pin.primary { width: 36px; height: 36px; font-size: 19px; border-width: 3px; }
+.world-chip { position: absolute; left: 10px; bottom: 48px; border: 1px solid #4dd0e1; background: #004d40e6; color: #e0f7fa; border-radius: 14px; padding: 5px 12px; font: inherit; font-size: 12px; cursor: pointer; max-width: calc(100% - 20px); }
+.world-chip.invite { animation: pulse 1.6s infinite; }
+.hud-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.hud-badges > * { align-self: center !important; }
+.sv-status { margin: 4px 0 2px; }
+.sv-status .tags { justify-content: flex-start; }
+.res { align-self: center; }
+.hud-badges > button { white-space: nowrap; }
+@media (max-width: 600px) {
+  .hud-left .clock { flex: 1 1 auto; min-width: 0; }
+  .hud-left .clock small { display: none; }
+  .hud-left .hud-badges { flex: 0 1 auto; justify-content: flex-end; }
 }

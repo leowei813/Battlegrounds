@@ -1,9 +1,10 @@
 import {
-  SAVE_VERSION, STARTING_RESOURCES, STARTING_COINS, DEFENSE_SLOTS,
+  SAVE_VERSION, STARTING_RESOURCES, STARTING_COINS,
 } from '../config/constants.js';
 import { FACILITIES } from '../config/facilities.js';
 import { CLASSES } from '../config/survivors.js';
 import { emptyEquipment } from '../config/equipment.js';
+import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 import { uid } from '../utils/math.js';
 
 /** 統計欄位（任務、成就皆由此衍生） */
@@ -28,7 +29,9 @@ export function createBase(poi, isFirst) {
     facilities: Object.fromEntries(
       Object.entries(FACILITIES).map(([id, def]) => [id, { level: isFirst ? def.startLevel : id === 'wall' ? 1 : 0 }]),
     ),
-    defenses: Array.from({ length: DEFENSE_SLOTS }, (_, slot) => ({ slot, type: null, level: 0, garrisonId: null })),
+    // 防禦建築欄位數依據點規模（小型 4～巨型 12）
+    size: baseSizeOf(poi),
+    defenses: Array.from({ length: BASE_SIZES[baseSizeOf(poi)].slots }, (_, slot) => ({ slot, type: null, level: 0, garrisonId: null })),
     wallHp: null, // null = 滿血（首次計算時填入）
     buildQueue: [],
   };
@@ -42,14 +45,17 @@ export function createLeader(name, classId = 'warrior') {
     level: 1,
     xp: 0,
     isLeader: true,
+    rarity: 'uncommon',
     status: 'idle', // idle | exploring
     job: 'guard',
-    injuredUntil: 0,
+    hp: null, // 目前生命（null = 滿血）
+    severe: false, // 重傷：生命歸零，無法行動
+    zeroSince: 0, // 飢餓且生命為 0 的起始時間（永久死亡倒數）
     equipment: emptyEquipment(),
   };
 }
 
-export function createSurvivor(name, classId, level = 1) {
+export function createSurvivor(name, classId, level = 1, rarity = 'common') {
   if (!CLASSES[classId]) throw new Error(`Unknown class ${classId}`);
   return {
     id: uid('sv'),
@@ -58,9 +64,12 @@ export function createSurvivor(name, classId, level = 1) {
     level,
     xp: 0,
     isLeader: false,
+    rarity,
     status: 'idle',
     job: 'scavenge',
-    injuredUntil: 0,
+    hp: null,
+    severe: false,
+    zeroSince: 0,
     equipment: emptyEquipment(),
   };
 }
@@ -92,6 +101,7 @@ export function createInitialState({ playerName, classId, lat, lon }) {
     inventory: { items: [], blueprints: [] },
     survivors: [createLeader(playerName, classId)],
     recruitPool: [],
+    recruitOffer: null, // 招募中的三位候選人
     expeditions: [],
     reports: [],
     research: { completed: [], active: null },

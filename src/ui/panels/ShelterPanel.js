@@ -102,7 +102,7 @@ export class ShelterPanel {
           <div><small>屍潮間隔</small><b>${siege.active() ? `${siege.spawnInterval().toFixed(1)} 秒` : '☀️ 白天無屍潮'}</b></div>
         </div>
         ${queue ? `<h4>施工佇列</h4>${queue}` : ''}
-        <h4>防禦建築 <small class="muted">（點擊場景中的槽位也可建造）</small></h4>
+        <h4>防禦建築 <small class="muted">${(() => { const z = g.shelter.sizeInfo(sh); return `${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築`; })()}</small></h4>
         <div class="slot-grid">${defenses}</div>
         <h4>設施</h4>
         <div class="fac-list">${facilities}</div>

@@ -1,7 +1,8 @@
 import { DEFENSES } from '../config/defenses.js';
 import { ENEMIES, BOSSES } from '../config/enemies.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
-import { SIEGE_SCALING, BREACH_LOSS } from '../config/civilization.js';
+import { SIEGE_SCALING, BREACH_LOSS, BREACH_BUILDING_DAMAGE_CHANCE } from '../config/civilization.js';
+import { FACILITIES } from '../config/facilities.js';
 import { TIME_PHASES, ZOMBIE_HOURS_FRACTION } from '../config/timePhases.js';
 import {
   chance, pick, randFloat, weightedPick, clamp,
@@ -35,7 +36,7 @@ export class BaseSiege {
     this.nextId = 1;
   }
 
-  slotPos(slot, total = 8) {
+  slotPos(slot, total = this.base?.defenses.length || 8) {
     const a = (slot / total) * Math.PI * 2 - Math.PI / 2;
     return { x: Math.cos(a) * WORLD.SLOT_R, y: Math.sin(a) * WORLD.SLOT_R };
   }
@@ -241,9 +242,8 @@ export class BaseSiege {
   /** 防禦駐守的倖存者住在主要據點，只防衛主要據點 */
   guards() {
     if (!this.game.shelter.isPrimary(this.base)) return [];
-    const now = Date.now();
     return this.game.state.survivors
-      .filter((s) => s.job === 'guard' && s.status === 'idle' && s.injuredUntil <= now && !this.game.survivors.isGarrisoned(s.id))
+      .filter((s) => s.job === 'guard' && s.status === 'idle' && !s.severe && !this.game.survivors.isGarrisoned(s.id))
       .map((s) => ({ sv: s, stats: this.game.survivors.stats(s) }));
   }
 
@@ -349,9 +349,40 @@ export class BaseSiege {
     base.wallHp = sh.wallMax(base) * 0.3;
     this.spawnTimer = BREACH_GRACE;
     this.game.state.stats.breaches += 1;
-    this.game.log(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源`, 'danger');
-    this.game.toast(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源，請強化圍牆與防禦塔`, 'danger');
-    this.game.bus.emit('siege:breach', { baseId: base.id, lost });
+    const damaged = this.damageBuildings(base);
+    const dmgText = damaged.length ? `，${damaged.length} 棟建築損毀` : '';
+    this.game.log(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源${dmgText}`, 'danger');
+    damaged.forEach((d) => this.game.log(`🏚️ ${base.name}：${d}`, 'danger'));
+    this.game.toast(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源${dmgText}，請強化圍牆與防禦塔`, 'danger');
+    this.game.bus.emit('siege:breach', { baseId: base.id, lost, damaged });
+    this.game.bus.emit('shelter:changed');
+  }
+
+  /**
+   * 突破後建築損毀：每棟已建造的設施/防禦建築有機率降 1 級，1 級的會被拆除。
+   * @returns {string[]} 損毀描述
+   */
+  damageBuildings(base) {
+    const out = [];
+    Object.entries(base.facilities).forEach(([id, f]) => {
+      if (f.level < 1 || !chance(BREACH_BUILDING_DAMAGE_CHANCE)) return;
+      if (id === 'wall' && f.level <= 1) return; // 圍牆最低保留 1 級
+      f.level -= 1;
+      out.push(f.level === 0 ? `${FACILITIES[id].name}被摧毀` : `${FACILITIES[id].name}損毀，降為 Lv${f.level}`);
+    });
+    base.defenses.forEach((d) => {
+      if (!d.type || d.level < 1 || !chance(BREACH_BUILDING_DAMAGE_CHANCE)) return;
+      const name = DEFENSES[d.type].name;
+      if (d.level <= 1) {
+        Object.assign(d, { type: null, level: 0, garrisonId: null });
+        out.push(`${name}被拆毀`);
+      } else {
+        d.level -= 1;
+        out.push(`${name}損毀，降為 Lv${d.level}`);
+      }
+    });
+    if (out.length) this.game.civilization.invalidate();
+    return out;
   }
 
   /** 防禦總 DPS（離線估算與 UI 顯示） */

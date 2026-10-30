@@ -63,4 +63,24 @@ export class SupabaseProvider {
   watch() {
     return null;
   }
+
+  // ---------------- 多人世界 ----------------
+
+  async worldPut(id, token, presence) {
+    const primary = presence.bases.find((b) => b.primary) || presence.bases[0];
+    await this.rpc('jdqs_world_put', {
+      p_id: id, p_token: token, p_payload: presence, p_lat: primary.lat, p_lon: primary.lon,
+    });
+  }
+
+  async worldDelete(id, token) {
+    await this.rpc('jdqs_world_delete', { p_id: id, p_token: token });
+  }
+
+  async worldNearby(lat, lon, km, excludeId) {
+    const body = await this.rpc('jdqs_world_nearby', {
+      p_lat: lat, p_lon: lon, p_km: km, p_exclude: excludeId || '',
+    });
+    return body.players || [];
+  }
 }

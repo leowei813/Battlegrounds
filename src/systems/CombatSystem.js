@@ -51,7 +51,8 @@ export class CombatSystem {
     const s = this.game.survivors.stats(sv);
     return {
       id: sv.id, name: sv.name, side: 'team', classId: sv.classId,
-      maxHp: s.hp, hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, critDmg: s.critDmg,
+      // 以目前生命出戰（受過傷的隊員不會回滿血）
+      maxHp: s.hp, hp: this.game.survivors.hpOf(sv), atk: s.atk, def: s.def, crit: s.crit, critDmg: s.critDmg,
       dodge: s.dodge, atkSpeed: s.atkSpeed, skills: s.skills, lifeSteal: Math.min(0.5, s.lifeSteal || 0),
       cd: randFloat(0, 0.3), healCd: s.skills.healEvery || 0, firstHit: true,
     };
@@ -164,7 +165,8 @@ export class CombatSystem {
   }
 
   /**
-   * 結算戰鬥對倖存者的影響：經驗、受傷、統計。
+   * 結算戰鬥對倖存者的影響：經驗、剩餘生命、重傷、統計。
+   * 生命歸零的隊員重傷並扣除經驗（可能降級），且不獲得本場經驗。
    * 由探索與地圖戰鬥共用。
    */
   applyOutcome(survivors, result, at = Date.now()) {
@@ -172,12 +174,15 @@ export class CombatSystem {
     st.kills += result.kills.length;
     st.bossKills += result.bossKills;
     st.eliteKills += result.eliteKills;
-    const injuryReduce = Math.max(0, ...survivors.map((sv) => this.game.survivors.skillEffects(sv).injuryReduce || 0));
     const xpEach = Math.round(result.xp / Math.max(1, survivors.length)) + (result.victory ? 5 : 0);
     survivors.forEach((sv) => {
-      this.game.survivors.gainXp(sv, xpEach);
       const u = result.team.find((x) => x.id === sv.id);
-      if (u?.down) this.game.survivors.injure(sv, result.victory ? 8 : 15, injuryReduce, at);
+      if (u?.down) {
+        this.game.survivors.becomeSevere(sv, '在戰鬥中', at);
+        return;
+      }
+      this.game.survivors.gainXp(sv, xpEach);
+      if (u) this.game.survivors.setHp(sv, u.hp);
     });
     this.game.grant({ coins: result.coins, parts: result.parts });
   }

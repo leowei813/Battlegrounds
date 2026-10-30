@@ -1,11 +1,13 @@
 import { BUILD_QUEUE_SIZE } from '../config/constants.js';
 import {
-  FACILITIES, FACILITY_MAX_LEVEL, facilityBuildTime, wallMaxHp, housingCap,
+  FACILITIES, FACILITY_MAX_LEVEL, facilityBuildTime, wallMaxHp,
 } from '../config/facilities.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL, defenseBuildTime } from '../config/defenses.js';
 import { RESEARCH } from '../config/research.js';
 import { POI_TYPES } from '../config/poiTypes.js';
-import { MAX_BASES, PRIMARY_DANGER_COEF, baseEstablishCost } from '../config/civilization.js';
+import {
+  MAX_BASES, PRIMARY_DANGER_COEF, baseEstablishCost, BASE_SIZES, FACILITY_COUNT, baseSizeOf,
+} from '../config/civilization.js';
 import { createBase } from '../core/GameState.js';
 import { canAfford, payCost, scaleCost } from './costUtils.js';
 
@@ -66,9 +68,23 @@ export class ShelterSystem {
     return this.bases.reduce((s, b) => s + b.facilities[fid].level, 0);
   }
 
-  housing() {
-    const sum = this.bases.reduce((s, b) => s + (b.facilities.warehouse.level > 0 ? housingCap(b.facilities.warehouse.level) : 0), 0);
-    return Math.max(housingCap(0), sum);
+  /**
+   * 據點規模資訊（據點或尚未建立的建築皆可查詢）
+   * @returns {{id:string, name:string, slots:number, total:number}}
+   */
+  sizeInfo(baseOrPoi) {
+    const id = baseOrPoi?.size || baseSizeOf(baseOrPoi);
+    const size = BASE_SIZES[id];
+    const slots = baseOrPoi?.defenses ? baseOrPoi.defenses.length : size.slots;
+    return { id, name: size.name, slots, total: FACILITY_COUNT + slots };
+  }
+
+  /** 據點等級：該據點所有設施等級的平均（無條件捨去），用於人員上限 */
+  baseLevel(b) {
+    const base = this.resolve(b);
+    if (!base) return 0;
+    const levels = Object.values(base.facilities).map((f) => f.level);
+    return Math.floor(levels.reduce((s, l) => s + l, 0) / levels.length);
   }
 
   defenseCount() {

@@ -27,6 +27,20 @@ export class SettingsPanel {
     this.busy = false;
   }
 
+  /** 多人互動：公開自己的據點與探索隊伍給附近玩家 */
+  renderWorld() {
+    const w = this.game.world;
+    if (!w?.available) {
+      return '<p class="muted">此版本沒有連線伺服器，無法使用多人互動。需要設定內建伺服器或 Supabase（見 docs/06-CLOUD-SAVE.md）。</p>';
+    }
+    const status = { online: '🟢 已連線', offline: '🔴 無法連線', error: `❌ ${escapeHtml(w.error || '')}`, idle: '連線中…' }[w.status] || w.status;
+    return `<div class="card">
+      <p>在地圖上可以看見附近 5 公里內其他玩家公開的<b>據點</b>與<b>探索隊伍</b>（${status}・目前 ${w.others.length} 位）。</p>
+      <label class="toggle"><input type="checkbox" data-world="share" ${w.sharing ? 'checked' : ''}> 公開我的據點與探索隊伍</label>
+      <small class="muted block">⚠️ 據點是真實地圖上的建築，公開後附近玩家會看到它的位置與你的玩家名稱「${escapeHtml(this.game.state.player.name)}」。若據點設在住家附近，請考慮是否公開。關閉後會立即從其他玩家的地圖上移除。</small>
+    </div>`;
+  }
+
   /** 雲端存檔區塊 */
   renderCloud() {
     const c = this.cloud;
@@ -132,6 +146,8 @@ export class SettingsPanel {
         <b>${escapeHtml(st.player.name)}</b> 的避難所・建立於 ${new Date(st.createdAt).toLocaleString()}
         <small class="muted block">上次存檔：${new Date(st.lastSaveAt).toLocaleTimeString()}（每 30 秒自動存檔，離開頁面時也會存檔）</small>
       </div>
+      <h3>👥 多人互動</h3>
+      ${this.renderWorld()}
       <h3>雲端存檔（跨裝置）</h3>
       ${this.renderCloud()}
       <h3>本機存檔</h3>
@@ -154,6 +170,13 @@ export class SettingsPanel {
   }
 
   afterRender(root) {
+    root.querySelectorAll('[data-world]').forEach((el) => {
+      el.addEventListener('change', async () => {
+        await this.game.world.setSharing(el.checked);
+        this.ui.toastEl.show(el.checked ? '👥 已公開你的據點與探索隊伍' : '已停止公開', 'success');
+        this.ui.refresh(true);
+      });
+    });
     root.querySelectorAll('[data-setting]').forEach((el) => {
       el.addEventListener('change', () => {
         this.game.state.settings[el.dataset.setting] = el.checked;

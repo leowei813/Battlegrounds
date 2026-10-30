@@ -6,6 +6,7 @@ import { bus, EVT } from '../core/EventBus.js';
 import { escapeHtml } from '../utils/dom.js';
 import { SiegeMapLayer } from './SiegeMapLayer.js';
 import { PoiCanvasLayer } from './PoiCanvasLayer.js';
+import { dayKey } from '../systems/LootStock.js';
 
 /**
  * 真實地圖（Leaflet + OpenStreetMap 圖磚）。
@@ -40,6 +41,7 @@ export class MapService {
     this.layers.routes = L.layerGroup().addTo(this.map);
     this.layers.zombies = L.layerGroup().addTo(this.map);
     this.layers.shelter = L.layerGroup().addTo(this.map);
+    this.layers.others = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
   }
 
@@ -73,9 +75,10 @@ export class MapService {
     const sh = state.bases.find((b) => b.id === state.primaryBaseId) || state.bases[0] || null;
 
     // 建築與殭屍群數量多，只有內容變動時才重建標記
-    let depletion = 0;
-    for (const p of pois) depletion += Math.round((p.depletion || 0) * 10);
-    const poiKey = `${state.map.fetchedAt}|${pois.length}|${[...basePoiIds].join(',')}|${depletion}`;
+    const today = dayKey();
+    let looted = 0;
+    for (const p of pois) if (p.lootedDay === today) looted += 1;
+    const poiKey = `${state.map.fetchedAt}|${pois.length}|${[...basePoiIds].join(',')}|${today}|${looted}`;
     if (poiKey !== this.poiKey) {
       this.poiKey = poiKey;
       this.poiLayer.setData(pois.filter((p) => !basePoiIds.has(p.id)));
@@ -96,6 +99,20 @@ export class MapService {
       m.addTo(this.layers.zombies);
     });
     return this.renderBases(state, sh);
+  }
+
+  /** 其他玩家公開的據點（多人互動） */
+  renderOthers(players = []) {
+    if (!this.map) return;
+    this.layers.others.clearLayers();
+    players.forEach((p) => p.bases.forEach((b) => {
+      L.marker([b.lat, b.lon], {
+        icon: this.icon(`<div class="other-pin ${b.primary ? 'primary' : ''}">🏴</div>`, 'shelter-icon', b.primary ? 36 : 28),
+        zIndexOffset: 800,
+      }).on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
+        .bindTooltip(`👤 ${escapeHtml(p.name)}・${escapeHtml(b.name)}`, { direction: 'top', offset: [0, -14] })
+        .addTo(this.layers.others);
+    }));
   }
 
   /** 據點、探索範圍、補給線與探索路線（數量少，每次重建） */

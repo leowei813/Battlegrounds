@@ -1,9 +1,8 @@
 import L from 'leaflet';
 import { WORLD } from '../systems/SiegeSystem.js';
 import { DEFENSES } from '../config/defenses.js';
-import { DEFENSE_SLOTS } from '../config/constants.js';
 import { bus } from '../core/EventBus.js';
-import { EXP_PHASES, AMBUSH_RADIUS_M } from '../systems/ExplorationSystem.js';
+import { EXP_PHASES, AMBUSH_RADIUS_M, tripProgress } from '../systems/ExplorationSystem.js';
 import { formatDuration } from '../utils/math.js';
 
 /** 屍潮世界座標 1 單位 = 1.5 公尺（出生圈半徑 150 → 約 225 公尺） */
@@ -146,7 +145,7 @@ export const SiegeMapLayer = L.Layer.extend({
       // 防禦建築
       base.defenses.forEach((d, i) => {
         if (!d.type || d.level < 1) return;
-        const p = s.slotPos(i, DEFENSE_SLOTS);
+        const p = s.slotPos(i, base.defenses.length);
         ctx.beginPath();
         ctx.arc(c.x + p.x * k, c.y + p.y * k, Math.max(3, 6 * Math.min(k, 1.6)), 0, Math.PI * 2);
         ctx.fillStyle = css(DEFENSES[d.type].color);
@@ -204,6 +203,47 @@ export const SiegeMapLayer = L.Layer.extend({
     this.drawFx(ctx, frames, dt);
     this.drawPulses(ctx, frames, dt);
     this.drawExpeditions(ctx, size);
+    this.drawOtherTrips(ctx, size);
+  },
+
+  /** 其他玩家的探索隊伍（依對方上傳的行程時間即時推算位置） */
+  drawOtherTrips(ctx, size) {
+    const now = Date.now();
+    (this.game.world?.others || []).forEach((player) => player.trips.forEach((trip) => {
+      if (now > trip.endAt) return;
+      const p = tripProgress(trip, now);
+      const a = this.map.latLngToContainerPoint([p.from.lat, p.from.lon]);
+      const b = this.map.latLngToContainerPoint([p.to.lat, p.to.lon]);
+      const m = this.map.latLngToContainerPoint([p.pos.lat, p.pos.lon]);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.setLineDash([3, 6]);
+      ctx.strokeStyle = 'rgba(38,198,218,0.55)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (m.x < -60 || m.y < -60 || m.x > size.x + 60 || m.y > size.y + 60) return;
+      const ph = EXP_PHASES[p.phase];
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 11, 0, Math.PI * 2);
+      ctx.fillStyle = '#00838f';
+      ctx.fill();
+      ctx.strokeStyle = '#e0f7fa';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ph.icon, m.x, m.y + 1);
+      const label = `👤 ${player.name}・${ph.name}`;
+      ctx.font = 'bold 10px sans-serif';
+      const w = ctx.measureText(label).width + 10;
+      ctx.fillStyle = 'rgba(0,77,64,0.85)';
+      ctx.fillRect(m.x - w / 2, m.y + 14, w, 15);
+      ctx.fillStyle = '#e0f7fa';
+      ctx.fillText(label, m.x, m.y + 22);
+    }));
   },
 
   /** 探索隊：沿路線移動的隊伍標記、已走路線、距離與剩餘時間 */

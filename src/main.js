@@ -10,6 +10,7 @@ import { CloudSync } from './cloud/CloudSync.js';
 import { createProvider } from './cloud/providers/index.js';
 import { requireAccess } from './security/AccessGate.js';
 import { showWhatsNew, markVersionSeen } from './ui/ChangelogView.js';
+import { WorldSync } from './multiplayer/WorldSync.js';
 import { gainsHtml } from './ui/components.js';
 import { $ } from './utils/dom.js';
 import { formatDuration } from './utils/math.js';
@@ -48,6 +49,8 @@ function showOfflineReport(ui, report) {
       <p>你離開了 <b>${formatDuration(report.elapsed)}</b>${report.capped ? '（已達 24 小時上限）' : ''}。倖存者們持續運作避難所：</p>
       <div class="gains big">${gainsHtml(report.gains)}</div>
       ${report.expeditions ? `<p>🧭 完成探索 ${report.expeditions} 次（詳見「探索」頁報告）</p>` : ''}
+      ${report.starving ? '<p class="warn">🍽️ 食物已耗盡，人員正在挨餓並持續扣血！請盡快補充食物。</p>' : ''}
+      ${report.deaths > 0 ? `<p class="warn">⚰️ 離線期間有 ${report.deaths} 名隊員因長期飢餓死亡。</p>` : ''}
       ${report.defense ? `<p>🛡️ 離線防守擊殺 ${report.defense.kills} 隻殭屍，獲得 💰${report.defense.coins}</p>` : '<p class="muted">研究「夜行者」可解鎖離線防守收益。</p>'}
       <div class="btn-row end"><button class="btn btn-primary" data-action="close">太好了！</button></div>`,
   });
@@ -114,6 +117,9 @@ async function boot() {
   ui.init();
   game.save();
   cloud.attach(game);
+  // 多人互動（與雲端存檔共用後端）
+  game.world = new WorldSync(game, cloud.provider);
+  game.world.start();
 
   if (fresh) {
     markVersionSeen(); // 新玩家不需要看更新內容

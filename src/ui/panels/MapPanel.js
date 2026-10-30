@@ -3,7 +3,9 @@ import { POI_TYPES } from '../../config/poiTypes.js';
 import { ALL_ENEMIES } from '../../config/enemies.js';
 import { RESOURCES } from '../../config/constants.js';
 import { delegateActions, escapeHtml } from '../../utils/dom.js';
-import { haversine } from '../../utils/math.js';
+import { haversine, formatDuration } from '../../utils/math.js';
+import { stockOf, msToReset } from '../../systems/LootStock.js';
+import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
 import { btn, costHtml } from '../components.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { showBattle } from '../BattleView.js';
@@ -29,6 +31,13 @@ export class MapPanel {
     const c = this.game.shelter.primary() || this.game.state.map.center;
     this.service.init(c.lat, c.lon);
     delegateActions(this.overlay, (action, data) => this.onAction(action, data));
+  }
+
+  /** 多人資料更新：重畫其他玩家據點 */
+  onWorld(players) {
+    this.service.renderOthers(players);
+    this.lastOverlay = '';
+    if (this.ui.tab === 'map') this.renderOverlay();
   }
 
   onShow() {
@@ -62,11 +71,54 @@ export class MapPanel {
       </div>
       ${this.siegeBanner()}
       ${this.scanning ? `<div class="scan-progress">📡 掃描建築中 ${this.scanProgress || ''}</div>` : ''}
+      ${this.worldChip()}
       <div class="map-info">建築 ${st.map.pois.length}・殭屍群 ${st.map.zombieGroups.length}・資料：${src}</div>`;
     if (html !== this.lastOverlay) {
       this.lastOverlay = html;
       this.overlay.innerHTML = html;
     }
+  }
+
+  /** 多人互動狀態：附近玩家數，或提示開啟 */
+  worldChip() {
+    const w = this.game.world;
+    if (!w?.available) return '';
+    const n = w.others.length;
+    const trips = w.others.reduce((s, p) => s + p.trips.filter((t) => t.endAt > Date.now()).length, 0);
+    if (this.game.state.settings.shareWorld === undefined) {
+      return `<button class="world-chip invite" data-action="worldSettings">👥 多人互動：附近 ${n} 位玩家・點此設定是否公開你的據點</button>`;
+    }
+    return `<button class="world-chip" data-action="worldSettings">👥 附近玩家 ${n}・隊伍 ${trips}${w.sharing ? '・已公開' : '・未公開'}</button>`;
+  }
+
+  /** 其他玩家資訊 */
+  openPlayer(playerId) {
+    const p = this.game.world?.others.find((x) => x.id === playerId);
+    if (!p) return;
+    const now = Date.now();
+    const trips = p.trips.filter((t) => t.endAt > now);
+    this.ui.modal.open({
+      title: `👤 ${p.name}`,
+      body: `<p>🏛️ 文明度 <b>${p.civ}</b>・據點 ${p.bases.length} 個・外出隊伍 ${trips.length} 支</p>
+        <div class="pick-list">${p.bases.map((b, i) => `<button class="pick-row" data-action="fly" data-i="${i}">${b.primary ? '⭐' : '🏴'} ${escapeHtml(b.name)}</button>`).join('')}</div>
+        ${trips.length ? `<div class="label">探索中</div><ul class="event-list">${trips.map((t) => `<li>${EXP_PHASES[tripProgress(t, now).phase].icon} 前往「${escapeHtml(t.target || '某處')}」・${t.members} 人・剩 ${formatDuration(t.endAt - now)}</li>`).join('')}</ul>` : ''}
+        <p class="muted">其他玩家自願公開的據點與隊伍，位置每 30 秒更新。</p>`,
+      onAction: (action, data, m) => {
+        if (action !== 'fly') return;
+        const b = p.bases[+data.i];
+        m.close();
+        this.service.focus(b.lat, b.lon, 17);
+      },
+    });
+  }
+
+  /** 今日物資（種類與數量每天 00:00 重新隨機；探索後清空） */
+  stockHtml(poi) {
+    const st = stockOf(poi);
+    const reset = `每天 00:00 重置（${formatDuration(msToReset())}後）`;
+    if (st.empty) return `<div class="muted">🕸️ 今日物資已被搜刮一空・${reset}</div>`;
+    const list = Object.entries(st.resources).map(([k, v]) => `${RESOURCES[k].icon}${RESOURCES[k].name} ${v}`).join('、');
+    return `<div class="muted">📦 今日物資：${list}・${reset}</div>`;
   }
 
   /** 各據點即時屍潮摘要；點擊可飛到該據點 */
@@ -88,6 +140,7 @@ export class MapPanel {
     const sh = this.game.shelter.primary();
     if (action === 'gotoShelter' && sh) this.service.focus(sh.lat, sh.lon);
     if (action === 'legend') this.showLegend();
+    if (action === 'worldSettings') this.ui.switchTab('settings');
     if (action === 'flyTo') {
       const b = this.game.shelter.base(data.id);
       if (b) this.service.focus(b.lat, b.lon, 17);
@@ -127,7 +180,11 @@ export class MapPanel {
     const exploring = g.state.expeditions.filter((e) => e.poiId === poi.id).length;
     const actions = [];
     let establish = '';
-    if (!g.shelter.hasShelter()) actions.push(btn('🏠 設為避難所', 'setShelter', {}, { cls: 'btn-primary' }));
+    if (!g.shelter.hasShelter()) {
+      actions.push(btn('🏠 設為避難所', 'setShelter', {}, { cls: 'btn-primary' }));
+      const z = g.shelter.sizeInfo(poi);
+      establish = `<small class="muted block">🏗️ ${z.name}據點：可建造 ${z.total} 棟建築（防禦欄位 ${z.slots}）</small>`;
+    }
     else if (base) {
       actions.push(btn('🏠 進入據點', 'enterShelter', {}, { cls: 'btn-primary' }));
       if (!g.shelter.isPrimary(base)) actions.push(btn('⭐ 設為主要據點', 'setPrimary', {}, { cls: 'btn-ghost' }));
@@ -135,7 +192,8 @@ export class MapPanel {
       const check = g.shelter.canEstablish(poi);
       actions.push(btn('🧭 派遣探索', 'explore', {}, { cls: 'btn-primary' }));
       actions.push(btn('🏗️ 建立新據點', 'setShelter', {}, { cls: 'btn-ghost', disabled: !check.ok, title: check.reason || '' }));
-      establish = `<small class="muted block">建立據點費用：<span class="costs inline">${costHtml(g.state, g.shelter.establishCost())}</span>${check.ok ? '' : `（${check.reason}）`}</small>`;
+      const z = g.shelter.sizeInfo(poi);
+      establish = `<small class="muted block">🏗️ ${z.name}據點：可建造 ${z.total} 棟建築（防禦欄位 ${z.slots}）</small><small class="muted block">建立據點費用：<span class="costs inline">${costHtml(g.state, g.shelter.establishCost())}</span>${check.ok ? '' : `（${check.reason}）`}</small>`;
     }
     return `
       <div class="poi-detail">
@@ -144,8 +202,7 @@ export class MapPanel {
           <b>${pt.name}</b>${poi.osm ? ' <small class="tag">OSM</small>' : ' <small class="tag">傳聞</small>'}
           ${base ? `<div><span class="tag tag-amber">${g.shelter.isPrimary(base) ? '⭐ 主要據點' : '🏠 前哨據點'}</span> 據點危險度 <b>${g.shelter.dangerLevel(base)}</b></div>` : `<div>危險度 <span class="danger">${stars(danger)}</span> ${pt.special ? '<span class="tag tag-red">高級怪物</span>' : ''}</div>`}
           ${dist != null ? `<div class="muted">距避難所 ${dist} 公尺</div>` : ''}
-          <div class="muted">可能物資：${Object.keys(pt.loot).map((k) => `${RESOURCES[k].icon}${RESOURCES[k].name}`).join(' ')}</div>
-          <div class="muted">物資殘量：${Math.round((1 - (poi.depletion || 0)) * 100)}%・裝備掉率 ${Math.round(pt.itemChance * 100)}%</div>
+          ${this.stockHtml(poi)}
           ${exploring ? `<div class="tag tag-blue">${exploring} 支隊伍探索中</div>` : ''}
         </div>
       </div>

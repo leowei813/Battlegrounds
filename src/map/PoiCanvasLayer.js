@@ -1,5 +1,6 @@
 import L from 'leaflet';
 import { POI_TYPES } from '../config/poiTypes.js';
+import { dayKey } from '../systems/LootStock.js';
 
 /**
  * 地圖建築圖層：上千棟建築用單一 canvas 繪製（DOM 標記在手機上會卡頓）。
@@ -75,13 +76,15 @@ export const PoiCanvasLayer = L.Layer.extend({
     ctx.textBaseline = 'middle';
     ctx.font = `${Math.round(r * 1.15)}px sans-serif`;
     // 住宅先畫，重要建築畫在上層
+    const today = dayKey();
     const order = [...this.pois].sort((a, b) => POI_TYPES[a.type].danger - POI_TYPES[b.type].danger);
     order.forEach((poi) => {
       const pt = map.latLngToContainerPoint([poi.lat, poi.lon]);
       if (pt.x < -pad || pt.y < -pad || pt.x > size.x + pad || pt.y > size.y + pad) return;
       const def = POI_TYPES[poi.type];
       const rr = poi.type === 'residential' && icons ? r * 0.8 : r;
-      ctx.globalAlpha = 1 - (poi.depletion || 0) * 0.8;
+      // 今天已被搜刮的建築變淡
+      ctx.globalAlpha = poi.lootedDay === today ? 0.3 : 1;
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, rr, 0, Math.PI * 2);
       ctx.fillStyle = icons ? 'rgba(17,17,17,0.82)' : def.color;

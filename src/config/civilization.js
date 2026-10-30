@@ -50,4 +50,46 @@ export const baseEstablishCost = (n) => ({
 });
 
 /** 據點遭突破時損失的資源比例 */
-export const BREACH_LOSS = { primary: 0.08, outpost: 0.04 };
+export const BREACH_LOSS = { primary: 0.25, outpost: 0.25 };
+
+/**
+ * 據點遭突破時，每棟建築（設施與防禦建築）各自有此機率損毀降 1 級；
+ * 1 級建築損毀即被拆除（圍牆最低保留 1 級）。
+ */
+export const BREACH_BUILDING_DAMAGE_CHANCE = 0.3;
+
+/**
+ * 據點規模：決定可建造的防禦建築數量（設施固定 8 種）。最大的「巨型」據點共可建造 20 棟建築。
+ */
+export const BASE_SIZES = {
+  small: { name: '小型', slots: 4 },
+  medium: { name: '中型', slots: 6 },
+  large: { name: '大型', slots: 9 },
+  huge: { name: '巨型', slots: 12 },
+};
+export const FACILITY_COUNT = 8;
+
+/** 各建築類型可能的規模（同類型中依建築 ID 固定挑選，不會每次變動） */
+const SIZE_BY_TYPE = {
+  residential: ['small', 'small', 'medium'],
+  shop: ['small', 'medium', 'medium'],
+  gasStation: ['medium'],
+  school: ['medium', 'large', 'large'],
+  police: ['large'],
+  hospital: ['large', 'large', 'huge'],
+  factory: ['large', 'huge'],
+  warehouse: ['large', 'huge'],
+  military: ['huge'],
+};
+
+function hashString(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/** 某棟建築作為據點時的規模 ID */
+export function baseSizeOf(poi) {
+  const options = SIZE_BY_TYPE[poi?.type] || ['medium'];
+  return options[hashString(String(poi?.id || '')) % options.length];
+}

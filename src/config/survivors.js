@@ -79,6 +79,41 @@ export const SURVIVOR_NAMES = [
 ];
 
 export const MAX_SURVIVOR_LEVEL = 50;
+
+/**
+ * 倖存者品級（與裝備相同的 6 階與顏色）：品級越高，每次升級提升的能力越多。
+ * growth 為等級成長倍率；weight 為招募/遭遇時出現的權重。
+ */
+export const SURVIVOR_RARITY = {
+  poor: { growth: 0.8, weight: 25 },
+  common: { growth: 0.9, weight: 35 },
+  uncommon: { growth: 1.0, weight: 24 },
+  rare: { growth: 1.15, weight: 11 },
+  epic: { growth: 1.3, weight: 4 },
+  legendary: { growth: 1.5, weight: 1 },
+};
+
+/** 人員上限：3 + 領袖等級 ÷ 5 + 各據點等級總和，最多 10 人（含領袖） */
+export const MAX_SURVIVORS = 10;
+export const BASE_SURVIVOR_CAP = 3;
+export const LEADER_LEVELS_PER_SLOT = 5;
+/** 一次招募出現的候選人數 */
+export const RECRUIT_CHOICES = 3;
+
+/**
+ * 生命、重傷、飢餓、死亡（時間以現實分鐘計）。
+ */
+export const VITALS = {
+  regenPctPerMin: 0.02, // 未飢餓時，每分鐘回復最大生命 2%
+  severeRegenPctPerMin: 0.008, // 重傷時回復較慢
+  severeRecoverRatio: 0.3, // 生命回到 30% 才解除重傷
+  starveDrainPctPerMin: 0.04, // 飢餓時每分鐘流失最大生命 4%（約 25 分鐘歸零）
+  healPct: 0.5, // 藥品治療回復最大生命 50%
+  healCost: { medicine: 5 },
+  xpPenaltyPct: 0.1, // 重傷懲罰：扣除升級所需經驗的 10%，不足時降一級
+  deathGameDays: 3, // 飢餓且生命為 0 持續遊戲內 3 天 → 永久死亡（領袖除外）
+  medicRegenBonus: 0.25, // 每位在醫療站工作的醫生，全員回復速度 +25%（上限 +100%）
+};
 export const xpToNext = (level) => Math.round(40 * level ** 1.6);
 /** 招募費用（依目前人數） */
 export const recruitCost = (count) => ({ coins: 60 + count * 45, food: 40 + count * 20 });

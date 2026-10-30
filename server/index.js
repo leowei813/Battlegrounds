@@ -16,12 +16,18 @@
  *   PUT  /api/saves/:id           ← { baseRev, deviceId, deviceName, data, force? }
  *                                 → 200 { meta } | 409 { meta } | 403
  *   GET  /api/saves/:id/events?token=…   Server-Sent Events：其他裝置寫入時即時推送 meta
+ *
+ * 多人世界（玩家自願公開的據點與探索隊伍）：
+ *   PUT    /api/world/players/:id   ← { name, civ, bases[], trips[] }（Bearer = 玩家 token 雜湊）
+ *   DELETE /api/world/players/:id   停止公開
+ *   GET    /api/world/nearby?lat=&lon=&km=&exclude=   附近玩家（km 最大 20）
  */
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SaveStore } from './SaveStore.js';
+import { WorldStore } from './WorldStore.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 8787;
@@ -39,6 +45,7 @@ const MIME = {
 };
 
 const store = new SaveStore(DATA_DIR);
+const world = new WorldStore(DATA_DIR);
 /** @type {Map<string, Set<http.ServerResponse>>} */
 const watchers = new Map();
 const hits = new Map();
@@ -50,7 +57,7 @@ function cors(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
@@ -121,8 +128,33 @@ function watch(req, res, id, token) {
   return null;
 }
 
+async function handleWorld(req, res, url) {
+  if (url.pathname === '/api/world/nearby' && req.method === 'GET') {
+    const lat = Number(url.searchParams.get('lat'));
+    const lon = Number(url.searchParams.get('lon'));
+    const km = Math.min(20, Math.max(0.5, Number(url.searchParams.get('km')) || 5));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json(res, 400, { error: 'invalid position' });
+    return json(res, 200, { players: world.nearby(lat, lon, km, String(url.searchParams.get('exclude') || '')) });
+  }
+  const m = /^\/api\/world\/players\/([^/]+)$/.exec(url.pathname);
+  if (!m || !ID_RE.test(m[1])) return json(res, 404, { error: 'not found' });
+  const token = bearer(req);
+  if (!token) return json(res, 401, { error: 'unauthorized' });
+  if (req.method === 'PUT') {
+    const result = world.put(m[1], token, await readBody(req));
+    if (result === 'forbidden') return json(res, 403, { error: 'forbidden' });
+    if (result === 'invalid') return json(res, 400, { error: 'invalid body' });
+    return json(res, 200, { ok: true });
+  }
+  if (req.method === 'DELETE') {
+    return world.remove(m[1], token) === 'forbidden' ? json(res, 403, { error: 'forbidden' }) : json(res, 200, { ok: true });
+  }
+  return json(res, 405, { error: 'method not allowed' });
+}
+
 async function handleApi(req, res, url) {
-  if (url.pathname === '/api/health') return json(res, 200, { ok: true, time: Date.now() });
+  if (url.pathname === '/api/health') return json(res, 200, { ok: true, time: Date.now(), world: true });
+  if (url.pathname.startsWith('/api/world/')) return handleWorld(req, res, url);
   const m = /^\/api\/saves\/([^/]+)(\/meta|\/events)?$/.exec(url.pathname);
   if (!m || !ID_RE.test(m[1])) return json(res, 404, { error: 'not found' });
   const [, id, sub] = m;

@@ -119,9 +119,8 @@ export class Game {
     this.resources.apply(dt);
     this.shelter.update(now, Math.min(dt, 5000));
     this.research.update(now);
-    this.survivors.update(now);
+    this.survivors.updateVitals(now, dt, this.resources.lastStarvingMs);
     this.exploration.update(now, { silent });
-    this.exploration.regenerate(dt);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();
@@ -137,12 +136,12 @@ export class Game {
     }
     const before = { ...this.state.resources, coins: this.state.player.coins, parts: this.state.player.parts };
     const killsBefore = this.state.stats.kills;
+    const survivorsBefore = this.state.survivors.length;
     this.resources.apply(elapsed);
     this.shelter.update(now, elapsed);
     this.research.update(now);
-    this.survivors.update(now);
+    this.survivors.updateVitals(now, elapsed, this.resources.lastStarvingMs);
     const reports = this.exploration.update(now, { silent: true });
-    this.exploration.regenerate(elapsed);
     const defense = this.siege.simulateOffline(elapsed);
     this.state.map.lastZombieRefresh = 0;
     this.zombies.update(now);
@@ -157,6 +156,8 @@ export class Game {
     return {
       elapsed, gains, expeditions: reports.length, defense, kills: this.state.stats.kills - killsBefore,
       capped: now - this.state.lastSaveAt > OFFLINE_CAP_MS,
+      starving: !!this.state.starving,
+      deaths: survivorsBefore - this.state.survivors.length,
     };
   }
 

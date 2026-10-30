@@ -39,7 +39,7 @@ export function timerBar(startAt, endAt, now = Date.now()) {
 }
 
 export function rarityTag(rarity) {
-  const r = RARITIES[rarity];
+  const r = RARITIES[rarity] || RARITIES.common;
   return `<span class="rarity r-${rarity}" style="--rc:${r.color}">${r.name}</span>`;
 }
 
@@ -96,25 +96,40 @@ export function itemCard(item, { actions = '', equippedBy = null, compact = fals
 }
 
 export function survivorStatus(game, sv, now = Date.now()) {
-  if (sv.status === 'exploring') return '<span class="tag tag-blue">探索中</span>';
-  if (sv.injuredUntil > now) return `<span class="tag tag-red">受傷 ${formatDuration(sv.injuredUntil - now)}</span>`;
-  if (game.survivors.isGarrisoned(sv.id)) return '<span class="tag tag-amber">駐守瞭望塔</span>';
-  return `<span class="tag">${JOBS[sv.job]?.icon || ''} ${JOBS[sv.job]?.name || '閒置'}</span>`;
+  const tags = [];
+  const death = game.survivors.deathCountdown(sv, now);
+  if (death != null) tags.push(`<span class="tag tag-red blink">⚰️ ${formatDuration(death)} 後死亡</span>`);
+  if (sv.severe) tags.push('<span class="tag tag-red">🩸 重傷</span>');
+  if (game.survivors.isStarving()) tags.push('<span class="tag tag-red">🍽️ 飢餓</span>');
+  if (sv.status === 'exploring') tags.push('<span class="tag tag-blue">探索中</span>');
+  else if (!sv.severe && game.survivors.isGarrisoned(sv.id)) tags.push('<span class="tag tag-amber">駐守瞭望塔</span>');
+  else if (!sv.severe) tags.push(`<span class="tag">${JOBS[sv.job]?.icon || ''} ${JOBS[sv.job]?.name || '閒置'}</span>`);
+  return `<span class="tags">${tags.join('')}</span>`;
+}
+
+/** 生命條（重傷時顯示脫離重傷的門檻） */
+export function hpBar(game, sv) {
+  const max = game.survivors.maxHp(sv);
+  const hp = game.survivors.hpOf(sv);
+  const cls = sv.severe || hp / max < 0.3 ? 'danger' : 'hp';
+  return progressBar(hp / max, cls, `❤️ ${Math.floor(hp)}/${max}${sv.severe ? '（30% 脫離重傷）' : ''}`);
 }
 
 export function survivorCard(game, sv, { actions = '', selected = false } = {}) {
   const cls = CLASSES[sv.classId];
   const s = game.survivors.stats(sv);
+  const r = RARITIES[sv.rarity] || RARITIES.common;
   return `
-  <div class="sv-card ${selected ? 'selected' : ''}" style="--cc:${cls.color}">
+  <div class="sv-card r-${sv.rarity} ${sv.severe ? 'severe' : ''} ${selected ? 'selected' : ''}" style="--cc:${cls.color};--rc:${r.color}">
     <div class="sv-head">
       <span class="sv-icon">${cls.icon}</span>
       <div class="sv-title">
         <b>${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b>
-        <small>${cls.name} Lv${sv.level} · 戰力 ${s.power}</small>
+        <small>${rarityTag(sv.rarity)} ${cls.name} Lv${sv.level} · 戰力 ${s.power} · 成長 ×${game.survivors.growthMul(sv)}</small>
       </div>
-      ${survivorStatus(game, sv)}
     </div>
+    <div class="sv-status">${survivorStatus(game, sv)}</div>
+    ${hpBar(game, sv)}
     ${progressBar(sv.xp / xpToNext(sv.level), 'xp', `XP ${sv.xp}/${xpToNext(sv.level)}`)}
     <div class="stat-line">${statLine({ hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, dodge: s.dodge })}<span>攻速 ${s.atkSpeed}</span></div>
     ${actions ? `<div class="btn-row">${actions}</div>` : ''}
