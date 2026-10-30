@@ -23,6 +23,7 @@ import { SaveManager } from '../src/core/SaveManager.js';
 import { PRIMARY_DANGER_COEF } from '../src/config/civilization.js';
 import { hashAccessCode, ACCESS_ITERATIONS } from '../src/security/accessHash.js';
 import { haversine } from '../src/utils/math.js';
+import { fetchPois, classify } from '../src/map/OverpassService.js';
 import crypto from 'node:crypto';
 
 let failures = 0;
@@ -80,7 +81,14 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 2, 'state is serializable');
+assert(save.version === 3, 'state is serializable');
+// v3 精簡格式：打包後體積變小，還原後內容一致
+g.state.map.pois[1].depletion = 0.24;
+g.state.map.pois[1].lastVisit = 123;
+const packed = JSON.stringify(SaveManager.pack(g.state));
+const restored = SaveManager.migrate(JSON.parse(packed));
+assert(JSON.stringify(restored.map.pois) === JSON.stringify(g.state.map.pois), '建築精簡格式可完整還原');
+assert(packed.length < JSON.stringify(g.state).length && !('pois' in JSON.parse(packed).map), `存檔以精簡格式儲存（${packed.length} < ${JSON.stringify(g.state).length} bytes）`);
 
 // ---- 3. 文明度與多據點 ----
 const civ0 = g.civilization.value();
@@ -120,7 +128,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 2 && migrated.bases.length === 1 && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 3 && migrated.bases.length === 1 && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -164,6 +172,44 @@ assert(migrated.version === 2 && migrated.bases.length === 1 && migrated.primary
   }
   assert(aborted && g3.state.expeditions.length === 0 && g3.survivors.leader().status === 'idle', '遇襲戰敗則撤退、探索結束');
   assert(g3.state.reports[0] && !g3.state.reports[0].success, '戰敗撤退產生失敗報告');
+}
+
+// ---- 7. OSM 分區抓取（模擬 Overpass）----
+{
+  const realFetch = globalThis.fetch;
+  const LAT = 25.05;
+  const LON = 121.56;
+  let calls = 0;
+  let truncatedOnce = false;
+  // 每個 bbox 內均勻產生建築：每 0.0004 度一棟（約 40 公尺）
+  globalThis.fetch = async (_url, { body }) => {
+    calls += 1;
+    const q = decodeURIComponent(body.slice(5));
+    const m = /way\["building"\]\(([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\)/.exec(q);
+    const json = (data) => ({ ok: true, json: async () => data });
+    if (!m) return json({ elements: [{ type: 'node', id: 1, lat: LAT, lon: LON, tags: { shop: 'convenience', name: '測試超商' } }] });
+    const [s, w, n, e] = m.slice(1).map(Number);
+    if (!truncatedOnce && n - s > 0.01) { // 第一個大區塊模擬被截斷
+      truncatedOnce = true;
+      return json({ remark: 'runtime error: Query timed out', elements: [] });
+    }
+    const elements = [];
+    for (let la = s; la < n; la += 0.0004) {
+      for (let lo = w; lo < e; lo += 0.0004) elements.push({ type: 'way', id: elements.length + calls * 1e6, center: { lat: la, lon: lo }, tags: { building: 'yes' } });
+    }
+    return json({ elements });
+  };
+  const progress = [];
+  const pois = await fetchPois(LAT, LON, 1200, (d, t) => progress.push(`${d}/${t}`));
+  globalThis.fetch = realFetch;
+  const resi = pois.filter((p) => p.type === 'residential').length;
+  assert(classify({ building: 'yes' }) === 'residential', 'building=yes 視為住宅');
+  assert(truncatedOnce && calls >= 9, `被截斷的區塊會切小重抓（請求 ${calls} 次）`);
+  // 模擬資料約每 1,800 平方公尺一棟，1.2 公里圓內約 2,500 棟，應全部取得
+  assert(resi > 2400, `分區抓取取得範圍內所有建築（住宅 ${resi}）`);
+  assert(pois.every((p) => haversine(LAT, LON, p.lat, p.lon) <= 1200 + 1), '只保留圓形掃描範圍內的建築');
+  assert(pois.some((p) => p.type === 'shop' && p.name === '測試超商'), '設施查詢結果保留');
+  assert(progress.at(-1) === '5/5', `回報掃描進度（${progress.join(' ')}）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

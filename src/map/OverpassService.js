@@ -1,5 +1,6 @@
 import { POI_TYPES } from '../config/poiTypes.js';
 import { POI_MAX_PER_TYPE, POI_SPREAD_CELL_M } from '../config/constants.js';
+import { haversine } from '../utils/math.js';
 
 /** 依序嘗試的 Overpass 端點（任一失敗即換下一個） */
 const ENDPOINTS = [
@@ -44,23 +45,49 @@ export function nameFromTags(tags = {}) {
   return '';
 }
 
-function buildQuery(lat, lon, r) {
-  const a = `(around:${r},${lat},${lon})`;
-  const big = `(around:${r * 2},${lat},${lon})`;
-  return `[out:json][timeout:60][maxsize:134217728];
+/** 以中心與半徑（公尺）計算 bbox：[south, west, north, east] */
+export function bboxAround(lat, lon, r) {
+  const dLat = r / 111320;
+  const dLon = r / (111320 * Math.cos((lat * Math.PI) / 180));
+  return [lat - dLat, lon - dLon, lat + dLat, lon + dLon];
+}
+
+/** 把 bbox 切成 n×n 塊（建築量大的市區分塊查詢，避免單次查詢逾時被截斷） */
+export function splitBbox([s, w, n, e], parts = 2) {
+  const out = [];
+  const dy = (n - s) / parts;
+  const dx = (e - w) / parts;
+  for (let i = 0; i < parts; i += 1) {
+    for (let j = 0; j < parts; j += 1) out.push([s + dy * i, w + dx * j, s + dy * (i + 1), w + dx * (j + 1)]);
+  }
+  return out;
+}
+
+const fmt = (b) => b.map((v) => v.toFixed(6)).join(',');
+
+/** 查詢一：有用途標籤的設施（商店、醫院、學校…），數量較少，一次查完 */
+function amenityQuery(bbox, bigBbox) {
+  const a = `(${fmt(bbox)})`;
+  const big = `(${fmt(bigBbox)})`;
+  return `[out:json][timeout:90];
 (
   nwr["shop"]${a};
   nwr["amenity"~"^(hospital|clinic|doctors|school|university|college|kindergarten|library|fuel|charging_station|police|fire_station|restaurant|cafe|fast_food|food_court|marketplace|pharmacy|bank|bar|pub)$"]${a};
   nwr["healthcare"~"^(hospital|clinic)$"]${a};
   nwr["landuse"="military"]${big};
   nwr["military"]${big};
-  nwr["building"~"^(warehouse|industrial|factory|manufacture|storage_tank|retail|commercial|supermarket|hospital|school|university)$"]${a};
   nwr["landuse"="industrial"]${a};
   nwr["man_made"="works"]${a};
   nwr["craft"]${a};
-  way["building"~"^(apartments|residential|dormitory|house|terrace|detached|semidetached_house|yes)$"]${a};
 );
-out center tags 25000;`;
+out center tags qt;`;
+}
+
+/** 查詢二：一個區塊內的所有建築輪廓（含未標註用途的一般建築） */
+function buildingQuery(bbox) {
+  return `[out:json][timeout:90];
+way["building"](${fmt(bbox)});
+out center tags qt;`;
 }
 
 async function fetchWithTimeout(url, body, ms) {
@@ -101,28 +128,72 @@ export function spreadPick(list, cap, lat0, cellM = POI_SPREAD_CELL_M) {
   return picked.concat(rest.slice(0, Math.max(0, cap - picked.length)));
 }
 
-/**
- * 查詢附近建築並轉為遊戲 POI。
- * @returns {Promise<Array<{id,type,name,lat,lon,osm:true}>>}
- */
-export async function fetchPois(lat, lon, radius) {
-  const query = buildQuery(lat.toFixed(6), lon.toFixed(6), radius);
-  let data = null;
+/** 依序嘗試各端點；伺服器回報 runtime error（結果被截斷）時拋出 TRUNCATED */
+async function runQuery(query) {
   let lastErr = null;
   for (const url of ENDPOINTS) {
     try {
-      data = await fetchWithTimeout(url, query, 70000);
-      break;
+      const data = await fetchWithTimeout(url, query, 100000);
+      if (/runtime error/i.test(data.remark || '')) {
+        const err = new Error(`TRUNCATED: ${data.remark}`);
+        err.truncated = true;
+        err.partial = data.elements || [];
+        throw err;
+      }
+      return data.elements || [];
     } catch (err) {
+      if (err.truncated) throw err;
       lastErr = err;
       console.warn('[Overpass] endpoint failed', url, err.message);
     }
   }
-  if (!data) throw lastErr || new Error('Overpass unavailable');
+  throw lastErr || new Error('Overpass unavailable');
+}
+
+/** 查詢一個建築區塊；被截斷時再切成 4 塊重抓（最多切兩層） */
+async function fetchBuildings(bbox, depth = 0) {
+  try {
+    return await runQuery(buildingQuery(bbox));
+  } catch (err) {
+    if (!err.truncated) throw err;
+    if (depth >= 2) return err.partial;
+    console.warn('[Overpass] 區塊結果被截斷，切小重抓', err.message);
+    const parts = [];
+    for (const sub of splitBbox(bbox, 2)) parts.push(...await fetchBuildings(sub, depth + 1));
+    return parts;
+  }
+}
+
+/**
+ * 查詢附近建築並轉為遊戲 POI。
+ * 分成「設施」與 4 個「建築區塊」依序查詢（公共伺服器每個 IP 同時只允許少量請求）。
+ * @param {(done:number,total:number)=>void} [onProgress]
+ * @returns {Promise<Array<{id,type,name,lat,lon,osm:true}>>}
+ */
+export async function fetchPois(lat, lon, radius, onProgress = () => {}) {
+  const bbox = bboxAround(lat, lon, radius);
+  const tiles = splitBbox(bbox, 2);
+  const total = tiles.length + 1;
+  onProgress(0, total);
+  const elements = await runQuery(amenityQuery(bbox, bboxAround(lat, lon, radius * 2))).catch((err) => {
+    if (err.truncated) return err.partial;
+    throw err;
+  });
+  onProgress(1, total);
+  let buildingErr = null;
+  for (let i = 0; i < tiles.length; i += 1) {
+    try {
+      elements.push(...await fetchBuildings(tiles[i]));
+    } catch (err) {
+      buildingErr = err; // 某區塊失敗不影響其他區塊
+    }
+    onProgress(i + 2, total);
+  }
+  if (!elements.length && buildingErr) throw buildingErr;
 
   const byType = {};
   const seen = new Set();
-  data.elements.forEach((el) => {
+  elements.forEach((el) => {
     const type = classify(el.tags);
     if (!type) return;
     const pLat = el.lat ?? el.center?.lat;
@@ -131,15 +202,18 @@ export async function fetchPois(lat, lon, radius) {
     const id = `osm_${el.type[0]}${el.id}`;
     if (seen.has(id)) return;
     seen.add(id);
+    // bbox 是方形；只保留圓形掃描範圍內（軍事區放寬兩倍）
+    const limit = type === 'military' ? radius * 2 : radius;
+    if (haversine(lat, lon, pLat, pLon) > limit) return;
     const name = nameFromTags(el.tags);
     (byType[type] = byType[type] || []).push({
-      id, type, name, named: !!name, lat: pLat, lon: pLon, osm: true,
+      id, type, name, named: !!name, lat: +pLat.toFixed(6), lon: +pLon.toFixed(6), osm: true,
     });
   });
 
   const result = [];
   Object.entries(byType).forEach(([type, list]) => {
-    spreadPick(list, POI_MAX_PER_TYPE[type] ?? 20, lat).forEach((p, i) => {
+    spreadPick(list, POI_MAX_PER_TYPE[type] ?? 200, lat).forEach((p, i) => {
       const { named, ...poi } = p;
       result.push({ ...poi, name: poi.name || `${POI_TYPES[type].name} #${i + 1}` });
     });

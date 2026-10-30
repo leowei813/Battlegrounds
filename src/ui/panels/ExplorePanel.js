@@ -33,12 +33,7 @@ export class ExplorePanel {
       </div>`;
     }).join('');
 
-    const sh = g.shelter.primary();
-    const nearby = !sh ? [] : st.map.pois
-      .filter((p) => !g.shelter.baseAtPoi(p.id))
-      .map((p) => ({ p, d: haversine(sh.lat, sh.lon, p.lat, p.lon) }))
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 30)
+    const nearby = this.nearby()
       .map(({ p, d }) => `<div class="poi-row">
         <span class="poi-pin sm" style="--c:${POI_TYPES[p.type].color}">${POI_TYPES[p.type].icon}</span>
         <div class="grow"><b>${escapeHtml(p.name)}</b><small class="muted block">${POI_TYPES[p.type].name}・${Math.round(d)}m・☠${g.zombies.areaDanger(p)}・殘量 ${Math.round((1 - (p.depletion || 0)) * 100)}%</small></div>
@@ -68,6 +63,23 @@ export class ExplorePanel {
     </div>`;
   }
 
+  /** 離主要據點最近的 30 個地點（建築可達數千棟，結果快取到據點或建築清單變動為止） */
+  nearby() {
+    const g = this.game;
+    const sh = g.shelter.primary();
+    if (!sh) return [];
+    const key = `${sh.id}|${g.state.map.fetchedAt}|${g.state.map.pois.length}|${g.state.bases.length}`;
+    if (key !== this.nearbyKey) {
+      this.nearbyKey = key;
+      this.nearbyList = g.state.map.pois
+        .filter((p) => !g.shelter.baseAtPoi(p.id))
+        .map((p) => ({ p, d: haversine(sh.lat, sh.lon, p.lat, p.lon) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 30);
+    }
+    return this.nearbyList;
+  }
+
   /** 行程三段（去程/搜索/返程）與移動距離 */
   progressHtml(ex, now) {
     const p = this.game.exploration.progress(ex, now);
@@ -76,7 +88,7 @@ export class ExplorePanel {
     const steps = Object.entries(EXP_PHASES).map(([id, ph]) => `<span class="step ${id === p.phase ? 'on' : ''}">${ph.icon} ${ph.name}</span>`).join('<span class="arrow">›</span>');
     return `<div class="exp-steps">${steps}</div>
       <div class="row-between exp-stats">
-        <span>📏 已移動 <b>${km(p.movedM)}</b> / ${km(p.totalM)}</span>
+        <span>${p.totalM ? `📏 已移動 <b>${km(p.movedM)}</b> / ${km(p.totalM)}` : '📏 （更新前出發的隊伍，無路程資料）'}</span>
         <span>⏱ 剩餘 <b>${formatDuration(p.remainingMs)}</b>${p.phase !== 'returning' ? `<small class="muted">（本階段 ${formatDuration(p.phaseRemainingMs)}）</small>` : ''}</span>
       </div>
       ${p.phase !== 'searching' && this.game.state.map.zombieGroups.length ? '<div class="tag tag-red">🌙 夜間移動中：經過殭屍群附近可能遇襲</div>' : ''}`;

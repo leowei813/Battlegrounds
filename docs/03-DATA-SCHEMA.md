@@ -9,7 +9,7 @@
 
 ```jsonc
 {
-  "version": 2,               // 存檔版本，SaveManager.migrate() 依此升級
+  "version": 3,               // 存檔版本，SaveManager.migrate() 依此升級
   "createdAt": 0,             // 建檔時間（同時是遊戲時鐘的基準）
   "lastSaveAt": 0,            // 最後存檔時間
   "lastTickAt": 0,            // 最後一次邏輯更新時間（離線結算依據）
@@ -64,6 +64,16 @@
   "lastZombieRefresh": 0
 }
 ```
+
+> **v3 儲存格式**：上面是載入後的記憶體結構。寫入 LocalStorage、匯出字串與雲端時，`map.pois` 會改存為精簡的 `map.poiPack`：
+> ```jsonc
+> "poiPack": {
+>   "types": ["residential", "shop", "hospital", ...],      // 類型對照表
+>   "rows": [["osm_w123456", 1, "全聯福利中心", 25.0341, 121.5651, 1, 0.08, 0]]
+>   //        id,           類型索引, 名稱,   緯度,     經度,  OSM, 枯竭度, 最後探索時間
+> }
+> ```
+> 由 `SaveManager.pack()` 產生、`SaveManager.migrate()` 還原。
 
 ## 4. bases — 據點（建築資料）
 最多 5 個；`primaryBaseId` 指向主要據點。每個據點各自擁有設施、防禦建築、圍牆與施工佇列。

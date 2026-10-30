@@ -100,7 +100,9 @@ async function boot() {
   if (!game.state.map.pois.length) {
     setLoading('📡 正在掃描附近的真實建築（OpenStreetMap）…');
     const { lat, lon } = game.state.map.center;
-    const r = await game.scanMap(lat, lon);
+    const r = await game.scanMap(lat, lon, (done, total) => {
+      setLoading(`📡 正在分區掃描附近的真實建築（OpenStreetMap）… ${done}/${total}`);
+    });
     setLoading(r.source === 'overpass' ? `找到 ${r.count} 個地點` : '');
   }
   setLoading('');

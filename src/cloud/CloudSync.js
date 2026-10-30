@@ -231,7 +231,7 @@ export class CloudSync {
         baseRev: this.cfg.rev || 0,
         deviceId: this.deviceId,
         deviceName: deviceName(),
-        data: this.game.state,
+        data: SaveManager.pack(this.game.state),
         force,
       }, { keepalive });
       this.cfg.rev = meta.rev;

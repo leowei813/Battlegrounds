@@ -5,7 +5,7 @@ import { POI_TYPES } from '../config/poiTypes.js';
  * 地圖建築圖層：上千棟建築用單一 canvas 繪製（DOM 標記在手機上會卡頓）。
  * 只在地圖移動/縮放結束或資料變更時重繪；點擊與滑鼠提示以像素距離判定。
  *
- * 縮放顯示：≤14 小點、15 色點、16 小圖示、≥17 完整圖示。
+ * 縮放顯示：≤16 色點、17 小圖示、≥18 完整圖示（建築密集時避免重疊）。
  */
 export const PoiCanvasLayer = L.Layer.extend({
   /** @param {(poiId:string)=>void} onClick */
@@ -45,10 +45,11 @@ export const PoiCanvasLayer = L.Layer.extend({
 
   radius() {
     const z = this.map.getZoom();
-    if (z <= 14) return 2.5;
-    if (z === 15) return 5;
-    if (z === 16) return 9;
-    return 13;
+    if (z <= 14) return 2;
+    if (z === 15) return 3.5;
+    if (z === 16) return 5;
+    if (z === 17) return 9;
+    return 12;
   },
 
   redraw() {

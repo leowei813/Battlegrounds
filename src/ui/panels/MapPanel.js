@@ -61,6 +61,7 @@ export class MapPanel {
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
       </div>
       ${this.siegeBanner()}
+      ${this.scanning ? `<div class="scan-progress">📡 掃描建築中 ${this.scanProgress || ''}</div>` : ''}
       <div class="map-info">建築 ${st.map.pois.length}・殭屍群 ${st.map.zombieGroups.length}・資料：${src}</div>`;
     if (html !== this.lastOverlay) {
       this.lastOverlay = html;
@@ -94,11 +95,17 @@ export class MapPanel {
     if (action === 'rescan') {
       if (this.scanning) return;
       this.scanning = true;
+      this.scanProgress = '';
       this.renderOverlay();
       const c = sh || this.game.state.map.center;
-      this.ui.toastEl.show('📡 掃描附近建築中…', 'info');
-      const r = await this.game.scanMap(c.lat, c.lon);
+      this.ui.toastEl.show('📡 分區掃描附近建築中，市區可能需要 30 秒～1 分鐘…', 'info', 6000);
+      const r = await this.game.scanMap(c.lat, c.lon, (done, total) => {
+        this.scanProgress = `${done}/${total}`;
+        this.lastOverlay = '';
+        this.renderOverlay();
+      });
       this.scanning = false;
+      this.scanProgress = '';
       this.ui.toastEl.show(`發現 ${r.count} 個地點（${r.source === 'overpass' ? 'OSM' : '程序生成'}）`, 'success');
       this.renderMap(true);
     }

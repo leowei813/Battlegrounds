@@ -1,5 +1,26 @@
 import { SAVE_KEY, SAVE_VERSION } from '../config/constants.js';
 import { STAT_KEYS } from './GameState.js';
+import { POI_KEYS } from '../config/poiTypes.js';
+
+/**
+ * 地圖建築改以「欄位陣列」儲存（市區可達數千棟，物件格式體積約大一倍）：
+ * [id, 類型索引, 名稱, 緯度, 經度, 是否 OSM(1/0), 枯竭度, 最後探索時間]
+ */
+function packPois(pois) {
+  return {
+    types: POI_KEYS,
+    rows: pois.map((p) => [p.id, POI_KEYS.indexOf(p.type), p.name, p.lat, p.lon, p.osm ? 1 : 0, p.depletion ? +p.depletion.toFixed(3) : 0, p.lastVisit || 0]),
+  };
+}
+
+function unpackPois({ types, rows }) {
+  return rows.map(([id, t, name, lat, lon, osm, depletion, lastVisit]) => {
+    const poi = { id, type: types[t], name, lat, lon, osm: !!osm };
+    if (depletion) poi.depletion = depletion;
+    if (lastVisit) poi.lastVisit = lastVisit;
+    return poi;
+  }).filter((p) => p.type);
+}
 
 /**
  * 存檔管理：LocalStorage 讀寫、版本遷移、匯出/匯入。
@@ -29,12 +50,21 @@ export class SaveManager {
   static save(state) {
     try {
       state.lastSaveAt = Date.now();
-      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      localStorage.setItem(SAVE_KEY, JSON.stringify(SaveManager.pack(state)));
       return true;
     } catch (err) {
       console.error('[SaveManager] save failed', err);
       return false;
     }
+  }
+
+  /**
+   * 轉為儲存/上傳用的精簡格式（不修改傳入的狀態）。
+   * LocalStorage、匯出字串與雲端存檔都使用此格式；讀取時由 migrate() 還原。
+   */
+  static pack(state) {
+    const { pois, ...map } = state.map;
+    return { ...state, map: { ...map, poiPack: packPois(pois) } };
   }
 
   static wipe() {
@@ -47,7 +77,7 @@ export class SaveManager {
 
   /** 匯出為 Base64 字串，供玩家跨裝置備份 */
   static exportString(state) {
-    const json = JSON.stringify(state);
+    const json = JSON.stringify(SaveManager.pack(state));
     return btoa(unescape(encodeURIComponent(json)));
   }
 
@@ -89,6 +119,12 @@ export class SaveManager {
       delete data.shelter;
     }
     data.bases = data.bases || [];
+    // v3：地圖建築改以精簡格式儲存，載入時還原為物件
+    if (data.map?.poiPack) {
+      data.map.pois = unpackPois(data.map.poiPack);
+      delete data.map.poiPack;
+    }
+    if (data.map) data.map.pois = data.map.pois || [];
     // 補 stats
     data.stats = data.stats || {};
     STAT_KEYS.forEach((k) => {

@@ -263,7 +263,7 @@ export const SiegeMapLayer = L.Layer.extend({
 
       // 資訊標籤：階段・已移動/總路程・剩餘時間
       const km = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)}km` : `${v}m`);
-      const line1 = `${ph.icon} ${ph.name}・${km(p.movedM)} / ${km(p.totalM)}`;
+      const line1 = p.totalM ? `${ph.icon} ${ph.name}・${km(p.movedM)} / ${km(p.totalM)}` : `${ph.icon} ${ph.name}`;
       const line2 = `⏱ 剩 ${formatDuration(p.remainingMs)}`;
       ctx.font = 'bold 11px sans-serif';
       const w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + 12;
