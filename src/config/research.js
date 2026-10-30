@@ -5,7 +5,7 @@
  *  - wallHpPct, towerDmgPct：防禦加成
  *  - foodPct, medicinePerHour, fuelPerHour, storagePct：生產加成
  *  - exploreSpeed, lootPct, nightPenaltyReduce, injuryReduce
- * *  - outposts：可建立的前哨站數量
+ *  - outposts：可建立的前哨站數量
  *  - unlock: ['autoExplore'|...]：新功能
  */
 export const RESEARCH_BRANCHES = {
