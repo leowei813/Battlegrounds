@@ -5,6 +5,7 @@ import { BootScene } from './scenes/BootScene.js';
 import { ShelterScene } from './scenes/ShelterScene.js';
 import { UIManager } from './ui/UIManager.js';
 import { SetupScreen } from './ui/SetupScreen.js';
+import { AuthScreen } from './ui/AuthScreen.js';
 import { SaveManager } from './core/SaveManager.js';
 import { CloudSync } from './cloud/CloudSync.js';
 import { createProvider } from './cloud/providers/index.js';
@@ -16,7 +17,7 @@ import { $ } from './utils/dom.js';
 import { formatDuration } from './utils/math.js';
 
 /**
- * 進入點：讀檔或建立新遊戲 → 掃描真實地圖 → 啟動 Phaser 與 UI。
+ * 進入點：登入帳號讀取雲端進度（或建立新角色）→ 掃描真實地圖 → 啟動 Phaser 與 UI。
  */
 function setLoading(text) {
   const el = $('#loading');
@@ -72,33 +73,71 @@ function showWelcome(ui) {
   });
 }
 
+/**
+ * 登入帳號並讀取雲端進度（遊戲進度只存在雲端）。
+ * @returns {Promise<{state:object|null, meta?:object, legacy?:object}>}
+ */
+async function signIn(cloud) {
+  const auth = new AuthScreen($('#setup-root'), cloud);
+  let message = '';
+  for (;;) {
+    if (cloud.enabled) {
+      setLoading(`☁️ 正在讀取 ${cloud.username} 的雲端進度…`);
+      try {
+        const r = await cloud.loadCurrent();
+        setLoading('');
+        return r.state ? r : { ...r, legacy: offerLegacy() };
+      } catch (err) {
+        setLoading('');
+        message = err.kind === 'network' ? `無法連線到雲端伺服器（${err.message}），請檢查網路後重試。` : err.message;
+        if (cloud.enabled) {
+          // 仍是登入狀態（連線問題）：提供重試或改用其他帳號
+          if (confirm(`${message}\n\n按「確定」重試，按「取消」改用其他帳號登入。`)) continue;
+          cloud.logout();
+        }
+      }
+    }
+    const r = await auth.show({ message });
+    message = '';
+    if (r.type === 'login' && r.state) return r;
+    return { state: null, legacy: offerLegacy() };
+  }
+}
+
+/** 此裝置有舊版本機存檔時，詢問是否轉移到目前帳號 */
+function offerLegacy() {
+  const legacy = SaveManager.legacyLoad();
+  if (!legacy) return null;
+  const ok = confirm(`此裝置有舊版的本機存檔（倖存者「${legacy.player.name}」）。\n要把它轉移到這個帳號繼續玩嗎？\n\n按「取消」會建立新角色（舊存檔保留在此裝置）。`);
+  return ok ? legacy : null;
+}
+
 async function boot() {
   // 通行碼（建置時設定 VITE_ACCESS_HASH 才會啟用）
   await requireAccess($('#gate-root'));
 
   const cloud = new CloudSync(createProvider());
-  let state = SaveManager.load();
-  let cloudMeta = null;
-  if (cloud.enabled) {
-    setLoading('☁️ 正在同步雲端存檔…');
-    const r = await cloud.resolveBoot(state);
-    state = r.state;
-    if (r.source === 'cloud') cloudMeta = r.meta;
-  }
-  setLoading('');
+  const { state, meta: cloudMeta, legacy } = await signIn(cloud);
 
-  let game = state ? new Game(state) : null;
+  let game;
   let fresh = false;
-  if (!game) {
-    const setup = new SetupScreen($('#setup-root'), cloud);
-    const choice = await setup.show();
-    if (choice.type === 'import') {
-      game = new Game(choice.data);
-      if (choice.meta) cloudMeta = choice.meta;
-    } else {
-      game = Game.newGame(choice);
-      fresh = true;
+  if (state) {
+    game = new Game(state);
+  } else {
+    // 新帳號或重置後：轉移舊版本機存檔，或建立新角色
+    game = legacy ? new Game(legacy) : Game.newGame(await new SetupScreen($('#setup-root'), cloud.username).show());
+    fresh = !legacy;
+    setLoading('☁️ 正在建立雲端存檔…');
+    try {
+      await cloud.create(game);
+    } catch (err) {
+      cloud.logout();
+      setLoading('');
+      alert(`建立雲端存檔失敗：${err.message}`);
+      location.reload();
+      return;
     }
+    if (legacy) SaveManager.clearLegacy();
   }
 
   // 第一次進入：先快速抓主要設施（最多等 12 秒）讓遊戲立刻開始，一般建築在背景補齊
@@ -138,9 +177,7 @@ async function boot() {
   } else {
     showWhatsNew(ui);
   }
-  if (cloudMeta) {
-    ui.toastEl.show(`☁️ 已載入雲端最新進度（來自 ${cloudMeta.deviceName || '其他裝置'}）`, 'success', 5000);
-  }
+  ui.toastEl.show(`☁️ 已登入 ${cloud.username}${cloudMeta?.deviceName ? `・進度來自 ${cloudMeta.deviceName}` : ''}`, 'success', 4000);
 
   if (import.meta.env.DEV) {
     window.__game = game;

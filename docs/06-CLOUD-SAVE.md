@@ -1,11 +1,12 @@
-# 雲端存檔（跨裝置即時接續）
+# 帳號與雲端存檔（跨裝置即時接續）
 
 ## 玩家使用方式
-1. 裝置 A：**設定 → 雲端存檔 → ☁️ 啟用雲端存檔**，取得 24 字元的**同步碼**（`XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`）。
-2. 裝置 B：首頁點 **☁️ 用同步碼讀取雲端存檔**（已有本機存檔則到 設定 → 🔗 輸入同步碼），即可接續同一份進度。
-3. 之後每台裝置開啟遊戲時都會**自動讀取雲端最新存檔**，離線收益依最後一次遊玩時間正確結算。
+1. 開啟遊戲 → **✨ 註冊新帳號**（帳號 3～20 個英文小寫／數字／底線，密碼至少 6 個字元，不需 Email）→ 建立角色。
+2. 其他裝置開啟遊戲 → **🔑 登入**同一個帳號，立即讀取雲端進度。
+3. 此裝置會記住登入狀態，下次開啟直接進入遊戲；**設定 → 🚪 登出**可切換帳號。
 
-> 同步碼就是存檔的鑰匙（免註冊帳號），擁有它的人都能讀寫這份存檔，請勿公開。
+> 遊戲進度**只存在雲端帳號**，瀏覽器不保存進度（只記住登入憑證，不含密碼）。忘記密碼無法找回。
+> v2.x 以前的本機存檔：在該裝置註冊新帳號時，會詢問是否轉移到帳號。
 
 ## 同步機制
 
@@ -24,12 +25,13 @@ sequenceDiagram
 
 | 情境 | 行為 |
 |---|---|
-| 開啟遊戲，雲端版本較新 | 自動下載雲端存檔 |
+| 開啟遊戲 / 登入 | 一律讀取雲端最新進度 |
 | 遊戲中，其他裝置開始遊玩 | 即時鎖定本機（SSE；Supabase 為 10 秒輪詢），避免互相覆蓋 |
 | 兩台裝置同時寫入 | 樂觀鎖：`baseRev` 不符的寫入被拒（HTTP 409），該裝置被鎖定 |
-| 網路斷線 | 照常遊玩並存在本機；HUD 顯示 ☁️✕，恢復後下一次存檔自動上傳 |
+| 網路斷線（遊戲中） | 照常遊玩；HUD 顯示 ☁️✕，恢復後下一次存檔自動上傳（期間關閉頁面會遺失未上傳的進度） |
+| 網路斷線（開啟時） | 無法進入遊戲，可重試或改用其他帳號 |
 | 「在此裝置接管」 | 以本機進度強制覆蓋雲端，其他裝置隨即被鎖定 |
-| 刪除本機存檔 | 同時解除雲端連結（雲端資料保留，可用同步碼重新連結） |
+| 刪除進度重新開始 | 清空雲端進度（帳號保留），重新建立角色 |
 
 ## 後端選擇
 
@@ -86,23 +88,24 @@ VITE_SUPABASE_ANON_KEY=sb_publishable_...（或舊版 eyJ... anon key）
 | GET | `/api/world/nearby?lat=&lon=&km=` | 多人互動：附近玩家（3 天未更新者不列出） |
 
 驗證：`Authorization: Bearer <token>`。
-- `id = sha256("jdqs-id:" + 同步碼)` 取前 32 字元
-- `token = sha256("jdqs-secret:" + 同步碼)`
+- `id = sha256("jdqs-acct:" + 帳號)` 取前 32 字元
+- `token` = 以 `sha256("jdqs-pw:帳號:密碼")` 為起點，再與密碼反覆 SHA-256 10,000 次
 
-伺服器只會收到雜湊值，看不到同步碼本身。另有每 IP 每分鐘 120 次請求上限、2MB 存檔上限，比對採 timing-safe。
+伺服器只會收到雜湊值，看不到密碼本身。註冊＝第一次以 `baseRev=0` 上傳；帳號已存在時密碼不同會被拒（403）。另有每 IP 每分鐘 120 次請求上限、2MB 存檔上限，比對採 timing-safe。
 
 ## 程式結構
 | 檔案 | 職責 |
 |---|---|
-| `src/cloud/CloudSync.js` | 同步管理：開機決策、自動上傳、即時監看、鎖定、接管 |
-| `src/cloud/syncCode.js` | 同步碼產生、格式化、id / token 推導 |
+| `src/cloud/CloudSync.js` | 帳號登入／註冊／登出、自動上傳、即時監看、鎖定、接管、重置進度 |
+| `src/cloud/account.js` | 帳號密碼格式檢查、id / token 推導 |
+| `src/ui/AuthScreen.js` | 首頁登入／註冊畫面 |
 | `src/cloud/providers/` | `SelfHostProvider`、`SupabaseProvider`、`createProvider()` |
 | `src/utils/sha256.js` | 純 JS SHA-256（非 HTTPS 環境也能用） |
 | `server/` | 內建伺服器與檔案儲存 |
 | `supabase/schema.sql` | Supabase 資料表與 RPC |
 | `scripts/test-cloud.js` | 伺服器 + 客戶端整合測試（`npm run test:cloud`） |
 
-本機同步設定存於 LocalStorage `jdqs_cloud_v1`（`{ code, rev, deviceId, lastSyncAt }`），刻意與遊戲存檔分開，所以「匯出存檔」不會帶出同步碼。
+本機只存登入狀態：LocalStorage `jdqs_cloud_v2`（`{ auth: { username, id, token }, rev, deviceId, lastSyncAt }`），不含遊戲進度與密碼。
 
 ## 多人互動
 多人互動與雲端存檔共用同一個後端：內建伺服器會把資料寫到 `DATA_DIR/world.json`；Supabase 則需執行 `supabase/schema.sql` 中新增的 `jdqs_world` 資料表與 3 個 RPC。

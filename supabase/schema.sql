@@ -3,7 +3,7 @@
 --
 -- 安全模型：
 --   資料表啟用 RLS 且沒有任何 policy → anon key 無法直接讀寫資料表。
---   所有存取都經過下列 SECURITY DEFINER 函式，並以 token（同步碼的 SHA-256）驗證。
+--   所有存取都經過下列 SECURITY DEFINER 函式，並以 token（由帳號密碼反覆雜湊而來）驗證。
 
 create table if not exists public.jdqs_saves (
   id          text primary key check (id ~ '^[0-9a-f]{32}$'),

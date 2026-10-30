@@ -1,7 +1,9 @@
 /**
  * 雲端操作錯誤。kind：
  *  - conflict  其他裝置已寫入較新版本（附 meta）
- *  - forbidden 同步碼錯誤
+ *  - forbidden 帳號或密碼錯誤
+ *  - taken     註冊時帳號已被使用
+ *  - invalid   帳號或密碼格式錯誤
  *  - notfound  雲端沒有這份存檔
  *  - network   連線失敗或逾時
  *  - server    伺服器錯誤

@@ -2,7 +2,6 @@ import {
   TICK_MS, AUTOSAVE_MS, OFFLINE_CAP_MS, MAX_LOG, RESOURCE_KEYS, POI_SCAN_RADIUS,
 } from '../config/constants.js';
 import { bus, EVT } from './EventBus.js';
-import { SaveManager } from './SaveManager.js';
 import { createInitialState } from './GameState.js';
 import { TimeSystem } from '../systems/TimeSystem.js';
 import { ResearchSystem } from '../systems/ResearchSystem.js';
@@ -217,13 +216,14 @@ export class Game {
   }
 
   /**
-   * @param {boolean} final 是否為離開頁面/切到背景前的最後一次存檔（雲端同步會立即上傳）
+   * 存檔＝上傳到雲端帳號（由 CloudSync 監聽 SAVE 事件，自動節流）。
+   * @param {boolean} final 是否為離開頁面/切到背景前的最後一次存檔（會立即上傳）
    */
   save(final = false) {
-    // 重置/匯入流程中、或存檔已被其他裝置接手時，避免把舊狀態寫回
+    // 重置流程中、或存檔已被其他裝置接手時，避免把舊狀態寫回
     if (this.resetting || this.locked) return false;
-    const ok = SaveManager.save(this.state);
-    if (ok) bus.emit(EVT.SAVE, { final });
-    return ok;
+    this.state.lastSaveAt = Date.now();
+    bus.emit(EVT.SAVE, { final });
+    return true;
   }
 }

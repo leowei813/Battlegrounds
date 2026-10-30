@@ -70,7 +70,7 @@ Battlegrounds/
     │
     ├── cloud/                      # 【雲端存檔】
     │   ├── CloudSync.js            #   同步管理（開機決策、自動上傳、即時鎖定、接管）
-    │   ├── syncCode.js             #   同步碼
+    │   ├── account.js              #   帳號密碼 → id / token
     │   └── providers/              #   SelfHostProvider / SupabaseProvider
     │
     ├── map/                        # 【真實地圖】
@@ -99,7 +99,7 @@ Battlegrounds/
     │       ├── InventoryPanel.js   #   背包與製作
     │       ├── ResearchPanel.js    #   研究樹
     │       ├── QuestPanel.js       #   任務
-    │       └── SettingsPanel.js    #   存檔管理與統計
+    │       └── SettingsPanel.js    #   帳號、存檔與統計
     │
     ├── utils/
     │   ├── math.js                 #   亂數、權重、格式化、地理距離

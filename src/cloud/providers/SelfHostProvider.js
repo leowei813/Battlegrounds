@@ -17,7 +17,7 @@ export class SelfHostProvider {
   check(status, body) {
     if (status === 200) return body;
     if (status === 409) throw new CloudError('conflict', '其他裝置已更新存檔', body?.meta);
-    if (status === 401 || status === 403) throw new CloudError('forbidden', '同步碼不正確');
+    if (status === 401 || status === 403) throw new CloudError('forbidden', '帳號或密碼錯誤');
     if (status === 404) throw new CloudError('notfound', '雲端找不到這份存檔');
     if (status === 413) throw new CloudError('server', '存檔過大');
     // 反向代理（Vite/Nginx）在後端停機時回 502~504 或無內容的 500，視為暫時離線
