@@ -371,3 +371,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .siege-chip { pointer-events: auto; border: 1px solid #ff5252; background: #7f0000dd; color: #fff; border-radius: 14px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
 .siege-chip.danger { animation: pulse 1s infinite; background: #b71c1c; }
 .map-hint + .siege-banner { top: 64px; }
+#map-root .leaflet-tile-pane { transition: filter 2s; }
+#map-root[data-phase="dusk"] .leaflet-tile-pane { filter: saturate(.45) brightness(.6) sepia(.45); }
+#map-root[data-phase="night"] .leaflet-tile-pane { filter: saturate(.35) brightness(.4) hue-rotate(190deg) sepia(.2); }
+#map-root[data-phase="midnight"] .leaflet-tile-pane { filter: saturate(.3) brightness(.3) hue-rotate(200deg) sepia(.2); }

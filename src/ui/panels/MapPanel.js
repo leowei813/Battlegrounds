@@ -49,6 +49,7 @@ export class MapPanel {
 
   renderOverlay() {
     if (Date.now() - this.lastRender > 5000) this.renderMap(true);
+    this.ui.mapRoot.dataset.phase = this.game.time.phaseId(); // 地圖依日夜變暗
     const st = this.game.state;
     const has = this.game.shelter.hasShelter();
     const src = { overpass: 'OpenStreetMap', generated: '程序生成（OSM 無法連線）', none: '—' }[st.map.source] || st.map.source;

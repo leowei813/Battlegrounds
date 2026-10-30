@@ -2,6 +2,7 @@ import { DEFENSES } from '../config/defenses.js';
 import { ENEMIES, BOSSES } from '../config/enemies.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
 import { SIEGE_SCALING, BREACH_LOSS } from '../config/civilization.js';
+import { TIME_PHASES, ZOMBIE_HOURS_FRACTION } from '../config/timePhases.js';
 import {
   chance, pick, randFloat, weightedPick, clamp,
 } from '../utils/math.js';
@@ -64,9 +65,17 @@ export class BaseSiege {
     return Math.max(1, 1 + this.game.civilization.levelBonus() + dangerBonus + (phase.danger > 1.5 ? 1 : 0));
   }
 
-  /** 屍潮間隔（秒）：文明度與據點危險度越高越密集 */
-  spawnInterval() {
-    const phase = this.game.time.phase();
+  /** 現在是否有屍潮（只在夜晚與午夜） */
+  active() {
+    return this.game.time.phase().zombies;
+  }
+
+  /**
+   * 屍潮間隔（秒）：文明度與據點危險度越高越密集。白天回傳 Infinity。
+   * @param {object} [phase] 指定時段（離線估算用），預設為目前時段
+   */
+  spawnInterval(phase = this.game.time.phase()) {
+    if (!phase.zombies) return Infinity;
     const dangerMul = 1 + (this.danger() - 1) * SIEGE_SCALING.dangerSpawn;
     return Math.max(0.6, 9 / (phase.zombieMul * this.game.civilization.spawnMul() * dangerMul));
   }
@@ -132,9 +141,10 @@ export class BaseSiege {
     const phase = this.game.time.phase();
     const day = this.game.time.day();
 
-    // 生成
+    // 生成（只在夜間）
+    const active = phase.zombies;
     this.spawnTimer -= dt;
-    if (this.spawnTimer <= 0) {
+    if (active && this.spawnTimer <= 0) {
       this.spawnTimer = this.spawnInterval() * randFloat(0.7, 1.3);
       if (this.zombies.length < MAX_ZOMBIES) this.spawn(this.pickEnemy());
     }
@@ -160,7 +170,13 @@ export class BaseSiege {
         if (Math.hypot(z.x - a.x, z.y - a.y) < a.range) z.slow = Math.max(z.slow, a.slow);
       });
       if (now < z.stunUntil) continue;
-      if (dist > WORLD.WALL_R + 2) {
+      if (!active) {
+        // 天亮：殭屍撤回建築內（往外退出地圖，不給獎勵）
+        const v = z.speed * 1.4 * dt;
+        z.x += (z.x / dist) * v;
+        z.y += (z.y / dist) * v;
+        if (dist > WORLD.SPAWN_R + 4) z.retreated = true;
+      } else if (dist > WORLD.WALL_R + 2) {
         const v = z.speed * (1 - z.slow) * dt;
         z.x -= (z.x / dist) * v;
         z.y -= (z.y / dist) * v;
@@ -217,6 +233,7 @@ export class BaseSiege {
     }
 
     this.collectDead();
+    if (!active) this.zombies = this.zombies.filter((z) => !z.retreated);
 
     if (sh.wallHp(base) <= 0) this.breach();
   }
@@ -358,11 +375,11 @@ export class BaseSiege {
     return Math.round(dps);
   }
 
-  /** 離線時估算此據點的擊殺數（以平均時段倍率 1.4 估算屍潮頻率） */
+  /** 離線時估算此據點的擊殺數（只計算夜間時段，以夜晚的屍潮頻率估算） */
   estimateOfflineKills(seconds) {
-    const spawns = (seconds / this.spawnInterval()) * (1.4 / Math.max(0.1, this.game.time.phase().zombieMul));
+    const spawns = (seconds * ZOMBIE_HOURS_FRACTION) / this.spawnInterval(TIME_PHASES.night);
     const avgHp = this.game.combat.createEnemy('infected', this.zombieLevel()).maxHp;
-    const capacity = (this.defenseDps() * seconds * 0.25) / avgHp;
+    const capacity = (this.defenseDps() * seconds * ZOMBIE_HOURS_FRACTION * 0.25) / avgHp;
     return Math.floor(clamp(Math.min(spawns, capacity), 0, 5000));
   }
 }

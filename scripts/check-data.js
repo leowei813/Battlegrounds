@@ -13,6 +13,12 @@ import { POI_TYPES } from '../src/config/poiTypes.js';
 import { ALL_ENEMIES } from '../src/config/enemies.js';
 import { MAIN_QUESTS, DAILY_POOL, ACHIEVEMENTS } from '../src/config/quests.js';
 import { FACILITIES } from '../src/config/facilities.js';
+import { DAY_REAL_MS, START_HOUR } from '../src/config/constants.js';
+
+/** 把遊戲時鐘調到指定時刻（建檔時間往前推） */
+const setHour = (game, hour) => {
+  game.state.createdAt = Date.now() - (((hour - START_HOUR + 24) % 24) / 24) * DAY_REAL_MS;
+};
 import { SaveManager } from '../src/core/SaveManager.js';
 import { PRIMARY_DANGER_COEF } from '../src/config/civilization.js';
 import { hashAccessCode, ACCESS_ITERATIONS } from '../src/security/accessHash.js';
@@ -43,6 +49,14 @@ globalThis.performance ??= { now: () => Date.now() };
 const g = Game.newGame({ playerName: 'CI', classId: 'scout', lat: 25.0339, lon: 121.5645 });
 g.state.map.pois = fillPois([], 25.0339, 121.5645);
 assert(g.shelter.setShelter(g.state.map.pois[0]).ok, 'set shelter');
+
+// ---- 白天：地圖上沒有殭屍（只在探索的建築內遭遇）----
+setHour(g, 10);
+g.zombies.refresh();
+assert(g.state.map.zombieGroups.length === 0, '白天地圖上沒有殭屍群');
+for (let i = 0; i < 300; i += 1) g.siege.update(0.1);
+assert(g.siege.of().zombies.length === 0 && !Number.isFinite(g.siege.of().spawnInterval()), '白天沒有屍潮');
+setHour(g, 21); // 之後的測試在夜晚進行
 assert(g.shelter.upgradeFacility(null, 'farm').ok, 'upgrade farm');
 g.zombies.refresh();
 assert(g.state.map.zombieGroups.length > 0, 'zombie groups spawned');
@@ -57,6 +71,13 @@ assert(g.equipment.craft('pistol').ok, 'craft');
 g.survivors.leader().injuredUntil = 0; // 探索可能讓領袖受傷；確保有人駐守
 for (let i = 0; i < 1200; i += 1) g.siege.update(0.1);
 assert(g.state.stats.siegeKills > 0, 'siege kills happen');
+const alive = g.siege.of().zombies.length;
+setHour(g, 7); // 天亮：殭屍撤回建築
+for (let i = 0; i < 400; i += 1) g.siege.update(0.1);
+assert(alive === 0 || g.siege.of().zombies.length === 0, `天亮後殭屍撤退（${alive} → ${g.siege.of().zombies.length}）`);
+g.zombies.refresh();
+assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
+setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
 assert(save.version === 2, 'state is serializable');
 
