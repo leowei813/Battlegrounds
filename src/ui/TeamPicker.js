@@ -8,7 +8,7 @@ import { VEHICLES } from '../config/vehicles.js';
 /** 載具選擇：座位、速度、運載量、耗油 */
 function vehicleHtml(game, cars, members, distanceM) {
   const vs = game.vehicles;
-  if (!game.state.vehicles.length) return '<p class="muted">🚗 沒有載具（可在背包 → 車庫製作，或探索時找到）・徒步運載量每人 40</p>';
+  if (!game.state.vehicles.length) return `<p class="muted">🚗 沒有載具（可在背包 → 車庫製作，或探索時找到）・隊伍運載量 ${vs.tripStats(members, []).cargo}（背包可增加）</p>`;
   const rows = game.state.vehicles.map((v) => {
     const def = VEHICLES[v.type];
     const ok = vs.isAvailable(v);
@@ -19,7 +19,7 @@ function vehicleHtml(game, cars, members, distanceM) {
     </button>`;
   }).join('');
   const st = vs.tripStats(members, [...cars].map((id) => vs.get(id)), distanceM);
-  const warn = cars.size > members ? '<span class="neg">每台載具至少需要一名駕駛</span>'
+  const warn = cars.size > members.length ? '<span class="neg">每台載具至少需要一名駕駛</span>'
     : cars.size && !st.seated ? '<span class="neg">座位不足，全隊仍以步行速度移動</span>' : '';
   const fuelWarn = st.fuel > game.state.resources.fuel ? '<span class="neg">（燃料不足）</span>' : '';
   return `<div class="label">載具（選填）</div><div class="pick-list">${rows}</div>
@@ -57,7 +57,7 @@ export function openTeamPicker(ui, opts) {
     const ids = [...selected];
     const vids = [...cars];
     const power = ids.reduce((sum, id) => sum + game.survivors.stats(game.survivors.get(id)).power, 0);
-    const vehicles = opts.vehicles ? vehicleHtml(game, cars, ids.length, opts.distanceM || 0) : '';
+    const vehicles = opts.vehicles ? vehicleHtml(game, cars, ids.map((id) => game.survivors.get(id)), opts.distanceM || 0) : '';
     const durs = opts.withDuration
       ? `<div class="label">探索時長</div><div class="chips">${EXPLORE_DURATIONS.map((d) => `<button class="chip ${d === duration ? 'active' : ''}" data-action="dur" data-d="${d}">${d} 分鐘</button>`).join('')}</div>
          ${opts.estimate && ids.length ? `<p class="muted">預估實際時間（含往返路程與日夜修正）：<b>${formatDuration(opts.estimate(ids, duration, vids))}</b></p>` : ''}

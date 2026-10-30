@@ -33,6 +33,8 @@ function createPhaser(core) {
     backgroundColor: '#1d2118',
     scale: { mode: Phaser.Scale.RESIZE, width: '100%', height: '100%' },
     render: { antialias: true },
+    // 不監聽整個視窗的輸入：點擊 HTML 面板時不應觸發畫布上的物件
+    input: { windowEvents: false },
     scene: [BootScene, ShelterScene],
   });
   phaser.registry.set('core', core);

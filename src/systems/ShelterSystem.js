@@ -1,8 +1,9 @@
 import { BUILD_QUEUE_SIZE } from '../config/constants.js';
 import {
-  FACILITIES, FACILITY_MAX_LEVEL, facilityBuildTime, wallMaxHp, OUTPOST_FACILITIES,
+  FACILITIES, FACILITY_MAX_LEVEL, facilityBuildTime, wallMaxHp, OUTPOST_FACILITIES, REPAIR,
 } from '../config/facilities.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
+import { JOBS } from '../config/survivors.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL, defenseBuildTime } from '../config/defenses.js';
 import { RESEARCH } from '../config/research.js';
 import { POI_TYPES } from '../config/poiTypes.js';
@@ -137,7 +138,7 @@ export class ShelterSystem {
   }
 
   establishCost() {
-    return this.primary() ? baseEstablishCost(this.outposts().length + 1) : {};
+    return this.primary() ? scaleCost(baseEstablishCost(this.outposts().length + 1), Math.max(0.3, 1 - this.game.research.bonus('establishCostReduce'))) : {};
   }
 
   canEstablish(poi) {
@@ -248,7 +249,12 @@ export class ShelterSystem {
   }
 
   discounted(cost) {
-    return scaleCost(cost, 1 - this.engineerEffect('buildDiscount'));
+    return scaleCost(cost, Math.max(0.3, 1 - this.engineerEffect('buildDiscount') - this.game.research.bonus('buildCostReduce')));
+  }
+
+  /** 施工秒數（研究「快速施工」縮短） */
+  buildSeconds(seconds) {
+    return seconds * Math.max(0.4, 1 - this.game.research.bonus('buildTimeReduce'));
   }
 
   wallMax(b) {
@@ -257,7 +263,8 @@ export class ShelterSystem {
     const barricade = base.defenses
       .filter((d) => d.type === 'barricade' && d.level > 0)
       .reduce((s, d) => s + DEFENSES.barricade.stats(d.level).wallBonus, 0);
-    return Math.round(wallMaxHp(base.facilities.wall.level) * (1 + this.game.research.bonus('wallHpPct')) + barricade);
+    const pct = this.game.research.bonus('wallHpPct') + (base.kind === 'outpost' ? this.game.research.bonus('outpostWallPct') : 0);
+    return Math.round(wallMaxHp(base.facilities.wall.level) * (1 + pct) + barricade);
   }
 
   wallHp(b) {
@@ -268,18 +275,18 @@ export class ShelterSystem {
   }
 
   wallReduction(b) {
-    return Math.min(0.5, this.resolve(b).facilities.wall.level * 0.03);
+    return Math.min(0.6, this.resolve(b).facilities.wall.level * 0.03 + this.game.research.bonus('wallReduceAdd'));
   }
 
   towerDamageMul(b) {
     const base = this.resolve(b);
-    const gen = this.game.resources.generatorActive() ? base.facilities.generator.level * 0.06 : 0;
+    const gen = this.game.resources.generatorActive() ? base.facilities.generator.level * 0.06 * (1 + this.game.research.bonus('generatorPct')) : 0;
     const eng = this.isPrimary(base) ? this.engineerEffect('towerDmg') : 0;
     return 1 + this.game.research.bonus('towerDmgPct') + gen + eng;
   }
 
   rangeMul(b) {
-    return 1 + this.resolve(b).facilities.watchtower.level * 0.06;
+    return 1 + this.resolve(b).facilities.watchtower.level * 0.06 + this.game.research.bonus('towerRangePct');
   }
 
   // ---------- 佇列 ----------
@@ -323,7 +330,7 @@ export class ShelterSystem {
     payCost(this.game.state, this.facilityCost(base, id));
     const target = base.facilities[id].level + 1;
     base.buildQueue.push({
-      kind: 'facility', id, targetLevel: target, startAt: Date.now(), endAt: Date.now() + facilityBuildTime(target) * 1000,
+      kind: 'facility', id, targetLevel: target, startAt: Date.now(), endAt: Date.now() + this.buildSeconds(facilityBuildTime(target)) * 1000,
     });
     return { ok: true, msg: `${FACILITIES[id].name} 開始${target === 1 ? '建造' : '升級'}` };
   }
@@ -358,7 +365,7 @@ export class ShelterSystem {
     if (!payCost(this.game.state, this.defenseCost(type, target))) return { ok: false, reason: '資源不足' };
     d.type = type;
     base.buildQueue.push({
-      kind: 'defense', slot, id: type, targetLevel: target, startAt: Date.now(), endAt: Date.now() + defenseBuildTime(target) * 1000,
+      kind: 'defense', slot, id: type, targetLevel: target, startAt: Date.now(), endAt: Date.now() + this.buildSeconds(defenseBuildTime(target)) * 1000,
     });
     return { ok: true, msg: `${DEFENSES[type].name} ${target === 1 ? '建造' : '升級'}中` };
   }
@@ -407,11 +414,53 @@ export class ShelterSystem {
         base.buildQueue = base.buildQueue.filter((q) => q.endAt > now);
         done.forEach((q) => this.completeBuild(base, q));
       }
-      // 圍牆自然修復：每秒 0.2%，主要據點的工程師額外加成
-      const max = this.wallMax(base);
-      const eng = this.isPrimary(base) ? this.engineerEffect('wallRegen') : 0;
-      base.wallHp = Math.min(max, this.wallHp(base) + (0.002 + eng) * max * (dtMs / 1000));
     });
+    this.repairWalls(dtMs);
+  }
+
+  /** 指派「修繕圍牆」的倖存者（在避難所、可行動、未駐守瞭望塔） */
+  repairers() {
+    return this.game.state.survivors.filter((s) => s.job === 'repair' && s.status === 'idle' && !s.severe && !this.game.survivors.isGarrisoned(s.id));
+  }
+
+  /** 每秒可修復的圍牆耐久 */
+  repairRate() {
+    const research = 1 + this.game.research.bonus('repairPct');
+    return this.repairers().reduce((sum, sv) => {
+      const cls = JOBS.repair.classBonus[sv.classId] || 1;
+      const skill = 1 + (this.game.survivors.skillEffects(sv).repairBonus || 0);
+      return sum + REPAIR.hpPerSec * (1 + sv.level * 0.03) * cls * skill;
+    }, 0) * research;
+  }
+
+  /** 每點耐久的修繕材料（研究「快速修補」減少） */
+  repairCostPerHp() {
+    const mul = Math.max(0.5, 1 - this.game.research.bonus('repairPct') * 0.3);
+    return { wood: REPAIR.wood * mul, metal: REPAIR.metal * mul };
+  }
+
+  /**
+   * 圍牆不會自行修復：由修繕人員修理並消耗木材與金屬。
+   * 先修受損比例最高的據點；材料不足時只修得了一部分。
+   */
+  repairWalls(dtMs) {
+    let budget = this.repairRate() * (dtMs / 1000);
+    if (budget <= 0) return;
+    const res = this.game.state.resources;
+    const per = this.repairCostPerHp();
+    const damaged = this.bases.map((b) => ({ b, ratio: this.wallHp(b) / this.wallMax(b) }))
+      .filter((x) => x.ratio < 1).sort((a, c) => a.ratio - c.ratio);
+    for (const { b } of damaged) {
+      if (budget <= 0) break;
+      const need = this.wallMax(b) - this.wallHp(b);
+      const affordable = Math.min(per.wood ? res.wood / per.wood : Infinity, per.metal ? res.metal / per.metal : Infinity);
+      const hp = Math.min(need, budget, affordable);
+      if (hp <= 0) break;
+      b.wallHp = this.wallHp(b) + hp;
+      res.wood -= hp * per.wood;
+      res.metal -= hp * per.metal;
+      budget -= hp;
+    }
   }
 
   completeBuild(base, q) {

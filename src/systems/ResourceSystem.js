@@ -38,13 +38,15 @@ export class ResourceSystem {
     let foodPct = rb.foodPct || 0;
     st.bases.filter((b) => b.kind !== 'outpost').forEach((b) => {
       const f = b.facilities;
-      const mul = genOn ? 1 + f.generator.level * 0.06 : 1;
-      gross.food += f.farm.level * FARM_FOOD * (1 + f.rainCollector.level * 0.1) * mul;
-      gross.medicine += f.rainCollector.level * RAIN_MEDICINE * mul;
-      gross.wood += f.workbench.level * WORKBENCH.wood * mul;
-      gross.metal += f.workbench.level * WORKBENCH.metal * mul;
-      gross.cloth += f.workbench.level * WORKBENCH.cloth * mul;
-      if (genOn) upkeep.fuel += f.generator.level * 2;
+      const mul = genOn ? 1 + f.generator.level * 0.06 * (1 + (rb.generatorPct || 0)) : 1;
+      const rain = 1 + (rb.rainPct || 0);
+      const wb = 1 + (rb.workbenchPct || 0);
+      gross.food += f.farm.level * (FARM_FOOD + (rb.farmFlat || 0)) * (1 + f.rainCollector.level * 0.1 * rain) * mul;
+      gross.medicine += f.rainCollector.level * RAIN_MEDICINE * rain * mul;
+      gross.wood += f.workbench.level * WORKBENCH.wood * wb * mul;
+      gross.metal += f.workbench.level * WORKBENCH.metal * wb * mul;
+      gross.cloth += f.workbench.level * WORKBENCH.cloth * wb * mul;
+      if (genOn) upkeep.fuel += f.generator.level * 2 * Math.max(0.3, 1 - (rb.generatorFuelReduce || 0));
     });
     gross.medicine += rb.medicinePerHour || 0;
     gross.fuel += rb.fuelPerHour || 0;
@@ -62,7 +64,7 @@ export class ResourceSystem {
     });
     gross.food *= 1 + foodPct;
 
-    upkeep.food += st.survivors.length * FOOD_PER_SURVIVOR_HOUR;
+    upkeep.food += st.survivors.length * FOOD_PER_SURVIVOR_HOUR * Math.max(0.5, 1 - (rb.foodUpkeepReduce || 0));
 
     const net = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, gross[k] - upkeep[k]]));
     return { net, gross, upkeep };

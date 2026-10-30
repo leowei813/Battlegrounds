@@ -30,7 +30,7 @@ export const CLASSES = {
     base: { hp: 120, atk: 11, def: 6, crit: 0.06, critDmg: 1.5, dodge: 0.05, atkSpeed: 1.0 },
     growth: { hp: 17, atk: 1.8, def: 1.0 },
     skills: [
-      { id: 'repair', name: '維修', unlock: 1, desc: '駐守時圍牆每秒修復 +0.5%', effect: { wallRegen: 0.005 } },
+      { id: 'repair', name: '維修', unlock: 1, desc: '修繕圍牆的速度 +50%', effect: { repairBonus: 0.5 } },
       { id: 'efficient', name: '高效施工', unlock: 4, desc: '建造費用 -10%', effect: { buildDiscount: 0.1 } },
       { id: 'overclock', name: '超頻', unlock: 8, desc: '防禦塔傷害 +15%', effect: { towerDmg: 0.15 } },
     ],
@@ -70,6 +70,7 @@ export const JOBS = {
   workshop: { name: '工作台', icon: '🛠️', produce: { wood: 2, metal: 1.5, cloth: 1 }, classBonus: { engineer: 1.8 } },
   clinic: { name: '醫療站', icon: '🏥', produce: { medicine: 0.6 }, classBonus: { medic: 2 } },
   guard: { name: '防禦駐守', icon: '🛡️', produce: {}, classBonus: { warrior: 1.5 } },
+  repair: { name: '修繕圍牆', icon: '🔨', produce: {}, classBonus: { engineer: 1.8 } },
 };
 
 export const SURVIVOR_NAMES = [
@@ -85,13 +86,33 @@ export const MAX_SURVIVOR_LEVEL = 50;
  * growth 為等級成長倍率；weight 為招募/遭遇時出現的權重。
  */
 export const SURVIVOR_RARITY = {
-  poor: { growth: 0.8, weight: 25 },
-  common: { growth: 0.9, weight: 35 },
-  uncommon: { growth: 1.0, weight: 24 },
-  rare: { growth: 1.15, weight: 11 },
-  epic: { growth: 1.3, weight: 4 },
-  legendary: { growth: 1.5, weight: 1 },
+  poor: { growth: 0.8 },
+  common: { growth: 0.9 },
+  uncommon: { growth: 1.0 },
+  rare: { growth: 1.15 },
+  epic: { growth: 1.3 },
+  legendary: { growth: 1.5 },
 };
+
+/**
+ * 倖存者品級機率（%）：初始稀有 0%、罕見 0.1%；研究「招募技術」每級提升，滿級稀有 0.2%。
+ * @param {number} tech 招募技術等級 0～10
+ */
+export function survivorRarityTable(tech = 0) {
+  const t = Math.max(0, Math.min(10, tech));
+  const legendary = 0.02 * t;
+  const epic = 0.1 + 0.05 * t;
+  const rare = 2 + 0.3 * t;
+  const uncommon = 12 + t;
+  const poor = 32 - 1.5 * t;
+  return {
+    poor, common: 100 - legendary - epic - rare - uncommon - poor, uncommon, rare, epic, legendary,
+  };
+}
+
+/** 固定出現的可招募倖存者：每小時更新 */
+export const RECRUIT_BOARD_SIZE = 2;
+export const RECRUIT_BOARD_MS = 60 * 60 * 1000;
 
 /** 人員上限：3 + 領袖等級 ÷ 5 + 各據點等級總和，最多 10 人（含領袖） */
 export const MAX_SURVIVORS = 10;

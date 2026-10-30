@@ -14,6 +14,9 @@ export const FARM_FOOD = 7;
 export const RAIN_MEDICINE = 0.5;
 export const WORKBENCH = { wood: 3, metal: 2, cloth: 1.5 };
 
+/** 修繕圍牆：每名修繕人員每秒修復的耐久，與每點耐久消耗的材料 */
+export const REPAIR = { hpPerSec: 1.5, wood: 0.12, metal: 0.06 };
+
 /** 前哨站只有防禦功能，只能建造這些設施 */
 export const OUTPOST_FACILITIES = ['wall', 'watchtower'];
 
@@ -55,7 +58,7 @@ export const FACILITIES = {
     effectText: (lv) => `農場 +${lv * 10}%，藥品 +${(lv * RAIN_MEDICINE).toFixed(1)}/時`,
   },
   workbench: {
-    name: '工作台', icon: '🛠️', startLevel: 1,
+    name: '工作台', icon: '🛠️', startLevel: 0,
     desc: '拆解廢料產出木材/金屬/布料，並可製作裝備。',
     cost: (lv) => scale({ wood: 80, metal: 70 }, lv),
     effectText: (lv) => `木 +${lv * WORKBENCH.wood} 金 +${lv * WORKBENCH.metal} 布 +${lv * WORKBENCH.cloth}/時，可製作 Lv${lv * 5} 裝備`,

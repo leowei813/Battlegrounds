@@ -39,8 +39,24 @@ export class VehicleSystem {
     return v.status === 'idle' && !this.isBroken(v);
   }
 
+  /** 車庫容量（研究「車庫擴建」增加） */
+  garageSize() {
+    return GARAGE_SIZE + Math.floor(this.game.research.bonus('garageSlots'));
+  }
+
   isFull() {
-    return this.list.length >= GARAGE_SIZE;
+    return this.list.length >= this.garageSize();
+  }
+
+  /** 每人徒步運載量（研究「負重訓練」與背包增加；背包在探索時另計） */
+  personCarry() {
+    return Math.round(PERSON_CARRY * (1 + this.game.research.bonus('carryPct')));
+  }
+
+  /** 隊員運載量：徒步基準 + 背包容量 */
+  memberCarry(sv) {
+    const bag = this.game.equipment.getItem(sv?.equipment?.backpack);
+    return this.personCarry() + (bag?.stats?.carry || 0);
   }
 
   create(type, durabilityRatio = 1) {
@@ -63,7 +79,7 @@ export class VehicleSystem {
   rollFind(poiType) {
     const mul = VEHICLE_FIND_BY_POI[poiType] ?? 1;
     const type = weightedPick(Object.fromEntries(Object.entries(VEHICLES).map(([k, d]) => [k, d.find])));
-    return { type, chance: 0.06 * mul, vehicle: this.create(type, randFloat(0.2, 0.7)) };
+    return { type, chance: 0.06 * mul * (1 + this.game.research.bonus('vehicleFindPct')), vehicle: this.create(type, randFloat(0.2, 0.7)) };
   }
 
   scrap(id) {
@@ -80,7 +96,8 @@ export class VehicleSystem {
   // ---------- 維修 / 製作 ----------
 
   repairCostOf(v) {
-    return repairCost(v.type, this.maxDurability(v) - v.durability);
+    const mul = Math.max(0.3, 1 - this.game.research.bonus('repairCostReduce'));
+    return Object.fromEntries(Object.entries(repairCost(v.type, this.maxDurability(v) - v.durability)).map(([k, n]) => [k, Math.max(1, Math.ceil(n * mul))]));
   }
 
   repair(id) {
@@ -98,7 +115,7 @@ export class VehicleSystem {
     const c = VEHICLES[type].craft;
     if (!c) return { ok: false, reason: '無法製作' };
     if (this.game.shelter.maxLevel('workbench') < c.workbench) return { ok: false, reason: `需工作台 Lv${c.workbench}` };
-    if (this.isFull()) return { ok: false, reason: `車庫已滿（${GARAGE_SIZE}）` };
+    if (this.isFull()) return { ok: false, reason: `車庫已滿（${this.garageSize()}）` };
     if (!canAfford(this.game.state, c.cost)) return { ok: false, reason: '資源不足' };
     return { ok: true };
   }
@@ -120,16 +137,21 @@ export class VehicleSystem {
    * @param {number} distanceM 單程距離
    */
   tripStats(members, vehicles, distanceM = 0) {
+    const rb = this.game.research.bonuses();
     const defs = vehicles.map((v) => this.def(v));
+    // members 可以是人數或隊員陣列（陣列時計入背包容量）
+    const list = Array.isArray(members) ? members : null;
+    const count = list ? list.length : members;
     const seats = defs.reduce((s, d) => s + d.seats, 0);
-    const seated = vehicles.length > 0 && seats >= members;
+    const seated = vehicles.length > 0 && seats >= count;
+    const people = list ? list.reduce((s, m) => s + this.memberCarry(m), 0) : count * this.personCarry();
     return {
       seats,
       seated,
       // 所有隊員都有座位才能以載具速度移動（取最慢的一台），否則全隊步行
-      speed: seated ? Math.min(...defs.map((d) => d.speed)) : 1,
-      cargo: members * PERSON_CARRY + defs.reduce((s, d) => s + d.cargo, 0),
-      fuel: Math.ceil(defs.reduce((s, d) => s + d.fuelPerKm, 0) * (distanceM / 1000) * 2),
+      speed: seated ? +(Math.min(...defs.map((d) => d.speed)) * (1 + (rb.vehicleSpeedPct || 0))).toFixed(2) : 1,
+      cargo: Math.round(people + defs.reduce((s, d) => s + d.cargo, 0) * (1 + (rb.vehicleCargoPct || 0))),
+      fuel: Math.ceil(defs.reduce((s, d) => s + d.fuelPerKm, 0) * (distanceM / 1000) * 2 * Math.max(0.3, 1 - (rb.vehicleFuelReduce || 0))),
     };
   }
 
@@ -140,7 +162,8 @@ export class VehicleSystem {
   validate(vehicleIds, members, distanceM) {
     const vehicles = vehicleIds.map((id) => this.get(id));
     if (vehicles.some((v) => !v || !this.isAvailable(v))) return { ok: false, reason: '有載具無法出車' };
-    if (vehicles.length > members) return { ok: false, reason: '每台載具至少需要一名駕駛' };
+    const count = Array.isArray(members) ? members.length : members;
+    if (vehicles.length > count) return { ok: false, reason: '每台載具至少需要一名駕駛' };
     const stats = this.tripStats(members, vehicles, distanceM);
     if (stats.fuel > this.game.state.resources.fuel) return { ok: false, reason: `燃料不足（需要 ${stats.fuel}）` };
     return { ok: true, vehicles, stats };
@@ -158,7 +181,7 @@ export class VehicleSystem {
       const v = this.get(id);
       if (!v) return;
       v.status = 'idle';
-      let wear = (distanceM / 1000) * 2 * WEAR_PER_KM * randFloat(0.7, 1.3);
+      let wear = (distanceM / 1000) * 2 * WEAR_PER_KM * randFloat(0.7, 1.3) * Math.max(0.3, 1 - this.game.research.bonus('vehicleWearReduce'));
       for (let i = 0; i < ambushes; i += 1) wear += randInt(...AMBUSH_WEAR);
       v.durability = Math.max(0, Math.round(v.durability - wear));
       if (v.durability <= 0) out.push(`🔧 ${this.def(v).name} 損壞了，需要維修才能再出車`);
@@ -179,10 +202,11 @@ export class VehicleSystem {
    * 搬家（放棄避難所）時能帶走的資源量：所有可行動的人 + 有人駕駛且未損壞的載具。
    */
   relocationCapacity() {
-    const people = this.game.state.survivors.filter((s) => !s.severe).length;
+    const able = this.game.state.survivors.filter((s) => !s.severe);
+    const people = able.length;
     const usable = this.list.filter((v) => !this.isBroken(v))
       .sort((a, b) => this.def(b).cargo - this.def(a).cargo)
       .slice(0, people);
-    return { people, vehicles: usable, cargo: people * PERSON_CARRY + usable.reduce((s, v) => s + this.def(v).cargo, 0) };
+    return { people, vehicles: usable, cargo: this.tripStats(able, usable).cargo };
   }
 }

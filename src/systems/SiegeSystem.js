@@ -284,7 +284,7 @@ export class BaseSiege {
         // 集火最靠近圍牆的目標
         const t = targets.reduce((a, b) => (Math.hypot(a.x, a.y) < Math.hypot(b.x, b.y) ? a : b));
         const crit = chance(stats.crit);
-        this.damage(t, stats.atk * 0.6 * (crit ? stats.critDmg : 1), crit);
+        this.damage(t, stats.atk * 0.6 * this.guardMul() * (crit ? stats.critDmg : 1), crit);
         this.pushFx({ type: 'shot', kind: 'guard', x1: 0, y1: 0, x2: t.x, y2: t.y });
       });
     }
@@ -303,8 +303,17 @@ export class BaseSiege {
       .map((s) => ({ sv: s, stats: this.game.survivors.stats(s) }));
   }
 
+  /** 研究對個別防禦塔與駐守人員的傷害加成 */
+  typeMul(type) {
+    return 1 + this.game.research.bonus(`defDmg_${type}`);
+  }
+
+  guardMul() {
+    return 1 + this.game.research.bonus('guardDmgPct');
+  }
+
   fire(d, st, pos, target, inRange, dmgMul) {
-    const base = st.damage * dmgMul;
+    const base = st.damage * dmgMul * this.typeMul(d.type);
     switch (d.type) {
       case 'trap':
         inRange.forEach((z) => this.damage(z, base / st.fireRate));
@@ -346,7 +355,7 @@ export class BaseSiege {
         if (!sv || sv.status !== 'idle') return;
         const s = this.game.survivors.stats(sv);
         const crit = chance(s.crit);
-        this.damage(target, s.atk * st.garrisonMul * dmgMul * (crit ? s.critDmg : 1), crit);
+        this.damage(target, s.atk * st.garrisonMul * dmgMul * this.guardMul() * (crit ? s.critDmg : 1), crit);
         this.pushFx({ type: 'shot', kind: 'sniper', x1: pos.x, y1: pos.y, x2: target.x, y2: target.y });
         break;
       }
@@ -454,12 +463,12 @@ export class BaseSiege {
       const st = DEFENSES[d.type].stats(d.level);
       if (d.type === 'watchPost') {
         const sv = this.game.survivors.get(d.garrisonId);
-        if (sv) dps += this.game.survivors.stats(sv).atk * st.garrisonMul * st.fireRate * mul;
+        if (sv) dps += this.game.survivors.stats(sv).atk * st.garrisonMul * st.fireRate * mul * this.guardMul();
       } else {
-        dps += st.damage * st.fireRate * mul * (st.aoe ? 1.8 : 1) * (st.chain ? 2 : 1);
+        dps += st.damage * st.fireRate * mul * this.typeMul(d.type) * (st.aoe ? 1.8 : 1) * (st.chain ? 2 : 1);
       }
     });
-    this.guards().forEach(({ stats }) => { dps += stats.atk * 0.6; });
+    this.guards().forEach(({ stats }) => { dps += stats.atk * 0.6 * this.guardMul(); });
     return Math.round(dps);
   }
 
@@ -513,7 +522,8 @@ export class SiegeSystem {
   simulateOffline(ms) {
     if (!this.game.research.hasUnlock('offlineDefense')) return null;
     const seconds = ms / 1000;
-    const kills = this.game.state.bases.reduce((s, b) => s + this.of(b.id).estimateOfflineKills(seconds), 0);
+    const kills = Math.floor(this.game.state.bases.reduce((s, b) => s + this.of(b.id).estimateOfflineKills(seconds), 0)
+      * (1 + this.game.research.bonus('offlineDefPct')));
     if (!kills) return { kills: 0, coins: 0 };
     const coins = kills * 2;
     const parts = Math.floor(kills / 60);

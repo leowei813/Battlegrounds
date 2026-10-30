@@ -1,7 +1,8 @@
 import { SAVE_KEY, SAVE_VERSION } from '../config/constants.js';
 import { STAT_KEYS } from './GameState.js';
 import { POI_KEYS } from '../config/poiTypes.js';
-import { SLOT_KEYS } from '../config/equipment.js';
+import { SLOT_KEYS, ITEM_MODELS } from '../config/equipment.js';
+import { RESEARCH, LEGACY_RESEARCH } from '../config/research.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 
 /**
@@ -114,6 +115,34 @@ export class SaveManager {
       data.primaryBaseId = data.bases.find((b) => b.kind === 'shelter')?.id || null;
     }
     data.vehicles = data.vehicles || [];
+    // v7：研究改為等級制；裝備改為具體型號；每小時固定出現的倖存者
+    const rs = data.research || {};
+    if (!rs.levels) {
+      rs.levels = {};
+      (rs.completed || []).forEach((id) => {
+        const [nid, lv] = LEGACY_RESEARCH[id] || [];
+        if (nid) rs.levels[nid] = Math.max(rs.levels[nid] || 0, lv);
+      });
+      delete rs.completed;
+    }
+    if (rs.active && (!RESEARCH[rs.active.id] || !rs.active.level)) rs.active = null;
+    data.research = { levels: rs.levels, active: rs.active || null };
+    (data.inventory?.items || []).forEach((it) => {
+      if (it.model && ITEM_MODELS[it.model]) return;
+      const candidates = Object.entries(ITEM_MODELS).filter(([, md]) => md.type === it.type);
+      const named = candidates.find(([, md]) => String(it.name || '').includes(md.name));
+      const [mid, md] = named || candidates.sort((a, b) => a[1].tier - b[1].tier)[0] || [];
+      if (!mid) return;
+      it.model = mid;
+      it.cat = it.type;
+      it.tier = md.tier;
+    });
+    (data.inventory?.blueprints || []).forEach((bp) => {
+      if (bp.model) return;
+      bp.model = Object.entries(ITEM_MODELS).filter(([, md]) => md.type === bp.itemType).sort((a, b) => a[1].tier - b[1].tier)[1]?.[0]
+        || Object.keys(ITEM_MODELS)[0];
+    });
+    data.recruitBoard = data.recruitBoard || { list: [], refreshAt: 0 };
     data.npcs = data.npcs || { list: [], nextSpawnAt: 0 };
     // v3 -> v4：品級改為 6 階（舊的灰色「普通」→「劣質」），裝備欄新增手套、鞋子、飾品
     if (v < 4) {

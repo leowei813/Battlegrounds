@@ -198,7 +198,7 @@ export class NpcSystem {
     // 防禦塔先削減掠奪者，剩下的與據點中的倖存者交戰
     let enemies = this.garrison(n);
     const siege = g.siege.of(base.id);
-    let towerDamage = siege.defenseDps() * 25 + g.shelter.wallHp(base) * 0.15;
+    let towerDamage = (siege.defenseDps() * 25 + g.shelter.wallHp(base) * 0.15) * (1 + g.research.bonus('raidDefensePct'));
     enemies = enemies.filter((e) => {
       if (towerDamage >= e.maxHp) {
         towerDamage -= e.maxHp;

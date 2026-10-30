@@ -105,11 +105,12 @@ export function createInitialState({ playerName, classId, lat, lon }) {
     survivors: [createLeader(playerName, classId)],
     recruitPool: [],
     recruitOffer: null, // 招募中的三位候選人
+    recruitBoard: { list: [], refreshAt: 0 }, // 每小時固定出現的可招募倖存者
     expeditions: [],
     reports: [],
     vehicles: [], // 車庫（見 VehicleSystem）
     npcs: { list: [], nextSpawnAt: 0 }, // NPC 據點（見 NpcSystem）
-    research: { completed: [], active: null },
+    research: { levels: {}, active: null }, // 科技等級（見 ResearchSystem）
     quests: { mainIndex: 0, mainClaimable: false, dailyDate: '', dailies: [], achievements: {} },
     stats: Object.fromEntries(STAT_KEYS.map((k) => [k, 0])),
     settings: { autoSave: true, showDamage: true },

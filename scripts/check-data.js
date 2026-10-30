@@ -12,7 +12,9 @@ import { POI_TYPES } from '../src/config/poiTypes.js';
 import { ALL_ENEMIES } from '../src/config/enemies.js';
 import { MAIN_QUESTS, DAILY_POOL, ACHIEVEMENTS } from '../src/config/quests.js';
 import { FACILITIES } from '../src/config/facilities.js';
-import { RARITIES, RARITY_ORDER, SLOT_KEYS, ITEM_TYPES } from '../src/config/equipment.js';
+import {
+  RARITIES, RARITY_ORDER, SLOT_KEYS, ITEM_TYPES, ITEM_MODELS,
+} from '../src/config/equipment.js';
 import { DAY_REAL_MS, START_HOUR } from '../src/config/constants.js';
 
 /** 把遊戲時鐘調到指定時刻（建檔時間往前推） */
@@ -35,9 +37,9 @@ const assert = (cond, msg) => {
 };
 
 // ---- 1. 參照完整性 ----
-Object.entries(RESEARCH).forEach(([id, r]) => (r.requires || []).forEach((q) => assert(RESEARCH[q], `research ${id} requires unknown ${q}`)));
+Object.entries(RESEARCH).forEach(([id, r]) => (r.requires || []).forEach(([q]) => assert(RESEARCH[q], `research ${id} requires unknown ${q}`)));
 Object.entries(DEFENSES).forEach(([id, d]) => assert(!d.requires || RESEARCH[d.requires], `defense ${id} requires unknown ${d.requires}`));
-Object.entries(ITEM_TYPES).forEach(([id, t]) => assert(!t.requires || RESEARCH[t.requires], `item ${id} requires unknown ${t.requires}`));
+Object.entries(ITEM_MODELS).forEach(([id, md]) => assert(ITEM_TYPES[md.type] && md.tier >= 1 && md.tier <= 10, `model ${id} invalid`));
 Object.entries(POI_TYPES).forEach(([id, p]) => {
   Object.keys(p.enemies).forEach((e) => assert(ALL_ENEMIES[e], `poi ${id} enemy ${e} unknown`));
   Object.keys(p.itemBias).forEach((t) => assert(ITEM_TYPES[t], `poi ${id} item ${t} unknown`));
@@ -71,7 +73,7 @@ Object.keys(g.state.resources).forEach((k) => { g.state.resources[k] = 1e5; });
 const roll = g.survivors.recruitRoll();
 assert(roll.ok && roll.offer.length === 3, '招募一次出現三位候選人');
 assert(g.survivors.pickRecruit(roll.offer[1].id).ok && !g.state.recruitOffer, '選擇其中一位加入');
-assert(g.equipment.craft('pistol').ok, 'craft');
+assert(g.equipment.craft('knife').ok, 'craft');
 Object.assign(g.survivors.leader(), { severe: false, hp: null }); // 探索可能讓領袖重傷；確保有人駐守
 for (let i = 0; i < 1200; i += 1) g.siege.update(0.1);
 assert(g.state.stats.siegeKills > 0, 'siege kills happen');
@@ -83,7 +85,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 6, 'state is serializable');
+assert(save.version === 7, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -117,7 +119,7 @@ assert(g2.siege.of().zombieLevel() - lvDay1 <= 1, '天數本身不會提升屍�
 
 const outpostPoi = g.state.map.pois.find((p) => !g.shelter.baseAtPoi(p.id));
 assert(!g.shelter.canEstablish(outpostPoi).ok, '避難所只能一座，未研究前哨站科技不能建第二個據點');
-g.state.research.completed.push('out1');
+g.state.research.levels.e_outpost = 1;
 g.research.invalidate();
 Object.assign(g.state.resources, { wood: 5000, metal: 5000, cloth: 5000 });
 g.state.player.coins = 5000;
@@ -136,7 +138,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 6 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 7 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -235,7 +237,7 @@ assert(migrated.version === 6 && migrated.bases.length === 1 && migrated.bases[0
     const range = {};
     RARITY_ORDER.forEach((rar) => {
       for (let i = 0; i < 60; i += 1) {
-        const it = eq.generate({ level: 12, type, rarity: rar });
+        const it = eq.generate({ level: 12, model: Object.keys(ITEM_MODELS).find((k) => ITEM_MODELS[k].type === type), rarity: rar });
         Object.entries(it.stats).forEach(([k, v]) => {
           range[rar] = range[rar] || {};
           const cur = range[rar][k] || { min: Infinity, max: -Infinity };
@@ -252,7 +254,7 @@ assert(migrated.version === 6 && migrated.bases.length === 1 && migrated.bases[0
   });
   assert(violations === 0, `所有類型的每項素質都符合「高品級最低 ≥ 低品級最高」（違規 ${violations}）`);
   // 同品級素質隨機
-  const sameTier = Array.from({ length: 30 }, () => eq.generate({ level: 10, type: 'rifle', rarity: 'rare' }).stats.atk);
+  const sameTier = Array.from({ length: 30 }, () => eq.generate({ level: 10, model: 'ak47', rarity: 'rare' }).stats.atk);
   assert(new Set(sameTier).size > 5, '同品級素質為隨機');
   // 製作：品級與素質隨機
   ge.state.map.pois = fillPois([], 0, 0);
@@ -260,7 +262,7 @@ assert(migrated.version === 6 && migrated.bases.length === 1 && migrated.bases[0
   ge.state.player.coins = 1e7;
   Object.keys(ge.state.resources).forEach((k) => { ge.state.resources[k] = 1e7; });
   ge.state.bases[0].facilities.warehouse.level = 10;
-  const crafted = Array.from({ length: 300 }, () => eq.craft('pistol').item);
+  const crafted = Array.from({ length: 300 }, () => eq.craft('knife').item);
   const tiers = new Set(crafted.map((it) => it.rarity));
   assert(crafted.every(Boolean) && tiers.size >= 4, `製作的品級隨機（出現 ${[...tiers].map((r) => RARITIES[r].name).join('、')}）`);
   // 吸血與探索速度詞綴生效
@@ -525,6 +527,114 @@ assert(migrated.version === 6 && migrated.bases.length === 1 && migrated.bases[0
   const [rr] = gn.exploration.update(Date.now() + 3 * 3600e3, { silent: true });
   assert(rr.success && !gn.npcs.get(weak.id) && gn.state.player.coins > coinsBefore, '攻陷 NPC 據點搶到資源，據點被摧毀');
   assert(gn.npcs.state.nextSpawnAt > Date.now(), '被摧毀後一段時間會在別處重生');
+}
+
+// ---- 11. v5：研究等級制、招募、裝備型號、分級製作、圍牆修繕 ----
+{
+  const { MAX_RESEARCH_LEVEL } = await import('../src/config/research.js');
+  const { craftRarityTable } = await import('../src/config/equipment.js');
+  const { survivorRarityTable } = await import('../src/config/survivors.js');
+  const gr = Game.newGame({ playerName: 'R', classId: 'warrior', lat: 0, lon: 0 });
+  gr.state.map.pois = fillPois([], 0, 0);
+  gr.shelter.establish(gr.state.map.pois[0]);
+  // 研究
+  assert(Object.keys(RESEARCH).length >= 69, `研究項目至少為原本三倍（${Object.keys(RESEARCH).length}）`);
+  assert(Object.values(RESEARCH).every((r) => r.maxLevel >= 1 && r.maxLevel <= MAX_RESEARCH_LEVEL), '每項科技都有等級，最高 10 級');
+  const atk0 = gr.survivors.stats(gr.survivors.leader()).atk;
+  gr.state.research.levels.w_atk = 10;
+  gr.research.invalidate();
+  const atk5 = gr.survivors.stats(gr.survivors.leader()).atk;
+  assert(atk5 > atk0 * 1.15, `科技等級越高效果越大（攻擊 ${atk0} → ${atk5}）`);
+  Object.keys(gr.state.resources).forEach((k) => { gr.state.resources[k] = 1e7; });
+  gr.state.player.coins = 1e7;
+  gr.state.player.parts = 1e4;
+  assert(!gr.research.canStart('w_crit').ok, '沒有研究中心不能研究');
+  gr.shelter.primary().facilities.researchCenter.level = 1;
+  assert(gr.research.start('w_crit').ok, '開始研究 Lv1');
+  gr.research.update(Date.now() + 1e9);
+  assert(gr.research.level('w_crit') === 1, '研究完成升到 Lv1');
+  assert(!gr.research.canStart('w_crit').ok, '第 2 級需要研究中心 Lv2');
+  assert(!gr.shelter.isDefenseUnlocked('machineGun'), '未研究不能建機槍塔');
+  gr.state.research.levels.d_mg = 1;
+  gr.research.invalidate();
+  assert(gr.shelter.isDefenseUnlocked('machineGun'), '研究「機槍塔」解鎖機槍塔');
+  // 舊研究遷移
+  const old = JSON.parse(JSON.stringify(gr.state));
+  old.version = 6;
+  old.research = { completed: ['wpn1', 'def1', 'srv1'], active: { id: 'wpn2', startAt: 0, endAt: 1 } };
+  const mig = SaveManager.migrate(old);
+  assert(mig.research.levels.w_atk === 3 && mig.research.levels.d_mg === 1 && mig.research.levels.s_scout === 3 && !mig.research.active, '舊研究轉換為新科技等級');
+
+  // 招募品級機率
+  const so0 = survivorRarityTable(0);
+  const so10 = survivorRarityTable(10);
+  assert(so0.legendary === 0 && Math.abs(so0.epic - 0.1) < 1e-9, '倖存者初始稀有 0%、罕見 0.1%');
+  assert(Math.abs(so10.legendary - 0.2) < 1e-9 && Math.abs(Object.values(so10).reduce((a2, b2) => a2 + b2, 0) - 100) < 1e-9, '招募技術滿級稀有 0.2%');
+  gr.survivors.updateBoard(Date.now());
+  assert(gr.state.recruitBoard.list.length === 2, '固定出現兩位可招募的倖存者');
+  const firstIds = gr.state.recruitBoard.list.map((c) => c.id).join();
+  gr.survivors.updateBoard(Date.now() + 1000);
+  assert(gr.state.recruitBoard.list.map((c) => c.id).join() === firstIds, '一小時內名單不變');
+  gr.survivors.updateBoard(Date.now() + 3600e3 + 1000);
+  assert(gr.state.recruitBoard.list.map((c) => c.id).join() !== firstIds, '每小時更新名單');
+  const n0 = gr.state.survivors.length;
+  assert(gr.survivors.hireFromBoard(gr.state.recruitBoard.list[0].id).ok && gr.state.survivors.length === n0 + 1, '招募固定出現的倖存者');
+  const legends = Array.from({ length: 3000 }, () => gr.survivors.rollRarity()).filter((r) => r === 'legendary').length;
+  assert(legends === 0, '初始不會招募到稀有倖存者');
+
+  // 裝備型號
+  const byType = {};
+  Object.values(ITEM_MODELS).forEach((md) => { byType[md.type] = (byType[md.type] || 0) + 1; });
+  const meleeNames = Object.values(ITEM_MODELS).filter((md) => md.type === 'melee').map((md) => md.name);
+  assert(['拳套', '小刀', '菜刀', '球棒', '水管', '鐵鍬', '開山刀', '斧頭', '武士刀', '電鋸'].every((n) => meleeNames.includes(n)), '近戰武器 10 種');
+  assert(['pistol', 'smg', 'shotgun', 'rifle', 'sniper', 'lmg', 'crossbow'].every((t) => byType[t] >= 10), `槍類各至少 10 種（${['pistol', 'smg', 'shotgun', 'rifle', 'sniper', 'lmg'].map((t) => byType[t]).join('/')}）`);
+  assert(['helmet', 'armor', 'legs', 'gloves', 'boots'].every((t) => byType[t] >= 10), '頭盔、衣服、護腿、手套、鞋子各至少 10 種');
+  assert(byType.backpack === 7, '背包 7 種大小');
+  const lowDrops = Array.from({ length: 400 }, () => gr.equipment.generate({ level: 1, type: 'rifle' }).tier);
+  const highDrops = Array.from({ length: 400 }, () => gr.equipment.generate({ level: 45, type: 'rifle' }).tier);
+  const avg = (a2) => a2.reduce((x, y) => x + y, 0) / a2.length;
+  assert(avg(lowDrops) < avg(highDrops) && lowDrops.filter((t) => t >= 9).length < 8, `越強的型號越難取得（低等平均 T${avg(lowDrops).toFixed(1)}、高等平均 T${avg(highDrops).toFixed(1)}）`);
+  // 製作
+  assert(craftRarityTable(0).legendary === 0 && Math.abs(craftRarityTable(0).epic - 0.1) < 1e-9 && Math.abs(craftRarityTable(10).legendary - 0.2) < 1e-9, '製作初始稀有 0%、罕見 0.1%，滿級稀有 0.2%');
+  const eq = gr.equipment;
+  assert(eq.canCraftModel('knuckles').ok && eq.workbench() === 0, '簡易製作不需要工作台');
+  assert(!eq.canCraftModel('bat').ok, '其他裝備需要工作台');
+  gr.shelter.primary().facilities.workbench.level = 3;
+  assert(eq.canCraftModel('bat').ok && !eq.canCraftModel('machete').ok, '工作台等級越高可製作的型號越多');
+  assert(!eq.canCraftModel('revolver').ok, '槍械需要研究「槍械製造」');
+  gr.state.research.levels.c_gun = 1;
+  gr.research.invalidate();
+  assert(eq.canCraftModel('revolver').ok && !eq.canCraftModel('uzi').ok, '槍械製造等級決定可製作的槍種');
+  const made = Array.from({ length: 2000 }, () => eq.craft('knife').item.rarity);
+  assert(!made.includes('legendary'), '製作技術 0 級時不會做出稀有裝備');
+  // 背包增加運載量、電鋸耗油
+  const lead = gr.survivors.leader();
+  const cargo0 = gr.vehicles.tripStats([lead], []).cargo;
+  const pack = eq.generate({ level: 5, model: 'pack3', rarity: 'common' });
+  eq.addItem(pack);
+  eq.equip(lead.id, pack.id);
+  assert(gr.vehicles.tripStats([lead], []).cargo > cargo0 + 100, '背包越大運載量越多');
+  const saw = eq.generate({ level: 5, model: 'chainsaw', rarity: 'common' });
+  eq.addItem(saw);
+  eq.equip(lead.id, saw.id);
+  gr.state.resources.fuel = 10;
+  gr.combat.simulate([lead], [gr.combat.createEnemy('walker', 1)]);
+  assert(gr.state.resources.fuel === 7, '電鋸每場戰鬥消耗燃料');
+  // 圍牆不會自行修復，需修繕人員並消耗資源
+  const home = gr.shelter.primary();
+  home.wallHp = 100;
+  lead.job = 'idle';
+  gr.state.survivors.forEach((x) => { x.job = 'idle'; });
+  gr.shelter.update(Date.now(), 60000);
+  assert(Math.round(gr.shelter.wallHp(home)) === 100, '沒有修繕人員時圍牆不會恢復');
+  lead.job = 'repair';
+  const wood0 = gr.state.resources.wood;
+  gr.shelter.update(Date.now(), 60000);
+  assert(gr.shelter.wallHp(home) > 100 && gr.state.resources.wood < wood0, '修繕人員修理圍牆並消耗木材');
+  gr.state.resources.wood = 0;
+  const hpNow = gr.shelter.wallHp(home);
+  gr.shelter.update(Date.now(), 60000);
+  assert(gr.shelter.wallHp(home) === hpNow, '材料不足時無法修繕');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

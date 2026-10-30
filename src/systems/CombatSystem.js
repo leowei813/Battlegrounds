@@ -1,3 +1,4 @@
+import { ITEM_MODELS } from '../config/equipment.js';
 import { ALL_ENEMIES, ELITE_MUL } from '../config/enemies.js';
 import { chance, randFloat, pick, uid } from '../utils/math.js';
 
@@ -47,12 +48,23 @@ export class CombatSystem {
   }
 
   /** 把倖存者轉成戰鬥單位 */
+  /** 需要燃料的武器（電鋸）：每場戰鬥耗油，燃料不足時只剩 30% 攻擊 */
+  weaponFuelMul(sv) {
+    const weapon = this.game.equipment.getItem(sv.equipment?.weapon);
+    const fuel = ITEM_MODELS[weapon?.model]?.fuel;
+    if (!fuel) return 1;
+    const res = this.game.state.resources;
+    if (res.fuel < fuel) return 0.3;
+    res.fuel -= fuel;
+    return 1;
+  }
+
   unitFromSurvivor(sv) {
     const s = this.game.survivors.stats(sv);
     return {
       id: sv.id, name: sv.name, side: 'team', classId: sv.classId,
       // 以目前生命出戰（受過傷的隊員不會回滿血）
-      maxHp: s.hp, hp: this.game.survivors.hpOf(sv), atk: s.atk, def: s.def, crit: s.crit, critDmg: s.critDmg,
+      maxHp: s.hp, hp: this.game.survivors.hpOf(sv), atk: s.atk * this.weaponFuelMul(sv), def: s.def, crit: s.crit, critDmg: s.critDmg,
       dodge: s.dodge, atkSpeed: s.atkSpeed, skills: s.skills, lifeSteal: Math.min(0.5, s.lifeSteal || 0),
       cd: randFloat(0, 0.3), healCd: s.skills.healEvery || 0, firstHit: true,
     };
