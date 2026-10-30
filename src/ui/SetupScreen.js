@@ -1,6 +1,7 @@
 import { CLASSES } from '../config/survivors.js';
 import { GAME_TITLE } from '../config/constants.js';
 import { SaveManager } from '../core/SaveManager.js';
+import { COPYRIGHT } from '../config/legal.js';
 
 const PRESETS = [
   { name: '台北 101', lat: 25.0339, lon: 121.5645 },
@@ -141,6 +142,7 @@ export class SetupScreen {
         ${this.cloud?.available ? '<button type="button" id="btn-cloud" class="btn btn-primary wide">☁️ 用同步碼讀取雲端存檔</button>' : ''}
         <button type="button" id="btn-import" class="btn btn-ghost wide">📥 匯入存檔</button>
       </form>
+      <p class="copyright">${COPYRIGHT}</p>
     </div>`;
   }
 }

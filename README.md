@@ -55,4 +55,7 @@ npm run dev
 | `npm run start` | 建置並啟動伺服器（一鍵正式環境） |
 | `npm run test:cloud` | 雲端存檔整合測試 |
 
+## 版權
+© 2026 leowei813 版權所有。本專案原始碼公開供瀏覽，但**未授予任何授權**；未經書面同意，禁止複製、修改、散布或商業使用。詳見 [LICENSE](LICENSE)。
+
 地圖資料 © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors。

@@ -3,6 +3,8 @@ import { GAME_TITLE } from '../../config/constants.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { formatNumber } from '../../utils/math.js';
 import { btn } from '../components.js';
+import { COPYRIGHT } from '../../config/legal.js';
+import { accessGateEnabled, lockDevice } from '../../security/AccessGate.js';
 
 const STAT_NAMES = {
   kills: '總擊殺', siegeKills: '防線擊殺', bossKills: 'Boss 擊殺', eliteKills: '精英擊殺', explorations: '探索次數',
@@ -141,7 +143,9 @@ export class SettingsPanel {
       <label class="toggle"><input type="checkbox" data-setting="showDamage" ${st.settings.showDamage ? 'checked' : ''}> 顯示傷害數字</label>
       <h3>統計</h3>
       <div class="stat-grid">${stats}</div>
+      ${accessGateEnabled() ? `<h3>通行碼</h3><div class="btn-row">${btn('🔒 鎖定此裝置（下次需重新輸入通行碼）', 'lockDevice', {}, { cls: 'btn-ghost' })}</div>` : ''}
       <h3>關於</h3>
+      <p class="copyright left">${COPYRIGHT}</p>
       <p class="muted">${GAME_TITLE} v1.0・地圖資料 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors，建築資料來自 Overpass API。</p>
     </div>`;
   }
@@ -157,6 +161,12 @@ export class SettingsPanel {
 
   onAction(action) {
     const g = this.game;
+    if (action === 'lockDevice' && confirm('鎖定後重新整理頁面需要再次輸入通行碼。確定？')) {
+      g.save();
+      lockDevice();
+      location.reload();
+      return;
+    }
     if (action.startsWith('cloud')) {
       this.onCloudAction(action);
       return;

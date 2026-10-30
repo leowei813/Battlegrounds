@@ -69,6 +69,14 @@ npm run build
 
 自架伺服器時，伺服器的 `CORS_ORIGIN` 請設為 `https://<帳號>.github.io`。
 
+**通行碼（限制遊玩者）**：到 **Settings → Secrets and variables → Actions → Secrets** 新增 `ACCESS_CODE`，然後重新部署（Actions 頁手動執行，或推送到 `main`）。
+- 建置時以 `scripts/hash-access-code.js` 計算雜湊（SHA-256 反覆 50,000 次），只把雜湊寫進網站，原始通行碼不會公開。
+- 玩家輸入正確後可「記住這台裝置」；更換通行碼後所有裝置都需重新輸入。設定頁可「鎖定此裝置」。
+- 移除 `ACCESS_CODE` 並重新部署即可取消通行碼。
+- 本機測試：`ACCESS_CODE='xxx' node scripts/hash-access-code.js` 取得雜湊，寫入 `.env` 的 `VITE_ACCESS_HASH=`。
+
+> ⚠️ 這是**前端驗證**：能擋住一般訪客，但原始碼公開，懂技術的人仍可繞過或自行執行遊戲。需要真正的存取控制，請改用 Cloudflare Pages + Cloudflare Access 等伺服器端驗證。建議使用 10 字以上的通行碼，增加暴力破解的難度。
+
 ### B. Vercel / Netlify / Cloudflare Pages
 | 設定 | 值 |
 |---|---|
