@@ -2,7 +2,7 @@ import { MapService } from '../../map/MapService.js';
 import { POI_TYPES } from '../../config/poiTypes.js';
 import { ALL_ENEMIES } from '../../config/enemies.js';
 import { RESOURCES } from '../../config/constants.js';
-import { delegateActions } from '../../utils/dom.js';
+import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine } from '../../utils/math.js';
 import { btn, costHtml } from '../components.js';
 import { openTeamPicker } from '../TeamPicker.js';
@@ -25,15 +25,20 @@ export class MapPanel {
     const root = this.ui.mapRoot;
     root.innerHTML = '<div id="map-canvas"></div><div id="map-overlay" class="map-overlay"></div>';
     this.overlay = root.querySelector('#map-overlay');
-    this.service = new MapService(root.querySelector('#map-canvas'));
+    this.service = new MapService(root.querySelector('#map-canvas'), this.game);
     const c = this.game.shelter.primary() || this.game.state.map.center;
     this.service.init(c.lat, c.lon);
-    delegateActions(this.overlay, (action) => this.onAction(action));
+    delegateActions(this.overlay, (action, data) => this.onAction(action, data));
   }
 
   onShow() {
     this.service.invalidate();
     this.renderMap(true);
+    this.service.setLive(true);
+  }
+
+  onHide() {
+    this.service.setLive(false);
   }
 
   renderMap(force = false) {
@@ -44,6 +49,7 @@ export class MapPanel {
 
   renderOverlay() {
     if (Date.now() - this.lastRender > 5000) this.renderMap(true);
+    this.ui.mapRoot.dataset.phase = this.game.time.phaseId(); // 地圖依日夜變暗
     const st = this.game.state;
     const has = this.game.shelter.hasShelter();
     const src = { overpass: 'OpenStreetMap', generated: '程序生成（OSM 無法連線）', none: '—' }[st.map.source] || st.map.source;
@@ -54,6 +60,7 @@ export class MapPanel {
         ${btn(this.scanning ? '⏳' : '🔄', 'rescan', {}, { cls: 'btn-icon', disabled: this.scanning, title: '重新掃描附近建築' })}
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
       </div>
+      ${this.siegeBanner()}
       <div class="map-info">建築 ${st.map.pois.length}・殭屍群 ${st.map.zombieGroups.length}・資料：${src}</div>`;
     if (html !== this.lastOverlay) {
       this.lastOverlay = html;
@@ -61,10 +68,29 @@ export class MapPanel {
     }
   }
 
-  async onAction(action) {
+  /** 各據點即時屍潮摘要；點擊可飛到該據點 */
+  siegeBanner() {
+    const g = this.game;
+    const rows = g.state.bases.map((b) => {
+      const s = g.siege.of(b.id);
+      const ratio = g.shelter.wallHp(b) / g.shelter.wallMax(b);
+      return { b, n: s.zombies.length, ratio };
+    }).filter((r) => r.n > 0 || r.ratio < 0.999);
+    if (!rows.length) return '';
+    return `<div class="siege-banner">${rows.map(({ b, n, ratio }) => `
+      <button class="siege-chip ${ratio < 0.3 ? 'danger' : ''}" data-action="flyTo" data-id="${b.id}">
+        ${g.shelter.isPrimary(b) ? '⭐' : '🏠'} ${escapeHtml(b.name)}・🧟${n}・🧱${Math.round(ratio * 100)}%
+      </button>`).join('')}</div>`;
+  }
+
+  async onAction(action, data = {}) {
     const sh = this.game.shelter.primary();
     if (action === 'gotoShelter' && sh) this.service.focus(sh.lat, sh.lon);
     if (action === 'legend') this.showLegend();
+    if (action === 'flyTo') {
+      const b = this.game.shelter.base(data.id);
+      if (b) this.service.focus(b.lat, b.lon, 17);
+    }
     if (action === 'rescan') {
       if (this.scanning) return;
       this.scanning = true;

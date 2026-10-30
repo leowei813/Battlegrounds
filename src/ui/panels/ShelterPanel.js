@@ -37,7 +37,9 @@ export class ShelterPanel {
           <span>☠ 據點危險度 <b>${danger}</b></span>
           <small class="muted">${isPrimary ? `基礎 ${baseDanger} + 文明度 ${b.total} × ${PRIMARY_DANGER_COEF}` : `基礎 ${baseDanger}（前哨不受文明度加成）`}</small>
         </div>
-        <small class="muted block">本據點殭屍 Lv${siege.zombieLevel()}・每 ${siege.spawnInterval().toFixed(1)} 秒一隻</small>
+        <small class="muted block">${siege.active()
+    ? `本據點殭屍 Lv${siege.zombieLevel()}・每 ${siege.spawnInterval().toFixed(1)} 秒一隻`
+    : `☀️ 白天殭屍躲在建築內；入夜後本據點殭屍約 Lv${siege.zombieLevel() + 1}`}</small>
       </div>`;
   }
 
@@ -97,7 +99,7 @@ export class ShelterPanel {
           <div><small>圍牆</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}</div>
           <div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div>
           <div><small>來襲殭屍</small><b>${siege.zombies.length}</b></div>
-          <div><small>屍潮間隔</small><b>${siege.spawnInterval().toFixed(1)} 秒</b></div>
+          <div><small>屍潮間隔</small><b>${siege.active() ? `${siege.spawnInterval().toFixed(1)} 秒` : '☀️ 白天無屍潮'}</b></div>
         </div>
         ${queue ? `<h4>施工佇列</h4>${queue}` : ''}
         <h4>防禦建築 <small class="muted">（點擊場景中的槽位也可建造）</small></h4>

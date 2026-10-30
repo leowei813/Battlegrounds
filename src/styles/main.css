@@ -363,3 +363,15 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .gate-card input[type=password] { padding: 12px; font: inherit; font-size: 18px; text-align: center; color: var(--text); background: #0008; border: 1px solid var(--line); border-radius: 8px; }
 .copyright { margin: 16px 0 0; font-size: 11px; color: var(--muted); text-align: center; line-height: 1.6; }
 .copyright.left { text-align: left; margin-top: 0; }
+
+/* ---------- Live siege on map ---------- */
+.siege-canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+.poi-icon .poi-pin.sm { width: 24px; height: 24px; flex: 0 0 24px; font-size: 13px; border-width: 1.5px; }
+.siege-banner { position: absolute; top: 10px; left: 56px; right: 64px; display: flex; flex-wrap: wrap; gap: 4px; pointer-events: none; }
+.siege-chip { pointer-events: auto; border: 1px solid #ff5252; background: #7f0000dd; color: #fff; border-radius: 14px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.siege-chip.danger { animation: pulse 1s infinite; background: #b71c1c; }
+.map-hint + .siege-banner { top: 64px; }
+#map-root .leaflet-tile-pane { transition: filter 2s; }
+#map-root[data-phase="dusk"] .leaflet-tile-pane { filter: saturate(.45) brightness(.6) sepia(.45); }
+#map-root[data-phase="night"] .leaflet-tile-pane { filter: saturate(.35) brightness(.4) hue-rotate(190deg) sepia(.2); }
+#map-root[data-phase="midnight"] .leaflet-tile-pane { filter: saturate(.3) brightness(.3) hue-rotate(200deg) sepia(.2); }

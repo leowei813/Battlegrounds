@@ -69,11 +69,17 @@ export class ShelterScene extends Phaser.Scene {
     this.scale.on('resize', () => this.layout());
     this.registry.events.on('changedata-viewInset', () => this.layout());
     this.registry.events.on('changedata-viewBaseId', () => {
+      this.fxQueue = [];
       this.zombieSprites.forEach((s) => s.destroy());
       this.zombieSprites.clear();
       this.refreshStatic(true);
     });
+    this.fxQueue = [];
     this.unsubs = [
+      bus.on('siege:fx', (events) => {
+        const id = this.base?.id;
+        events.forEach((e) => { if (e.baseId === id && this.fxQueue.length < 300) this.fxQueue.push(e); });
+      }),
       bus.on('shelter:changed', () => this.refreshStatic()),
       bus.on(EVT.STATE_CHANGED, () => this.refreshStatic()),
     ];
@@ -201,10 +207,8 @@ export class ShelterScene extends Phaser.Scene {
   }
 
   spawnFx() {
-    const siege = this.siege;
-    if (!siege) return;
-    this.core.siege.drainOthers(siege.baseId);
-    const fx = siege.drainFx();
+    const fx = this.fxQueue;
+    this.fxQueue = [];
     fx.forEach((e) => {
       if (e.type === 'shot' || e.type === 'flame') {
         const a = this.toScreen(e.x1, e.y1);
@@ -259,7 +263,6 @@ export class ShelterScene extends Phaser.Scene {
     const core = this.core;
     if (!core) return;
     const dt = delta / 1000;
-    core.siege.update(dt);
     this.drawWall();
     this.syncZombies();
     this.spawnFx();

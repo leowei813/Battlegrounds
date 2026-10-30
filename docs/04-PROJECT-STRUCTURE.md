@@ -76,7 +76,8 @@ Battlegrounds/
     ├── map/                        # 【真實地圖】
     │   ├── OverpassService.js      #   OSM Overpass 查詢與標籤分類
     │   ├── PoiGenerator.js         #   程序補足地點
-    │   └── MapService.js           #   Leaflet 地圖與圖層
+    │   ├── MapService.js           #   Leaflet 地圖與圖層
+    │   └── SiegeMapLayer.js        #   地圖上的即時屍潮（canvas 圖層）
     │
     ├── scenes/                     # 【Phaser 場景】
     │   ├── BootScene.js            #   程式生成貼圖

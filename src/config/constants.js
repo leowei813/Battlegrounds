@@ -17,10 +17,16 @@ export const OFFLINE_CAP_MS = 24 * 60 * 60 * 1000;
 
 /** OSM 掃描半徑（公尺） */
 export const POI_SCAN_RADIUS = 1200;
-export const POI_MAX_PER_TYPE = 14;
+/** 每類建築在地圖上的數量上限（優先保留有名字的建築，並平均分散） */
+export const POI_MAX_PER_TYPE = {
+  residential: 60, shop: 45, school: 15, factory: 20, warehouse: 15,
+  gasStation: 12, hospital: 12, police: 10, military: 6,
+};
+/** 分散取樣的格子大小（公尺）：同一格優先只取一棟，避免擠在一起 */
+export const POI_SPREAD_CELL_M = 90;
 /** 地圖殭屍刷新週期 */
 export const ZOMBIE_REFRESH_MS = 5 * 60 * 1000;
-export const ZOMBIE_MAX_GROUPS = 28;
+export const ZOMBIE_MAX_GROUPS = 40;
 
 /** 探索可選時長（分鐘） */
 export const EXPLORE_DURATIONS = [5, 15, 30, 60];

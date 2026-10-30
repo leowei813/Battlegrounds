@@ -44,6 +44,14 @@ export class ZombieSpawnSystem {
   refresh(now = Date.now()) {
     const map = this.game.state.map;
     const phase = this.game.time.phase(now);
+    // 白天殭屍躲在建築內：地圖上不出現殭屍群（只會在探索時遭遇）
+    if (!phase.zombies) {
+      if (map.zombieGroups.length) {
+        map.zombieGroups = [];
+        this.game.bus.emit('map:changed');
+      }
+      return;
+    }
     // 過期的群體散去
     map.zombieGroups = this.groups.filter((g) => now - g.spawnedAt < ZOMBIE_REFRESH_MS * 3);
     const target = Math.round(ZOMBIE_MAX_GROUPS * Math.min(1, 0.45 * phase.zombieMul));
@@ -96,6 +104,7 @@ export class ZombieSpawnSystem {
   attack(groupId, memberIds) {
     const g = this.groups.find((x) => x.id === groupId);
     if (!g) return { ok: false, reason: '殭屍群已離開' };
+    if (!this.game.time.phase().zombies) return { ok: false, reason: '天亮了，殭屍已躲回建築內' };
     const members = memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
     if (!members.length) return { ok: false, reason: '請選擇隊員' };
     if (members.length > MAX_TEAM_SIZE) return { ok: false, reason: `隊伍最多 ${MAX_TEAM_SIZE} 人` };
