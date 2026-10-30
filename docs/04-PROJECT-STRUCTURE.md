@@ -70,7 +70,7 @@ Battlegrounds/
     │
     ├── cloud/                      # 【雲端存檔】
     │   ├── CloudSync.js            #   同步管理（開機決策、自動上傳、即時鎖定、接管）
-    │   ├── syncCode.js             #   同步碼
+    │   ├── account.js              #   帳號密碼 → id / token
     │   └── providers/              #   SelfHostProvider / SupabaseProvider
     │
     ├── map/                        # 【真實地圖】
@@ -85,7 +85,8 @@ Battlegrounds/
     │
     ├── ui/                         # 【DOM UI】
     │   ├── UIManager.js            #   版面、HUD、導覽、分頁
-    │   ├── SetupScreen.js          #   首次進入：名字/職業/座標
+    │   ├── AuthScreen.js           #   首頁：帳號登入／註冊
+    │   ├── SetupScreen.js          #   建立角色：名字/職業/座標
     │   ├── Modal.js                #   彈窗（支援 live 自動重繪）
     │   ├── Toast.js                #   通知
     │   ├── TeamPicker.js           #   隊伍選擇（探索/戰鬥共用）
@@ -99,7 +100,7 @@ Battlegrounds/
     │       ├── InventoryPanel.js   #   背包與製作
     │       ├── ResearchPanel.js    #   研究樹
     │       ├── QuestPanel.js       #   任務
-    │       └── SettingsPanel.js    #   存檔管理與統計
+    │       └── SettingsPanel.js    #   帳號、存檔與統計
     │
     ├── utils/
     │   ├── math.js                 #   亂數、權重、格式化、地理距離

@@ -1,6 +1,5 @@
 import { CLASSES } from '../config/survivors.js';
 import { GAME_TITLE } from '../config/constants.js';
-import { SaveManager } from '../core/SaveManager.js';
 import { COPYRIGHT } from '../config/legal.js';
 import { APP_VERSION, CHANGELOG } from '../config/version.js';
 import { versionHtml } from './ChangelogView.js';
@@ -15,19 +14,19 @@ const PRESETS = [
 ];
 
 /**
- * 首次進入畫面：輸入名字、選擇領袖職業、決定起始座標（定位或手動）。
+ * 建立角色：輸入名字、選擇領袖職業、決定起始座標（定位或手動）。帳號註冊後或重置進度後顯示。
  */
 export class SetupScreen {
   /**
    * @param {HTMLElement} root
-   * @param {import('../cloud/CloudSync.js').CloudSync} cloud
+   * @param {string} [account] 目前登入的帳號（顯示用）
    */
-  constructor(root, cloud = null) {
+  constructor(root, account = '') {
     this.root = root;
-    this.cloud = cloud;
+    this.account = account;
   }
 
-  /** @returns {Promise<{type:'new', playerName, classId, lat, lon}|{type:'import', data}>} */
+  /** @returns {Promise<{type:'new', playerName, classId, lat, lon}>} */
   show() {
     return new Promise((resolve) => {
       this.root.innerHTML = this.template();
@@ -70,32 +69,6 @@ export class SetupScreen {
         });
       });
 
-      $('#btn-import').addEventListener('click', () => {
-        const str = prompt('貼上匯出的存檔字串：');
-        if (!str) return;
-        try {
-          const data = SaveManager.importString(str);
-          this.hide();
-          resolve({ type: 'import', data });
-        } catch (err) {
-          status.textContent = `❌ 匯入失敗：${err.message}`;
-        }
-      });
-
-      $('#btn-cloud')?.addEventListener('click', async () => {
-        const code = prompt('輸入其他裝置上顯示的同步碼（XXXX-XXXX-…）：');
-        if (!code) return;
-        status.textContent = '☁️ 讀取雲端存檔中…';
-        try {
-          const { state, meta } = await this.cloud.link(code);
-          SaveManager.save(state);
-          this.hide();
-          resolve({ type: 'import', data: state, meta });
-        } catch (err) {
-          status.textContent = `❌ ${err.message}`;
-        }
-      });
-
       $('#setup-form').addEventListener('submit', (e) => {
         e.preventDefault();
         const name = $('#in-name').value.trim() || '倖存者';
@@ -130,6 +103,7 @@ export class SetupScreen {
       <div class="home-version"><span class="ver-tag">v${APP_VERSION}</span></div>
       <p class="lore">病毒在一夜之間席捲全球。城市淪陷、通訊中斷……<br>你是少數的倖存者之一。在真實世界的街道上建立避難所，活下去。</p>
       <div class="home-news">${CHANGELOG[0] ? versionHtml(CHANGELOG[0], { open: false, label: '🆕 最新更新' }) : ''}</div>
+      ${this.account ? `<p class="muted">帳號 <b>${this.account}</b>：建立你的角色</p>` : ''}
       <form id="setup-form">
         <label>倖存者名稱<input id="in-name" maxlength="16" placeholder="輸入你的名字" autocomplete="off"></label>
         <div class="label">選擇你的職業</div>
@@ -143,8 +117,6 @@ export class SetupScreen {
         <div class="chips">${presets}</div>
         <p id="setup-status" class="status"></p>
         <button type="submit" class="btn btn-danger wide big">☣️ 開始求生</button>
-        ${this.cloud?.available ? '<button type="button" id="btn-cloud" class="btn btn-primary wide">☁️ 用同步碼讀取雲端存檔</button>' : ''}
-        <button type="button" id="btn-import" class="btn btn-ghost wide">📥 匯入存檔</button>
       </form>
       <p class="copyright">${COPYRIGHT}・v${APP_VERSION}</p>
     </div>`;

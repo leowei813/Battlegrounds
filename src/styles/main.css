@@ -285,8 +285,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .logo { text-align: center; font-size: 46px; margin: 10px 0 0; letter-spacing: 8px; color: #e53935; text-shadow: 0 0 20px #b71c1c, 0 3px 0 #000; }
 .logo small { display: block; font-size: 12px; letter-spacing: 4px; color: var(--muted); text-shadow: none; }
 .lore { text-align: center; color: #c9c5b0; line-height: 1.8; }
-#setup-form label { display: block; margin: 10px 0; color: var(--muted); font-size: 13px; }
-#setup-form input { display: block; width: 100%; margin-top: 4px; padding: 10px 12px; font: inherit; font-size: 16px; color: var(--text); background: #0008; border: 1px solid var(--line); border-radius: 8px; }
+#setup-form label, #auth-form label { display: block; margin: 10px 0; color: var(--muted); font-size: 13px; }
+#setup-form input, #auth-form input { display: block; width: 100%; margin-top: 4px; padding: 10px 12px; font: inherit; font-size: 16px; color: var(--text); background: #0008; border: 1px solid var(--line); border-radius: 8px; }
 .class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
 .class-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px; text-align: left; border: 2px solid var(--line); border-radius: 10px; background: #0007; color: var(--text); font: inherit; cursor: pointer; }
 .class-opt span { font-size: 24px; }
@@ -294,7 +294,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .class-opt.active { border-color: var(--cc); background: #ffffff10; }
 .coord-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .status { min-height: 20px; color: var(--accent); font-size: 13px; }
-#setup-form .btn { margin-top: 8px; }
+#setup-form .btn, #auth-form .btn { margin-top: 8px; }
 
 /* ---------- Loading ---------- */
 #loading { position: fixed; inset: 0; z-index: 1300; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #0b0c08f0; }
@@ -456,3 +456,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .size-large .size-tag { color: #42a5f5; }
 .size-huge .size-tag { color: #ffa726; }
 .star-tag { left: -5px; top: -6px; font-size: 13px; }
+.auth-tabs { display: flex; gap: 8px; margin: 12px 0 6px; }
+.auth-tabs .chip { flex: 1; font-size: 14px; padding: 8px 10px; }
+.status.warn { color: #ef9a9a; }
+.account-name { font-size: 16px; }

@@ -7,7 +7,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SelfHostProvider } from '../src/cloud/providers/SelfHostProvider.js';
-import { generateCode, saveIdFromCode, tokenFromCode, normalizeCode, formatCode } from '../src/cloud/syncCode.js';
+import { credentials, validateCredentials, normalizeUsername } from '../src/cloud/account.js';
+
+const rand = () => `t${Math.random().toString(36).slice(2, 12)}`;
 
 const PORT = 18000 + Math.floor(Math.random() * 1000);
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jdqs-cloud-'));
@@ -35,10 +37,12 @@ async function run() {
   for (let i = 0; i < 50 && !(await api.health().catch(() => false)); i += 1) await new Promise((r) => setTimeout(r, 100));
   assert(await api.health(), '伺服器啟動');
 
-  const code = generateCode();
-  assert(normalizeCode(formatCode(code).toLowerCase()) === code, '同步碼格式化 / 正規化');
-  const id = saveIdFromCode(code);
-  const token = tokenFromCode(code);
+  // ---- 帳號 ----
+  assert(normalizeUsername('  Leo_01 ') === 'leo_01', '帳號正規化（小寫、去空白）');
+  assert(validateCredentials('ab', 'secret1') && validateCredentials('leo', '123') && !validateCredentials('leo_01', 'secret1'), '帳號密碼格式檢查');
+  const user = rand();
+  const { id, token } = credentials(user, 'secret1');
+  assert(credentials(user, 'secret1').token === token && credentials(user, 'secret2').token !== token, '同帳號密碼產生相同憑證，不同密碼不同');
   const save = { version: 1, player: { name: 'A' }, shelter: {} };
 
   const m1 = await api.push(id, token, { baseRev: 0, deviceId: 'devA', deviceName: 'A', data: save });
@@ -49,8 +53,9 @@ async function run() {
   assert(pulled.data.player.name === 'A2' && pulled.meta.deviceId === 'devA', '另一台裝置讀取最新存檔');
 
   await expectError(api.push(id, token, { baseRev: 1, deviceId: 'devB', deviceName: 'B', data: save }), 'conflict', '舊版本寫入被拒（樂觀鎖）');
-  await expectError(api.meta(id, tokenFromCode(generateCode())), 'forbidden', '錯誤同步碼被拒');
-  await expectError(api.meta(saveIdFromCode(generateCode()), token), 'notfound', '不存在的存檔');
+  await expectError(api.meta(id, credentials(user, 'wrong-pw').token), 'forbidden', '密碼錯誤被拒');
+  await expectError(api.meta(credentials(rand(), 'secret1').id, token), 'notfound', '不存在的帳號');
+  await expectError(api.push(id, credentials(user, 'wrong-pw').token, { baseRev: 0, deviceId: 'x', deviceName: 'x', data: save }), 'forbidden', '帳號已被使用時無法以其他密碼建立');
 
   // SSE 即時通知
   const events = [];
@@ -73,8 +78,8 @@ async function run() {
   await sse;
 
   // ---- 多人世界 ----
-  const pA = { id: saveIdFromCode(generateCode()), token: tokenFromCode(generateCode()) };
-  const pB = { id: saveIdFromCode(generateCode()), token: tokenFromCode(generateCode()) };
+  const pA = credentials(rand(), 'pw-aaaa');
+  const pB = credentials(rand(), 'pw-bbbb');
   const now = Date.now();
   await api.worldPut(pA.id, pA.token, {
     name: '玩家A<script>', civ: 120,

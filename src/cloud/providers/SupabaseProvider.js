@@ -27,7 +27,7 @@ export class SupabaseProvider {
     });
     if (status !== 200) throw new CloudError('server', `Supabase 錯誤（${status}）：${body?.message || ''}`);
     // 函式回傳 { status, meta, data }
-    if (body?.status === 'forbidden') throw new CloudError('forbidden', '同步碼不正確');
+    if (body?.status === 'forbidden') throw new CloudError('forbidden', '帳號或密碼錯誤');
     if (body?.status === 'notfound') throw new CloudError('notfound', '雲端找不到這份存檔');
     if (body?.status === 'conflict') throw new CloudError('conflict', '其他裝置已更新存檔', body.meta);
     return body;

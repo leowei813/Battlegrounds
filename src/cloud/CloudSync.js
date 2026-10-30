@@ -1,11 +1,9 @@
 import { bus, EVT } from '../core/EventBus.js';
 import { SaveManager } from '../core/SaveManager.js';
 import { CloudError } from './providers/CloudError.js';
-import {
-  generateCode, normalizeCode, saveIdFromCode, tokenFromCode, formatCode,
-} from './syncCode.js';
+import { credentials, normalizeUsername, validateCredentials } from './account.js';
 
-const CFG_KEY = 'jdqs_cloud_v1';
+const CFG_KEY = 'jdqs_cloud_v2';
 /** 無 SSE 時輪詢雲端版本的間隔 */
 const POLL_MS = 10000;
 /** 有 SSE 時的保險輪詢（防止連線靜默中斷） */
@@ -32,14 +30,14 @@ function loadCfg() {
 }
 
 /**
- * 雲端存檔同步。
+ * 帳號制雲端存檔（唯一的存檔位置，本機不保存遊戲進度）。
+ *
+ * 帳號登入後即讀取雲端進度；此裝置只記住登入憑證（雜湊後的 token，不含密碼）。
  *
  * 一致性模型：「單一作用中裝置 + 樂觀鎖」
  *  - 每次上傳帶 baseRev，雲端版本不同就回 409（不會互相覆蓋）。
- *  - 開啟遊戲時若雲端版本較新 → 直接讀雲端（換裝置即時接續）。
  *  - 遊戲執行中若偵測到其他裝置寫入較新版本 → 鎖定本機遊戲，
  *    讓玩家選擇「載入最新進度」或「在此裝置接管」。
- *  - 本機存檔（LocalStorage）仍是離線時的主要存檔；雲端是跨裝置的同步層。
  */
 export class CloudSync {
   /** @param {object|null} provider */
@@ -65,12 +63,13 @@ export class CloudSync {
     return !!this.provider;
   }
 
+  /** 已登入帳號 */
   get enabled() {
-    return !!(this.provider && this.cfg.code);
+    return !!(this.provider && this.cfg.auth);
   }
 
-  get displayCode() {
-    return this.cfg.code ? formatCode(this.cfg.code) : '';
+  get username() {
+    return this.cfg.auth?.username || '';
   }
 
   get deviceId() {
@@ -78,7 +77,7 @@ export class CloudSync {
   }
 
   creds() {
-    return { id: saveIdFromCode(this.cfg.code), token: tokenFromCode(this.cfg.code) };
+    return { id: this.cfg.auth.id, token: this.cfg.auth.token };
   }
 
   persist() {
@@ -105,77 +104,98 @@ export class CloudSync {
     else this.setStatus('error', err.message);
   }
 
-  // ---------------- 開機 / 連結 ----------------
+  // ---------------- 帳號 ----------------
+
+  check(username, password) {
+    if (!this.provider) throw new CloudError('server', '此版本未設定雲端伺服器，無法登入');
+    const u = normalizeUsername(username);
+    const msg = validateCredentials(u, password);
+    if (msg) throw new CloudError('invalid', msg);
+    return credentials(u, password);
+  }
 
   /**
-   * 開機時決定要用本機還是雲端存檔。
-   * @param {object|null} local 本機存檔
-   * @returns {Promise<{state:object|null, source:'local'|'cloud', meta?:object}>}
+   * 登入並讀取雲端進度。
+   * @returns {Promise<{state:object|null, meta?:object}>} state=null 代表帳號尚未建立角色
    */
-  async resolveBoot(local) {
-    if (!this.enabled) return { state: local, source: 'local' };
+  async login(username, password) {
+    const auth = this.check(username, password);
+    try {
+      await this.provider.meta(auth.id, auth.token);
+    } catch (err) {
+      if (err.kind === 'notfound') throw new CloudError('notfound', '帳號不存在，請先註冊');
+      if (err.kind === 'forbidden') throw new CloudError('forbidden', '密碼錯誤');
+      throw err;
+    }
+    this.cfg = { deviceId: this.cfg.deviceId, auth, rev: 0 };
+    this.persist();
+    return this.loadCurrent();
+  }
+
+  /** 註冊：確認帳號可用並記住憑證；第一次上傳存檔（create）時才真正建立 */
+  async register(username, password) {
+    const auth = this.check(username, password);
+    try {
+      await this.provider.meta(auth.id, auth.token);
+      throw new CloudError('taken', '這個帳號已經有人使用');
+    } catch (err) {
+      if (err.kind === 'forbidden') throw new CloudError('taken', '這個帳號已經有人使用');
+      if (err.kind !== 'notfound') throw err;
+    }
+    this.cfg = { deviceId: this.cfg.deviceId, auth, rev: 0, pendingCreate: true };
+    this.persist();
+  }
+
+  /**
+   * 讀取目前帳號的雲端進度。
+   * @returns {Promise<{state:object|null, meta?:object}>}
+   */
+  async loadCurrent() {
     const { id, token } = this.creds();
     this.setStatus('syncing');
     try {
-      const meta = await this.provider.meta(id, token);
-      if (!local || meta.rev > (this.cfg.rev || 0)) {
-        const remote = await this.provider.pull(id, token);
-        const state = SaveManager.migrate(remote.data);
-        SaveManager.save(state);
-        this.cfg.rev = remote.meta.rev;
-        this.cfg.lastSyncAt = Date.now();
-        this.persist();
-        this.setStatus('synced');
-        return { state, source: 'cloud', meta: remote.meta };
-      }
-      this.setStatus('idle');
-      return { state: local, source: 'local' };
-    } catch (err) {
-      if (err.kind === 'notfound') {
-        // 雲端資料遺失：以本機為準，下次上傳時重建
-        this.cfg.rev = 0;
-        this.persist();
-        this.setStatus('idle');
-      } else {
-        this.handleError(err);
-      }
-      return { state: local, source: 'local' };
-    }
-  }
-
-  /**
-   * 用同步碼連結既有雲端存檔，回傳雲端遊戲狀態（呼叫端負責寫入並重新載入）。
-   */
-  async link(input) {
-    if (!this.provider) throw new CloudError('server', '未設定雲端伺服器');
-    const code = normalizeCode(input);
-    if (!code) throw new CloudError('forbidden', '同步碼格式錯誤（應為 24 個英數字）');
-    const remote = await this.provider.pull(saveIdFromCode(code), tokenFromCode(code));
-    const state = SaveManager.migrate(remote.data);
-    if (!state?.player || !Array.isArray(state?.bases)) throw new CloudError('server', '雲端存檔格式錯誤');
-    this.cfg = { ...this.cfg, code, rev: remote.meta.rev, lastSyncAt: Date.now() };
-    this.persist();
-    return { state, meta: remote.meta };
-  }
-
-  /** 為目前遊戲建立新的雲端存檔並產生同步碼 */
-  async enable(game) {
-    if (!this.provider) throw new CloudError('server', '未設定雲端伺服器');
-    const prev = { ...this.cfg };
-    this.game = game;
-    this.cfg = { ...this.cfg, code: generateCode(), rev: 0 };
-    try {
-      await this.pushNow({ throwOnError: true });
-    } catch (err) {
-      this.cfg = prev;
+      const remote = await this.provider.pull(id, token);
+      const state = SaveManager.migrate(remote.data);
+      this.cfg.rev = remote.meta.rev;
+      this.cfg.lastSyncAt = Date.now();
+      delete this.cfg.pendingCreate;
       this.persist();
+      this.setStatus('synced');
+      // 重置進度後的空存檔：需要重新建立角色
+      if (!state?.player) return { state: null, meta: remote.meta };
+      return { state, meta: remote.meta };
+    } catch (err) {
+      if (err.kind === 'notfound' && this.cfg.pendingCreate) {
+        this.setStatus('idle');
+        return { state: null };
+      }
+      if (err.kind === 'notfound' || err.kind === 'forbidden') this.logout();
+      this.handleError(err);
       throw err;
     }
-    this.attach(game);
-    return this.displayCode;
   }
 
-  disable() {
+  /** 把新建立的遊戲寫入雲端（註冊後第一次、或重置後重新開始） */
+  async create(game) {
+    this.game = game;
+    await this.pushNow({ force: !this.cfg.pendingCreate, throwOnError: true });
+    delete this.cfg.pendingCreate;
+    this.persist();
+  }
+
+  /** 清空雲端進度（保留帳號），下次登入會重新建立角色 */
+  async resetProgress() {
+    const { id, token } = this.creds();
+    this.detach();
+    this.locked = true;
+    const meta = await this.provider.push(id, token, {
+      baseRev: this.cfg.rev || 0, deviceId: this.deviceId, deviceName: deviceName(), data: { reset: Date.now() }, force: true,
+    });
+    this.cfg.rev = meta.rev;
+    this.persist();
+  }
+
+  logout() {
     this.detach();
     this.cfg = { deviceId: this.cfg.deviceId };
     this.persist();

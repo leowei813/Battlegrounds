@@ -26,69 +26,41 @@ function unpackPois({ types, rows }) {
 }
 
 /**
- * 存檔管理：LocalStorage 讀寫、版本遷移、匯出/匯入。
- * 所有存取都包 try/catch，避免無痕模式或空間不足造成遊戲崩潰。
+ * 存檔格式：精簡打包、版本遷移。
+ * 遊戲進度只存在雲端帳號；本機 LocalStorage 只用來讀取舊版（v2.1 以前）留下的存檔，
+ * 讓玩家註冊帳號時可以把它轉移上去。
  */
 export class SaveManager {
-  static hasSave() {
-    try {
-      return !!localStorage.getItem(SAVE_KEY);
-    } catch {
-      return false;
-    }
-  }
-
-  /** @returns {object|null} */
-  static load() {
+  /** 舊版本機存檔（沒有則回傳 null） */
+  static legacyLoad() {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return null;
-      return SaveManager.migrate(JSON.parse(raw));
+      const data = SaveManager.migrate(JSON.parse(raw));
+      return data?.player ? data : null;
     } catch (err) {
-      console.error('[SaveManager] load failed', err);
+      console.error('[SaveManager] legacy load failed', err);
       return null;
     }
   }
 
-  static save(state) {
-    try {
-      state.lastSaveAt = Date.now();
-      localStorage.setItem(SAVE_KEY, JSON.stringify(SaveManager.pack(state)));
-      return true;
-    } catch (err) {
-      console.error('[SaveManager] save failed', err);
-      return false;
-    }
-  }
-
-  /**
-   * 轉為儲存/上傳用的精簡格式（不修改傳入的狀態）。
-   * LocalStorage、匯出字串與雲端存檔都使用此格式；讀取時由 migrate() 還原。
-   */
-  static pack(state) {
-    const { pois, ...map } = state.map;
-    return { ...state, map: { ...map, poiPack: packPois(pois) } };
-  }
-
-  static wipe() {
+  /** 舊版本機存檔已轉移到帳號後刪除 */
+  static clearLegacy() {
     try {
       localStorage.removeItem(SAVE_KEY);
+      localStorage.removeItem('jdqs_cloud_v1');
     } catch {
       /* ignore */
     }
   }
 
-  /** 匯出為 Base64 字串，供玩家跨裝置備份 */
-  static exportString(state) {
-    const json = JSON.stringify(SaveManager.pack(state));
-    return btoa(unescape(encodeURIComponent(json)));
-  }
-
-  static importString(str) {
-    const json = decodeURIComponent(escape(atob(str.trim())));
-    const data = SaveManager.migrate(JSON.parse(json));
-    if (!data?.player || !Array.isArray(data?.bases)) throw new Error('存檔格式錯誤');
-    return data;
+  /**
+   * 轉為儲存/上傳用的精簡格式（不修改傳入的狀態）。
+   * 雲端存檔使用此格式；讀取時由 migrate() 還原。
+   */
+  static pack(state) {
+    const { pois, ...map } = state.map;
+    return { ...state, map: { ...map, poiPack: packPois(pois) } };
   }
 
   /**

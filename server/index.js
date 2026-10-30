@@ -9,7 +9,7 @@
  *   STATIC_DIR   一併提供的前端靜態檔（預設 dist，存在才啟用）
  *   CORS_ORIGIN  允許的前端來源，逗號分隔（預設 *）
  *
- * API（Authorization: Bearer <token>，token = sha256("jdqs-secret:" + 同步碼)）
+ * API（Authorization: Bearer <token>，token = 由帳號密碼反覆雜湊而來，見 src/cloud/account.js）
  *   GET  /api/health
  *   GET  /api/saves/:id/meta      → { rev, updatedAt, deviceId, deviceName }
  *   GET  /api/saves/:id           → { meta, data }

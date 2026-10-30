@@ -6,7 +6,7 @@
 
 🎮 **線上試玩：<https://leowei813.github.io/Battlegrounds/>**（需輸入通行碼）
 
-目前版本：**v2.1.0**（各版本改動見 [CHANGELOG.md](CHANGELOG.md)）
+目前版本：**v3.0.0**（各版本改動見 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 快速開始
 
@@ -18,7 +18,7 @@ npm install
 npm run dev
 ```
 
-開啟 <http://localhost:5173>，輸入名字、選擇職業與位置即可開始。
+另開一個終端機執行 `npm run server` 啟動帳號／存檔伺服器，再開啟 <http://localhost:5173>，註冊帳號、建立角色即可開始。
 
 ## 文件
 | 階段 | 文件 |
@@ -29,7 +29,7 @@ npm run dev
 | 四、專案資料夾結構 | [docs/04-PROJECT-STRUCTURE.md](docs/04-PROJECT-STRUCTURE.md) |
 | 五、程式碼 | [`src/`](src) |
 | 六、安裝與部署 | [docs/05-DEPLOYMENT.md](docs/05-DEPLOYMENT.md) |
-| 雲端存檔 | [docs/06-CLOUD-SAVE.md](docs/06-CLOUD-SAVE.md) |
+| 帳號與雲端存檔 | [docs/06-CLOUD-SAVE.md](docs/06-CLOUD-SAVE.md) |
 | 更新日誌 | [CHANGELOG.md](CHANGELOG.md) |
 
 ## 功能一覽
@@ -46,8 +46,7 @@ npm run dev
 - 🌗 **日夜系統**：現實 30 分鐘 = 遊戲 1 天（白天／黃昏／夜晚／午夜）
 - 🔬 **研究**：5 分支 20 項，解鎖新建築、新裝備、新功能
 - 📜 **任務**：15 章主線、每日任務、17 項成就
-- 💾 **存檔**：LocalStorage 自動存檔、版本遷移、匯出／匯入
-- ☁️ **雲端存檔**：同步碼跨裝置接續，開啟即讀取最新進度，多裝置即時鎖定防覆蓋（內建伺服器或 Supabase）
+- 👤 **帳號與雲端存檔**：註冊帳號後進度只存在雲端，任何裝置登入即讀取最新進度，多裝置即時鎖定防覆蓋（內建伺服器或 Supabase）
 - 🌐 **多人互動**：所有玩家的據點與探索隊都會顯示在附近玩家的地圖上（需雲端後端）
 
 ## 指令

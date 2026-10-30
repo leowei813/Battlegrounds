@@ -210,7 +210,7 @@ export class UIManager {
     if (!c?.enabled) return '';
     const map = {
       idle: ['☁️', '雲端存檔已連線'], syncing: ['🔄', '同步中…'], synced: ['☁️✓', '已同步'],
-      offline: ['☁️✕', '離線：進度暫存本機，恢復連線後自動上傳'], error: ['☁️!', c.error], locked: ['🔒', '存檔已在其他裝置繼續'],
+      offline: ['☁️✕', '離線：恢復連線後自動上傳（請勿關閉頁面）'], error: ['☁️!', c.error], locked: ['🔒', '存檔已在其他裝置繼續'],
     };
     const [icon, tip] = map[c.status] || map.idle;
     return `<button class="cloud-badge st-${c.status}" data-action="openCloud" title="${escapeHtml(tip)}">${icon}</button>`;
