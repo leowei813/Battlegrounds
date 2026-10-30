@@ -5,6 +5,7 @@ import { zoneAt } from '../config/zones.js';
 import { stockOf, dayKey } from './LootStock.js';
 import { tripProgress } from './ExplorationSystem.js';
 import {
+  withSeed,
   uid, pick, randFloat, randInt, haversine, chance,
 } from '../utils/math.js';
 
@@ -62,16 +63,47 @@ export class NpcSystem {
     return this.game.shelter.primary() || this.game.state.map.center;
   }
 
-  spawn(now = Date.now()) {
+  /** 建築所在的 1 公里格子 */
+  cellOf(lat, lon) {
+    const dLat = NPC_CONFIG.cellKm / 111.32;
+    const dLon = dLat / Math.cos((this.origin().lat * Math.PI) / 180);
+    return `${Math.floor(lat / dLat)}:${Math.floor(lon / dLon)}`;
+  }
+
+  /**
+   * 每個有建築的 1 公里格子維持 3 個 NPC 據點（被摧毀的格子要等重生時間）。
+   * @returns {number} 本次新增的數量
+   */
+  fillCells(now = Date.now(), { silent = false } = {}) {
+    const st = this.state;
+    st.cellNext = st.cellNext || {};
     const o = this.origin();
     const used = new Set(this.list.map((n) => n.poiId));
-    const candidates = this.game.state.map.pois.filter((p) => {
-      if (used.has(p.id) || this.game.shelter.baseAtPoi(p.id)) return false;
-      const d = haversine(o.lat, o.lon, p.lat, p.lon);
-      return d >= NPC_CONFIG.spawnMinM && d <= NPC_CONFIG.spawnMaxM && POI_TYPES[p.type].danger >= 2;
+    const cells = new Map();
+    this.game.state.map.pois.forEach((p) => {
+      if (used.has(p.id) || this.game.shelter.baseAtPoi(p.id) || POI_TYPES[p.type].danger < 2) return;
+      if (haversine(o.lat, o.lon, p.lat, p.lon) < NPC_CONFIG.minFromShelterM) return;
+      const key = this.cellOf(p.lat, p.lon);
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key).push(p);
     });
-    const poi = pick(candidates);
-    if (!poi) return null;
+    let added = 0;
+    cells.forEach((pois, key) => {
+      if ((st.cellNext[key] || 0) > now) return;
+      let need = NPC_CONFIG.perCell - this.list.filter((n) => n.cell === key).length;
+      const pool = [...pois];
+      while (need > 0 && pool.length) {
+        const poi = pool.splice(Math.floor(randFloat(0, pool.length)), 1)[0];
+        this.spawnAt(poi, key, now, silent);
+        need -= 1;
+        added += 1;
+      }
+    });
+    if (added) this.game.bus.emit('npcs:changed');
+    return added;
+  }
+
+  spawnAt(poi, cell, now = Date.now(), silent = false) {
     const leader = this.game.survivors.leader();
     const zone = zoneAt(poi.lat, poi.lon);
     const level = Math.max(1, (leader?.level || 1) - 2 + randInt(0, 3) + Math.max(0, zone.danger));
@@ -79,34 +111,43 @@ export class NpcSystem {
       id: uid('npc'),
       name: pick(NPC_NAMES.filter((x) => !this.list.some((m) => m.name === x))) || pick(NPC_NAMES),
       poiId: poi.id,
+      cell,
       lat: poi.lat,
       lon: poi.lon,
       level,
       resources: { food: randInt(60, 160), wood: randInt(60, 200), metal: randInt(40, 150), fuel: randInt(10, 60) },
       coins: randInt(40, 120) * level,
       nextLevelAt: now + rand(NPC_CONFIG.levelUpMs),
-      nextExploreAt: now + rand(NPC_CONFIG.exploreEveryMs) * 0.5,
+      nextExploreAt: now + rand(NPC_CONFIG.exploreEveryMs) * randFloat(0.3, 1),
       nextRaidAt: now + this.raidDelay(),
       trip: null,
     };
     this.list.push(n);
-    this.game.log(`🏴‍☠️ NPC 勢力「${n.name}」在「${poi.name}」建立據點（Lv${n.level}）`, 'danger');
-    this.game.bus.emit('npcs:changed');
+    if (!silent) this.game.log(`🏴‍☠️ NPC 勢力「${n.name}」在「${poi.name}」建立據點（Lv${n.level}）`, 'danger');
     return n;
   }
 
   /** 下一次掠奪的間隔：積極度越高越頻繁 */
   raidDelay() {
-    return (NPC_CONFIG.raidBaseMs / (0.3 + this.aggression())) * randFloat(0.7, 1.3);
+    const crowd = Math.max(1, this.list.length / 3);
+    return (NPC_CONFIG.raidBaseMs * crowd / (0.3 + this.aggression())) * randFloat(0.7, 1.3);
   }
 
   // ---------- 更新 ----------
 
+  /** NPC 行動（使用存檔種子） */
   update(now = Date.now()) {
+    return withSeed(this.game.state.rng, 'npc', () => this.updateNow(now));
+  }
+
+  updateNow(now = Date.now()) {
     if (!this.game.state.map.pois.length || !this.game.shelter.hasShelter()) return;
     const st = this.state;
-    if (this.list.length < NPC_CONFIG.count && now >= (st.nextSpawnAt || 0)) {
-      this.spawn(now);
+    if (now >= (st.nextSpawnAt || 0)) {
+      // 第一次（或重新掃描後）一次補齊，不逐一記錄
+      const first = !this.list.length;
+      const added = this.fillCells(now, { silent: first });
+      if (first && added) this.game.log(`🏴‍☠️ 附近出現 ${added} 個 NPC 勢力據點（每平方公里約 ${NPC_CONFIG.perCell} 個）`, 'danger');
       st.nextSpawnAt = now + 60000;
     }
     this.list.forEach((n) => {
@@ -300,7 +341,8 @@ export class NpcSystem {
 
   destroy(n, now = Date.now()) {
     this.state.list = this.list.filter((x) => x.id !== n.id);
-    this.state.nextSpawnAt = now + rand(NPC_CONFIG.respawnMs);
+    this.state.cellNext = this.state.cellNext || {};
+    this.state.cellNext[n.cell || this.cellOf(n.lat, n.lon)] = now + rand(NPC_CONFIG.respawnMs);
     this.game.bus.emit('npcs:changed');
   }
 

@@ -8,7 +8,7 @@ import { VEHICLES } from '../config/vehicles.js';
 /** 載具選擇：座位、速度、運載量、耗油 */
 function vehicleHtml(game, cars, members, distanceM) {
   const vs = game.vehicles;
-  if (!game.state.vehicles.length) return `<p class="muted">🚗 沒有載具（可在背包 → 車庫製作，或探索時找到）・隊伍運載量 ${vs.tripStats(members, []).cargo}（背包可增加）</p>`;
+  if (!game.state.vehicles.length) return `<p class="muted">🚗 沒有載具（可在「製作」頁製作，或探索時找到）・隊伍運載量 ${vs.tripStats(members, []).cargo}（背包可增加）</p>`;
   const rows = game.state.vehicles.map((v) => {
     const def = VEHICLES[v.type];
     const ok = vs.isAvailable(v);
@@ -59,7 +59,7 @@ export function openTeamPicker(ui, opts) {
     const power = ids.reduce((sum, id) => sum + game.survivors.stats(game.survivors.get(id)).power, 0);
     const vehicles = opts.vehicles ? vehicleHtml(game, cars, ids.map((id) => game.survivors.get(id)), opts.distanceM || 0) : '';
     const durs = opts.withDuration
-      ? `<div class="label">探索時長</div><div class="chips">${EXPLORE_DURATIONS.map((d) => `<button class="chip ${d === duration ? 'active' : ''}" data-action="dur" data-d="${d}">${d} 分鐘</button>`).join('')}</div>
+      ? `${opts.fixedDuration ? '' : `<div class="label">探索時長</div><div class="chips">${EXPLORE_DURATIONS.map((d) => `<button class="chip ${d === duration ? 'active' : ''}" data-action="dur" data-d="${d}">${d} 分鐘</button>`).join('')}</div>`}
          ${opts.estimate && ids.length ? `<p class="muted">預估實際時間（含往返路程與日夜修正）：<b>${formatDuration(opts.estimate(ids, duration, vids))}</b></p>` : ''}
          <label class="toggle ${autoUnlocked ? '' : 'disabled'}"><input type="checkbox" data-role="auto" ${auto ? 'checked' : ''} ${autoUnlocked ? '' : 'disabled'}> 🔁 自動探索（完成後自動再出發）${autoUnlocked ? '' : '<small>（需研究「斥候訓練」）</small>'}</label>`
       : '';

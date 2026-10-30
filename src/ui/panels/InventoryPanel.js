@@ -9,23 +9,52 @@ import {
 import { VEHICLES } from '../../config/vehicles.js';
 
 /**
- * 背包分頁：裝備篩選/排序、裝備給隊員、出售、拆解、上鎖，以及工作台製作。
+ * 製作分頁（裝備與載具製作）；倉庫裝備清單與車庫由避難所頁以彈窗開啟。
  */
 export class InventoryPanel {
   constructor(ui) {
     this.ui = ui;
     this.game = ui.game;
-    this.view = 'items';
+    this.view = 'craft';
     this.filter = 'all';
     this.rarityFilter = 'all';
     this.sort = 'power';
     this.craftCat = 'melee';
   }
 
+  /** 製作分頁：只有裝備製作與載具製作 */
   render() {
-    const tabs = `<div class="seg">${btn('🎒 裝備', 'view', { v: 'items' }, { cls: this.view === 'items' ? 'active' : '' })}${btn('🛠️ 製作', 'view', { v: 'craft' }, { cls: this.view === 'craft' ? 'active' : '' })}${btn(`🚗 車庫 ${this.game.state.vehicles.length}/${this.game.vehicles.garageSize()}`, 'view', { v: 'garage' }, { cls: this.view === 'garage' ? 'active' : '' })}</div>`;
-    const body = { items: () => this.renderItems(), craft: () => this.renderCraft(), garage: () => this.renderGarage() }[this.view]();
-    return `<div class="panel-inner"><h2>🎒 背包 <small>${this.game.state.inventory.items.length} 件</small></h2>${tabs}${body}</div>`;
+    const view = this.view === 'vehicles' ? 'vehicles' : 'craft';
+    const tabs = `<div class="seg">${btn('🛠️ 裝備製作', 'view', { v: 'craft' }, { cls: view === 'craft' ? 'active' : '' })}${btn('🚗 載具製作', 'view', { v: 'vehicles' }, { cls: view === 'vehicles' ? 'active' : '' })}</div>`;
+    return `<div class="panel-inner"><h2>🛠️ 製作</h2>${tabs}${view === 'craft' ? this.renderCraft() : this.renderVehicleCraft()}</div>`;
+  }
+
+  /** 倉庫裝備（從避難所頁開啟） */
+  openStorage() {
+    this.ui.modal.open({
+      title: `📦 倉庫裝備（${this.game.state.inventory.items.length} 件）`,
+      wide: true,
+      body: this.renderItems(),
+      live: () => this.renderItems(),
+      onAction: (action, data, m) => {
+        this.onAction(action, data);
+        if (this.ui.modal.current === m) m.update(this.renderItems());
+      },
+    });
+  }
+
+  /** 車庫（從避難所頁開啟） */
+  openGarage() {
+    this.ui.modal.open({
+      title: `🚗 車庫 ${this.game.state.vehicles.length}/${this.game.vehicles.garageSize()}`,
+      wide: true,
+      body: this.renderGarage(),
+      live: () => this.renderGarage(),
+      onAction: (action, data, m) => {
+        this.onAction(action, data);
+        if (this.ui.modal.current === m) m.update(this.renderGarage());
+      },
+    });
   }
 
   /** 車庫：載具耐久、維修、拆解，以及工作台製作滑板車／腳踏車 */
@@ -45,15 +74,21 @@ export class InventoryPanel {
           <span>${btn('🔧 維修', 'repair', { id: v.id }, { cls: 'btn-xs btn-primary', disabled: !Object.keys(cost).length || v.status !== 'idle' })}${btn('拆解', 'scrap', { id: v.id }, { cls: 'btn-xs btn-ghost', disabled: v.status !== 'idle' })}</span></div>
       </div>`;
     }).join('');
+    return `
+      <p class="muted">探索時可帶載具：所有隊員都有座位時全隊以載具速度移動；運載量讓隊伍帶回更多物資（每人徒步 ${g.vehicles.personCarry()}，背包可再增加）。每台至少一人駕駛，除滑板車與腳踏車外都會耗油，行駛與遇襲會磨損耐久。更多載具可在探索加油站、倉庫、工廠等地點時找到，或到「製作」頁製作。</p>
+      <div class="grid">${cards || '<p class="muted">車庫是空的。</p>'}</div>`;
+  }
+
+  /** 載具製作 */
+  renderVehicleCraft() {
+    const g = this.game;
+    const vs = g.vehicles;
     const crafts = Object.entries(VEHICLES).filter(([, d]) => d.craft).map(([type, d]) => {
       const check = vs.canCraft(type);
       return `<div class="card row-between"><div><b>${d.icon} ${d.name}</b><small class="muted block">工作台 Lv${d.craft.workbench}・🪑${d.seats}・速度 ×${d.speed}・運載 ${d.cargo}</small><div class="costs">${costHtml(g.state, d.craft.cost)}</div></div>
         ${btn('製作', 'craftVehicle', { type }, { cls: 'btn-sm btn-primary', disabled: !check.ok, title: check.reason || '' })}</div>`;
     }).join('');
-    return `
-      <p class="muted">探索時可帶載具：所有隊員都有座位時全隊以載具速度移動；運載量讓隊伍帶回更多物資（每人徒步 ${g.vehicles.personCarry()}，背包可再增加）。每台至少一人駕駛，除滑板車與腳踏車外都會耗油，行駛與遇襲會磨損耐久。更多載具可在探索加油站、倉庫、工廠等地點時找到。</p>
-      <div class="grid">${cards || '<p class="muted">車庫是空的。</p>'}</div>
-      <h3>🛠️ 製作載具</h3>
+    return `<p class="muted">車庫 ${g.state.vehicles.length}/${vs.garageSize()}（到避難所頁「🚗 車庫」管理、維修載具）。其他載具只能在探索時找到。</p>
       <div class="grid">${crafts}</div>`;
   }
 

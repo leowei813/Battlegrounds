@@ -1,5 +1,5 @@
 import { SAVE_KEY, SAVE_VERSION } from '../config/constants.js';
-import { STAT_KEYS } from './GameState.js';
+import { STAT_KEYS, newSeeds } from './GameState.js';
 import { POI_KEYS } from '../config/poiTypes.js';
 import { SLOT_KEYS, ITEM_MODELS } from '../config/equipment.js';
 import { RESEARCH, LEGACY_RESEARCH } from '../config/research.js';
@@ -62,6 +62,33 @@ export class SaveManager {
   static pack(state) {
     const { pois, ...map } = state.map;
     return { ...state, map: { ...map, poiPack: packPois(pois) } };
+  }
+
+  /**
+   * 雲端主存檔：不含地圖建築（上千棟、很少變動），只記錄今天被搜刮的建築。
+   * 建築清單另存一份（packMap），只有重新掃描時才上傳，讓每次事件的即時存檔保持輕量。
+   */
+  static packMain(state) {
+    const { pois, ...map } = state.map;
+    const looted = {};
+    pois.forEach((p) => { if (p.lootedDay) looted[p.id] = p.lootedDay; });
+    return { ...state, map: { ...map, poisExternal: true, looted } };
+  }
+
+  /** 地圖建築清單（不含搜刮紀錄） */
+  static packMap(state) {
+    const pois = state.map.pois.map(({ lootedDay, ...p }) => p);
+    return { fetchedAt: state.map.fetchedAt, poiPack: packPois(pois) };
+  }
+
+  /** 把另存的建築清單合併回主存檔，並套回搜刮紀錄 */
+  static mergeMap(state, mapData) {
+    const looted = state.map.looted || {};
+    state.map.pois = mapData?.poiPack ? unpackPois(mapData.poiPack) : [];
+    state.map.pois.forEach((p) => { if (looted[p.id]) p.lootedDay = looted[p.id]; });
+    delete state.map.looted;
+    delete state.map.poisExternal;
+    return state;
   }
 
   /**
@@ -143,6 +170,8 @@ export class SaveManager {
         || Object.keys(ITEM_MODELS)[0];
     });
     data.recruitBoard = data.recruitBoard || { list: [], refreshAt: 0 };
+    // v8：隨機結果種子
+    data.rng = { ...newSeeds(), ...(data.rng || {}) };
     data.npcs = data.npcs || { list: [], nextSpawnAt: 0 };
     // v3 -> v4：品級改為 6 階（舊的灰色「普通」→「劣質」），裝備欄新增手套、鞋子、飾品
     if (v < 4) {
@@ -158,6 +187,7 @@ export class SaveManager {
         delete sv.injuredUntil;
       }
       sv.equipment = sv.equipment || {};
+      sv.bag = sv.bag || {};
       SLOT_KEYS.forEach((k) => { if (!(k in sv.equipment)) sv.equipment[k] = null; });
     });
     // v3：地圖建築改以精簡格式儲存，載入時還原為物件

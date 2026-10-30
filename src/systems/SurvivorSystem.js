@@ -1,11 +1,12 @@
 import {
   CLASSES, CLASS_KEYS, JOBS, SURVIVOR_NAMES, MAX_SURVIVOR_LEVEL, xpToNext, recruitCost,
-  SURVIVOR_RARITY, survivorRarityTable, RECRUIT_BOARD_SIZE, RECRUIT_BOARD_MS, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
+  SURVIVOR_RARITY, survivorRarityTable, hireFee, RECRUIT_BOARD_SIZE, RECRUIT_BOARD_MS, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
 } from '../config/survivors.js';
 import { DAY_REAL_MS } from '../config/constants.js';
 import { SLOT_KEYS, RARITIES } from '../config/equipment.js';
 import { createSurvivor } from '../core/GameState.js';
 import {
+  withSeed,
   clamp, pick, randInt, weightedPick,
 } from '../utils/math.js';
 import { canAfford, payCost, scaleCost } from './costUtils.js';
@@ -250,6 +251,8 @@ export class SurvivorSystem {
     const sv = this.get(id);
     if (!sv) return;
     SLOT_KEYS.forEach((slot) => { sv.equipment[slot] = null; });
+    // 攜帶的物資留在倉庫
+    Object.entries(sv.bag || {}).forEach(([k, v]) => { this.game.state.resources[k] += v; });
     this.game.state.bases.forEach((b) => b.defenses.forEach((d) => {
       if (d.garrisonId === id) d.garrisonId = null;
     }));
@@ -339,12 +342,22 @@ export class SurvivorSystem {
 
   // ---------- 每小時固定出現的倖存者 ----------
 
+  /** 招募任何倖存者都要支付的雇用費（研究「招募宣傳」可降低） */
+  hireCost(sv) {
+    return { coins: Math.max(1, Math.round(hireFee(sv) * Math.max(0.3, 1 - this.game.research.bonus('recruitCostReduce')))) };
+  }
+
   boardSize() {
     return RECRUIT_BOARD_SIZE + Math.floor(this.game.research.bonus('boardSlots'));
   }
 
   /** 到整點更新名單 */
+  /** 附近的倖存者（使用存檔種子） */
   updateBoard(now = Date.now()) {
+    return withSeed(this.game.state.rng, 'recruit', () => this.updateBoardNow(now));
+  }
+
+  updateBoardNow(now = Date.now()) {
     const st = this.game.state;
     const board = st.recruitBoard;
     if (now < (board.refreshAt || 0) && board.list.length) return;
@@ -358,7 +371,7 @@ export class SurvivorSystem {
     const sv = board.list.find((c) => c.id === id);
     if (!sv) return { ok: false, reason: '對方已離開' };
     if (this.isFull()) return { ok: false, reason: `人數已達上限（${this.housing()} 人）` };
-    if (!payCost(this.game.state, this.currentRecruitCost())) return { ok: false, reason: '資源不足' };
+    if (!payCost(this.game.state, this.hireCost(sv))) return { ok: false, reason: '金錢不足' };
     board.list = board.list.filter((c) => c.id !== id);
     this.addSurvivor(sv);
     return { ok: true, msg: `${sv.name}（${RARITIES[sv.rarity].name}・${CLASSES[sv.classId].name}）加入了避難所` };
@@ -372,7 +385,12 @@ export class SurvivorSystem {
    * 廣播招募：支付費用後出現 3 位候選人，可選擇其中一位或放棄（放棄不退費）。
    * @returns {{ok:boolean, offer?:object[], reason?:string}}
    */
+  /** 廣播招募（使用存檔種子） */
   recruitRoll() {
+    return withSeed(this.game.state.rng, 'recruit', () => this.recruitRollNow());
+  }
+
+  recruitRollNow() {
     if (this.game.state.recruitOffer?.length) return { ok: true, offer: this.game.state.recruitOffer };
     if (this.isFull()) return { ok: false, reason: `人數已達上限（${this.housing()} 人），提升領袖等級或據點等級可增加上限` };
     if (!canAfford(this.game.state, this.currentRecruitCost())) return { ok: false, reason: '資源不足' };
@@ -386,6 +404,7 @@ export class SurvivorSystem {
     const sv = offer.find((c) => c.id === id);
     if (!sv) return { ok: false, reason: '候選人已離開' };
     if (this.isFull()) return { ok: false, reason: '人數已達上限' };
+    if (!payCost(this.game.state, this.hireCost(sv))) return { ok: false, reason: '金錢不足，無法支付雇用費' };
     this.game.state.recruitOffer = null;
     this.addSurvivor(sv);
     return { ok: true, msg: `${sv.name}（${RARITIES[sv.rarity].name}・${CLASSES[sv.classId].name}）加入了避難所` };
@@ -417,6 +436,92 @@ export class SurvivorSystem {
   rejectCandidate(id) {
     this.game.state.recruitPool = this.game.state.recruitPool.filter((c) => c.id !== id);
     return { ok: true };
+  }
+
+  // ---------------- 個人背包（攜帶的資源） ----------------
+
+  /** 背包內容（資源） */
+  bagOf(sv) {
+    if (!sv.bag) sv.bag = {};
+    return sv.bag;
+  }
+
+  /** 目前負重（攜帶資源總量） */
+  bagLoad(sv) {
+    return Object.values(this.bagOf(sv)).reduce((s, v) => s + v, 0);
+  }
+
+  /** 負重上限：徒步運載量 + 背包容量 */
+  bagCap(sv) {
+    return this.game.vehicles.memberCarry(sv);
+  }
+
+  /** 在避難所裡才能存取倉庫 */
+  atShelter(sv) {
+    return !!sv && sv.status === 'idle' && this.game.shelter.hasShelter();
+  }
+
+  /** 所有隊員攜帶的某種資源總量 */
+  carried(key) {
+    return this.list.reduce((s, sv) => s + (sv.bag?.[key] || 0), 0);
+  }
+
+  /** 從背包存入倉庫（受倉庫上限限制） */
+  deposit(id, key, amount) {
+    const sv = this.get(id);
+    if (!this.atShelter(sv)) return { ok: false, reason: '不在避難所，無法存取倉庫' };
+    const bag = this.bagOf(sv);
+    const res = this.game.state.resources;
+    const room = Math.max(0, this.game.resources.storageCap() - res[key]);
+    const n = Math.floor(Math.min(amount, bag[key] || 0, room));
+    if (n <= 0) return { ok: false, reason: room <= 0 ? '倉庫已滿' : '背包裡沒有這項物資' };
+    bag[key] -= n;
+    if (bag[key] <= 0) delete bag[key];
+    res[key] += n;
+    return { ok: true, n };
+  }
+
+  /** 從倉庫取出放進背包（受負重上限限制） */
+  withdraw(id, key, amount) {
+    const sv = this.get(id);
+    if (!this.atShelter(sv)) return { ok: false, reason: '不在避難所，無法存取倉庫' };
+    const bag = this.bagOf(sv);
+    const res = this.game.state.resources;
+    const room = Math.max(0, this.bagCap(sv) - this.bagLoad(sv));
+    const n = Math.floor(Math.min(amount, res[key], room));
+    if (n <= 0) return { ok: false, reason: room <= 0 ? '背包已滿' : '倉庫沒有這項物資' };
+    res[key] -= n;
+    bag[key] = (bag[key] || 0) + n;
+    return { ok: true, n };
+  }
+
+  /** 全部存入倉庫 */
+  depositAll(id) {
+    const sv = this.get(id);
+    if (!this.atShelter(sv)) return { ok: false, reason: '不在避難所，無法存取倉庫' };
+    let total = 0;
+    Object.keys(this.bagOf(sv)).forEach((k) => { total += this.deposit(id, k, Infinity).n || 0; });
+    return total ? { ok: true, msg: `存入 ${total} 單位物資` } : { ok: false, reason: '沒有可存入的物資（或倉庫已滿）' };
+  }
+
+  /**
+   * 探索帶回的物資：倉庫放不下的部分由隊員裝進自己的背包，背包也滿了才會遺棄。
+   * @returns {number} 遺棄的數量
+   */
+  stash(members, leftovers) {
+    let lost = 0;
+    Object.entries(leftovers).forEach(([k, v]) => {
+      let rest = Math.floor(v);
+      members.forEach((sv) => {
+        if (rest <= 0) return;
+        const n = Math.min(rest, Math.max(0, this.bagCap(sv) - this.bagLoad(sv)));
+        if (n <= 0) return;
+        this.bagOf(sv)[k] = (this.bagOf(sv)[k] || 0) + n;
+        rest -= n;
+      });
+      lost += rest;
+    });
+    return lost;
   }
 
   /** 驅逐隊員（裝備留在背包） */

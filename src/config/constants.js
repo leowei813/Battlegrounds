@@ -2,7 +2,7 @@
 
 export const GAME_TITLE = '絕地求生';
 export const SAVE_KEY = 'jdqs_save_v1';
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 export const TICK_MS = 1000;
 export const AUTOSAVE_MS = 30 * 1000;
@@ -17,6 +17,8 @@ export const OFFLINE_CAP_MS = 24 * 60 * 60 * 1000;
 
 /** OSM 掃描半徑（公尺） */
 export const POI_SCAN_RADIUS = 1200;
+/** 前哨站周圍的掃描半徑（公尺，比避難所小） */
+export const OUTPOST_SCAN_RADIUS = 500;
 /** 每類建築在地圖上的數量上限（優先保留有名字的建築，並平均分散） */
 export const POI_MAX_PER_TYPE = {
   residential: 6000, shop: 1500, school: 300, factory: 600, warehouse: 400,

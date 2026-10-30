@@ -46,6 +46,7 @@ export class ShelterPanel {
 
   waveText(siege) {
     const w = siege.waveInfo();
+    if (siege.quiet()) return '💥 防線已破，今晚不再來襲';
     if (!w.active) return '☀️ 白天無屍潮';
     if (w.attacking) return `第 ${w.wave} 波進攻中（剩 ${w.left} 隻）`;
     return `下一波 ${w.nextIn} 秒後`;
@@ -103,6 +104,7 @@ export class ShelterPanel {
         ${g.shelter.hasShelter() ? '' : `<div class="card warn">🏚️ 目前沒有避難所，無法生產與探索。${btn('🗺️ 到地圖選擇新的避難所', 'gotoMap', {}, { cls: 'btn-sm btn-primary' })}</div>`}
         <div class="chips">${tabs}</div>
         <div class="btn-row">${baseActions}</div>
+        <div class="btn-row">${btn(`📦 倉庫裝備 ${st.inventory.items.length}`, 'openStorage', {}, { cls: 'btn-sm' })}${btn(`🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`, 'openGarage', {}, { cls: 'btn-sm' })}</div>
         ${this.renderCivilization(sh)}
         <div class="stat-grid">
           <div><small>圍牆（不會自行修復）</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}
@@ -129,6 +131,8 @@ export class ShelterPanel {
     if (action === 'slot') this.openSlot(+data.slot);
     if (action === 'viewBase') this.ui.setViewBase(data.id);
     if (action === 'abandon') openAbandonDialog(this.ui, base);
+    if (action === 'openStorage') this.ui.panels.inventory.openStorage();
+    if (action === 'openGarage') this.ui.panels.inventory.openGarage();
   }
 
   slotBody(base, slot) {

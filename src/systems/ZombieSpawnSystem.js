@@ -3,6 +3,7 @@ import { POI_TYPES } from '../config/poiTypes.js';
 import { zoneAt } from '../config/zones.js';
 import { ALL_ENEMIES, BOSSES } from '../config/enemies.js';
 import {
+  withSeed,
   chance, pick, randInt, uid, weightedPick, haversine, offsetLatLon, randFloat,
 } from '../utils/math.js';
 
@@ -101,7 +102,12 @@ export class ZombieSpawnSystem {
    * 派隊攻擊殭屍群。
    * @returns {{ok:boolean, reason?:string, result?:object, loot?:object}}
    */
+  /** 攻擊殭屍群（使用存檔種子） */
   attack(groupId, memberIds) {
+    return withSeed(this.game.state.rng, 'battle', () => this.attackNow(groupId, memberIds));
+  }
+
+  attackNow(groupId, memberIds) {
     const g = this.groups.find((x) => x.id === groupId);
     if (!g) return { ok: false, reason: '殭屍群已離開' };
     if (!this.game.time.phase().zombies) return { ok: false, reason: '天亮了，殭屍已躲回建築內' };

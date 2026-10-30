@@ -103,9 +103,14 @@ export class BaseSiege {
     };
   }
 
-  /** 現在是否有屍潮（只在夜晚與午夜） */
+  /** 現在是否有屍潮：只在夜晚與午夜；防線被突破後，當晚不再來襲 */
   active() {
-    return this.game.time.phase().zombies;
+    return this.game.time.phase().zombies && !this.quiet();
+  }
+
+  /** 防線被突破後到天亮前的平靜期 */
+  quiet(now = Date.now()) {
+    return (this.base?.quietUntil || 0) > now;
   }
 
   /**
@@ -189,7 +194,7 @@ export class BaseSiege {
     const day = this.game.time.day();
 
     // 生成（只在夜間）：一波一波來襲，波與波之間有喘息時間
-    const active = phase.zombies;
+    const active = this.active();
     if (!active) {
       this.wave = 0;
       this.waveLeft = 0;
@@ -414,10 +419,12 @@ export class BaseSiege {
     base.wallHp = sh.wallMax(base) * 0.3;
     this.waveLeft = 0;
     this.lull = BREACH_GRACE;
+    // 防線被突破後，殭屍散去，當晚不再來襲
+    base.quietUntil = this.game.time.nextDawn();
     this.game.state.stats.breaches += 1;
     const damaged = this.damageBuildings(base);
     const dmgText = damaged.length ? `，${damaged.length} 棟建築損毀` : '';
-    this.game.log(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源${dmgText}`, 'danger');
+    this.game.log(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源${dmgText}，今晚屍潮不再來襲`, 'danger');
     damaged.forEach((d) => this.game.log(`🏚️ ${base.name}：${d}`, 'danger'));
     this.game.toast(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源${dmgText}，請強化圍牆與防禦塔`, 'danger');
     this.game.bus.emit('siege:breach', { baseId: base.id, lost, damaged });

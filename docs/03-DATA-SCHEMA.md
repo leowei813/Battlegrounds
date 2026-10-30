@@ -251,3 +251,12 @@
 | `survivors[].job` | 新增 `repair` | 修繕圍牆 |
 
 舊存檔遷移（v6 → v7）：已完成的研究轉換為新科技等級；舊裝備依名稱對應型號（找不到則用該類最低型號）。
+
+## v8 新增欄位（v6.0.0）
+| 位置 | 欄位 | 說明 |
+|---|---|---|
+| `rng` | `{ craft, recruit, explore, battle, npc }` | 隨機結果的種子，隨存檔保存（重新讀檔結果相同） |
+| `survivors[].bag` | `{ 資源: 數量 }` | 個人背包攜帶的資源 |
+| `bases[].quietUntil` | `number` | 防線被突破後，到天亮前不再有屍潮 |
+| `npcs.cellNext` | `{ 格子: 時間 }` | 各 1 公里格子 NPC 重生時間；NPC 新增 `cell` |
+| 雲端主存檔 `map` | `poisExternal`, `looted` | 建築清單另存（`id = sha256("jdqs-map:" + 帳號 id)`），主存檔只記錄今日搜刮紀錄 |
