@@ -6,6 +6,10 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    // 開發時把雲端存檔 API 轉到 npm run server（預設 8787）
+    proxy: {
+      '/api': 'http://localhost:8787',
+    },
   },
   build: {
     outDir: 'dist',

@@ -25,6 +25,7 @@ npm run dev
 | 四、專案資料夾結構 | [docs/04-PROJECT-STRUCTURE.md](docs/04-PROJECT-STRUCTURE.md) |
 | 五、程式碼 | [`src/`](src) |
 | 六、安裝與部署 | [docs/05-DEPLOYMENT.md](docs/05-DEPLOYMENT.md) |
+| 雲端存檔 | [docs/06-CLOUD-SAVE.md](docs/06-CLOUD-SAVE.md) |
 
 ## 功能一覽
 - 🗺️ **真實地圖**：定位或手動座標，OSM 建築自動分類為 9 種地點（住宅、商店、醫院、學校、工廠、加油站、警局、軍事基地、倉庫）
@@ -40,6 +41,7 @@ npm run dev
 - 🔬 **研究**：5 分支 20 項，解鎖新建築、新裝備、新功能
 - 📜 **任務**：13 章主線、每日任務、14 項成就
 - 💾 **存檔**：LocalStorage 自動存檔、版本遷移、匯出／匯入
+- ☁️ **雲端存檔**：同步碼跨裝置接續，開啟即讀取最新進度，多裝置即時鎖定防覆蓋（內建伺服器或 Supabase）
 
 ## 指令
 | 指令 | 說明 |
@@ -48,5 +50,8 @@ npm run dev
 | `npm run build` | 建置到 `dist/` |
 | `npm run preview` | 預覽建置結果 |
 | `npm run check` | 資料檢查與無頭邏輯模擬 |
+| `npm run server` | 雲端存檔伺服器（同時提供 `dist/`） |
+| `npm run start` | 建置並啟動伺服器（一鍵正式環境） |
+| `npm run test:cloud` | 雲端存檔整合測試 |
 
 地圖資料 © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors。

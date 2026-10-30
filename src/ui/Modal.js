@@ -13,7 +13,9 @@ export class Modal {
   /**
    * @param {{title:string, body:string, live?:()=>string, onAction?:(action:string, data:DOMStringMap, modal:object, el:HTMLElement)=>void, wide?:boolean, onClose?:Function}} opts
    */
-  open({ title, body, onAction, wide = false, onClose, live }) {
+  open({ title, body, onAction, wide = false, onClose, live, dismissible = true }) {
+    // 不可關閉的彈窗（例如雲端鎖定）不能被其他彈窗取代
+    if (this.current && !this.current.dismissible) return this.current;
     this.close();
     const wrap = document.createElement('div');
     wrap.className = 'modal-backdrop';
@@ -23,6 +25,7 @@ export class Modal {
         <div class="modal-body"></div>
       </div>`;
     wrap.querySelector('h3').textContent = title;
+    if (!dismissible) wrap.querySelector('[data-action="close"]').remove();
     const bodyEl = wrap.querySelector('.modal-body');
     bodyEl.innerHTML = body;
     const handle = {
@@ -38,13 +41,14 @@ export class Modal {
       onClose,
       live,
       lastLive: body,
+      dismissible,
     };
     delegateActions(wrap, (action, data, el) => {
-      if (action === 'close') return this.close();
+      if (action === 'close') return dismissible ? this.close() : null;
       onAction?.(action, data, handle, el);
       return null;
     });
-    wrap.addEventListener('click', (e) => { if (e.target === wrap) this.close(); });
+    wrap.addEventListener('click', (e) => { if (e.target === wrap && dismissible) this.close(); });
     this.root.appendChild(wrap);
     this.current = handle;
     return handle;
@@ -58,6 +62,12 @@ export class Modal {
     if (html === cur.lastLive) return;
     cur.lastLive = html;
     cur.update(html);
+  }
+
+  /** 強制關閉（包含不可關閉的彈窗） */
+  forceClose() {
+    if (this.current) this.current.dismissible = true;
+    this.close();
   }
 
   close() {

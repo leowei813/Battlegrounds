@@ -331,3 +331,15 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .nav-label { font-size: 13px; }
   :root { --nav-h: 52px; }
 }
+
+/* ---------- Cloud save ---------- */
+.cloud-badge { align-self: flex-start; border: 1px solid var(--line); background: #0006; color: var(--text); border-radius: 8px; padding: 2px 6px; font-size: 12px; cursor: pointer; }
+.cloud-badge.st-offline, .cloud-badge.st-error { border-color: var(--danger); }
+.cloud-badge.st-synced { border-color: #558b2f; }
+.cloud-badge.st-syncing { animation: pulse 1s infinite; }
+.sync-code { font-family: ui-monospace, monospace; font-size: 17px; letter-spacing: 1px; padding: 10px; background: #0007; border: 1px dashed var(--accent); border-radius: 8px; text-align: center; word-break: break-all; user-select: all; }
+.sync-code.big { font-size: 20px; color: var(--accent); }
+@media (max-width: 600px) {
+  .sync-code { font-size: 14px; letter-spacing: 0; }
+  .hud-left .cloud-badge { align-self: center; }
+}

@@ -15,8 +15,13 @@ const PRESETS = [
  * 首次進入畫面：輸入名字、選擇領袖職業、決定起始座標（定位或手動）。
  */
 export class SetupScreen {
-  constructor(root) {
+  /**
+   * @param {HTMLElement} root
+   * @param {import('../cloud/CloudSync.js').CloudSync} cloud
+   */
+  constructor(root, cloud = null) {
     this.root = root;
+    this.cloud = cloud;
   }
 
   /** @returns {Promise<{type:'new', playerName, classId, lat, lon}|{type:'import', data}>} */
@@ -74,6 +79,20 @@ export class SetupScreen {
         }
       });
 
+      $('#btn-cloud')?.addEventListener('click', async () => {
+        const code = prompt('輸入其他裝置上顯示的同步碼（XXXX-XXXX-…）：');
+        if (!code) return;
+        status.textContent = '☁️ 讀取雲端存檔中…';
+        try {
+          const { state, meta } = await this.cloud.link(code);
+          SaveManager.save(state);
+          this.hide();
+          resolve({ type: 'import', data: state, meta });
+        } catch (err) {
+          status.textContent = `❌ ${err.message}`;
+        }
+      });
+
       $('#setup-form').addEventListener('submit', (e) => {
         e.preventDefault();
         const name = $('#in-name').value.trim() || '倖存者';
@@ -119,6 +138,7 @@ export class SetupScreen {
         <div class="chips">${presets}</div>
         <p id="setup-status" class="status"></p>
         <button type="submit" class="btn btn-danger wide big">☣️ 開始求生</button>
+        ${this.cloud?.available ? '<button type="button" id="btn-cloud" class="btn btn-primary wide">☁️ 用同步碼讀取雲端存檔</button>' : ''}
         <button type="button" id="btn-import" class="btn btn-ghost wide">📥 匯入存檔</button>
       </form>
     </div>`;

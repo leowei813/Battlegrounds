@@ -8,7 +8,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "node scripts/check-data.js"
+    "check": "node scripts/check-data.js",
+    "server": "node server/index.js",
+    "start": "vite build && node server/index.js",
+    "test:cloud": "node scripts/test-cloud.js"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

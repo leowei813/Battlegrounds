@@ -36,6 +36,8 @@ npm run dev
 | `npm run build` | 產生正式版到 `dist/` |
 | `npm run preview` | 本機預覽 `dist/` |
 | `npm run check` | 設定資料檢查 + 無頭邏輯模擬（CI 可用） |
+| `npm run server` | 雲端存檔伺服器，並提供 `dist/`（見 [06-CLOUD-SAVE.md](06-CLOUD-SAVE.md)） |
+| `npm run start` | 建置後啟動伺服器 |
 
 ## 3. 正式建置
 
@@ -131,12 +133,16 @@ docker build -t jdqs .
 docker run -p 8080:80 jdqs
 ```
 
-## 5. OpenStreetMap 使用規範（上線前務必閱讀）
+## 5. 雲端存檔
+純靜態部署（A、B）預設會嘗試同網域的 `/api`；沒有後端時雲端功能會顯示「無法連線」，其餘遊戲正常。
+要啟用跨裝置存檔，請依 [06-CLOUD-SAVE.md](06-CLOUD-SAVE.md) 選擇「內建伺服器」（C/D 方式改用 `npm run start` 一個 Node 程序即可同時提供前端與 API）或 Supabase。
+
+## 6. OpenStreetMap 使用規範（上線前務必閱讀）
 - 地圖圖磚來自 `tile.openstreetmap.org`，須遵守 [OSM Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/)：保留版權標示（已內建於地圖右下角）、不可大量預抓。**流量較大的正式營運請改用商用圖磚**（MapTiler、Stadia Maps、Thunderforest 等），只需修改 `src/map/MapService.js` 中 `L.tileLayer` 的網址與 attribution。
 - 建築資料來自公共 Overpass API（`src/map/OverpassService.js` 的 `ENDPOINTS`，會依序容錯）。遊戲只在**新建存檔**或玩家按「🔄 重新掃描」時查詢一次，結果存入存檔。大量玩家時建議自架 Overpass 或加一層快取代理。
 - Overpass 無法連線時，遊戲會自動以程序生成地點繼續運作（地圖資訊列顯示「程序生成」）。
 
-## 6. 疑難排解
+## 7. 疑難排解
 | 症狀 | 原因與處理 |
 |---|---|
 | 地圖一片灰色 | 圖磚被網路阻擋（公司防火牆、擋廣告外掛）。遊戲仍可遊玩，可改用其他圖磚來源。 |

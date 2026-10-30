@@ -50,11 +50,6 @@ export class Game {
     return new Game(createInitialState(opts));
   }
 
-  static load() {
-    const data = SaveManager.load();
-    return data ? new Game(data) : null;
-  }
-
   /**
    * 啟動主迴圈並結算離線收益。
    * @returns {object|null} 離線報告
@@ -66,7 +61,7 @@ export class Game {
     this.started = true;
     this.timers.push(setInterval(() => this.tick(), TICK_MS));
     this.timers.push(setInterval(() => this.save(), AUTOSAVE_MS));
-    const flush = () => this.save();
+    const flush = () => this.save(true);
     document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
     window.addEventListener('beforeunload', flush);
     window.addEventListener('pagehide', flush);
@@ -189,9 +184,14 @@ export class Game {
     bus.emit(EVT.STATE_CHANGED);
   }
 
-  save() {
-    // 重置或匯入流程中，避免 beforeunload 又把舊狀態寫回
-    if (this.resetting) return false;
-    return SaveManager.save(this.state);
+  /**
+   * @param {boolean} final 是否為離開頁面/切到背景前的最後一次存檔（雲端同步會立即上傳）
+   */
+  save(final = false) {
+    // 重置/匯入流程中、或存檔已被其他裝置接手時，避免把舊狀態寫回
+    if (this.resetting || this.locked) return false;
+    const ok = SaveManager.save(this.state);
+    if (ok) bus.emit(EVT.SAVE, { final });
+    return ok;
   }
 }

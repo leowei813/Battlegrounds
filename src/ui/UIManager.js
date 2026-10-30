@@ -13,6 +13,7 @@ import { InventoryPanel } from './panels/InventoryPanel.js';
 import { ResearchPanel } from './panels/ResearchPanel.js';
 import { QuestPanel } from './panels/QuestPanel.js';
 import { SettingsPanel } from './panels/SettingsPanel.js';
+import { CLOUD_EVT } from '../cloud/CloudSync.js';
 
 const TABS = [
   { id: 'map', icon: '🗺️', name: '地圖' },
@@ -36,10 +37,12 @@ export class UIManager {
   /**
    * @param {import('../core/Game.js').Game} game
    * @param {Phaser.Game} phaser
+   * @param {import('../cloud/CloudSync.js').CloudSync} cloud
    */
-  constructor(game, phaser) {
+  constructor(game, phaser, cloud) {
     this.game = game;
     this.phaser = phaser;
+    this.cloud = cloud;
     this.hud = $('#hud');
     this.nav = $('#nav');
     this.panelEl = $('#panel');
@@ -80,6 +83,7 @@ export class UIManager {
     delegateActions(this.hud, (action) => {
       if (action === 'openSettings') this.switchTab('settings');
       if (action === 'openRates') this.showRates();
+      if (action === 'openCloud') this.switchTab('settings');
     });
 
     bus.on(EVT.TOAST, ({ msg, type }) => this.toastEl.show(msg, type));
@@ -90,6 +94,8 @@ export class UIManager {
     bus.on(EVT.MAP_CHANGED, () => this.panels.map.renderMap(true));
     bus.on('expedition:done', () => this.panels.map.renderMap(true));
     window.addEventListener('resize', () => this.applyLayout());
+    bus.on(CLOUD_EVT.STATUS, () => this.renderHud());
+    bus.on(CLOUD_EVT.LOCKED, (meta) => this.showCloudLock(meta));
 
     this.panels.map.init();
     this.switchTab(this.game.shelter.hasShelter() ? 'shelter' : 'map');
@@ -158,12 +164,56 @@ export class UIManager {
           <span class="phase-icon">${phase.icon}</span>
           <div><b>第 ${g.time.day()} 天 ${g.time.clockText()}</b><small>${phase.name}・${phase.desc}</small></div>
         </div>
+        ${this.cloudBadge()}
         <div class="wallhp" title="圍牆耐久">🧱${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp())}/${g.shelter.wallMax()}`)}</div>
       </div>
       <div class="hud-res" data-action="openRates">${res}
         <div class="res cur" title="${CURRENCIES.coins.name}"><span>${CURRENCIES.coins.icon}</span><b>${formatNumber(st.player.coins)}</b></div>
         <div class="res cur" title="${CURRENCIES.parts.name}"><span>${CURRENCIES.parts.icon}</span><b>${formatNumber(st.player.parts)}</b></div>
       </div>`;
+  }
+
+  cloudBadge() {
+    const c = this.cloud;
+    if (!c?.enabled) return '';
+    const map = {
+      idle: ['☁️', '雲端存檔已連線'], syncing: ['🔄', '同步中…'], synced: ['☁️✓', '已同步'],
+      offline: ['☁️✕', '離線：進度暫存本機，恢復連線後自動上傳'], error: ['☁️!', c.error], locked: ['🔒', '存檔已在其他裝置繼續'],
+    };
+    const [icon, tip] = map[c.status] || map.idle;
+    return `<button class="cloud-badge st-${c.status}" data-action="openCloud" title="${escapeHtml(tip)}">${icon}</button>`;
+  }
+
+  /** 其他裝置接手時顯示的鎖定畫面（不可關閉） */
+  showCloudLock(meta) {
+    this.modal.forceClose();
+    const when = meta?.updatedAt ? new Date(meta.updatedAt).toLocaleString() : '';
+    this.modal.open({
+      title: '☁️ 存檔已在其他裝置繼續',
+      dismissible: false,
+      body: `
+        <p><b>${escapeHtml(meta?.deviceName || '另一台裝置')}</b> 於 ${when} 更新了雲端存檔。</p>
+        <p class="muted">為避免兩台裝置互相覆蓋進度，本裝置的遊戲已暫停。</p>
+        <div class="btn-row end">
+          <button class="btn btn-ghost" data-action="takeover">📲 在此裝置接管</button>
+          <button class="btn btn-primary" data-action="reload">🔄 載入最新進度</button>
+        </div>`,
+      onAction: async (action, _data, m, el) => {
+        if (action === 'reload') location.reload();
+        if (action === 'takeover') {
+          if (!confirm('接管會用「本裝置的進度」覆蓋雲端，另一台裝置的新進度將會遺失。確定？')) return;
+          el.disabled = true;
+          try {
+            await this.cloud.takeover();
+            location.reload();
+          } catch (err) {
+            el.disabled = false;
+            this.toastEl.show(`接管失敗：${err.message}`, 'danger');
+          }
+        }
+        void m;
+      },
+    });
   }
 
   renderBadges() {

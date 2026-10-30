@@ -5,6 +5,9 @@ import { BootScene } from './scenes/BootScene.js';
 import { ShelterScene } from './scenes/ShelterScene.js';
 import { UIManager } from './ui/UIManager.js';
 import { SetupScreen } from './ui/SetupScreen.js';
+import { SaveManager } from './core/SaveManager.js';
+import { CloudSync } from './cloud/CloudSync.js';
+import { createProvider } from './cloud/providers/index.js';
 import { gainsHtml } from './ui/components.js';
 import { $ } from './utils/dom.js';
 import { formatDuration } from './utils/math.js';
@@ -65,13 +68,25 @@ function showWelcome(ui) {
 }
 
 async function boot() {
-  let game = Game.load();
+  const cloud = new CloudSync(createProvider());
+  let state = SaveManager.load();
+  let cloudMeta = null;
+  if (cloud.enabled) {
+    setLoading('☁️ 正在同步雲端存檔…');
+    const r = await cloud.resolveBoot(state);
+    state = r.state;
+    if (r.source === 'cloud') cloudMeta = r.meta;
+  }
+  setLoading('');
+
+  let game = state ? new Game(state) : null;
   let fresh = false;
   if (!game) {
-    const setup = new SetupScreen($('#setup-root'));
+    const setup = new SetupScreen($('#setup-root'), cloud);
     const choice = await setup.show();
     if (choice.type === 'import') {
       game = new Game(choice.data);
+      if (choice.meta) cloudMeta = choice.meta;
     } else {
       game = Game.newGame(choice);
       fresh = true;
@@ -88,14 +103,21 @@ async function boot() {
 
   const phaser = createPhaser(game);
   const report = game.start();
-  const ui = new UIManager(game, phaser);
+  const ui = new UIManager(game, phaser, cloud);
   ui.init();
   game.save();
+  cloud.attach(game);
 
   if (fresh) showWelcome(ui);
   else if (report) showOfflineReport(ui, report);
+  if (cloudMeta) {
+    ui.toastEl.show(`☁️ 已載入雲端最新進度（來自 ${cloudMeta.deviceName || '其他裝置'}）`, 'success', 5000);
+  }
 
-  if (import.meta.env.DEV) window.__game = game;
+  if (import.meta.env.DEV) {
+    window.__game = game;
+    window.__cloud = cloud;
+  }
 }
 
 boot().catch((err) => {
