@@ -1,0 +1,23 @@
+{
+  "name": "jue-di-qiu-sheng",
+  "private": true,
+  "version": "1.0.0",
+  "description": "絕地求生 — 基於 OpenStreetMap 真實地圖的放置型生存策略 RPG",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "node scripts/check-data.js"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.21"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

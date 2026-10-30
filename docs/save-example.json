@@ -1,0 +1,313 @@
+{
+  "version": 1,
+  "createdAt": 1793343169172,
+  "lastSaveAt": 1793343169172,
+  "lastTickAt": 1793343169172,
+  "player": {
+    "name": "阿傑",
+    "coins": 999,
+    "parts": 0
+  },
+  "map": {
+    "center": {
+      "lat": 25.0339,
+      "lon": 121.5645
+    },
+    "pois": [
+      {
+        "id": "osm_w123456",
+        "type": "shop",
+        "name": "全聯福利中心",
+        "lat": 25.0341,
+        "lon": 121.5651,
+        "osm": true,
+        "depletion": 0.08,
+        "lastVisit": 1793343169172
+      },
+      {
+        "id": "gen_residential_1_qv1yi",
+        "type": "residential",
+        "name": "廢棄的住宅區",
+        "lat": 25.0287,
+        "lon": 121.5579,
+        "osm": false
+      }
+    ],
+    "source": "none",
+    "fetchedAt": 0,
+    "zombieGroups": [
+      {
+        "id": "zg_mvum7xcm128mt",
+        "poiId": "gen_residential_1_qv1yi",
+        "lat": 25.0287,
+        "lon": 121.5577,
+        "enemyId": "walker",
+        "count": 2,
+        "level": 2,
+        "elite": false,
+        "boss": false,
+        "spawnedAt": 1793343169173
+      }
+    ],
+    "lastZombieRefresh": 0
+  },
+  "shelter": {
+    "poiId": "osm_w123456",
+    "name": "全聯福利中心",
+    "lat": 25.0341,
+    "lon": 121.5651,
+    "facilities": {
+      "wall": {
+        "level": 1
+      },
+      "warehouse": {
+        "level": 1
+      },
+      "watchtower": {
+        "level": 0
+      },
+      "farm": {
+        "level": 1
+      },
+      "generator": {
+        "level": 0
+      },
+      "rainCollector": {
+        "level": 0
+      },
+      "workbench": {
+        "level": 1
+      },
+      "researchCenter": {
+        "level": 0
+      }
+    },
+    "defenses": [
+      {
+        "slot": 0,
+        "type": "barricade",
+        "level": 0,
+        "garrisonId": null
+      },
+      {
+        "slot": 1,
+        "type": null,
+        "level": 0,
+        "garrisonId": null
+      }
+    ],
+    "wallHp": null,
+    "buildQueue": [
+      {
+        "kind": "facility",
+        "id": "farm",
+        "targetLevel": 2,
+        "startAt": 1793343169175,
+        "endAt": 1793343182175
+      },
+      {
+        "kind": "defense",
+        "slot": 0,
+        "id": "barricade",
+        "targetLevel": 1,
+        "startAt": 1793343169175,
+        "endAt": 1793343175175
+      }
+    ]
+  },
+  "resources": {
+    "food": 200,
+    "wood": 32,
+    "metal": 989,
+    "cloth": 44,
+    "fuel": 40,
+    "medicine": 15
+  },
+  "inventory": {
+    "items": [
+      {
+        "id": "it_mvum7xcne2a9l",
+        "type": "rifle",
+        "slot": "weapon",
+        "rarity": "rare",
+        "level": 5,
+        "name": "強化的AK-47",
+        "stats": {
+          "atk": 37,
+          "atkSpeed": 0.15,
+          "crit": 0.06
+        },
+        "affixes": [
+          {
+            "id": "crit",
+            "value": 0.037
+          },
+          {
+            "id": "atkPct",
+            "value": 0.071
+          }
+        ],
+        "locked": false,
+        "power": 187
+      }
+    ],
+    "blueprints": [
+      {
+        "id": "bp_mvum7xcnf1wzz",
+        "itemType": "helmet",
+        "rarity": "rare"
+      }
+    ]
+  },
+  "survivors": [
+    {
+      "id": "leader",
+      "name": "阿傑",
+      "classId": "warrior",
+      "level": 1,
+      "xp": 0,
+      "isLeader": true,
+      "status": "idle",
+      "job": "guard",
+      "injuredUntil": 0,
+      "equipment": {
+        "weapon": "it_mvum7xcne2a9l",
+        "helmet": null,
+        "armor": null,
+        "legs": null,
+        "backpack": null
+      }
+    },
+    {
+      "id": "sv_mvum7xcnge8yz",
+      "name": "宗翰",
+      "classId": "engineer",
+      "level": 2,
+      "xp": 0,
+      "isLeader": false,
+      "status": "exploring",
+      "job": "scavenge",
+      "injuredUntil": 0,
+      "equipment": {
+        "weapon": null,
+        "helmet": null,
+        "armor": null,
+        "legs": null,
+        "backpack": null
+      }
+    }
+  ],
+  "recruitPool": [
+    {
+      "id": "sv_mvum7xcnhhtie",
+      "name": "Yuki",
+      "classId": "farmer",
+      "level": 1,
+      "xp": 0,
+      "isLeader": false,
+      "status": "idle",
+      "job": "scavenge",
+      "injuredUntil": 0,
+      "equipment": {
+        "weapon": null,
+        "helmet": null,
+        "armor": null,
+        "legs": null,
+        "backpack": null
+      }
+    }
+  ],
+  "expeditions": [
+    {
+      "id": "ex_mvum7xcoio32z",
+      "poiId": "gen_residential_1_qv1yi",
+      "memberIds": [
+        "sv_mvum7xcnge8yz"
+      ],
+      "durationMin": 15,
+      "auto": false,
+      "startAt": 1793343169175,
+      "endAt": 1793344071239,
+      "phaseAtStart": "day"
+    }
+  ],
+  "reports": [
+    {
+      "id": "rp_x",
+      "poiName": "燒毀的醫院",
+      "poiType": "hospital",
+      "at": 1793343169176,
+      "events": [
+        "🔍 搜刮到 藥品、布料"
+      ],
+      "resources": {
+        "medicine": 18,
+        "cloth": 9
+      },
+      "items": [],
+      "blueprints": [],
+      "kills": 0,
+      "xp": 0,
+      "success": true,
+      "members": [
+        "阿傑"
+      ]
+    }
+  ],
+  "research": {
+    "completed": [
+      "srv1"
+    ],
+    "active": {
+      "id": "def1",
+      "startAt": 1793343169176,
+      "endAt": 1793343223176
+    }
+  },
+  "quests": {
+    "mainIndex": 0,
+    "mainClaimable": false,
+    "dailyDate": "2026-10-30",
+    "dailies": [
+      {
+        "id": "d_build",
+        "baseline": {
+          "kills": 0,
+          "...": "全部統計快照"
+        },
+        "claimed": false
+      }
+    ],
+    "achievements": {}
+  },
+  "stats": {
+    "kills": 0,
+    "siegeKills": 0,
+    "bossKills": 0,
+    "eliteKills": 0,
+    "explorations": 0,
+    "battlesWon": 0,
+    "battlesLost": 0,
+    "itemsFound": 1,
+    "rareItems": 1,
+    "legendaryItems": 0,
+    "crafted": 0,
+    "upgrades": 0,
+    "recruits": 0,
+    "researchDone": 0,
+    "breaches": 0,
+    "daysSurvived": 0,
+    "foodCollected": 0
+  },
+  "settings": {
+    "autoSave": true,
+    "showDamage": true
+  },
+  "log": [
+    {
+      "t": 1793343169176,
+      "msg": "🏠 建立避難所於「全聯福利中心」",
+      "type": "success"
+    }
+  ]
+}

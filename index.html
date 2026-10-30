@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#14170f" />
+    <meta name="description" content="絕地求生：在真實地圖上建立避難所的放置型殭屍生存策略 RPG" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <title>絕地求生</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="hud"></header>
+      <main id="stage">
+        <div id="game-root"></div>
+        <div id="map-root" class="hidden"></div>
+        <section id="panel" class="panel"></section>
+      </main>
+      <nav id="nav"></nav>
+    </div>
+    <div id="toasts"></div>
+    <div id="modal-root"></div>
+    <div id="setup-root"></div>
+    <div id="loading"><div class="spinner"></div><p></p></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
