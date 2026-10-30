@@ -160,12 +160,15 @@ export class Game {
     };
   }
 
-  /** 取得附近建築（OSM → 失敗則程序化） */
-  async scanMap(lat, lon) {
+  /**
+   * 取得附近建築（OSM → 失敗則程序化）
+   * @param {(done:number,total:number)=>void} [onProgress] 分區查詢進度
+   */
+  async scanMap(lat, lon, onProgress) {
     let pois = [];
     let source = 'overpass';
     try {
-      pois = await fetchPois(lat, lon, POI_SCAN_RADIUS);
+      pois = await fetchPois(lat, lon, POI_SCAN_RADIUS, onProgress);
     } catch (err) {
       console.warn('[Game] Overpass failed, using generated POIs', err);
       source = 'generated';

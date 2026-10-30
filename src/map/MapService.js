@@ -73,7 +73,9 @@ export class MapService {
     const sh = state.bases.find((b) => b.id === state.primaryBaseId) || state.bases[0] || null;
 
     // 建築與殭屍群數量多，只有內容變動時才重建標記
-    const poiKey = pois.map((p) => `${p.id}:${basePoiIds.has(p.id) ? 'b' : Math.round((p.depletion || 0) * 10)}`).join(',');
+    let depletion = 0;
+    for (const p of pois) depletion += Math.round((p.depletion || 0) * 10);
+    const poiKey = `${state.map.fetchedAt}|${pois.length}|${[...basePoiIds].join(',')}|${depletion}`;
     if (poiKey !== this.poiKey) {
       this.poiKey = poiKey;
       this.poiLayer.setData(pois.filter((p) => !basePoiIds.has(p.id)));
