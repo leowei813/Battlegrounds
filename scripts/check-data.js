@@ -8,11 +8,11 @@ import { Game } from '../src/core/Game.js';
 import { fillPois } from '../src/map/PoiGenerator.js';
 import { RESEARCH } from '../src/config/research.js';
 import { DEFENSES } from '../src/config/defenses.js';
-import { ITEM_TYPES } from '../src/config/equipment.js';
 import { POI_TYPES } from '../src/config/poiTypes.js';
 import { ALL_ENEMIES } from '../src/config/enemies.js';
 import { MAIN_QUESTS, DAILY_POOL, ACHIEVEMENTS } from '../src/config/quests.js';
 import { FACILITIES } from '../src/config/facilities.js';
+import { RARITIES, RARITY_ORDER, SLOT_KEYS, ITEM_TYPES } from '../src/config/equipment.js';
 import { DAY_REAL_MS, START_HOUR } from '../src/config/constants.js';
 
 /** 把遊戲時鐘調到指定時刻（建檔時間往前推） */
@@ -81,7 +81,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 3, 'state is serializable');
+assert(save.version === 4, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].depletion = 0.24;
 g.state.map.pois[1].lastVisit = 123;
@@ -128,7 +128,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 3 && migrated.bases.length === 1 && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 4 && migrated.bases.length === 1 && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -210,6 +210,68 @@ assert(migrated.version === 3 && migrated.bases.length === 1 && migrated.primary
   assert(pois.every((p) => haversine(LAT, LON, p.lat, p.lon) <= 1200 + 1), '只保留圓形掃描範圍內的建築');
   assert(pois.some((p) => p.type === 'shop' && p.name === '測試超商'), '設施查詢結果保留');
   assert(progress.at(-1) === '5/5', `回報掃描進度（${progress.join(' ')}）`);
+}
+
+// ---- 8. 裝備品級與素質 ----
+{
+  const ge = Game.newGame({ playerName: 'Gear', classId: 'warrior', lat: 0, lon: 0 });
+  const eq = ge.equipment;
+  assert(Object.keys(ITEM_TYPES).length >= 15 && SLOT_KEYS.length === 8, `裝備類型 ${Object.keys(ITEM_TYPES).length} 種、裝備欄 ${SLOT_KEYS.length} 個`);
+  // 每個品級範圍首尾相接、不重疊
+  RARITY_ORDER.slice(1).forEach((r, i) => {
+    assert(RARITIES[r].min >= RARITIES[RARITY_ORDER[i]].max, `${RARITIES[r].name}最低倍率 ≥ ${RARITIES[RARITY_ORDER[i]].name}最高倍率`);
+  });
+  // 實際生成：同類型同等級，高一階的每項最低素質 ≥ 低一階的最高素質
+  let violations = 0;
+  Object.keys(ITEM_TYPES).forEach((type) => {
+    const range = {};
+    RARITY_ORDER.forEach((rar) => {
+      for (let i = 0; i < 60; i += 1) {
+        const it = eq.generate({ level: 12, type, rarity: rar });
+        Object.entries(it.stats).forEach(([k, v]) => {
+          range[rar] = range[rar] || {};
+          const cur = range[rar][k] || { min: Infinity, max: -Infinity };
+          range[rar][k] = { min: Math.min(cur.min, v), max: Math.max(cur.max, v) };
+        });
+      }
+    });
+    RARITY_ORDER.slice(1).forEach((rar, i) => {
+      Object.entries(range[rar]).forEach(([k, { min }]) => {
+        const lowerMax = range[RARITY_ORDER[i]][k].max;
+        if (min < lowerMax) violations += 1;
+      });
+    });
+  });
+  assert(violations === 0, `所有類型的每項素質都符合「高品級最低 ≥ 低品級最高」（違規 ${violations}）`);
+  // 同品級素質隨機
+  const sameTier = Array.from({ length: 30 }, () => eq.generate({ level: 10, type: 'rifle', rarity: 'rare' }).stats.atk);
+  assert(new Set(sameTier).size > 5, '同品級素質為隨機');
+  // 製作：品級與素質隨機
+  ge.state.map.pois = fillPois([], 0, 0);
+  ge.shelter.establish(ge.state.map.pois[0]);
+  ge.state.player.coins = 1e7;
+  Object.keys(ge.state.resources).forEach((k) => { ge.state.resources[k] = 1e7; });
+  ge.state.bases[0].facilities.warehouse.level = 10;
+  const crafted = Array.from({ length: 300 }, () => eq.craft('pistol').item);
+  const tiers = new Set(crafted.map((it) => it.rarity));
+  assert(crafted.every(Boolean) && tiers.size >= 4, `製作的品級隨機（出現 ${[...tiers].map((r) => RARITIES[r].name).join('、')}）`);
+  // 吸血與探索速度詞綴生效
+  const sv = ge.survivors.leader();
+  const ls = eq.generate({ level: 10, type: 'melee', rarity: 'legendary' });
+  eq.addItem(ls);
+  eq.equip(sv.id, ls.id);
+  assert(ge.survivors.stats(sv).lifeSteal > 0, '近戰武器吸血屬性生效');
+  const boots = eq.generate({ level: 10, type: 'boots', rarity: 'epic' });
+  eq.addItem(boots);
+  eq.equip(sv.id, boots.id);
+  assert(ge.survivors.stats(sv).exploreSpeed > 0, '鞋子探索速度屬性生效');
+  // 舊存檔：灰色「普通」→「劣質」，補上新裝備欄
+  const old = JSON.parse(JSON.stringify(SaveManager.pack(ge.state)));
+  old.version = 3;
+  old.inventory.items[0].rarity = 'common';
+  delete old.survivors[0].equipment.gloves;
+  const mig = SaveManager.migrate(old);
+  assert(mig.inventory.items[0].rarity === 'poor' && mig.survivors[0].equipment.gloves === null, 'v3 → v4：舊普通裝備轉為劣質、補上新裝備欄');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

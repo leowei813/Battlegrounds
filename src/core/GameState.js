@@ -3,6 +3,7 @@ import {
 } from '../config/constants.js';
 import { FACILITIES } from '../config/facilities.js';
 import { CLASSES } from '../config/survivors.js';
+import { emptyEquipment } from '../config/equipment.js';
 import { uid } from '../utils/math.js';
 
 /** 統計欄位（任務、成就皆由此衍生） */
@@ -44,7 +45,7 @@ export function createLeader(name, classId = 'warrior') {
     status: 'idle', // idle | exploring
     job: 'guard',
     injuredUntil: 0,
-    equipment: { weapon: null, helmet: null, armor: null, legs: null, backpack: null },
+    equipment: emptyEquipment(),
   };
 }
 
@@ -60,7 +61,7 @@ export function createSurvivor(name, classId, level = 1) {
     status: 'idle',
     job: 'scavenge',
     injuredUntil: 0,
-    equipment: { weapon: null, helmet: null, armor: null, legs: null, backpack: null },
+    equipment: emptyEquipment(),
   };
 }
 

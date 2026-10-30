@@ -15,6 +15,7 @@ export class InventoryPanel {
     this.game = ui.game;
     this.view = 'items';
     this.filter = 'all';
+    this.rarityFilter = 'all';
     this.sort = 'power';
   }
 
@@ -27,6 +28,7 @@ export class InventoryPanel {
     const g = this.game;
     let items = [...g.state.inventory.items];
     if (this.filter !== 'all') items = items.filter((i) => i.slot === this.filter);
+    if (this.rarityFilter !== 'all') items = items.filter((i) => i.rarity === this.rarityFilter);
     items.sort(this.sort === 'power'
       ? (a, b) => b.power - a.power
       : (a, b) => RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) || b.power - a.power);
@@ -42,12 +44,17 @@ export class InventoryPanel {
       ].join('');
       return itemCard(it, { equippedBy: owner, actions });
     }).join('');
+    const counts = {};
+    g.state.inventory.items.forEach((i) => { counts[i.rarity] = (counts[i.rarity] || 0) + 1; });
+    const rarities = [['all', '全部品級', '#fff'], ...RARITY_ORDER.map((r) => [r, `${RARITIES[r].name} ${counts[r] || 0}`, RARITIES[r].color])]
+      .map(([k, n, c]) => `<button class="chip rchip ${this.rarityFilter === k ? 'active' : ''}" style="--rc:${c}" data-action="rfilter" data-r="${k}">${n}</button>`).join('');
     return `
       <div class="chips">${filters}</div>
+      <div class="chips">${rarities}</div>
       <div class="row-between"><div class="chips">
         <button class="chip ${this.sort === 'power' ? 'active' : ''}" data-action="sort" data-s="power">依戰力</button>
         <button class="chip ${this.sort === 'rarity' ? 'active' : ''}" data-action="sort" data-s="rarity">依品質</button></div>
-        ${btn('一鍵出售普通', 'sellCommon', {}, { cls: 'btn-sm btn-ghost' })}</div>
+        ${btn('一鍵出售劣質/一般', 'sellCommon', {}, { cls: 'btn-sm btn-ghost' })}</div>
       <div class="grid">${cards || '<p class="muted">沒有裝備。去探索或擊殺殭屍吧！</p>'}</div>`;
   }
 
@@ -69,8 +76,11 @@ export class InventoryPanel {
         <div class="costs">${costHtml(st, g.equipment.craftCost(bp.itemType, true))}</div></div>
         ${btn('製作', 'craftBp', { id: bp.id, type: bp.itemType }, { cls: 'btn-sm btn-primary', disabled: wb < 1 })}
       </div>`).join('');
+    const odds = (boost) => Object.entries(g.equipment.rarityOdds(boost))
+      .map(([r, p]) => `<span class="odd" style="--rc:${RARITIES[r].color}">${RARITIES[r].name} ${(p * 100).toFixed(p < 0.01 ? 2 : 1)}%</span>`).join('');
     return `
-      <p class="muted">工作台 Lv${wb}：製作裝備等級 = 工作台等級 × 5。設計圖可無視研究限制，並保證品質。</p>
+      <p class="muted">工作台 Lv${wb}：製作裝備等級 = 工作台等級 × 5。製作出的<b>品級與素質皆為隨機</b>，工作台等級越高越容易出現高品級。設計圖可無視研究限制，並保證最低品級。</p>
+      <div class="odds"><small class="muted">目前製作品級機率：</small>${odds(g.equipment.craftBoost(false))}</div>
       ${bps ? `<h3>設計圖</h3>${bps}` : ''}
       <h3>基礎製作</h3><div class="grid">${types}</div>`;
   }
@@ -81,14 +91,15 @@ export class InventoryPanel {
       case 'view': this.view = data.v; break;
       case 'filter': this.filter = data.f; break;
       case 'sort': this.sort = data.s; break;
+      case 'rfilter': this.rarityFilter = data.r; break;
       case 'lock': g.equipment.toggleLock(data.id); break;
       case 'sell': this.ui.result(g.equipment.sell(data.id)); break;
       case 'dismantle': this.ui.result(g.equipment.dismantle(data.id)); break;
       case 'sellCommon': {
-        const ids = g.state.inventory.items.filter((i) => i.rarity === 'common' && !i.locked && !g.equipment.equippedBy(i.id)).map((i) => i.id);
+        const ids = g.state.inventory.items.filter((i) => (i.rarity === 'poor' || i.rarity === 'common') && !i.locked && !g.equipment.equippedBy(i.id)).map((i) => i.id);
         let coins = 0;
         ids.forEach((id) => { coins += g.equipment.sellValue(g.equipment.getItem(id)); g.equipment.sell(id); });
-        this.ui.result({ ok: true, msg: ids.length ? `出售 ${ids.length} 件，獲得 ${coins} 金錢` : '沒有可出售的普通裝備' });
+        this.ui.result({ ok: true, msg: ids.length ? `出售 ${ids.length} 件，獲得 ${coins} 金錢` : '沒有可出售的劣質/一般裝備' });
         break;
       }
       case 'craft': this.showCraftResult(g.equipment.craft(data.type)); break;

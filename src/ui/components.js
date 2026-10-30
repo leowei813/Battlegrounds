@@ -40,7 +40,15 @@ export function timerBar(startAt, endAt, now = Date.now()) {
 
 export function rarityTag(rarity) {
   const r = RARITIES[rarity];
-  return `<span class="rarity" style="--rc:${r.color}">${r.name}</span>`;
+  return `<span class="rarity r-${rarity}" style="--rc:${r.color}">${r.name}</span>`;
+}
+
+/** 素質（該品級範圍內的位置），例如「素質 132%（精良 120–145%）」 */
+export function qualityTag(item) {
+  if (!item.quality) return '';
+  const r = RARITIES[item.rarity];
+  const pos = Math.max(0, Math.min(1, (item.quality / 100 - r.min) / (r.max - r.min)));
+  return `<span class="quality" title="${r.name}素質範圍 ${Math.round(r.min * 100)}–${Math.round(r.max * 100)}%">素質 ${item.quality}%<i style="--p:${Math.round(pos * 100)}%"></i></span>`;
 }
 
 export function statLine(stats) {
@@ -49,6 +57,8 @@ export function statLine(stats) {
     crit: ['暴擊', (v) => `${(v * 100).toFixed(1)}%`], critDmg: ['暴傷', (v) => `+${(v * 100).toFixed(0)}%`],
     dodge: ['閃避', (v) => `${(v * 100).toFixed(1)}%`], atkSpeed: ['攻速', (v) => (v > 0 ? `+${v.toFixed(2)}` : v.toFixed(2))],
     lootBonus: ['搜刮', (v) => `+${(v * 100).toFixed(0)}%`],
+    lifeSteal: ['吸血', (v) => `${(v * 100).toFixed(1)}%`],
+    exploreSpeed: ['探索速度', (v) => `+${(v * 100).toFixed(1)}%`],
   };
   return Object.entries(stats)
     .filter(([k]) => fmt[k])
@@ -70,12 +80,12 @@ export function itemCard(item, { actions = '', equippedBy = null, compact = fals
   if (!item) return '';
   const r = RARITIES[item.rarity];
   return `
-  <div class="item-card ${compact ? 'compact' : ''}" style="--rc:${r.color}">
+  <div class="item-card r-${item.rarity} ${compact ? 'compact' : ''}" style="--rc:${r.color}">
     <div class="item-head">
-      <span class="item-icon">${ITEM_TYPES[item.type].icon}</span>
+      <span class="item-icon">${ITEM_TYPES[item.type]?.icon || '❔'}</span>
       <div class="item-title">
         <b>${escapeHtml(item.name)}</b>${item.locked ? ' 🔒' : ''}
-        <small>${rarityTag(item.rarity)} ${ITEM_TYPES[item.type].name} · Lv${item.level} · 戰力 ${item.power}</small>
+        <small>${rarityTag(item.rarity)} ${ITEM_TYPES[item.type]?.name || ''} · Lv${item.level} · 戰力 ${item.power} ${compact ? '' : qualityTag(item)}</small>
       </div>
     </div>
     ${compact ? '' : `<div class="stat-line">${statLine(item.stats)}</div>

@@ -60,6 +60,8 @@ export class SurvivorSystem {
       dodge: cls.base.dodge,
       atkSpeed: cls.base.atkSpeed,
       lootBonus: 0,
+      lifeSteal: 0,
+      exploreSpeed: 0,
     };
     let atkPct = 0;
     let hpPct = 0;
@@ -71,6 +73,7 @@ export class SurvivorSystem {
       Object.entries(st).forEach(([k, v]) => {
         if (k === 'atkPct') atkPct += v;
         else if (k === 'hpPct') hpPct += v;
+        else if (k === 'defPct') defPct += v;
         else s[k] = (s[k] || 0) + v;
       });
     });

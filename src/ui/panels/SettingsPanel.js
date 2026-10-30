@@ -8,7 +8,7 @@ import { accessGateEnabled, lockDevice } from '../../security/AccessGate.js';
 
 const STAT_NAMES = {
   kills: '總擊殺', siegeKills: '防線擊殺', bossKills: 'Boss 擊殺', eliteKills: '精英擊殺', explorations: '探索次數',
-  battlesWon: '戰鬥勝利', battlesLost: '戰鬥失敗', itemsFound: '獲得裝備', rareItems: '稀有以上', legendaryItems: '傳說裝備',
+  battlesWon: '戰鬥勝利', battlesLost: '戰鬥失敗', itemsFound: '獲得裝備', rareItems: '精良以上', legendaryItems: '稀有（橘）裝備',
   crafted: '製作次數', upgrades: '建築升級', recruits: '招募人數', researchDone: '完成研究', breaches: '防線失守', daysSurvived: '存活天數',
 };
 

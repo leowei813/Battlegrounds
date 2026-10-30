@@ -52,7 +52,7 @@ export class CombatSystem {
     return {
       id: sv.id, name: sv.name, side: 'team', classId: sv.classId,
       maxHp: s.hp, hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, critDmg: s.critDmg,
-      dodge: s.dodge, atkSpeed: s.atkSpeed, skills: s.skills,
+      dodge: s.dodge, atkSpeed: s.atkSpeed, skills: s.skills, lifeSteal: Math.min(0.5, s.lifeSteal || 0),
       cd: randFloat(0, 0.3), healCd: s.skills.healEvery || 0, firstHit: true,
     };
   }
@@ -94,6 +94,10 @@ export class CombatSystem {
       const dmg = Math.max(1, Math.round(raw * (100 / (100 + target.def * 2))));
       target.hp -= dmg;
       push(t, `${atkUnit.name} ${crit ? '💥暴擊' : '攻擊'} ${target.name} -${dmg}`, atkUnit.side === 'team' ? (crit ? 'crit' : 'hit') : 'hurt');
+      if (atkUnit.lifeSteal) {
+        const heal = Math.round(dmg * atkUnit.lifeSteal);
+        if (heal > 0) atkUnit.hp = Math.min(atkUnit.maxHp, atkUnit.hp + heal);
+      }
       if (target.hp <= 0) {
         push(t, `☠️ ${target.name} 倒下`, target.side === 'enemy' ? 'kill' : 'down');
         if (target.side === 'enemy') kills.push(target);

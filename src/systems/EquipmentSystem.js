@@ -1,10 +1,11 @@
 import {
-  RARITIES, RARITY_ORDER, ITEM_TYPES, AFFIXES, RARITY_PREFIX, SLOT_KEYS,
+  RARITIES, RARITY_ORDER, ITEM_TYPES, AFFIXES, RARITY_PREFIX, SLOT_KEYS, rarityIndex,
 } from '../config/equipment.js';
 import { weightedPick, pick, randFloat, uid, clamp } from '../utils/math.js';
 import { canAfford, payCost, grant } from './costUtils.js';
 
-const SCALED_BASE = new Set(['atk', 'def', 'hp']);
+/** 整數顯示的屬性（其餘為小數/百分比） */
+const INT_STATS = new Set(['atk', 'def', 'hp']);
 
 /**
  * 裝備系統：隨機生成（品質 + 詞綴）、穿脫、出售、拆解、製作。
@@ -41,11 +42,20 @@ export class EquipmentSystem {
     if (minRarity && RARITY_ORDER.indexOf(rar) < RARITY_ORDER.indexOf(minRarity)) rar = minRarity;
     const rdef = RARITIES[rar];
     const lv = clamp(Math.round(level), 1, 60);
+    // 每項數值各自在品級範圍內擲一次素質倍率；範圍互不重疊，保證高品級最低值 ≥ 低品級最高值
+    const rolls = [];
+    const roll = () => {
+      const q = randFloat(rdef.min, rdef.max);
+      rolls.push(q);
+      return q;
+    };
+    const round = (k, v) => (INT_STATS.has(k) ? Math.round(v) : +v.toFixed(3));
 
     const stats = {};
     Object.entries(def.base).forEach(([k, v]) => {
       const grown = v + (def.perLevel[k] || 0) * (lv - 1);
-      stats[k] = SCALED_BASE.has(k) ? Math.round(grown * rdef.mul) : +grown.toFixed(3);
+      // 負面屬性（例如散彈槍的攻速懲罰）不隨品級放大
+      stats[k] = round(k, grown > 0 ? grown * roll() : grown);
     });
 
     const affixPool = Object.keys(AFFIXES);
@@ -54,8 +64,7 @@ export class EquipmentSystem {
       const idx = Math.floor(Math.random() * affixPool.length);
       const aid = affixPool.splice(idx, 1)[0];
       const a = AFFIXES[aid];
-      const raw = (a.value + (a.perLevel || 0) * (lv - 1)) * rdef.mul * randFloat(0.75, 1.25);
-      affixes.push({ id: aid, value: a.pct || a.value < 1 ? +raw.toFixed(3) : Math.round(raw) });
+      affixes.push({ id: aid, value: round(a.stat, (a.value + (a.perLevel || 0) * (lv - 1)) * roll()) });
     }
 
     const item = {
@@ -67,6 +76,8 @@ export class EquipmentSystem {
       name: `${pick(RARITY_PREFIX[rar])}${pick(def.names)}`,
       stats,
       affixes,
+      // 素質：所有數值素質倍率的平均（%），供玩家比較同品級裝備
+      quality: Math.round((rolls.reduce((s, q) => s + q, 0) / Math.max(1, rolls.length)) * 100),
       locked: false,
     };
     item.power = this.itemPower(item);
@@ -88,7 +99,8 @@ export class EquipmentSystem {
     return Math.round(
       (s.atk || 0) * 3 + (s.def || 0) * 4 + (s.hp || 0) * 0.5 +
       ((s.crit || 0) + (s.dodge || 0)) * 300 + (s.critDmg || 0) * 100 +
-      (s.atkSpeed || 0) * 120 + ((s.atkPct || 0) + (s.hpPct || 0)) * 400 + (s.lootBonus || 0) * 200,
+      (s.atkSpeed || 0) * 120 + ((s.atkPct || 0) + (s.hpPct || 0) + (s.defPct || 0)) * 400 + (s.lootBonus || 0) * 200
+      + (s.lifeSteal || 0) * 500 + (s.exploreSpeed || 0) * 250,
     );
   }
 
@@ -97,12 +109,12 @@ export class EquipmentSystem {
     this.items.push(item);
     const st = this.game.state.stats;
     st.itemsFound += 1;
-    if (RARITY_ORDER.indexOf(item.rarity) >= 2) st.rareItems += 1;
+    if (rarityIndex(item.rarity) >= rarityIndex('rare')) st.rareItems += 1;
     if (item.rarity === 'legendary') {
       st.legendaryItems += 1;
-      this.game.toast(`🌟 獲得傳說裝備「${item.name}」！`, 'legendary');
+      this.game.toast(`🌟 獲得稀有（橘色）裝備「${item.name}」！`, 'legendary');
     }
-    if (RARITY_ORDER.indexOf(item.rarity) >= 3) {
+    if (rarityIndex(item.rarity) >= rarityIndex('epic')) {
       this.game.log(`${source}獲得 ${RARITIES[item.rarity].name}裝備「${item.name}」`, 'loot');
     }
     return item;
@@ -140,7 +152,7 @@ export class EquipmentSystem {
 
   dismantleValue(item) {
     const idx = RARITY_ORDER.indexOf(item.rarity);
-    return { metal: 10 + item.level * 3, cloth: 4 + item.level, parts: [0, 0, 1, 3, 8][idx] };
+    return { metal: 10 + item.level * 3, cloth: 4 + item.level, parts: [0, 0, 0, 1, 3, 8][idx] || 0 };
   }
 
   removeItem(itemId) {
@@ -178,6 +190,18 @@ export class EquipmentSystem {
 
   // ---- 製作 ----
 
+  /** 製作的高品級加成：工作台等級越高越容易做出好裝備；品級與素質仍然隨機 */
+  craftBoost(withBlueprint = false) {
+    return this.game.shelter.maxLevel('workbench') * 0.03 + (withBlueprint ? 0.3 : 0);
+  }
+
+  /** 製作出各品級的機率（UI 顯示用） */
+  rarityOdds(boost) {
+    const w = RARITY_ORDER.map((r, i) => RARITIES[r].weight * (1 + boost * i * 1.5));
+    const sum = w.reduce((a, b) => a + b, 0);
+    return Object.fromEntries(RARITY_ORDER.map((r, i) => [r, w[i] / sum]));
+  }
+
   craftLevel() {
     return Math.max(1, this.game.shelter.maxLevel('workbench') * 5);
   }
@@ -209,7 +233,7 @@ export class EquipmentSystem {
     if (!payCost(this.game.state, cost)) return { ok: false, reason: '資源不足' };
     if (bp) this.game.state.inventory.blueprints = bpList.filter((b) => b.id !== bp.id);
     const item = this.generate({
-      level: this.craftLevel(), type: typeId, minRarity: bp?.rarity, boost: bp ? 0.3 : 0.05,
+      level: this.craftLevel(), type: typeId, minRarity: bp?.rarity, boost: this.craftBoost(!!bp),
     });
     this.addItem(item, '製作');
     this.game.state.stats.crafted += 1;
