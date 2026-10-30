@@ -15,7 +15,12 @@ export class SupabaseProvider {
   async rpc(fn, args, opts = {}) {
     const { status, body } = await fetchJson(`${this.base}/rest/v1/rpc/${fn}`, {
       method: 'POST',
-      headers: { apikey: this.key, Authorization: `Bearer ${this.key}`, 'Content-Type': 'application/json' },
+      // 舊版 anon key 是 JWT，可同時放 Authorization；新版 sb_publishable_ 金鑰只能放 apikey
+      headers: {
+        apikey: this.key,
+        ...(this.key.startsWith('eyJ') ? { Authorization: `Bearer ${this.key}` } : {}),
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(args),
       timeout: 15000,
       ...opts,

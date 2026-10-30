@@ -63,7 +63,7 @@ npm run server
 ```
 VITE_CLOUD_PROVIDER=supabase
 VITE_SUPABASE_URL=https://xxxx.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJ...
+VITE_SUPABASE_ANON_KEY=sb_publishable_...（或舊版 eyJ... anon key）
 ```
 
 3. `npm run build` 後部署 `dist/` 到任何靜態主機。

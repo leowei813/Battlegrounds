@@ -1,7 +1,7 @@
 {
   "name": "jue-di-qiu-sheng",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "絕地求生 — 基於 OpenStreetMap 真實地圖的放置型生存策略 RPG",
   "license": "UNLICENSED",
   "author": "leowei813",
