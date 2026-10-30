@@ -9,6 +9,7 @@ import { ALL_ENEMIES } from '../config/enemies.js';
 import { stockOf, dayKey } from './LootStock.js';
 import { zoneAt } from '../config/zones.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
+import { pathLength, pointAlong } from '../map/routing.js';
 
 /** 每公里單程移動時間（分鐘，未套用速度加成） */
 const MIN_PER_KM_ONE_WAY = 2;
@@ -28,8 +29,10 @@ export function tripProgress(trip, now = Date.now()) {
   const from = trip.from || to;
   const t = Math.max(0, now - trip.startAt);
   const searchEnd = travelMs + (trip.searchMs ?? trip.endAt - trip.startAt);
-  const dist = trip.distanceM ?? Math.round(haversine(from.lat, from.lon, to.lat, to.lon));
-  const at = (r) => ({ lat: lerp(from.lat, to.lat, r), lon: lerp(from.lon, to.lon, r) });
+  // 繞路的折線路線（避開警戒範圍）；沒有時為直線
+  const path = Array.isArray(trip.path) && trip.path.length >= 2 ? trip.path : null;
+  const dist = path ? Math.round(pathLength(path)) : trip.distanceM ?? Math.round(haversine(from.lat, from.lon, to.lat, to.lon));
+  const at = (r) => (path ? pointAlong(path, dist * r) : { lat: lerp(from.lat, to.lat, r), lon: lerp(from.lon, to.lon, r) });
   let phase;
   let ratio;
   let movedM;
@@ -52,7 +55,7 @@ export function tripProgress(trip, now = Date.now()) {
     phaseRemainingMs = trip.endAt - now;
   }
   return {
-    phase, pos: at(ratio), from, to,
+    phase, pos: at(ratio), from, to, path,
     movedM: Math.round(movedM), totalM: dist * 2, remainingMs: Math.max(0, trip.endAt - now), phaseRemainingMs: Math.max(0, phaseRemainingMs),
   };
 }
@@ -87,17 +90,26 @@ export class ExplorationSystem {
 
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   poi(id) {
-    return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || null;
+    return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id) || null;
   }
 
   /**
    * 規劃行程：去程 → 搜索 → 返程。探索隊從主要據點出發。
    * @returns {{from:{lat,lon}, distanceM:number, travelMs:number, searchMs:number, totalMs:number}}
    */
-  plan(poi, members, durationMin, at = Date.now(), vehicles = []) {
+  /** 攻擊目標本身的警戒範圍不需要繞開，也不另外觸發遭遇 */
+  targetZone(poi) {
+    if (poi?.npc) return [poi.id];
+    if (poi?.pvp) return [poi.zoneId];
+    return [];
+  }
+
+  plan(poi, members, durationMin, at = Date.now(), vehicles = [], { avoidHostile = false } = {}) {
     const sh = this.game.shelter.primary();
     const from = sh ? { lat: sh.lat, lon: sh.lon } : { lat: poi.lat, lon: poi.lon };
-    const distanceM = Math.round(haversine(from.lat, from.lon, poi.lat, poi.lon));
+    // 路線：預設繞開非敵對據點的警戒範圍
+    const path = this.game.territory.route(from, poi, { avoidHostile, ignore: this.targetZone(poi) });
+    const distanceM = Math.round(pathLength(path));
     const trip = this.game.vehicles.tripStats(members, vehicles, distanceM);
     // 隊伍速度取最快成員的「技能 + 裝備」探索速度
     const scout = Math.max(0, ...members.map((m) => (this.game.survivors.skillEffects(m).exploreSpeed || 0)
@@ -109,7 +121,7 @@ export class ExplorationSystem {
     const travelMs = Math.round(((distanceM / 1000) * MIN_PER_KM_ONE_WAY / (speed * trip.speed)) * 60000);
     const searchMs = Math.round((durationMin / (speed * teamMul)) * 60000);
     return {
-      from, distanceM, travelMs, searchMs, totalMs: travelMs * 2 + searchMs, trip,
+      from, path, distanceM, travelMs, searchMs, totalMs: travelMs * 2 + searchMs, trip,
     };
   }
 
@@ -124,8 +136,8 @@ export class ExplorationSystem {
   }
 
   /** 計算實際探索時間（毫秒） */
-  actualDurationMs(poi, members, durationMin, at = Date.now(), vehicles = []) {
-    return this.plan(poi, members, durationMin, at, vehicles).totalMs;
+  actualDurationMs(poi, members, durationMin, at = Date.now(), vehicles = [], opts = {}) {
+    return this.plan(poi, members, durationMin, at, vehicles, opts).totalMs;
   }
 
   /**
@@ -153,23 +165,31 @@ export class ExplorationSystem {
    * 出發。
    * @param {{vehicleIds?:string[], kind?:'explore'|'raid'}} [opts] 載具；raid = 攻打 NPC 據點
    */
-  start(poiId, memberIds, durationMin, auto = false, startAt = Date.now(), { vehicleIds = [], kind = 'explore' } = {}) {
+  start(poiId, memberIds, durationMin, auto = false, startAt = Date.now(), { vehicleIds = [], kind = 'explore', avoidHostile = false } = {}) {
     const v = this.validate(poiId, memberIds);
     if (!v.ok) return v;
     if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'raid' ? 5 : this.searchMinutes(v.poi);
-    const sh = this.game.shelter.primary();
-    const distanceM = Math.round(haversine(sh.lat, sh.lon, v.poi.lat, v.poi.lon));
-    const car = this.game.vehicles.validate(vehicleIds, v.members, distanceM);
+    durationMin = kind === 'raid' || kind === 'pvp' ? 5 : this.searchMinutes(v.poi);
+    const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile });
+    const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
-    const plan = this.plan(v.poi, v.members, durationMin, startAt, car.vehicles);
+    const plan = this.plan(v.poi, v.members, durationMin, startAt, car.vehicles, { avoidHostile });
+    // 路線會經過的敵對警戒範圍（去程與返程各算一次）
+    const ignore = this.targetZone(v.poi);
+    const back = [...plan.path].reverse();
+    const threats = [
+      ...this.game.territory.threats(plan.path, ignore).map((th) => ({ ...th, leg: 'out', done: false })),
+      ...this.game.territory.threats(back, ignore).map((th) => ({ ...th, leg: 'back', done: false })),
+    ];
     v.members.forEach((m) => { m.status = 'exploring'; });
     this.game.vehicles.depart(car.vehicles, plan.trip.fuel);
     const exp = {
       id: uid('ex'), poiId, kind, memberIds: [...memberIds], durationMin, auto,
       startAt, endAt: startAt + plan.totalMs, phaseAtStart: this.game.time.phaseId(startAt),
       from: plan.from, distanceM: plan.distanceM, travelMs: plan.travelMs, searchMs: plan.searchMs,
+      path: plan.path, avoidHostile, threats,
+      ...(v.poi.pvp ? { pvpTarget: v.poi } : {}),
       vehicleIds: [...vehicleIds], cargo: plan.trip.cargo, ambushes: 0,
       encountered: [], travelEvents: [], travelKills: 0, travelXp: 0,
     };
@@ -189,6 +209,7 @@ export class ExplorationSystem {
   }
 
   checkAmbushNow(now = Date.now()) {
+    [...this.list].forEach((exp) => this.checkThreats(exp, now));
     const out = [];
     const groups = this.game.state.map.zombieGroups;
     if (!groups.length) return out;
@@ -210,6 +231,65 @@ export class ExplorationSystem {
       });
     });
     return out;
+  }
+
+  /** 經過敵對據點警戒範圍的時間 */
+  threatTime(exp, th) {
+    const ratio = exp.distanceM ? th.at / exp.distanceM : 0;
+    return th.leg === 'out' ? exp.startAt + exp.travelMs * ratio : exp.startAt + exp.travelMs + exp.searchMs + exp.travelMs * ratio;
+  }
+
+  /**
+   * 經過敵對（NPC、敵對玩家）且有駐守人員的據點警戒範圍：駐守人員主動攻擊。
+   * 勝利則繼續前進；失敗則撤退、本次探索沒有收穫。
+   * @returns {object|null} 撤退時的報告
+   */
+  checkThreats(exp, now) {
+    for (const th of exp.threats || []) {
+      if (th.done || this.threatTime(exp, th) > now) continue;
+      th.done = true;
+      if (!this.game.territory.noticed(th)) {
+        exp.travelEvents.push(`👣 悄悄穿過「${th.name}」的警戒範圍，沒有被發現`);
+        continue;
+      }
+      const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+      const result = this.game.combat.simulate(members, this.game.territory.defenders(th));
+      this.game.combat.applyOutcome(members, result, now);
+      exp.travelKills += result.kills.length;
+      exp.travelXp += result.xp;
+      exp.ambushes = (exp.ambushes || 0) + 1;
+      const who = th.kind === 'npc' ? `NPC「${th.name}」` : `玩家「${th.owner}」的「${th.name}」`;
+      if (result.victory) {
+        exp.travelEvents.push(`⚔️ 進入${who}的警戒範圍，擊退駐守人員`);
+        this.game.log(`⚔️ 探索隊擊退了${who}的駐守人員`, 'success');
+        continue;
+      }
+      return this.retreat(exp, `💀 進入${who}的警戒範圍，被駐守人員擊退`, now);
+    }
+    return null;
+  }
+
+  /** 撤退：探索提前結束、沒有收穫 */
+  retreat(exp, text, now) {
+    const poi = this.poi(exp.poiId);
+    const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+    this.game.state.stats.battlesLost += 1;
+    exp.travelEvents.push(text);
+    this.game.toast(`${text}（前往「${poi?.name || '目的地'}」的隊伍撤退）`, 'danger');
+    this.game.log(text, 'danger');
+    this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
+    this.free(exp);
+    const wear = this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0);
+    const report = {
+      id: uid('rp'), poiName: poi?.name || '未知地點', poiType: poi?.type, at: now,
+      events: [...exp.travelEvents, '🏳️ 隊伍帶著傷撤回據點，本次探索沒有收穫。', ...wear],
+      resources: {}, items: [], blueprints: [], kills: exp.travelKills, xp: exp.travelXp, success: false,
+      members: members.map((m) => m.name),
+    };
+    report.retreated = true;
+    this.game.state.reports = [report, ...(this.game.state.reports || [])].slice(0, 20);
+    this.game.bus.emit('expedition:done', [report]);
+    return report;
   }
 
   /** 途中遭遇戰：勝利則消滅殭屍群繼續前進，失敗則全隊撤退、探索結束 */
@@ -291,8 +371,15 @@ export class ExplorationSystem {
     while (due.length && guard < 400) {
       guard += 1;
       due.forEach((exp) => {
+        // 離線或背景時沒有即時判定的警戒範圍遭遇，結算前補算
+        const retreated = this.checkThreats(exp, exp.endAt);
+        if (retreated) {
+          reports.push(retreated);
+          return;
+        }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
-        const report = exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp) : this.resolve(exp);
+        const report = exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
+          : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp);
         report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
         reports.push(report);
         this.free(exp);
@@ -301,8 +388,8 @@ export class ExplorationSystem {
           const m = this.game.survivors.get(id);
           return m && !m.severe;
         });
-        if (exp.kind !== 'raid' && exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
-          const r = this.start(exp.poiId, exp.memberIds, exp.durationMin, true, exp.endAt, { vehicleIds: exp.vehicleIds || [] });
+        if (exp.kind === 'explore' && exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
+          const r = this.start(exp.poiId, exp.memberIds, exp.durationMin, true, exp.endAt, { vehicleIds: exp.vehicleIds || [], avoidHostile: exp.avoidHostile });
           if (!r.ok) report.events.push(`⏹️ 自動探索停止：${r.reason}`);
         }
       });
@@ -310,7 +397,8 @@ export class ExplorationSystem {
     }
     if (reports.length) {
       const st = this.game.state;
-      st.reports = [...reports.reverse(), ...(st.reports || [])].slice(0, 20);
+      // 撤退的報告已經記錄過，不重複加入
+      st.reports = [...reports.filter((r) => !r.retreated).reverse(), ...(st.reports || [])].slice(0, 20);
       if (!silent) {
         reports.forEach((r) => this.game.toast(`${r.success ? '✅' : '⚠️'} ${r.poiName} 探索${r.success ? '完成' : '受挫'}`, r.success ? 'success' : 'danger'));
       }
@@ -452,7 +540,12 @@ export class ExplorationSystem {
       Object.entries(leftovers).forEach(([k, v]) => { report.resources[k] = (report.resources[k] || 0) + v; });
       report.events.push(`📦 倉庫已滿：${kept} 單位物資由隊員放進背包${lost ? `，${lost} 單位帶不走被留下` : ''}`);
     }
-    report.items.forEach((it) => this.game.equipment.addItem(it, '探索'));
+    // 裝備：先放倉庫，倉庫滿了由隊員裝進背包，都放不下就留在原地
+    report.items = report.items.filter((it) => {
+      const ok = this.game.equipment.addItem(it, '探索', members);
+      if (!ok) report.events.push(`📦 空間不足，「${it.name}」帶不回來`);
+      return ok;
+    });
     (report.vehicles || []).forEach((v) => this.game.vehicles.add(v, '探索'));
     this.game.state.inventory.blueprints.push(...report.blueprints);
     members.forEach((m) => this.game.survivors.gainXp(m, 4 + exp.durationMin));

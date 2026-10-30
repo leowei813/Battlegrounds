@@ -260,3 +260,12 @@
 | `bases[].quietUntil` | `number` | 防線被突破後，到天亮前不再有屍潮 |
 | `npcs.cellNext` | `{ 格子: 時間 }` | 各 1 公里格子 NPC 重生時間；NPC 新增 `cell` |
 | 雲端主存檔 `map` | `poisExternal`, `looted` | 建築清單另存（`id = sha256("jdqs-map:" + 帳號 id)`），主存檔只記錄今日搜刮紀錄 |
+
+## v10 新增欄位（v7.0.0）
+| 位置 | 欄位 | 說明 |
+|---|---|---|
+| `relations` | `{ players: { 玩家ID: { status: hostile\|friend, name } }, requestsIn, requestsOut }` | 外交關係與友好請求 |
+| `expeditions[]` | `path`, `threats`, `avoidHostile`, `kind: pvp` | 繞路折線、會經過的敵對警戒範圍、突襲玩家 |
+| `npcs.list[].trip` | `path`, `crossings` | NPC 路線與會穿過的玩家警戒範圍 |
+| `inventory.items[].loc` | `store` 或倖存者 ID | 物品放在倉庫或某位隊員的背包 |
+| 公開資料 `bases[]` | `alert`, `guards`, `guardLevel` | 警戒範圍、駐守人數與等級 |

@@ -21,6 +21,8 @@
  *   PUT    /api/world/players/:id   ← { name, civ, bases[], trips[] }（Bearer = 玩家 token 雜湊）
  *   DELETE /api/world/players/:id   停止公開
  *   GET    /api/world/nearby?lat=&lon=&km=&exclude=   附近玩家（km 最大 20）
+ *   POST   /api/world/players/:id/events   送出事件 { from, type, data }（Bearer = 寄件者 token）
+ *   GET    /api/world/players/:id/events   讀取並清空自己的事件信箱
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -57,7 +59,7 @@ function cors(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
@@ -135,6 +137,23 @@ async function handleWorld(req, res, url) {
     const km = Math.min(20, Math.max(0.5, Number(url.searchParams.get('km')) || 5));
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json(res, 400, { error: 'invalid position' });
     return json(res, 200, { players: world.nearby(lat, lon, km, String(url.searchParams.get('exclude') || '')) });
+  }
+  // 玩家事件信箱：POST 送出（寄件者 token），GET 讀取並清空（本人 token）
+  const ev = /^\/api\/world\/players\/([^/]+)\/events$/.exec(url.pathname);
+  if (ev && ID_RE.test(ev[1])) {
+    const token = bearer(req);
+    if (!token) return json(res, 401, { error: 'unauthorized' });
+    if (req.method === 'POST') {
+      const body = await readBody(req);
+      const result = world.send(String(body?.from || ''), token, ev[1], body);
+      const code = { ok: 200, forbidden: 403, notfound: 404, invalid: 400 }[result];
+      return json(res, code, result === 'ok' ? { ok: true } : { error: result });
+    }
+    if (req.method === 'GET') {
+      const r = world.take(ev[1], token);
+      return r.status === 'forbidden' ? json(res, 403, { error: 'forbidden' }) : json(res, 200, { events: r.events });
+    }
+    return json(res, 405, { error: 'method not allowed' });
   }
   const m = /^\/api\/world\/players\/([^/]+)$/.exec(url.pathname);
   if (!m || !ID_RE.test(m[1])) return json(res, 404, { error: 'not found' });

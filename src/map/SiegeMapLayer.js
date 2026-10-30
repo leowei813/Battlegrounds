@@ -222,13 +222,16 @@ export const SiegeMapLayer = L.Layer.extend({
   },
 
   /** @param {[string,string,string,string]} colors 路線、標記底色、外框與文字、標籤底色 */
-  drawTrip(ctx, size, p, name, [line, fill, stroke, labelBg]) {
-    const a = this.map.latLngToContainerPoint([p.from.lat, p.from.lon]);
-    const b = this.map.latLngToContainerPoint([p.to.lat, p.to.lon]);
-    const m = this.map.latLngToContainerPoint([p.pos.lat, p.pos.lon]);
+  /** 路線（繞路時為折線） */
+  tracePath(ctx, p) {
+    const pts = (p.path || [p.from, p.to]).map((q) => this.map.latLngToContainerPoint([q.lat, q.lon]));
     ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
+    pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+  },
+
+  drawTrip(ctx, size, p, name, [line, fill, stroke, labelBg]) {
+    const m = this.map.latLngToContainerPoint([p.pos.lat, p.pos.lon]);
+    this.tracePath(ctx, p);
     ctx.setLineDash([3, 6]);
     ctx.strokeStyle = line;
     ctx.lineWidth = 2;
@@ -263,20 +266,14 @@ export const SiegeMapLayer = L.Layer.extend({
     this.game.state.expeditions.forEach((exp) => {
       const p = exploration.progress(exp, now);
       if (!p) return;
-      const a = this.map.latLngToContainerPoint([p.from.lat, p.from.lon]);
-      const b = this.map.latLngToContainerPoint([p.to.lat, p.to.lon]);
       const m = this.map.latLngToContainerPoint([p.pos.lat, p.pos.lon]);
-      // 已走過的路段（實線）
-      ctx.beginPath();
-      if (p.phase === 'returning') {
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.moveTo(b.x, b.y);
-      } else ctx.moveTo(a.x, a.y);
-      ctx.lineTo(m.x, m.y);
+      // 路線（繞開警戒範圍時為折線）
+      this.tracePath(ctx, p);
       ctx.strokeStyle = 'rgba(255,213,79,0.9)';
       ctx.lineWidth = 3;
+      ctx.setLineDash(p.phase === 'returning' ? [6, 4] : []);
       ctx.stroke();
+      ctx.setLineDash([]);
       if (m.x < -60 || m.y < -60 || m.x > size.x + 60 || m.y > size.y + 60) return;
 
       // 移動中的遇襲範圍（夜間有殭屍群時才顯示）

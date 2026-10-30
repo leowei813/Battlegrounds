@@ -19,12 +19,16 @@ function cleanPlayer(p) {
     .map((b) => ({
       lat: b.lat, lon: b.lon, name: String(b.name || '').slice(0, 40), primary: !!b.primary,
       size: BASE_SIZES[b.size] ? b.size : 'medium',
+      alert: finite(b.alert) ? Math.min(500, Math.max(0, b.alert)) : BASE_SIZES[b.size]?.alert || 80,
+      guards: finite(b.guards) ? Math.min(20, Math.max(0, Math.round(b.guards))) : 0,
+      guardLevel: finite(b.guardLevel) ? Math.min(60, Math.max(1, Math.round(b.guardLevel))) : 1,
     }));
   if (!bases.length) return null;
   const trips = (Array.isArray(p.trips) ? p.trips : []).slice(0, 10).filter((t) => validPoint(t?.from) && validPoint(t?.to)
     && finite(t.startAt) && finite(t.endAt) && t.endAt > t.startAt)
     .map((t) => ({
       from: t.from, to: t.to, startAt: t.startAt, endAt: t.endAt,
+      ...(Array.isArray(t.path) && t.path.length >= 2 && t.path.every(validPoint) ? { path: t.path.slice(0, 20) } : {}),
       travelMs: finite(t.travelMs) ? t.travelMs : 0, searchMs: finite(t.searchMs) ? t.searchMs : t.endAt - t.startAt,
       members: finite(t.members) ? t.members : 1, target: String(t.target || '').slice(0, 40),
     }));
@@ -112,14 +116,19 @@ export class WorldSync {
     return {
       name: g.state.player.name,
       civ: g.civilization.value(),
-      bases: g.state.bases.map((b) => ({
-        lat: b.lat, lon: b.lon, name: b.name, primary: b === primary, size: b.size,
-      })),
+      bases: g.state.bases.map((b) => {
+        const gar = g.territory.garrison(b);
+        return {
+          lat: b.lat, lon: b.lon, name: b.name, primary: b === primary, size: b.size,
+          alert: g.territory.alertRadius(b), guards: gar.count, guardLevel: gar.level,
+        };
+      }),
       trips: g.state.expeditions.map((ex) => {
         const poi = g.exploration.poi(ex.poiId);
         return poi && ex.from && {
           from: ex.from, to: { lat: poi.lat, lon: poi.lon }, startAt: ex.startAt, endAt: ex.endAt,
           travelMs: ex.travelMs, searchMs: ex.searchMs, members: ex.memberIds.length, target: poi.name,
+          ...(ex.path?.length > 2 ? { path: ex.path.slice(0, 20) } : {}),
         };
       }).filter(Boolean),
     };
@@ -141,6 +150,11 @@ export class WorldSync {
       }
       const list = await this.provider.worldNearby(center.lat, center.lon, WORLD_RADIUS_KM, id);
       this.others = list.map(cleanPlayer).filter((p) => p && p.id !== id);
+      // 其他玩家送來的事件（攻擊、友好請求…）
+      if (this.provider.worldInbox && this.shared) {
+        const events = await this.provider.worldInbox(id, token).catch(() => []);
+        if (events.length) g.territory.handleEvents(events);
+      }
       this.status = 'online';
       this.lastSyncAt = Date.now();
     } catch (err) {

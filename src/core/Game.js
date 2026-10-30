@@ -17,6 +17,7 @@ import { QuestSystem } from '../systems/QuestSystem.js';
 import { CivilizationSystem } from '../systems/CivilizationSystem.js';
 import { VehicleSystem } from '../systems/VehicleSystem.js';
 import { NpcSystem } from '../systems/NpcSystem.js';
+import { TerritorySystem } from '../systems/TerritorySystem.js';
 import { grant } from '../systems/costUtils.js';
 import { fetchPois } from '../map/OverpassService.js';
 import { fillPois } from '../map/PoiGenerator.js';
@@ -46,6 +47,7 @@ export class Game {
     this.civilization = new CivilizationSystem(this);
     this.vehicles = new VehicleSystem(this);
     this.npcs = new NpcSystem(this);
+    this.territory = new TerritorySystem(this);
 
     this.lastPhase = null;
     this.timers = [];
@@ -65,7 +67,7 @@ export class Game {
     this.lastPhase = this.time.phaseId();
     this.started = true;
     // 重要事件發生時立即存檔
-    ['expedition:done', 'shelter:changed', 'siege:breach', 'siege:wave', 'npc:raid', 'npcs:changed', 'vehicles:changed', 'recruit:board']
+    ['expedition:done', 'shelter:changed', 'siege:breach', 'siege:wave', 'npc:raid', 'npcs:changed', 'vehicles:changed', 'recruit:board', 'relations:changed']
       .forEach((evt) => bus.on(evt, () => this.requestSave()));
     this.timers.push(setInterval(() => this.tick(), TICK_MS));
     this.startSiegeLoop();

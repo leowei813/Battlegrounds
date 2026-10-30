@@ -4,6 +4,7 @@ import { POI_TYPES } from '../config/poiTypes.js';
 import { zoneAt } from '../config/zones.js';
 import { stockOf, dayKey } from './LootStock.js';
 import { tripProgress } from './ExplorationSystem.js';
+import { planRoute, pathLength, crossings } from '../map/routing.js';
 import {
   withSeed,
   uid, pick, randFloat, randInt, haversine, chance,
@@ -158,6 +159,7 @@ export class NpcSystem {
         if (n.level < NPC_CONFIG.maxLevel) n.level += 1;
         n.nextLevelAt += rand(NPC_CONFIG.levelUpMs);
       }
+      if (n.trip) this.checkCrossings(n, now);
       // 掠奪隊抵達時立即交戰，之後返回據點
       if (n.trip?.kind === 'raid' && !n.trip.resolved && now >= this.arriveAt(n.trip)) {
         n.trip.resolved = true;
@@ -169,10 +171,65 @@ export class NpcSystem {
     });
   }
 
-  tripTimes(n, to, searchMs) {
-    const dist = haversine(n.lat, n.lon, to.lat, to.lon);
+  /** 玩家據點的防禦強度（防禦塔與駐守人員） */
+  baseDefense(base) {
+    const g = this.game;
+    const guards = g.territory.garrison(base).list.reduce((s, sv) => s + g.survivors.stats(sv).power, 0);
+    return g.siege.of(base.id).defenseDps() * 8 + guards;
+  }
+
+  /**
+   * NPC 行程：自動判斷玩家據點的警戒範圍是否有威脅——防禦強過自己就繞路，
+   * 否則直接穿過（若該據點有駐守人員會遭到攻擊）。
+   * @param {string} [targetBaseId] 掠奪目標（不繞開）
+   */
+  tripTimes(n, to, searchMs, targetBaseId = null) {
+    const g = this.game;
+    const power = this.power(n);
+    const zones = g.state.bases.filter((b) => b.id !== targetBaseId).map((b) => ({
+      base: b, lat: b.lat, lon: b.lon, r: g.territory.alertRadius(b), defense: this.baseDefense(b),
+    }));
+    const avoid = zones.filter((z) => z.defense > power * 0.7);
+    const from = { lat: n.lat, lon: n.lon };
+    const path = planRoute(from, to, avoid);
+    const dist = pathLength(path);
+    const through = zones.filter((z) => !avoid.includes(z) && g.territory.garrison(z.base).count > 0);
+    const back = [...path].reverse();
+    const crossingsList = [
+      ...crossings(path, through).map(({ index, at }) => ({ baseId: through[index].base.id, at, leg: 'out', done: false })),
+      ...crossings(back, through).map(({ index, at }) => ({ baseId: through[index].base.id, at, leg: 'back', done: false })),
+    ];
     const travelMs = Math.round((dist / 1000) * NPC_CONFIG.walkMinPerKm * 60000);
-    return { travelMs, searchMs, distanceM: Math.round(dist) };
+    return {
+      travelMs, searchMs, distanceM: Math.round(dist), path, crossings: crossingsList, avoided: avoid.length,
+    };
+  }
+
+  /** NPC 隊伍穿過有駐守人員的玩家據點範圍：駐守人員主動攻擊 */
+  checkCrossings(n, now) {
+    const trip = n.trip;
+    for (const c of trip?.crossings || []) {
+      const ratio = trip.distanceM ? c.at / trip.distanceM : 0;
+      const at = c.leg === 'out' ? trip.startAt + trip.travelMs * ratio : trip.startAt + trip.travelMs + trip.searchMs + trip.travelMs * ratio;
+      if (c.done || at > now) continue;
+      c.done = true;
+      const g = this.game;
+      const base = g.shelter.base(c.baseId);
+      const guards = base ? g.territory.garrison(base).list : [];
+      if (!guards.length) continue;
+      const enemies = Array.from({ length: Math.min(4, 2 + Math.floor(n.level / 8)) }, () => g.combat.createEnemy('raider', n.level));
+      const result = g.combat.simulate(guards, enemies);
+      g.combat.applyOutcome(guards, result, now);
+      if (result.victory) {
+        g.log(`🛡️「${base.name}」的駐守人員擊退了路過的「${n.name}」隊伍`, 'success');
+        g.toast(`🛡️「${base.name}」擊退了路過的「${n.name}」隊伍`, 'success');
+        n.trip = null;
+        n.level = Math.max(1, n.level - 1);
+        g.bus.emit('npcs:changed');
+        return;
+      }
+      g.log(`⚠️「${n.name}」的隊伍強行穿過「${base.name}」的警戒範圍`, 'danger');
+    }
   }
 
   launchExplore(n, now) {
@@ -197,7 +254,7 @@ export class NpcSystem {
     const bases = this.game.state.bases;
     if (!bases.length) return;
     const base = pick(bases);
-    const t = this.tripTimes(n, base, 0);
+    const t = this.tripTimes(n, base, 0, base.id);
     // 抵達時若已入夜（屍潮），NPC 會放棄這次掠奪
     n.trip = {
       kind: 'raid', baseId: base.id, target: base.name, from: { lat: n.lat, lon: n.lon }, to: { lat: base.lat, lon: base.lon },

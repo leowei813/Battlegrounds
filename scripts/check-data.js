@@ -75,7 +75,7 @@ assert(roll.ok && roll.offer.length === 3, '招募一次出現三位候選人');
 assert(g.survivors.pickRecruit(roll.offer[1].id).ok && !g.state.recruitOffer, '選擇其中一位加入');
 assert(g.equipment.craft('knife').ok, 'craft');
 Object.assign(g.survivors.leader(), { severe: false, hp: null }); // 探索可能讓領袖重傷；確保有人駐守
-for (let i = 0; i < 1200; i += 1) g.siege.update(0.1);
+for (let i = 0; i < 2400; i += 1) { g.siege.update(0.1); g.shelter.primary().wallHp = null; } // 避免被突破後當晚平靜
 assert(g.state.stats.siegeKills > 0, 'siege kills happen');
 const alive = g.siege.of().zombies.length;
 setHour(g, 7); // 天亮：殭屍撤回建築
@@ -85,7 +85,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 9, 'state is serializable');
+assert(save.version === 10, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -138,7 +138,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 9 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 10 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -262,7 +262,7 @@ assert(migrated.version === 9 && migrated.bases.length === 1 && migrated.bases[0
   ge.state.player.coins = 1e7;
   Object.keys(ge.state.resources).forEach((k) => { ge.state.resources[k] = 1e7; });
   ge.state.bases[0].facilities.warehouse.level = 10;
-  const crafted = Array.from({ length: 300 }, () => eq.craft('knife').item);
+  const crafted = Array.from({ length: 300 }, () => { const it = eq.craft('knife').item; ge.state.inventory.items = []; return it; }); // 清空倉庫避免格子用完
   const tiers = new Set(crafted.map((it) => it.rarity));
   assert(crafted.every(Boolean) && tiers.size >= 4, `製作的品級隨機（出現 ${[...tiers].map((r) => RARITIES[r].name).join('、')}）`);
   // 吸血與探索速度詞綴生效
@@ -617,7 +617,7 @@ assert(migrated.version === 9 && migrated.bases.length === 1 && migrated.bases[0
   gr.state.research.levels.c_gun = 1;
   gr.research.invalidate();
   assert(eq.canCraftModel('revolver').ok && !eq.canCraftModel('uzi').ok, '槍械製造等級決定可製作的槍種');
-  const made = Array.from({ length: 2000 }, () => eq.craft('knife').item.rarity);
+  const made = Array.from({ length: 2000 }, () => { const it = eq.craft('knife').item; gr.state.inventory.items = []; return it.rarity; });
   assert(!made.includes('legendary'), '製作技術 0 級時不會做出稀有裝備');
   // 背包增加運載量、電鋸耗油
   const lead = gr.survivors.leader();
@@ -757,6 +757,123 @@ assert(migrated.version === 9 && migrated.bases.length === 1 && migrated.bases[0
   calls.length = 0;
   await w1.clear();
   assert(calls.length === 1 && calls[0][0] === 'del', '刪除進度時移除公開的據點與探索隊');
+}
+
+// ---- 14. v7：警戒範圍、繞路、敵對遭遇、外交、NPC 判斷 ----
+{
+  const { planRoute, pathLength, crossings } = await import('../src/map/routing.js');
+  const A = { lat: 25, lon: 121 };
+  const B = { lat: 25, lon: 121.01 };
+  const circle = { lat: 25, lon: 121.005, r: 150 };
+  const route = planRoute(A, B, [circle]);
+  assert(route.length > 2 && crossings(route, [circle]).length === 0 && pathLength(route) > pathLength([A, B]), '路線會繞開警戒範圍（路程變長）');
+  assert(crossings([A, B], [circle]).length === 1, '直線穿過時偵測到進入警戒範圍');
+
+  const gt = Game.newGame({ playerName: 'T', classId: 'warrior', lat: 25, lon: 121 });
+  gt.state.map.pois = fillPois([], 25, 121);
+  const home = gt.state.map.pois.reduce((best, p) => ((p.lat - 25) ** 2 + (p.lon - 121) ** 2 < (best.lat - 25) ** 2 + (best.lon - 121) ** 2 ? p : best));
+  gt.shelter.establish(home);
+  const target = { id: 'far', type: 'shop', name: '目標', lat: home.lat, lon: home.lon + 0.012, osm: true };
+  gt.state.map.pois.push(target);
+  // 中立玩家的據點在路線中間：預設繞開
+  gt.world = {
+    others: [{ id: 'p1', name: '鄰居', civ: 10, trips: [], bases: [{ lat: home.lat, lon: home.lon + 0.006, name: '鄰居家', primary: true, size: 'medium', alert: 150, guards: 2, guardLevel: 3 }] }],
+    identity: () => ({ id: 'me', token: 'x' }),
+  };
+  const zoneCircle = { lat: home.lat, lon: home.lon + 0.006, r: 150 };
+  const pn = gt.territory.route(home, target);
+  assert(crossings(pn, [zoneCircle]).length === 0, '非敵對（中立）據點的警戒範圍預設繞開');
+  assert(gt.territory.threats(pn).length === 0, '中立據點不會攻擊');
+  // 敵對：預設不繞開，有駐守人員會攻擊
+  gt.territory.handleEvents([{ from: 'p1', fromName: '鄰居', type: 'attack', data: { win: true, lossPct: 0.1, base: '我家' } }]);
+  Object.keys(gt.state.resources).forEach((k) => { gt.state.resources[k] = 1000; });
+  gt.territory.handleEvents([{ from: 'p1', fromName: '鄰居', type: 'attack', data: { win: true, lossPct: 0.1 } }]);
+  assert(gt.territory.relation('p1') === 'hostile' && gt.state.resources.wood === 900, '被其他玩家攻擊後變成敵對並損失資源');
+  const ph = gt.territory.route(home, target);
+  const th = gt.territory.threats(ph);
+  assert(th.length === 1 && th[0].kind === 'player', '敵對據點的警戒範圍不會自動繞開，經過時會遭到駐守人員攻擊');
+  assert(crossings(gt.territory.route(home, target, { avoidHostile: true }), [zoneCircle]).length === 0, '可選擇連敵對範圍也繞開');
+  // 實際派隊：經過敵對範圍時發生戰鬥（打輸會撤退）
+  setHour(gt, 10);
+  const lead = gt.survivors.leader();
+  Object.assign(lead, { status: 'idle', severe: false, hp: null, level: 1 });
+  gt.world.others[0].bases[0].guards = 6;
+  gt.world.others[0].bases[0].guardLevel = 40;
+  gt.territory.noticed = () => true;
+  const ex = gt.exploration.start(target.id, ['leader'], 10);
+  assert(ex.ok && ex.exp.threats.length === 2, '出發時算出去程與返程會經過的敵對範圍');
+  const [rep] = gt.exploration.update(ex.exp.endAt + 1, { silent: true });
+  assert(!gt.state.expeditions.length && rep && !rep.success && rep.events.some((e) => e.includes('警戒範圍')), `在敵對範圍被駐守人員擊退後撤退（${JSON.stringify(rep?.events)}）`);
+  // 友好
+  gt.territory.handleEvents([{ from: 'p2', fromName: '阿美', type: 'friendRequest' }]);
+  assert(gt.territory.rel.requestsIn.p2, '收到友好請求');
+  await gt.territory.acceptFriend('p2', '阿美');
+  assert(gt.territory.relation('p2') === 'friend', '接受後成為友好');
+  gt.territory.handleEvents([{ from: 'p2', fromName: '阿美', type: 'friendRemove' }]);
+  assert(gt.territory.relation('p2') === 'neutral', '對方解除後回到中立');
+  // NPC 一律敵對
+  gt.state.npcs.list.push({ id: 'npcX', name: '測試幫', lat: home.lat + 0.006, lon: home.lon, level: 5, poiId: 'x', resources: {}, coins: 0, nextLevelAt: Infinity, nextExploreAt: Infinity, nextRaidAt: Infinity, trip: null });
+  assert(gt.territory.zones().find((z) => z.id === 'npcX').relation === 'hostile', 'NPC 一律敵對');
+  // NPC 判斷：玩家據點防禦強就繞路，弱就直接穿過
+  const npc = gt.state.npcs.list.find((x) => x.id === 'npcX');
+  const across = { lat: home.lat - 0.006, lon: home.lon };
+  const homeBase = gt.shelter.primary();
+  Object.assign(lead, { job: 'guard', level: 1, status: 'idle', severe: false, hp: null });
+  gt.npcs.baseDefense = () => 0;
+  const weak = gt.npcs.tripTimes(npc, across, 0);
+  assert(weak.avoided === 0 && weak.crossings.length >= 1, 'NPC 判斷沒有威脅時直接穿過玩家警戒範圍（有駐守人員會被攻擊）');
+  gt.npcs.baseDefense = () => 1e9;
+  const strong = gt.npcs.tripTimes(npc, across, 0);
+  assert(strong.avoided === 1 && strong.crossings.length === 0, 'NPC 判斷有威脅時繞開玩家警戒範圍');
+  void homeBase;
+}
+
+// ---- 15. 物品空間：格子與重量 ----
+{
+  const { BAG_BASE_SLOTS, STORE_BASE_SLOTS, itemSize } = await import('../src/config/equipment.js');
+  const gi = Game.newGame({ playerName: 'I', classId: 'warrior', lat: 0, lon: 0 });
+  gi.state.map.pois = fillPois([], 0, 0);
+  gi.shelter.establish(gi.state.map.pois[0]);
+  const eq = gi.equipment;
+  const lead = gi.survivors.leader();
+  assert(eq.storeCap() === STORE_BASE_SLOTS && eq.bagSlotCap(lead) === BAG_BASE_SLOTS, `倉庫初始 ${STORE_BASE_SLOTS} 格、隊員背包初始 ${BAG_BASE_SLOTS} 格`);
+  gi.shelter.primary().facilities.warehouse.level = 3;
+  gi.state.research.levels.i_shelves = 2;
+  gi.research.invalidate();
+  assert(eq.storeCap() === STORE_BASE_SLOTS + 20 + 10, '升級倉庫與研究可增加倉庫格子');
+  gi.shelter.primary().facilities.warehouse.level = 1;
+  gi.state.research.levels.i_shelves = 0;
+  gi.research.invalidate();
+  const lmg = eq.generate({ level: 5, model: 'm249', rarity: 'common' });
+  const knife = eq.generate({ level: 5, model: 'knife', rarity: 'common' });
+  assert(itemSize(lmg) > itemSize(knife) && eq.isWorn(lmg) === false, '物品依大小佔用不同格數');
+  // 填滿倉庫
+  let added = 0;
+  while (eq.addItem(eq.generate({ level: 1, model: 'shovel', rarity: 'common' }), '測試')) added += 1;
+  assert(eq.storeUsed() <= eq.storeCap() && added === eq.storeCap(), `倉庫滿了就放不下（放入 ${added} 件）`);
+  Object.keys(gi.state.resources).forEach((k) => { gi.state.resources[k] = 1e5; });
+  assert(!eq.craft('knife').ok, '倉庫空間不足時無法製作');
+  // 放不下時由隊員背包攜帶
+  const extra = eq.generate({ level: 1, model: 'pistolXbow', rarity: 'common' });
+  assert(eq.addItem(extra, '測試', [lead]) && extra.loc === lead.id, '倉庫滿時物品放進隊員背包');
+  assert(gi.survivors.bagLoad(lead) >= 4, '背包內物品計入負重');
+  // 背包裝備增加格數
+  const pack = eq.generate({ level: 1, model: 'pack3', rarity: 'common' });
+  gi.state.inventory.items.push({ ...pack, loc: 'store' });
+  eq.equip(lead.id, pack.id);
+  assert(eq.bagSlotCap(lead) > BAG_BASE_SLOTS + 8, `背包裝備增加物品格數（${eq.bagSlotCap(lead)} 格）`);
+  // 移動與穿戴
+  gi.state.inventory.items = [];
+  const gun = eq.generate({ level: 1, model: 'm1911', rarity: 'common' });
+  eq.addItem(gun, '測試');
+  assert(eq.moveToBag(gun.id, lead.id).ok && gun.loc === lead.id && eq.storeUsed() === 0, '倉庫物品交給隊員攜帶');
+  assert(eq.moveToStore(gun.id).ok && gun.loc === 'store', '隊員背包物品放回倉庫');
+  eq.equip(lead.id, gun.id);
+  assert(eq.storeUsed() === 0, '穿戴中的裝備不佔格子');
+  assert(eq.unequip(lead.id, 'weapon').ok && eq.storeUsed() === itemSize(gun), '卸下後放回倉庫');
+  const old = JSON.parse(JSON.stringify(gi.state));
+  old.inventory.items.forEach((it) => { delete it.loc; });
+  assert(SaveManager.migrate(old).inventory.items.every((it) => it.loc === 'store'), '舊存檔的物品都放在倉庫');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

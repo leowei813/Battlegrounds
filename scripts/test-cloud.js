@@ -93,6 +93,16 @@ async function run() {
   assert((await api.worldNearby(35.0, 139.0, 5, pB.id)).length === 0, '遠方玩家不會出現');
   await expectError(api.worldPut(pA.id, pB.token, { name: 'x', bases: [{ lat: 0, lon: 0 }] }), 'forbidden', '無法冒用他人身分更新');
   await expectError(api.worldPut(pB.id, pB.token, { name: 'x', bases: [{ lat: 999, lon: 0 }] }), 'server', '無效座標被拒');
+  assert(seenByB[0].bases[0].alert > 0 && 'guards' in seenByB[0].bases[0], '公開資料包含警戒範圍與駐守人數');
+  // 事件信箱（攻擊、友好請求）
+  await api.worldPut(pB.id, pB.token, { name: '玩家B', bases: [{ lat: 25.041, lon: 121.561, name: 'B家', primary: true, size: 'small', alert: 70, guards: 1 }] });
+  await api.worldSend(pB.id, pB.token, pA.id, 'friendRequest');
+  await expectError(api.worldSend(pB.id, pA.token, pA.id, 'attack'), 'forbidden', '無法冒用他人身分送出事件');
+  await expectError(api.worldSend(pB.id, pB.token, pA.id, 'hack'), 'server', '不允許的事件類型被拒');
+  const inbox = await api.worldInbox(pA.id, pA.token);
+  assert(inbox.length === 1 && inbox[0].type === 'friendRequest' && inbox[0].from === pB.id && inbox[0].fromName === '玩家B', '收到其他玩家的事件');
+  assert((await api.worldInbox(pA.id, pA.token)).length === 0, '讀取後清空信箱');
+  await expectError(api.worldInbox(pA.id, pB.token), 'forbidden', '無法讀取他人信箱');
   await api.worldDelete(pA.id, pA.token);
   assert((await api.worldNearby(25.04, 121.56, 5, pB.id)).length === 0, '停止公開後立即從世界移除');
 }

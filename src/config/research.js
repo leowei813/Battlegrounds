@@ -1,5 +1,5 @@
 /**
- * 研究樹：10 個分支、77 項科技，每項都有等級（大多最高 10 級）。
+ * 研究樹：10 個分支、78 項科技，每項都有等級（大多最高 10 級）。
  *
  *  - tier       1～4，決定需要的研究中心等級（tier n 需 Lv n×2−1）；第 L 級另需研究中心 Lv L 以上
  *  - effects    每一級提供的數值（等級越高效果越大，累加）
@@ -93,6 +93,7 @@ export const RESEARCH = {
   // ---- 工業 ----
   i_work: r('industry', 1, '工作台效率', '工作台資源產量提升', { workbenchPct: 0.05 }),
   i_storage: r('industry', 1, '物資管理', '資源上限提升', { storagePct: 0.05 }),
+  i_shelves: r('industry', 1, '倉儲擴建', '倉庫的物品格子增加', { storeSlots: 5 }),
   i_salvage: r('industry', 1, '拆解回收', '拆解裝備獲得的材料提升', { dismantlePct: 0.08 }),
   i_trade: r('industry', 1, '以物易物', '出售裝備獲得的金錢提升', { sellPct: 0.05 }),
   i_gen: r('industry', 2, '發電效率', '發電機的生產加成提升', { generatorPct: 0.05 }, { req: [['i_work', 2]] }),
@@ -179,6 +180,7 @@ const LABELS = {
   survivorFindPct: (v) => `遇到倖存者 +${pct(v)}`, blueprintPct: (v) => `設計圖 +${pct(v)}`, vehicleWearReduce: (v) => `載具磨損 −${pct(v)}`,
   vehicleFuelReduce: (v) => `載具耗油 −${pct(v)}`, repairCostReduce: (v) => `維修費用 −${pct(v)}`, vehicleSpeedPct: (v) => `載具速度 +${pct(v)}`,
   vehicleCargoPct: (v) => `載具運載 +${pct(v)}`, vehicleFindPct: (v) => `找到載具 +${pct(v)}`, garageSlots: (v) => `車庫 +${Math.floor(v)}`,
+  storeSlots: (v) => `倉庫格子 +${v}`,
   craftTech: (v) => `製作技術 Lv${v}`, craftCostReduce: (v) => `製作費用 −${pct(v)}`, gunCraft: (v) => `槍械製造 Lv${v}`,
   craftLevelAdd: (v) => `製作裝備等級 +${v}`, craftBpBoost: (v) => `設計圖升階 ${pct(v)}`, craftQualityAdd: (v) => `製作素質 +${pct(v)}`,
   recruitTech: (v) => `招募技術 Lv${v}`, recruitCostReduce: (v) => `招募費用 −${pct(v)}`, boardSlots: (v) => `每小時倖存者 +${Math.floor(v)}`,

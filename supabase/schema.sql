@@ -139,3 +139,58 @@ revoke all on function public.jdqs_world_nearby(double precision, double precisi
 grant execute on function public.jdqs_world_put(text, text, jsonb, double precision, double precision) to anon, authenticated;
 grant execute on function public.jdqs_world_delete(text, text) to anon, authenticated;
 grant execute on function public.jdqs_world_nearby(double precision, double precision, double precision, text) to anon, authenticated;
+
+-- ============================================================
+-- 玩家之間的事件信箱（v7.0.0）：攻擊、友好請求、接受、解除
+-- 已經建立過的專案只要再執行一次本檔即可（皆為 if not exists / or replace）
+-- ============================================================
+create table if not exists public.jdqs_world_events (
+  id         bigserial primary key,
+  to_id      text not null,
+  from_id    text not null,
+  from_name  text not null,
+  type       text not null,
+  data       jsonb not null default '{}'::jsonb,
+  at         bigint not null
+);
+create index if not exists jdqs_world_events_to on public.jdqs_world_events (to_id);
+alter table public.jdqs_world_events enable row level security;
+revoke all on public.jdqs_world_events from anon, authenticated;
+
+create or replace function public.jdqs_world_send(p_from text, p_token text, p_to text, p_type text, p_data jsonb)
+returns json language plpgsql security definer set search_path = public as $$
+declare s public.jdqs_world;
+begin
+  if p_type not in ('attack', 'friendRequest', 'friendAccept', 'friendRemove') or p_from = p_to then
+    return json_build_object('status', 'invalid');
+  end if;
+  if octet_length(coalesce(p_data, '{}'::jsonb)::text) > 2000 then return json_build_object('status', 'invalid'); end if;
+  select * into s from public.jdqs_world where id = p_from;
+  if not found or s.token_hash <> p_token then return json_build_object('status', 'forbidden'); end if;
+  if not exists (select 1 from public.jdqs_world where id = p_to) then return json_build_object('status', 'notfound'); end if;
+  insert into public.jdqs_world_events (to_id, from_id, from_name, type, data, at)
+    values (p_to, p_from, coalesce(s.payload->>'name', '倖存者'), p_type, coalesce(p_data, '{}'::jsonb), (extract(epoch from clock_timestamp()) * 1000)::bigint);
+  -- 每位玩家最多保留 50 筆
+  delete from public.jdqs_world_events where to_id = p_to and id not in (
+    select id from public.jdqs_world_events where to_id = p_to order by id desc limit 50);
+  return json_build_object('status', 'ok');
+end $$;
+
+create or replace function public.jdqs_world_inbox(p_id text, p_token text)
+returns json language plpgsql security definer set search_path = public as $$
+declare s public.jdqs_world;
+declare out json;
+begin
+  select * into s from public.jdqs_world where id = p_id;
+  if not found then return json_build_object('status', 'ok', 'events', '[]'::json); end if;
+  if s.token_hash <> p_token then return json_build_object('status', 'forbidden'); end if;
+  select coalesce(json_agg(json_build_object('from', from_id, 'fromName', from_name, 'type', type, 'data', data, 'at', at) order by id), '[]'::json)
+    into out from public.jdqs_world_events where to_id = p_id;
+  delete from public.jdqs_world_events where to_id = p_id;
+  return json_build_object('status', 'ok', 'events', out);
+end $$;
+
+revoke all on function public.jdqs_world_send(text, text, text, text, jsonb) from public;
+revoke all on function public.jdqs_world_inbox(text, text) from public;
+grant execute on function public.jdqs_world_send(text, text, text, text, jsonb) to anon, authenticated;
+grant execute on function public.jdqs_world_inbox(text, text) to anon, authenticated;

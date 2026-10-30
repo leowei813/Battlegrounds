@@ -102,21 +102,28 @@ export class InventoryPanel {
       : (a, b) => RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) || b.power - a.power);
     const filters = [['all', '全部'], ...Object.entries(SLOTS).map(([k, v]) => [k, `${v.icon}${v.name}`])]
       .map(([k, n]) => `<button class="chip ${this.filter === k ? 'active' : ''}" data-action="filter" data-f="${k}">${n}</button>`).join('');
+    const eq = g.equipment;
     const cards = items.map((it) => {
-      const owner = g.equipment.equippedBy(it.id);
+      const owner = eq.equippedBy(it.id);
+      const carrier = it.loc && it.loc !== 'store' ? g.survivors.get(it.loc) : null;
       const actions = [
         btn('裝備', 'equipTo', { id: it.id }, { cls: 'btn-xs btn-primary' }),
+        carrier && !owner ? btn('放回倉庫', 'toStore', { id: it.id }, { cls: 'btn-xs' }) : '',
+        !carrier && !owner ? btn('交給隊員', 'toBag', { id: it.id }, { cls: 'btn-xs' }) : '',
         btn(it.locked ? '🔓' : '🔒', 'lock', { id: it.id }, { cls: 'btn-xs btn-ghost', title: '上鎖' }),
         btn(`出售 💰${g.equipment.sellValue(it)}`, 'sell', { id: it.id }, { cls: 'btn-xs', disabled: !!owner || it.locked }),
         btn('拆解', 'dismantle', { id: it.id }, { cls: 'btn-xs btn-ghost', disabled: !!owner || it.locked }),
       ].join('');
-      return itemCard(it, { equippedBy: owner, actions });
+      return itemCard(it, { equippedBy: owner, carrier: owner ? null : carrier, actions });
     }).join('');
+    const used = eq.storeUsed();
+    const cap = eq.storeCap();
     const counts = {};
     g.state.inventory.items.forEach((i) => { counts[i.rarity] = (counts[i.rarity] || 0) + 1; });
     const rarities = [['all', '全部品級', '#fff'], ...RARITY_ORDER.map((r) => [r, `${RARITIES[r].name} ${counts[r] || 0}`, RARITIES[r].color])]
       .map(([k, n, c]) => `<button class="chip rchip ${this.rarityFilter === k ? 'active' : ''}" style="--rc:${c}" data-action="rfilter" data-r="${k}">${n}</button>`).join('');
     return `
+      <p>📦 倉庫空間 <b class="${used >= cap ? 'neg' : ''}">${used} / ${cap}</b> 格 <small class="muted">（物品依大小佔格子；倉庫每升一級 +10 格，研究「倉儲擴建」再增加；穿戴中的裝備不佔格子）</small></p>
       <div class="chips">${filters}</div>
       <div class="chips">${rarities}</div>
       <div class="row-between"><div class="chips">
@@ -156,6 +163,7 @@ export class InventoryPanel {
     const odds = Object.entries(eq.rarityOdds())
       .map(([r, p]) => `<span class="odd" style="--rc:${RARITIES[r].color}">${RARITIES[r].name} ${(p * 100).toFixed(p < 0.01 ? 2 : 1)}%</span>`).join('');
     return `
+      <p>📦 倉庫空間 <b>${eq.storeUsed()} / ${eq.storeCap()}</b> 格（空間不足時無法製作）</p>
       <p class="muted">工作台 Lv${wb}：簡易製作不需要工作台；其餘裝備需要對應等級的工作台，工作台等級越高<b>可製作的型號越多</b>。槍械另需研究「槍械製造」。製作品級只受研究「製作技術」影響（Lv${eq.craftTech()}/10）。</p>
       <div class="odds"><small class="muted">製作品級機率：</small>${odds}</div>
       ${bps ? `<h3>設計圖</h3>${bps}` : ''}
@@ -184,6 +192,8 @@ export class InventoryPanel {
       case 'craft': this.showCraftResult(g.equipment.craft(data.type)); break;
       case 'craftBp': this.showCraftResult(g.equipment.craft(data.type, data.id)); break;
       case 'equipTo': this.pickSurvivor(data.id); break;
+      case 'toStore': this.ui.result(g.equipment.moveToStore(data.id)); break;
+      case 'toBag': this.pickSurvivor(data.id, 'carry'); break;
       case 'repair': this.ui.result(g.vehicles.repair(data.id)); break;
       case 'scrap': if (confirm('確定拆解這台載具？會回收部分金屬。')) this.ui.result(g.vehicles.scrap(data.id)); break;
       case 'craftVehicle': this.ui.result(g.vehicles.craft(data.type)); break;
@@ -197,24 +207,28 @@ export class InventoryPanel {
     if (res.ok) this.ui.modal.open({ title: '🛠️ 製作完成', body: itemCard(res.item) });
   }
 
-  pickSurvivor(itemId) {
+  /** 選擇倖存者：mode = equip（裝備）或 carry（放進背包攜帶） */
+  pickSurvivor(itemId, mode = 'equip') {
     const g = this.game;
-    const item = g.equipment.getItem(itemId);
+    const eq = g.equipment;
+    const item = eq.getItem(itemId);
+    const carry = mode === 'carry';
     const rows = g.state.survivors.map((sv) => {
-      const cur = g.equipment.getItem(sv.equipment[item.slot]);
+      const cur = eq.getItem(sv.equipment[item.slot]);
       const diff = item.power - (cur?.power || 0);
+      const info = carry
+        ? `<small class="muted">背包 ${eq.bagSlotsUsed(sv)}/${eq.bagSlotCap(sv)} 格・負重 ${Math.floor(g.survivors.bagLoad(sv))}/${g.survivors.bagCap(sv)}</small>`
+        : `<small class="muted">目前：${cur ? escapeHtml(cur.name) : '無'}</small><span class="${diff >= 0 ? 'pos' : 'neg'}">${diff >= 0 ? '▲' : '▼'}${Math.abs(diff)}</span>`;
       return `<button class="pick-row" data-action="give" data-id="${sv.id}" ${sv.status === 'exploring' ? 'disabled' : ''}>
-        <span>${CLASSES[sv.classId].icon} <b>${escapeHtml(sv.name)}</b> Lv${sv.level}</span>
-        <small class="muted">目前：${cur ? escapeHtml(cur.name) : '無'}</small>
-        <span class="${diff >= 0 ? 'pos' : 'neg'}">${diff >= 0 ? '▲' : '▼'}${Math.abs(diff)}</span>
+        <span>${CLASSES[sv.classId].icon} <b>${escapeHtml(sv.name)}</b> Lv${sv.level}</span>${info}
       </button>`;
     }).join('');
     this.ui.modal.open({
-      title: `裝備「${item.name}」給…`,
+      title: carry ? `交給誰攜帶「${item.name}」？` : `裝備「${item.name}」給…`,
       body: `<div class="pick-list">${rows}</div>`,
       onAction: (action, data, m) => {
         if (action === 'give') {
-          const r = this.ui.result(g.equipment.equip(data.id, itemId));
+          const r = this.ui.result(carry ? eq.moveToBag(itemId, data.id) : eq.equip(data.id, itemId));
           if (r.ok) m.close();
         }
       },

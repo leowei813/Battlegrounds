@@ -1,6 +1,6 @@
 import { RESOURCES, CURRENCIES } from '../config/constants.js';
 import {
-  RARITIES, SLOTS, AFFIXES, ITEM_TYPES, ITEM_MODELS,
+  RARITIES, SLOTS, AFFIXES, ITEM_TYPES, ITEM_MODELS, itemSize, itemWeight,
 } from '../config/equipment.js';
 import { CLASSES, JOBS, xpToNext } from '../config/survivors.js';
 import { escapeHtml } from '../utils/dom.js';
@@ -79,7 +79,9 @@ export function affixLines(item) {
     .join('');
 }
 
-export function itemCard(item, { actions = '', equippedBy = null, compact = false } = {}) {
+export function itemCard(item, {
+  actions = '', equippedBy = null, compact = false, carrier = null,
+} = {}) {
   if (!item) return '';
   const r = RARITIES[item.rarity];
   return `
@@ -88,12 +90,12 @@ export function itemCard(item, { actions = '', equippedBy = null, compact = fals
       <span class="item-icon">${ITEM_MODELS[item.model]?.icon || ITEM_TYPES[item.type]?.icon || '❔'}</span>
       <div class="item-title">
         <b>${escapeHtml(item.name)}</b>${item.locked ? ' 🔒' : ''}
-        <small>${rarityTag(item.rarity)} ${ITEM_TYPES[item.type]?.name || ''}${item.tier ? ` T${item.tier}` : ''} · Lv${item.level} · 戰力 ${item.power} ${compact ? '' : qualityTag(item)}</small>
+        <small>${rarityTag(item.rarity)} ${ITEM_TYPES[item.type]?.name || ''}${item.tier ? ` T${item.tier}` : ''} · Lv${item.level} · 戰力 ${item.power} · 📦${itemSize(item)}格 ⚖️${itemWeight(item)} ${compact ? '' : qualityTag(item)}</small>
       </div>
     </div>
     ${compact ? '' : `<div class="stat-line">${statLine(item.stats)}</div>
     ${item.affixes.length ? `<ul class="affixes">${affixLines(item)}</ul>` : ''}`}
-    ${equippedBy ? `<div class="equipped-by">已裝備：${escapeHtml(equippedBy.name)}</div>` : ''}
+    ${equippedBy ? `<div class="equipped-by">已裝備：${escapeHtml(equippedBy.name)}</div>` : carrier ? `<div class="equipped-by">🎒 ${escapeHtml(carrier.name)} 攜帶中</div>` : ''}
     ${actions ? `<div class="btn-row">${actions}</div>` : ''}
   </div>`;
 }
