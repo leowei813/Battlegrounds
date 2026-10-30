@@ -23,7 +23,7 @@ const TABS = [
   { id: 'shelter', icon: '🏠', name: '避難所' },
   { id: 'explore', icon: '🧭', name: '探索' },
   { id: 'survivors', icon: '👥', name: '倖存者' },
-  { id: 'inventory', icon: '🎒', name: '背包' },
+  { id: 'inventory', icon: '🛠️', name: '製作' },
   { id: 'research', icon: '🔬', name: '研究' },
   { id: 'quests', icon: '📜', name: '任務' },
   { id: 'settings', icon: '⚙️', name: '設定' },
@@ -52,6 +52,7 @@ export class UIManager {
     this.mapRoot = $('#map-root');
     this.toastEl = new Toast($('#toasts'));
     this.modal = new Modal($('#modal-root'));
+    this.modal.onAnyAction = () => this.game.requestSave(); // 彈窗內的操作也立即存檔
     this.tab = 'shelter';
     this.viewBaseId = null; // 避難所分頁目前檢視的據點（null = 主要據點）
     this.drawerCollapsed = false;
@@ -83,6 +84,7 @@ export class UIManager {
         return;
       }
       this.panels[this.tab].onAction?.(action, data, el);
+      this.game.requestSave(); // 任何操作都立即存檔
     });
     delegateActions(this.hud, (action) => {
       if (action === 'openSettings') this.switchTab('settings');
@@ -178,11 +180,13 @@ export class UIManager {
     const cap = g.resources.storageCap();
     const phase = g.time.phase();
     const res = RESOURCE_KEYS.map((k) => {
+      // 右上角顯示總數量：倉庫 + 所有隊員背包
       const v = st.resources[k];
+      const carried = g.survivors.carried(k);
       const r = net[k];
       const full = v >= cap;
-      return `<div class="res ${full ? 'full' : ''} ${v < 1 && r < 0 ? 'empty' : ''}" title="${RESOURCES[k].name}：${Math.floor(v)}/${cap}（${r >= 0 ? '+' : ''}${r.toFixed(1)}/時）">
-        <span>${RESOURCES[k].icon}</span><b>${formatNumber(v)}</b><small class="${r < 0 ? 'neg' : ''}">${r >= 0 ? '+' : ''}${formatNumber(r)}</small></div>`;
+      return `<div class="res ${full ? 'full' : ''} ${v < 1 && r < 0 ? 'empty' : ''}" title="${RESOURCES[k].name}：總計 ${Math.floor(v + carried)}（倉庫 ${Math.floor(v)}/${cap}、隊員攜帶 ${Math.floor(carried)}）・${r >= 0 ? '+' : ''}${r.toFixed(1)}/時">
+        <span>${RESOURCES[k].icon}</span><b>${formatNumber(v + carried)}</b><small class="${r < 0 ? 'neg' : ''}">${r >= 0 ? '+' : ''}${formatNumber(r)}</small></div>`;
     }).join('');
     const hasBase = g.shelter.hasShelter();
     const wallRatio = hasBase ? g.shelter.wallHp() / g.shelter.wallMax() : 1;

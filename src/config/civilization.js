@@ -55,7 +55,7 @@ export const baseEstablishCost = (n) => ({
 });
 
 /** 據點遭突破時損失的資源比例 */
-export const BREACH_LOSS = { primary: 0.25, outpost: 0.25 };
+export const BREACH_LOSS = { primary: 0.5, outpost: 0.5 };
 
 /**
  * 據點遭突破時，每棟建築（設施與防禦建築）各自有此機率損毀降 1 級；
@@ -68,10 +68,10 @@ export const BREACH_BUILDING_DAMAGE_CHANCE = 0.3;
  * 據點越大，圍牆越長越難防守：siegeMul 為屍潮數量倍率。
  */
 export const BASE_SIZES = {
-  small: { name: '小型', slots: 4, icon: '⛺', pin: 32, mul: 0.88, color: '#b0bec5', siegeMul: 0.85 },
-  medium: { name: '中型', slots: 6, icon: '🏘️', pin: 35, mul: 1, color: '#9ccc65', siegeMul: 1 },
-  large: { name: '大型', slots: 9, icon: '🏢', pin: 38, mul: 1.12, color: '#42a5f5', siegeMul: 1.25 },
-  huge: { name: '巨型', slots: 12, icon: '🏰', pin: 42, mul: 1.25, color: '#ffa726', siegeMul: 1.55 },
+  small: { name: '小型', slots: 4, icon: '⛺', pin: 32, mul: 0.88, color: '#b0bec5', siegeMul: 0.85, searchMin: 8 },
+  medium: { name: '中型', slots: 6, icon: '🏘️', pin: 35, mul: 1, color: '#9ccc65', siegeMul: 1, searchMin: 14 },
+  large: { name: '大型', slots: 9, icon: '🏢', pin: 38, mul: 1.12, color: '#42a5f5', siegeMul: 1.25, searchMin: 22 },
+  huge: { name: '巨型', slots: 12, icon: '🏰', pin: 42, mul: 1.25, color: '#ffa726', siegeMul: 1.55, searchMin: 30 },
 };
 export const FACILITY_COUNT = 8;
 

@@ -3,6 +3,7 @@ import {
   ITEM_MODELS, tierMul, benchFor, craftRarityTable,
 } from '../config/equipment.js';
 import {
+  withSeed,
   weightedPick, pick, randFloat, uid, clamp, chance,
 } from '../utils/math.js';
 import { canAfford, payCost, grant } from './costUtils.js';
@@ -86,7 +87,7 @@ export class EquipmentSystem {
     const affixPool = Object.keys(AFFIXES);
     const affixes = [];
     for (let i = 0; i < rdef.affixes && affixPool.length; i += 1) {
-      const idx = Math.floor(Math.random() * affixPool.length);
+      const idx = Math.floor(randFloat(0, affixPool.length));
       const aid = affixPool.splice(idx, 1)[0];
       const a = AFFIXES[aid];
       affixes.push({ id: aid, value: round(a.stat, (a.value + (a.perLevel || 0) * (lv - 1)) * roll()) });
@@ -268,7 +269,12 @@ export class EquipmentSystem {
     return cost;
   }
 
+  /** 製作（使用存檔種子：重新讀檔不會改變結果） */
   craft(modelId, blueprintId = null) {
+    return withSeed(this.game.state.rng, 'craft', () => this.craftNow(modelId, blueprintId));
+  }
+
+  craftNow(modelId, blueprintId = null) {
     const md = ITEM_MODELS[modelId];
     if (!md) return { ok: false, reason: '未知裝備' };
     const bpList = this.game.state.inventory.blueprints;
@@ -295,7 +301,7 @@ export class EquipmentSystem {
   /** 生成設計圖（指定型號，保底精良以上） */
   makeBlueprint(level) {
     const type = pick(Object.keys(ITEM_TYPES));
-    const rarity = level > 15 && Math.random() < 0.3 ? 'epic' : 'rare';
+    const rarity = level > 15 && chance(0.3) ? 'epic' : 'rare';
     return { id: uid('bp'), model: this.pickModel(type, level, 1), rarity };
   }
 

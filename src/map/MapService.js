@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ALL_ENEMIES } from '../config/enemies.js';
-import { POI_SCAN_RADIUS } from '../config/constants.js';
+import { POI_SCAN_RADIUS, OUTPOST_SCAN_RADIUS } from '../config/constants.js';
 import { BASE_SIZES } from '../config/civilization.js';
 import { bus, EVT } from '../core/EventBus.js';
 import { escapeHtml } from '../utils/dom.js';
@@ -163,6 +163,12 @@ export class MapService {
         .on('click', () => bus.emit(EVT.OPEN_POI, { poiId: b.poiId }))
         .bindTooltip(`${primary ? '⭐ 避難所' : '🏴 前哨站'}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）`, { direction: 'top', offset: [0, -d / 2] })
         .addTo(this.layers.shelter);
+      // 前哨站的可視範圍較小
+      if (!primary) {
+        L.circle([b.lat, b.lon], {
+          radius: OUTPOST_SCAN_RADIUS, color: '#ffb300', weight: 1, dashArray: '4 6', fillOpacity: 0.02,
+        }).addTo(this.layers.range);
+      }
       // 前哨與主要據點之間的補給線
       if (!primary && sh) {
         L.polyline([[sh.lat, sh.lon], [b.lat, b.lon]], { color: '#ffb300', weight: 2, opacity: 0.5 }).addTo(this.layers.range);

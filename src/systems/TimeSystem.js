@@ -32,6 +32,13 @@ export class TimeSystem {
     return TIME_PHASES[this.phaseId(at)];
   }
 
+  /** 下一次天亮（06:00）的現實時間 */
+  nextDawn(at = Date.now()) {
+    const h = this.hour(at);
+    const hours = h < 6 ? 6 - h : 30 - h;
+    return at + (hours / 24) * DAY_REAL_MS;
+  }
+
   clockText(at = Date.now()) {
     const h = this.hour(at);
     const hh = Math.floor(h);

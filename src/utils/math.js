@@ -1,19 +1,54 @@
 /**
  * 通用數學與隨機工具。
- * 所有遊戲隨機皆透過此模組，便於日後替換為可重現的種子亂數。
+ * 所有遊戲隨機皆透過此模組；重要結果（製作、招募、探索、戰鬥）改用存檔中的種子，
+ * 重新讀檔也會得到相同結果，無法靠反覆讀檔刷結果。
  */
 
 export const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
 export const lerp = (a, b, t) => a + (b - a) * t;
 
-export const randFloat = (min, max) => min + Math.random() * (max - min);
+/** 目前使用的亂數來源（預設 Math.random；withSeed 期間改為種子亂數） */
+let source = Math.random;
+const rnd = () => source();
+
+/** 新的隨機種子（32 位元整數） */
+export const newSeed = () => Math.floor(Math.random() * 2 ** 32) >>> 0;
+
+/**
+ * 在 fn 執行期間，所有遊戲隨機都改用 holder[key] 的種子（mulberry32），結束後寫回推進後的種子。
+ * 種子隨存檔保存並立即上傳，因此讀回舊存檔會重現同樣的結果。
+ * @template T
+ * @param {Record<string, number>} holder 存檔中的種子表（state.rng）
+ * @param {string} key 種子名稱
+ * @param {() => T} fn
+ * @returns {T}
+ */
+export function withSeed(holder, key, fn) {
+  if (source !== Math.random || !holder) return fn(); // 巢狀呼叫沿用外層種子
+  let s = Number.isInteger(holder[key]) ? holder[key] >>> 0 : newSeed();
+  source = () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  try {
+    return fn();
+  } finally {
+    holder[key] = s;
+    source = Math.random;
+  }
+}
+
+export const randFloat = (min, max) => min + rnd() * (max - min);
 
 export const randInt = (min, max) => Math.floor(randFloat(min, max + 1));
 
-export const chance = (p) => Math.random() < p;
+export const chance = (p) => rnd() < p;
 
-export const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+export const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
 
 /**
  * 依權重隨機挑選。
@@ -26,7 +61,7 @@ export function weightedPick(table) {
     : Object.entries(table);
   const total = entries.reduce((s, [, w]) => s + Math.max(0, w), 0);
   if (total <= 0) return null;
-  let r = Math.random() * total;
+  let r = rnd() * total;
   for (const [key, w] of entries) {
     r -= Math.max(0, w);
     if (r <= 0) return key;

@@ -1,5 +1,5 @@
 import {
-  TICK_MS, AUTOSAVE_MS, OFFLINE_CAP_MS, MAX_LOG, RESOURCE_KEYS, POI_SCAN_RADIUS,
+  TICK_MS, AUTOSAVE_MS, OFFLINE_CAP_MS, MAX_LOG, RESOURCE_KEYS, POI_SCAN_RADIUS, OUTPOST_SCAN_RADIUS,
 } from '../config/constants.js';
 import { bus, EVT } from './EventBus.js';
 import { createInitialState } from './GameState.js';
@@ -64,6 +64,9 @@ export class Game {
     this.quests.ensureDaily();
     this.lastPhase = this.time.phaseId();
     this.started = true;
+    // 重要事件發生時立即存檔
+    ['expedition:done', 'shelter:changed', 'siege:breach', 'siege:wave', 'npc:raid', 'npcs:changed', 'vehicles:changed', 'recruit:board']
+      .forEach((evt) => bus.on(evt, () => this.requestSave()));
     this.timers.push(setInterval(() => this.tick(), TICK_MS));
     this.startSiegeLoop();
     this.timers.push(setInterval(() => this.save(), AUTOSAVE_MS));
@@ -171,14 +174,36 @@ export class Game {
    * 取得附近建築（OSM → 失敗則程序化）
    * @param {(done:number,total:number)=>void} [onProgress] 分區查詢進度
    */
+  /**
+   * 掃描範圍：避難所（或起始點）周圍 POI_SCAN_RADIUS，每座前哨站周圍 OUTPOST_SCAN_RADIUS（較小）。
+   * @returns {{lat:number, lon:number, radius:number}[]}
+   */
+  scanAreas(lat, lon) {
+    return [
+      { lat, lon, radius: POI_SCAN_RADIUS },
+      ...this.shelter.outposts().map((b) => ({ lat: b.lat, lon: b.lon, radius: OUTPOST_SCAN_RADIUS })),
+    ];
+  }
+
   async scanMap(lat, lon, onProgress, { quick = false, maxWaitMs = 0 } = {}) {
     let pois = [];
     let source = 'overpass';
+    const areas = this.scanAreas(lat, lon);
     try {
-      const req = fetchPois(lat, lon, POI_SCAN_RADIUS, onProgress, { buildings: !quick });
+      // 依序掃描各區域（公共伺服器限制同時請求數），進度合併計算
+      const run = async () => {
+        const seen = new Set();
+        const out = [];
+        for (let i = 0; i < areas.length; i += 1) {
+          const a = areas[i];
+          const list = await fetchPois(a.lat, a.lon, a.radius, onProgress && ((d, t) => onProgress(i * t + d, areas.length * t)), { buildings: !quick });
+          list.forEach((p) => { if (!seen.has(p.id)) { seen.add(p.id); out.push(p); } });
+        }
+        return out;
+      };
       pois = maxWaitMs
-        ? await Promise.race([req, new Promise((_, rej) => setTimeout(() => rej(new Error('quick scan timeout')), maxWaitMs))])
-        : await req;
+        ? await Promise.race([run(), new Promise((_, rej) => setTimeout(() => rej(new Error('quick scan timeout')), maxWaitMs))])
+        : await run();
     } catch (err) {
       console.warn('[Game] Overpass failed, using generated POIs', err);
       source = 'generated';
@@ -211,6 +236,20 @@ export class Game {
     this.state.log.unshift({ t: Date.now(), msg, type });
     if (this.state.log.length > MAX_LOG) this.state.log.length = MAX_LOG;
     bus.emit(EVT.LOG);
+    this.requestSave();
+  }
+
+  /**
+   * 發生任何事件（玩家操作、遊戲事件、記錄）時立即存檔。
+   * 同一輪事件迴圈內的多次要求合併成一次，雲端上傳也會合併進行中的請求。
+   */
+  requestSave() {
+    if (this.saveQueued || !this.started) return;
+    this.saveQueued = true;
+    queueMicrotask(() => {
+      this.saveQueued = false;
+      this.save();
+    });
   }
 
   toast(msg, type = 'info') {
@@ -220,6 +259,7 @@ export class Game {
   /** 玩家操作後呼叫：立即通知 UI 更新 */
   changed() {
     bus.emit(EVT.STATE_CHANGED);
+    this.requestSave();
   }
 
   /**

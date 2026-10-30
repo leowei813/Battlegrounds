@@ -2,14 +2,13 @@ import { bus, EVT } from '../core/EventBus.js';
 import { SaveManager } from '../core/SaveManager.js';
 import { CloudError } from './providers/CloudError.js';
 import { credentials, normalizeUsername, validateCredentials } from './account.js';
+import { sha256 } from '../utils/sha256.js';
 
 const CFG_KEY = 'jdqs_cloud_v2';
 /** 無 SSE 時輪詢雲端版本的間隔 */
 const POLL_MS = 10000;
 /** 有 SSE 時的保險輪詢（防止連線靜默中斷） */
 const SAFETY_POLL_MS = 60000;
-/** 一般自動存檔時，兩次上傳的最短間隔 */
-const PUSH_MIN_INTERVAL = 10000;
 
 export const CLOUD_EVT = { STATUS: 'cloud:status', LOCKED: 'cloud:locked' };
 
@@ -78,6 +77,11 @@ export class CloudSync {
 
   creds() {
     return { id: this.cfg.auth.id, token: this.cfg.auth.token };
+  }
+
+  /** 地圖建築清單另存一筆雲端紀錄（同一組憑證） */
+  mapCreds() {
+    return { id: sha256(`jdqs-map:${this.cfg.auth.id}`).slice(0, 32), token: this.cfg.auth.token };
   }
 
   persist() {
@@ -156,6 +160,15 @@ export class CloudSync {
     try {
       const remote = await this.provider.pull(id, token);
       const state = SaveManager.migrate(remote.data);
+      if (state?.map?.poisExternal) {
+        const m = this.mapCreds();
+        const map = await this.provider.pull(m.id, m.token).catch((err) => {
+          if (err.kind === 'notfound') return null;
+          throw err;
+        });
+        SaveManager.mergeMap(state, map?.data);
+        this.mapPushedAt = state.map.pois.length ? state.map.fetchedAt : 0;
+      }
       this.cfg.rev = remote.meta.rev;
       this.cfg.lastSyncAt = Date.now();
       delete this.cfg.pendingCreate;
@@ -231,9 +244,10 @@ export class CloudSync {
     this.timers = [];
   }
 
+  /** 每次存檔都立即上傳；上傳中又有新存檔時，完成後再上傳最新狀態（合併為一次） */
   onSave(final) {
     if (!this.enabled || this.locked) return;
-    if (final || Date.now() - this.lastPushAt >= PUSH_MIN_INTERVAL) this.pushNow({ keepalive: final });
+    this.pushNow({ keepalive: final });
   }
 
   async pushNow({ force = false, keepalive = false, throwOnError = false } = {}) {
@@ -247,11 +261,20 @@ export class CloudSync {
     this.setStatus('syncing');
     const { id, token } = this.creds();
     try {
+      // 地圖建築重新掃描過才上傳建築清單（較大，平常不需要）
+      const st = this.game.state;
+      if (st.map.pois.length && st.map.fetchedAt !== this.mapPushedAt) {
+        const m = this.mapCreds();
+        await this.provider.push(m.id, m.token, {
+          baseRev: 0, deviceId: this.deviceId, deviceName: deviceName(), data: SaveManager.packMap(st), force: true,
+        });
+        this.mapPushedAt = st.map.fetchedAt;
+      }
       const meta = await this.provider.push(id, token, {
         baseRev: this.cfg.rev || 0,
         deviceId: this.deviceId,
         deviceName: deviceName(),
-        data: SaveManager.pack(this.game.state),
+        data: SaveManager.packMain(st),
         force,
       }, { keepalive });
       this.cfg.rev = meta.rev;

@@ -5,7 +5,10 @@ import { FACILITIES } from '../config/facilities.js';
 import { CLASSES } from '../config/survivors.js';
 import { emptyEquipment } from '../config/equipment.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
-import { uid } from '../utils/math.js';
+import { uid, newSeed } from '../utils/math.js';
+
+/** 各類隨機結果的種子 */
+export const newSeeds = () => Object.fromEntries(['craft', 'recruit', 'explore', 'battle', 'npc'].map((k) => [k, newSeed()]));
 
 /** 統計欄位（任務、成就皆由此衍生） */
 export const STAT_KEYS = [
@@ -54,6 +57,7 @@ export function createLeader(name, classId = 'warrior') {
     hp: null, // 目前生命（null = 滿血）
     severe: false, // 重傷：生命歸零，無法行動
     zeroSince: 0, // 飢餓且生命為 0 的起始時間（永久死亡倒數）
+    bag: {}, // 個人背包攜帶的資源
     equipment: emptyEquipment(),
   };
 }
@@ -73,6 +77,7 @@ export function createSurvivor(name, classId, level = 1, rarity = 'common') {
     hp: null,
     severe: false,
     zeroSince: 0,
+    bag: {},
     equipment: emptyEquipment(),
   };
 }
@@ -109,6 +114,7 @@ export function createInitialState({ playerName, classId, lat, lon }) {
     expeditions: [],
     reports: [],
     vehicles: [], // 車庫（見 VehicleSystem）
+    rng: newSeeds(), // 製作、招募、探索、戰鬥的隨機種子（重新讀檔結果不變）
     npcs: { list: [], nextSpawnAt: 0 }, // NPC 據點（見 NpcSystem）
     research: { levels: {}, active: null }, // 科技等級（見 ResearchSystem）
     quests: { mainIndex: 0, mainClaimable: false, dailyDate: '', dailies: [], achievements: {} },

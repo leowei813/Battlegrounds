@@ -1,5 +1,6 @@
 import { formatDuration } from '../../utils/math.js';
 import { CLASSES, JOBS, xpToNext } from '../../config/survivors.js';
+import { RESOURCES, RESOURCE_KEYS } from '../../config/constants.js';
 import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
 import {
@@ -38,10 +39,10 @@ export class SurvivorPanel {
     const pool = st.recruitPool.map((c) => this.candidateCard(c,
       `${btn('✅ 接納', 'accept', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full })}${btn('拒絕', 'reject', { id: c.id }, { cls: 'btn-sm btn-ghost' })}`)).join('');
     const offer = (st.recruitOffer || []).map((c) => this.candidateCard(c,
-      btn('✅ 選擇', 'pick', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full }))).join('');
+      btn(`✅ 雇用 💰${g.survivors.hireCost(c).coins}`, 'pick', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full }))).join('');
     const cost = g.survivors.currentRecruitCost();
     const board = (st.recruitBoard?.list || []).map((c) => this.candidateCard(c,
-      btn('✅ 招募', 'hire', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full }))).join('');
+      btn(`✅ 雇用 💰${g.survivors.hireCost(c).coins}`, 'hire', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full }))).join('');
     const odds = Object.entries(g.survivors.rarityOdds())
       .map(([r, p]) => `<span class="odd" style="--rc:${RARITIES[r].color}">${RARITIES[r].name} ${p < 1 ? p.toFixed(2) : p.toFixed(1)}%</span>`).join('');
     const cap = g.survivors.housingBreakdown();
@@ -55,11 +56,11 @@ export class SurvivorPanel {
       ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷，飢餓時無法治療。重傷且持續飢餓滿遊戲內 3 天的隊員會永久死亡（領袖除外）。</div>' : ''}
       ${offer ? `<h3>📻 招募候選人（三選一）</h3><div class="grid">${offer}</div><div class="btn-row">${btn('放棄此次招募（不退費）', 'abandon', {}, { cls: 'btn-ghost btn-sm' })}</div>` : `
       <div class="card row-between">
-        <div><b>📻 廣播招募</b><small class="muted block">會出現 3 位隨機職業與品級的倖存者供你選擇，也可以放棄（費用不退還）</small><div class="costs">${costHtml(st, cost)}</div></div>
+        <div><b>📻 廣播招募</b><small class="muted block">支付廣播費用後出現 3 位隨機職業與品級的倖存者，選擇後還要支付雇用費；也可以放棄（廣播費用不退還）</small><div class="costs">${costHtml(st, cost)}</div></div>
         ${btn(full ? '人數已達上限' : '招募', 'recruit', {}, { cls: 'btn-primary', disabled: full })}
       </div>`}
       ${pool ? `<h3>🙋 等待加入（探索中遇到）</h3><div class="grid">${pool}</div>` : ''}
-      <h3>🏕️ 附近的倖存者 <small class="muted">每小時更新（${formatDuration(Math.max(0, st.recruitBoard.refreshAt - Date.now()))}後）・費用同廣播招募</small></h3>
+      <h3>🏕️ 附近的倖存者 <small class="muted">每小時更新（${formatDuration(Math.max(0, st.recruitBoard.refreshAt - Date.now()))}後）・雇用需支付金錢</small></h3>
       <div class="grid">${board || '<p class="muted">目前沒有人。</p>'}</div>
       <div class="odds"><small class="muted">倖存者品級機率（招募技術 Lv${g.research.level('r_tech')}/10）：</small>${odds}</div>
       <div class="grid">${list}</div>
@@ -119,8 +120,38 @@ export class SurvivorPanel {
         <h4>技能</h4><ul class="skill-list">${skills}</ul>
         <h4>工作指派 <small class="muted">（閒置在避難所時生效）</small></h4><div class="chips">${jobs}</div>
         <h4>裝備</h4><div class="equip-grid">${slots}</div>
+        ${this.bagHtml(sv)}
         ${sv.isLeader ? '' : `<div class="btn-row end">${btn('🚪 驅逐', 'dismiss', {}, { cls: 'btn-ghost btn-sm', disabled: sv.status === 'exploring' })}</div>`}
       </div>`;
+  }
+
+  /**
+   * 個人背包（資源與負重）；在避難所時右側顯示倉庫，可存入／取出。
+   * 倉庫的每種基本物資都是固定格子，只能改變存取數量。
+   */
+  bagHtml(sv) {
+    const g = this.game;
+    const bag = g.survivors.bagOf(sv);
+    const load = g.survivors.bagLoad(sv);
+    const cap = g.survivors.bagCap(sv);
+    const home = g.survivors.atShelter(sv);
+    const res = g.state.resources;
+    const storage = g.resources.storageCap();
+    const rows = RESOURCE_KEYS.map((k) => `
+      <div class="bag-row" data-key="${k}">
+        <div class="bag-cell ${bag[k] ? '' : 'empty'}"><span>${RESOURCES[k].icon}</span><small>${RESOURCES[k].name}</small><b>${Math.floor(bag[k] || 0)}</b></div>
+        ${home ? `<div class="bag-ctrl">
+          ${btn('◀', 'bagOut', { key: k }, { cls: 'btn-xs', title: '從倉庫取出' })}
+          <input type="number" min="1" step="1" value="10" inputmode="numeric" aria-label="數量">
+          ${btn('▶', 'bagIn', { key: k }, { cls: 'btn-xs', title: '存入倉庫' })}
+        </div>
+        <div class="bag-cell store"><span>${RESOURCES[k].icon}</span><small>倉庫</small><b>${Math.floor(res[k])}</b></div>` : ''}
+      </div>`).join('');
+    return `<h4>🎒 背包 <small class="muted">負重 ${Math.floor(load)} / ${cap}（徒步 ${g.vehicles.personCarry()} + 背包裝備）</small></h4>
+      ${progressBar(cap ? load / cap : 0, load >= cap ? 'danger' : '', `${Math.floor(load)}/${cap}`)}
+      ${home ? `<div class="row-between bag-head"><small>隊員背包</small><small>◀ 取出・存入 ▶</small><small>📦 倉庫（上限 ${storage}）</small></div>` : '<p class="muted">不在避難所，無法存取倉庫。</p>'}
+      <div class="bag-grid ${home ? 'with-store' : ''}">${rows}</div>
+      ${home && load ? `<div class="btn-row end">${btn('全部存入倉庫', 'bagAll', {}, { cls: 'btn-sm' })}</div>` : ''}`;
   }
 
   openDetail(id) {
@@ -130,7 +161,14 @@ export class SurvivorPanel {
       wide: true,
       body: this.detailBody(id),
       live: () => this.detailBody(id),
-      onAction: (action, data, m) => {
+      onAction: (action, data, m, el) => {
+        if (action === 'bagIn' || action === 'bagOut') {
+          const n = Math.max(1, Math.floor(+el.closest('.bag-row').querySelector('input').value || 1));
+          const r = action === 'bagIn' ? g.survivors.deposit(id, data.key, n) : g.survivors.withdraw(id, data.key, n);
+          if (!r.ok) this.ui.toastEl.show(r.reason, 'danger');
+          g.changed();
+        }
+        if (action === 'bagAll') this.ui.result(g.survivors.depositAll(id));
         if (action === 'job') this.ui.result(g.survivors.setJob(id, data.job));
         if (action === 'heal') this.ui.result(g.survivors.heal(id));
         if (action === 'unequip') this.ui.result(g.equipment.unequip(id, data.slot));

@@ -31,9 +31,16 @@ export class Modal {
     const handle = {
       el: wrap,
       body: bodyEl,
+      // 重繪時保留捲動位置與使用者輸入的數量（例如背包存取）
       update: (html) => {
         const top = bodyEl.scrollTop;
+        const inputs = [...bodyEl.querySelectorAll('input[type=number]')];
+        const values = inputs.map((el) => el.value);
+        const focused = inputs.indexOf(document.activeElement);
         bodyEl.innerHTML = html;
+        const after = [...bodyEl.querySelectorAll('input[type=number]')];
+        if (after.length === values.length) after.forEach((el, i) => { el.value = values[i]; });
+        if (focused >= 0) after[focused]?.focus();
         bodyEl.scrollTop = top;
       },
       setTitle: (t) => { wrap.querySelector('h3').textContent = t; },
@@ -46,6 +53,7 @@ export class Modal {
     delegateActions(wrap, (action, data, el) => {
       if (action === 'close') return dismissible ? this.close() : null;
       onAction?.(action, data, handle, el);
+      this.onAnyAction?.();
       return null;
     });
     wrap.addEventListener('click', (e) => { if (e.target === wrap && dismissible) this.close(); });

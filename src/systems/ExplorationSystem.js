@@ -2,11 +2,13 @@ import { MAX_TEAM_SIZE, OFFLINE_CAP_MS, RESOURCES } from '../config/constants.js
 import { POI_TYPES } from '../config/poiTypes.js';
 import { RARITIES } from '../config/equipment.js';
 import {
+  withSeed,
   chance, pick, randInt, uid, weightedPick, haversine, randFloat, lerp,
 } from '../utils/math.js';
 import { ALL_ENEMIES } from '../config/enemies.js';
 import { stockOf, dayKey } from './LootStock.js';
 import { zoneAt } from '../config/zones.js';
+import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 
 /** 每公里單程移動時間（分鐘，未套用速度加成） */
 const MIN_PER_KM_ONE_WAY = 2;
@@ -100,13 +102,25 @@ export class ExplorationSystem {
     // 隊伍速度取最快成員的「技能 + 裝備」探索速度
     const scout = Math.max(0, ...members.map((m) => (this.game.survivors.skillEffects(m).exploreSpeed || 0)
       + (this.game.survivors.stats(m).exploreSpeed || 0)));
+    // 偵察兵（技能「尋路」）與裝備、研究加快速度；隊員越多搜索越快
     const speed = this.game.time.exploreSpeedMul(at) * (1 + scout + this.game.research.bonus('exploreSpeed'));
+    const teamMul = 1 + 0.1 * Math.max(0, members.length - 1);
     // 載具只加快路程，不影響搜索時間
     const travelMs = Math.round(((distanceM / 1000) * MIN_PER_KM_ONE_WAY / (speed * trip.speed)) * 60000);
-    const searchMs = Math.round((durationMin / speed) * 60000);
+    const searchMs = Math.round((durationMin / (speed * teamMul)) * 60000);
     return {
       from, distanceM, travelMs, searchMs, totalMs: travelMs * 2 + searchMs, trip,
     };
+  }
+
+  /**
+   * 搜索時間（分鐘，未套用速度加成）：依建築大小與危險度，最大型、最危險的地點需要 30 分鐘。
+   */
+  searchMinutes(poi) {
+    if (!poi || poi.npc) return 5;
+    const size = BASE_SIZES[baseSizeOf(poi)];
+    const danger = this.game.zombies.areaDanger(poi);
+    return Math.max(3, Math.round(size.searchMin * (0.6 + 0.4 * Math.min(1, (danger - 1) / 5))));
   }
 
   /** 計算實際探索時間（毫秒） */
@@ -143,6 +157,8 @@ export class ExplorationSystem {
     const v = this.validate(poiId, memberIds);
     if (!v.ok) return v;
     if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
+    // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
+    durationMin = kind === 'raid' ? 5 : this.searchMinutes(v.poi);
     const sh = this.game.shelter.primary();
     const distanceM = Math.round(haversine(sh.lat, sh.lon, v.poi.lat, v.poi.lon));
     const car = this.game.vehicles.validate(vehicleIds, v.members, distanceM);
@@ -167,7 +183,12 @@ export class ExplorationSystem {
    * 只在線上每秒檢查；殭屍群只在夜間出現，所以白天移動是安全的。
    * @returns {object[]} 本次發生的遭遇
    */
+  /** 途中遇襲（使用存檔種子） */
   checkAmbush(now = Date.now()) {
+    return withSeed(this.game.state.rng, 'battle', () => this.checkAmbushNow(now));
+  }
+
+  checkAmbushNow(now = Date.now()) {
     const out = [];
     const groups = this.game.state.map.zombieGroups;
     if (!groups.length) return out;
@@ -258,7 +279,12 @@ export class ExplorationSystem {
    * 結算到期的探索；離線時可能一次結算多輪自動探索。
    * @returns {object[]} 報告列表
    */
+  /** 結算探索（使用存檔種子） */
   update(now, { silent = false } = {}) {
+    return withSeed(this.game.state.rng, 'explore', () => this.updateNow(now, { silent }));
+  }
+
+  updateNow(now, { silent = false } = {}) {
     const reports = [];
     let guard = 0;
     let due = this.list.filter((e) => e.endAt <= now);
@@ -415,9 +441,17 @@ export class ExplorationSystem {
       Object.keys(gained).forEach((k) => { if (RESOURCES[k]) gained[k] *= ratio; });
       report.events.push(`🎒 帶不動了！運載量 ${carry}，留下約 ${Math.round(total - carry)} 單位物資（載具可以載更多）`);
     }
-    // 入帳
+    // 入帳：先放進倉庫，放不下的由隊員裝進自己的背包
     const rounded = Object.fromEntries(Object.entries(gained).map(([k, v]) => [k, Math.round(v)]));
     report.resources = this.game.grant(rounded);
+    const leftovers = Object.fromEntries(Object.entries(rounded)
+      .filter(([k]) => RESOURCES[k]).map(([k, v]) => [k, v - (report.resources[k] || 0)]).filter(([, v]) => v > 0));
+    if (Object.keys(leftovers).length) {
+      const lost = this.game.survivors.stash(members, leftovers);
+      const kept = Object.values(leftovers).reduce((s, v) => s + v, 0) - lost;
+      Object.entries(leftovers).forEach(([k, v]) => { report.resources[k] = (report.resources[k] || 0) + v; });
+      report.events.push(`📦 倉庫已滿：${kept} 單位物資由隊員放進背包${lost ? `，${lost} 單位帶不走被留下` : ''}`);
+    }
     report.items.forEach((it) => this.game.equipment.addItem(it, '探索'));
     (report.vehicles || []).forEach((v) => this.game.vehicles.add(v, '探索'));
     this.game.state.inventory.blueprints.push(...report.blueprints);

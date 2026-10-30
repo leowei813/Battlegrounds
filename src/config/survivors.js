@@ -110,6 +110,12 @@ export function survivorRarityTable(tech = 0) {
   };
 }
 
+/** 雇用費（金錢）：不論廣播招募或附近的倖存者，招募時都要另外支付；品級與等級越高越貴 */
+export const HIRE_FEE_MUL = {
+  poor: 0.6, common: 1, uncommon: 1.6, rare: 3, epic: 6, legendary: 12,
+};
+export const hireFee = (sv) => Math.round((40 + sv.level * 15) * (HIRE_FEE_MUL[sv.rarity] || 1));
+
 /** 固定出現的可招募倖存者：每小時更新 */
 export const RECRUIT_BOARD_SIZE = 2;
 export const RECRUIT_BOARD_MS = 60 * 60 * 1000;

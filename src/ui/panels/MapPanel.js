@@ -5,7 +5,7 @@ import { RESOURCES } from '../../config/constants.js';
 import { BASE_SIZES, FACILITY_COUNT } from '../../config/civilization.js';
 import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
-import { stockOf, msToReset } from '../../systems/LootStock.js';
+import { isLooted, msToReset } from '../../systems/LootStock.js';
 import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
 import { btn, costHtml } from '../components.js';
 import { openTeamPicker } from '../TeamPicker.js';
@@ -164,13 +164,12 @@ export class MapPanel {
     });
   }
 
-  /** 今日物資（種類與數量每天 00:00 重新隨機；探索後清空） */
+  /** 可能出現的物資（實際種類與數量要探索時才知道；探索後清空，每天 00:00 重置） */
   stockHtml(poi) {
-    const st = stockOf(poi);
     const reset = `每天 00:00 重置（${formatDuration(msToReset())}後）`;
-    if (st.empty) return `<div class="muted">🕸️ 今日物資已被搜刮一空・${reset}</div>`;
-    const list = Object.entries(st.resources).map(([k, v]) => `${RESOURCES[k].icon}${RESOURCES[k].name} ${v}`).join('、');
-    return `<div class="muted">📦 今日物資：${list}・${reset}</div>`;
+    if (isLooted(poi)) return `<div class="muted">🕸️ 今日已被搜刮一空・${reset}</div>`;
+    const list = Object.keys(POI_TYPES[poi.type].loot).map((k) => `${RESOURCES[k].icon}${RESOURCES[k].name}`).join('、');
+    return `<div class="muted">📦 可能出現：${list}（實際所得於探索時隨機）・${reset}</div>`;
   }
 
   /** 各據點即時屍潮摘要；點擊可飛到該據點 */
@@ -203,7 +202,7 @@ export class MapPanel {
       this.scanProgress = '';
       this.renderOverlay();
       const c = sh || this.game.state.map.center;
-      this.ui.toastEl.show('📡 分區掃描附近建築中，市區可能需要 30 秒～1 分鐘…', 'info', 6000);
+      this.ui.toastEl.show(`📡 掃描避難所${this.game.shelter.outposts().length ? `與 ${this.game.shelter.outposts().length} 座前哨站` : ''}附近的建築中，市區可能需要 30 秒～1 分鐘…`, 'info', 6000);
       const r = await this.game.scanMap(c.lat, c.lon, (done, total) => {
         this.scanProgress = `${done}/${total}`;
         this.lastOverlay = '';
@@ -301,11 +300,13 @@ export class MapPanel {
     const g = this.game;
     openTeamPicker(this.ui, {
       title: `🧭 探索：${poi.name}`,
-      intro: `<p class="muted">${POI_TYPES[poi.type].name}・危險度 ${stars(g.zombies.areaDanger(poi))}・敵人等級約 Lv${g.zombies.areaLevel(poi)}</p>`,
+      intro: `<p class="muted">${POI_TYPES[poi.type].name}・危險度 ${stars(g.zombies.areaDanger(poi))}・敵人等級約 Lv${g.zombies.areaLevel(poi)}</p>
+        <p class="muted">🔍 搜索時間 ${g.exploration.searchMinutes(poi)} 分鐘（依地點大小與危險度；偵察兵、裝備、研究與隊員人數可縮短）</p>`,
       withDuration: true,
+      fixedDuration: true,
       vehicles: true,
       distanceM: g.shelter.primary() ? haversine(g.shelter.primary().lat, g.shelter.primary().lon, poi.lat, poi.lon) : 0,
-      estimate: (ids, dur, vids) => g.exploration.actualDurationMs(poi, ids.map((id) => g.survivors.get(id)), dur, Date.now(), vids.map((id) => g.vehicles.get(id))),
+      estimate: (ids, dur, vids) => g.exploration.actualDurationMs(poi, ids.map((id) => g.survivors.get(id)), g.exploration.searchMinutes(poi), Date.now(), vids.map((id) => g.vehicles.get(id))),
       confirmLabel: '出發！',
       onConfirm: (ids, dur, auto, vids) => {
         const r = this.ui.result(g.exploration.start(poi.id, ids, dur, auto, Date.now(), { vehicleIds: vids }));
