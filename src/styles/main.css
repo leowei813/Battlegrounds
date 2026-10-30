@@ -355,3 +355,11 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 @media (max-width: 600px) {
   .hud-left .civ-badge { align-self: center; }
 }
+
+/* ---------- Access gate / copyright ---------- */
+#gate-root { position: fixed; inset: 0; z-index: 1400; display: none; overflow-y: auto; background: radial-gradient(circle at 50% 20%, #3e1a1a, #0b0c08 70%); padding: 20px 16px; }
+#gate-root.show { display: flex; align-items: center; justify-content: center; }
+.gate-card { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; }
+.gate-card input[type=password] { padding: 12px; font: inherit; font-size: 18px; text-align: center; color: var(--text); background: #0008; border: 1px solid var(--line); border-radius: 8px; }
+.copyright { margin: 16px 0 0; font-size: 11px; color: var(--muted); text-align: center; line-height: 1.6; }
+.copyright.left { text-align: left; margin-top: 0; }

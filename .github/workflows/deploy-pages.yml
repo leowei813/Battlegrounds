@@ -7,6 +7,9 @@
 #   VITE_CLOUD_PROVIDER = selfhost 並設定 VITE_CLOUD_URL（自架 server/ 的網址），或
 #   VITE_CLOUD_PROVIDER = supabase 並設定 VITE_SUPABASE_URL、VITE_SUPABASE_ANON_KEY
 # 未設定時預設為 none（關閉雲端存檔，其餘功能正常）。
+#
+# 通行碼（選用）：到 Settings → Secrets and variables → Actions → Secrets
+# 新增 ACCESS_CODE。建置時只會把它的雜湊寫進網站，原始通行碼不會公開。
 name: 部署到 GitHub Pages
 
 on:
@@ -44,6 +47,17 @@ jobs:
 
       - name: 雲端存檔整合測試
         run: npm run test:cloud
+
+      - name: 計算通行碼雜湊
+        env:
+          ACCESS_CODE: ${{ secrets.ACCESS_CODE }}
+        run: |
+          if [ -n "$ACCESS_CODE" ]; then
+            echo "VITE_ACCESS_HASH=$(node scripts/hash-access-code.js)" >> "$GITHUB_ENV"
+            echo "已啟用通行碼"
+          else
+            echo "::warning::未設定 ACCESS_CODE，網站不會要求通行碼"
+          fi
 
       - name: 建置
         run: npm run build

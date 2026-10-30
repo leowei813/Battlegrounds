@@ -15,6 +15,8 @@ import { MAIN_QUESTS, DAILY_POOL, ACHIEVEMENTS } from '../src/config/quests.js';
 import { FACILITIES } from '../src/config/facilities.js';
 import { SaveManager } from '../src/core/SaveManager.js';
 import { PRIMARY_DANGER_COEF } from '../src/config/civilization.js';
+import { hashAccessCode, ACCESS_ITERATIONS } from '../src/security/accessHash.js';
+import crypto from 'node:crypto';
 
 let failures = 0;
 const assert = (cond, msg) => {
@@ -97,6 +99,11 @@ delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
 assert(migrated.version === 2 && migrated.bases.length === 1 && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+
+// ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
+let ref = 'jdqs-gate:密碼 test';
+for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
+assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto 一致（並忽略前後空白）');
 
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);

@@ -1,0 +1,35 @@
+Copyright (c) 2026 leowei813. All rights reserved.
+
+本軟體（含原始碼、遊戲設計文件與所有相關檔案，以下稱「本作品」）之著作權屬於
+leowei813 所有，受中華民國著作權法及國際著作權條約保護。
+
+本作品原始碼雖公開於 GitHub 供瀏覽，但並未授予任何授權。除非事先取得著作權人書面同意，
+任何人不得：
+
+  1. 複製、重製本作品之全部或一部分；
+  2. 修改、改作或以本作品為基礎製作衍生作品；
+  3. 散布、公開傳輸、再授權、出租或出售本作品；
+  4. 將本作品用於任何商業用途；
+  5. 移除或變更本作品中的版權標示。
+
+依 GitHub 服務條款，使用者得於 GitHub 平台上瀏覽及 fork 本儲存庫，但此不構成上述任何
+權利之授權。
+
+本作品以「現狀」提供，不附任何明示或默示之保證。
+
+第三方元件依其各自授權條款使用，包括：
+  - Phaser（MIT License）
+  - Leaflet（BSD 2-Clause License）
+  - 地圖資料 © OpenStreetMap contributors（ODbL）
+
+授權洽詢：請透過 GitHub（https://github.com/leowei813）聯繫。
+
+--------------------------------------------------------------------------------
+
+Copyright (c) 2026 leowei813. All rights reserved.
+
+This repository is publicly viewable, but NO license is granted. Without prior
+written permission from the copyright holder, you may not copy, modify,
+distribute, sublicense, sell, or use this work (in whole or in part) for any
+purpose, including commercial use. Third-party components remain under their
+own licenses.

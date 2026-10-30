@@ -8,6 +8,7 @@ import { SetupScreen } from './ui/SetupScreen.js';
 import { SaveManager } from './core/SaveManager.js';
 import { CloudSync } from './cloud/CloudSync.js';
 import { createProvider } from './cloud/providers/index.js';
+import { requireAccess } from './security/AccessGate.js';
 import { gainsHtml } from './ui/components.js';
 import { $ } from './utils/dom.js';
 import { formatDuration } from './utils/math.js';
@@ -68,6 +69,9 @@ function showWelcome(ui) {
 }
 
 async function boot() {
+  // 通行碼（建置時設定 VITE_ACCESS_HASH 才會啟用）
+  await requireAccess($('#gate-root'));
+
   const cloud = new CloudSync(createProvider());
   let state = SaveManager.load();
   let cloudMeta = null;
