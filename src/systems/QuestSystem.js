@@ -1,7 +1,7 @@
 import {
   MAIN_QUESTS, DAILY_POOL, DAILY_COUNT, ACHIEVEMENTS,
 } from '../config/quests.js';
-import { RARITY_ORDER } from '../config/equipment.js';
+import { RARITIES } from '../config/equipment.js';
 
 const todayKey = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 
@@ -120,7 +120,7 @@ export class QuestSystem {
   rewardText(reward) {
     const names = { coins: '💰', parts: '⚙️', food: '🥫', wood: '🪵', metal: '🔩', cloth: '🧵', fuel: '⛽', medicine: '💊' };
     return Object.entries(reward)
-      .map(([k, v]) => (k === 'item' ? `🎁${RARITY_ORDER.includes(v) ? { epic: '史詩', legendary: '傳說', rare: '稀有' }[v] || v : v}裝備` : `${names[k] || k}${v}`))
+      .map(([k, v]) => (k === 'item' ? `🎁${RARITIES[v]?.name || v}裝備` : `${names[k] || k}${v}`))
       .join(' ');
   }
 

@@ -53,7 +53,9 @@ export class ExplorationSystem {
     const sh = this.game.shelter.primary();
     const from = sh ? { lat: sh.lat, lon: sh.lon } : { lat: poi.lat, lon: poi.lon };
     const distanceM = Math.round(haversine(from.lat, from.lon, poi.lat, poi.lon));
-    const scout = Math.max(0, ...members.map((m) => this.game.survivors.skillEffects(m).exploreSpeed || 0));
+    // 隊伍速度取最快成員的「技能 + 裝備」探索速度
+    const scout = Math.max(0, ...members.map((m) => (this.game.survivors.skillEffects(m).exploreSpeed || 0)
+      + (this.game.survivors.stats(m).exploreSpeed || 0)));
     const speed = this.game.time.exploreSpeedMul(at) * (1 + scout + this.game.research.bonus('exploreSpeed'));
     const travelMs = Math.round(((distanceM / 1000) * MIN_PER_KM_ONE_WAY / speed) * 60000);
     const searchMs = Math.round((durationMin / speed) * 60000);

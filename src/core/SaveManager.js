@@ -1,6 +1,7 @@
 import { SAVE_KEY, SAVE_VERSION } from '../config/constants.js';
 import { STAT_KEYS } from './GameState.js';
 import { POI_KEYS } from '../config/poiTypes.js';
+import { SLOT_KEYS } from '../config/equipment.js';
 
 /**
  * 地圖建築改以「欄位陣列」儲存（市區可達數千棟，物件格式體積約大一倍）：
@@ -119,6 +120,14 @@ export class SaveManager {
       delete data.shelter;
     }
     data.bases = data.bases || [];
+    // v3 -> v4：品級改為 6 階（舊的灰色「普通」→「劣質」），裝備欄新增手套、鞋子、飾品
+    if (v < 4) {
+      (data.inventory?.items || []).forEach((it) => { if (it.rarity === 'common') it.rarity = 'poor'; });
+    }
+    (data.survivors || []).concat(data.recruitPool || []).forEach((sv) => {
+      sv.equipment = sv.equipment || {};
+      SLOT_KEYS.forEach((k) => { if (!(k in sv.equipment)) sv.equipment[k] = null; });
+    });
     // v3：地圖建築改以精簡格式儲存，載入時還原為物件
     if (data.map?.poiPack) {
       data.map.pois = unpackPois(data.map.poiPack);

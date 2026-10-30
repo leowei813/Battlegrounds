@@ -17,10 +17,10 @@ export const RESEARCH_BRANCHES = {
 
 export const RESEARCH = {
   // 武器
-  wpn1: { branch: 'weapons', tier: 1, name: '改良槍管', desc: '攻擊 +10%，解鎖步槍製作', cost: { metal: 120, wood: 60 }, time: 60, effects: { atkPct: 0.1 } },
+  wpn1: { branch: 'weapons', tier: 1, name: '改良槍管', desc: '攻擊 +10%，解鎖步槍、衝鋒槍製作', cost: { metal: 120, wood: 60 }, time: 60, effects: { atkPct: 0.1 } },
   wpn2: { branch: 'weapons', tier: 2, name: '霰彈工藝', desc: '暴擊率 +5%，解鎖散彈槍製作', cost: { metal: 260, fuel: 60, parts: 2 }, time: 180, requires: ['wpn1'], effects: { critAdd: 0.05 } },
   wpn3: { branch: 'weapons', tier: 3, name: '精準射擊', desc: '暴擊傷害 +25%，解鎖狙擊槍製作', cost: { metal: 520, fuel: 120, parts: 6 }, time: 420, requires: ['wpn2'], effects: { critDmgAdd: 0.25 } },
-  wpn4: { branch: 'weapons', tier: 4, name: '穿甲彈', desc: '攻擊 +20%', cost: { metal: 1100, fuel: 260, parts: 15 }, time: 900, requires: ['wpn3'], effects: { atkPct: 0.2 } },
+  wpn4: { branch: 'weapons', tier: 4, name: '穿甲彈', desc: '攻擊 +20%，解鎖輕機槍製作', cost: { metal: 1100, fuel: 260, parts: 15 }, time: 900, requires: ['wpn3'], effects: { atkPct: 0.2 } },
   // 防禦
   def1: { branch: 'defense', tier: 1, name: '加固工事', desc: '圍牆耐久 +20%，解鎖機槍塔', cost: { wood: 150, metal: 100 }, time: 60, effects: { wallHpPct: 0.2 } },
   def2: { branch: 'defense', tier: 2, name: '燃燒劑', desc: '解鎖火焰塔', cost: { metal: 250, fuel: 120, parts: 2 }, time: 180, requires: ['def1'], effects: {} },
