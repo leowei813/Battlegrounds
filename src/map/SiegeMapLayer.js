@@ -3,6 +3,8 @@ import { WORLD } from '../systems/SiegeSystem.js';
 import { DEFENSES } from '../config/defenses.js';
 import { DEFENSE_SLOTS } from '../config/constants.js';
 import { bus } from '../core/EventBus.js';
+import { EXP_PHASES, AMBUSH_RADIUS_M } from '../systems/ExplorationSystem.js';
+import { formatDuration } from '../utils/math.js';
 
 /** 屍潮世界座標 1 單位 = 1.5 公尺（出生圈半徑 150 → 約 225 公尺） */
 export const METERS_PER_UNIT = 1.5;
@@ -201,6 +203,82 @@ export const SiegeMapLayer = L.Layer.extend({
 
     this.drawFx(ctx, frames, dt);
     this.drawPulses(ctx, frames, dt);
+    this.drawExpeditions(ctx, size);
+  },
+
+  /** 探索隊：沿路線移動的隊伍標記、已走路線、距離與剩餘時間 */
+  drawExpeditions(ctx, size) {
+    const now = Date.now();
+    const { exploration } = this.game;
+    this.game.state.expeditions.forEach((exp) => {
+      const p = exploration.progress(exp, now);
+      if (!p) return;
+      const a = this.map.latLngToContainerPoint([p.from.lat, p.from.lon]);
+      const b = this.map.latLngToContainerPoint([p.to.lat, p.to.lon]);
+      const m = this.map.latLngToContainerPoint([p.pos.lat, p.pos.lon]);
+      // 已走過的路段（實線）
+      ctx.beginPath();
+      if (p.phase === 'returning') {
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.moveTo(b.x, b.y);
+      } else ctx.moveTo(a.x, a.y);
+      ctx.lineTo(m.x, m.y);
+      ctx.strokeStyle = 'rgba(255,213,79,0.9)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      if (m.x < -60 || m.y < -60 || m.x > size.x + 60 || m.y > size.y + 60) return;
+
+      // 移動中的遇襲範圍（夜間有殭屍群時才顯示）
+      if (p.phase !== 'searching' && this.game.state.map.zombieGroups.length) {
+        const n = this.map.latLngToContainerPoint([p.pos.lat + AMBUSH_RADIUS_M / M_PER_LAT, p.pos.lon]);
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, Math.abs(m.y - n.y), 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,82,82,0.08)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,82,82,0.4)';
+        ctx.setLineDash([3, 4]);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // 隊伍標記
+      const ph = EXP_PHASES[p.phase];
+      const bob = p.phase === 'searching' ? 0 : Math.sin(now / 150) * 1.5;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y + bob, 13, 0, Math.PI * 2);
+      ctx.fillStyle = '#1565c0';
+      ctx.fill();
+      ctx.strokeStyle = '#ffd54f';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.font = '15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ph.icon, m.x, m.y + bob + 1);
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(String(exp.memberIds.length), m.x + 11, m.y + bob - 10);
+
+      // 資訊標籤：階段・已移動/總路程・剩餘時間
+      const km = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)}km` : `${v}m`);
+      const line1 = `${ph.icon} ${ph.name}・${km(p.movedM)} / ${km(p.totalM)}`;
+      const line2 = `⏱ 剩 ${formatDuration(p.remainingMs)}`;
+      ctx.font = 'bold 11px sans-serif';
+      const w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + 12;
+      const x = m.x - w / 2;
+      const y = m.y + 18;
+      ctx.fillStyle = 'rgba(13,27,42,0.88)';
+      ctx.fillRect(x, y, w, 30);
+      ctx.strokeStyle = '#ffd54f';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, w, 30);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(line1, m.x, y + 9);
+      ctx.fillStyle = '#ffe082';
+      ctx.fillText(line2, m.x, y + 22);
+    });
   },
 
   drawFx(ctx, frames, dt) {

@@ -74,6 +74,6 @@ export const POI_KEYS = Object.keys(POI_TYPES);
 
 /** 若 OSM 查不到某類型，每類程序化補足的最小數量 */
 export const POI_MIN_PER_TYPE = {
-  residential: 25, shop: 15, hospital: 3, school: 5, factory: 6,
-  gasStation: 5, police: 3, military: 2, warehouse: 6,
+  residential: 250, shop: 150, hospital: 30, school: 50, factory: 60,
+  gasStation: 50, police: 30, military: 20, warehouse: 60,
 };

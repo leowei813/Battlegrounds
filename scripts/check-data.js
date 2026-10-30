@@ -22,6 +22,7 @@ const setHour = (game, hour) => {
 import { SaveManager } from '../src/core/SaveManager.js';
 import { PRIMARY_DANGER_COEF } from '../src/config/civilization.js';
 import { hashAccessCode, ACCESS_ITERATIONS } from '../src/security/accessHash.js';
+import { haversine } from '../src/utils/math.js';
 import crypto from 'node:crypto';
 
 let failures = 0;
@@ -120,6 +121,50 @@ delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
 assert(migrated.version === 2 && migrated.bases.length === 1 && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+
+// ---- 6. 探索行程與途中遇襲 ----
+{
+  const g3 = Game.newGame({ playerName: 'Trip', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  g3.state.map.pois = fillPois([], 25.0339, 121.5645);
+  g3.shelter.establish(g3.state.map.pois[0]);
+  const home = g3.shelter.primary();
+  const far = g3.state.map.pois.find((p) => !g3.shelter.baseAtPoi(p.id) && haversine(home.lat, home.lon, p.lat, p.lon) > 600);
+  setHour(g3, 21);
+  const t0 = Date.now();
+  const ex = g3.exploration.start(far.id, ['leader'], 15, false, t0).exp;
+  const p0 = g3.exploration.progress(ex, t0);
+  const pMid = g3.exploration.progress(ex, t0 + ex.travelMs / 2);
+  const pSearch = g3.exploration.progress(ex, t0 + ex.travelMs + 1000);
+  const pBack = g3.exploration.progress(ex, t0 + ex.travelMs * 1.5 + ex.searchMs);
+  assert(p0.phase === 'outbound' && pSearch.phase === 'searching' && pBack.phase === 'returning', '行程三段：去程 → 搜索 → 返程');
+  assert(Math.abs(pMid.movedM - ex.distanceM / 2) < 2 && Math.abs(pBack.movedM - ex.distanceM * 1.5) < 2, `移動距離正確（${pMid.movedM} / ${ex.distanceM * 2} m）`);
+  assert(ex.endAt - ex.startAt === ex.travelMs * 2 + ex.searchMs, '總時間 = 去程 + 搜索 + 返程');
+  // 在路線中點放一群弱小殭屍，模擬經過時遇襲
+  const leader = g3.survivors.leader();
+  leader.level = 30;
+  let ambushes = 0;
+  for (let i = 0; i < 20 && !ambushes; i += 1) {
+    ex.encountered = [];
+    g3.state.map.zombieGroups = [{ id: `zg_test${i}`, poiId: far.id, lat: pMid.pos.lat, lon: pMid.pos.lon, enemyId: 'walker', count: 1, level: 1, elite: false, boss: false, spawnedAt: t0 }];
+    ambushes = g3.exploration.checkAmbush(t0 + ex.travelMs / 2).length;
+  }
+  assert(ambushes === 1 && ex.travelEvents.some((e) => e.includes('擊退')), '夜間移動經過殭屍群會遇襲，勝利後繼續');
+  assert(g3.state.expeditions.length === 1 && g3.state.map.zombieGroups.length === 0, '擊退後殭屍群消失、探索繼續');
+  // 搜索中不會遇襲
+  g3.state.map.zombieGroups = [{ id: 'zg_s', poiId: far.id, lat: far.lat, lon: far.lon, enemyId: 'walker', count: 1, level: 1, elite: false, boss: false, spawnedAt: t0 }];
+  assert(g3.exploration.checkAmbush(t0 + ex.travelMs + 1000).length === 0, '搜索中不會遇襲');
+  // 戰敗：探索提前結束
+  leader.level = 1;
+  leader.injuredUntil = 0;
+  let aborted = false;
+  for (let i = 0; i < 20 && !aborted; i += 1) {
+    ex.encountered = [];
+    g3.state.map.zombieGroups = [{ id: `zg_boss${i}`, poiId: far.id, lat: pBack.pos.lat, lon: pBack.pos.lon, enemyId: 'tankBoss', count: 1, level: 30, elite: false, boss: true, spawnedAt: t0 }];
+    aborted = g3.exploration.checkAmbush(t0 + ex.travelMs * 1.5 + ex.searchMs).some((r) => r.aborted);
+  }
+  assert(aborted && g3.state.expeditions.length === 0 && g3.survivors.leader().status === 'idle', '遇襲戰敗則撤退、探索結束');
+  assert(g3.state.reports[0] && !g3.state.reports[0].success, '戰敗撤退產生失敗報告');
+}
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
