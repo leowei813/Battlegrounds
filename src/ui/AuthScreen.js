@@ -99,7 +99,7 @@ export class AuthScreen {
         <p id="auth-status" class="status"></p>
         <button type="submit" id="auth-submit" class="btn ${reg ? 'btn-primary' : 'btn-danger'} wide big" ${off ? 'disabled' : ''}>${reg ? '✨ 建立帳號' : '☣️ 登入並開始求生'}</button>
       </form>
-      <p class="muted small">進度只儲存在雲端帳號，換裝置登入同一個帳號即可接續。${reg ? '<b>請牢記密碼，忘記密碼無法找回。</b>' : ''}</p>
+      <p class="muted small">進度只儲存在雲端帳號，換裝置登入同一個帳號即可接續。${reg ? '<b>請牢記密碼；密碼不會以明碼保存，忘記時需聯絡管理員重設。</b>' : '忘記密碼？請聯絡管理員重設。'}</p>
       <p class="copyright">${COPYRIGHT}・v${APP_VERSION}</p>
     </div>`;
   }
