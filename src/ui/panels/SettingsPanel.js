@@ -4,6 +4,8 @@ import { escapeHtml } from '../../utils/dom.js';
 import { formatNumber } from '../../utils/math.js';
 import { btn } from '../components.js';
 import { COPYRIGHT } from '../../config/legal.js';
+import { APP_VERSION } from '../../config/version.js';
+import { showChangelog } from '../ChangelogView.js';
 import { accessGateEnabled, lockDevice } from '../../security/AccessGate.js';
 
 const STAT_NAMES = {
@@ -145,8 +147,9 @@ export class SettingsPanel {
       <div class="stat-grid">${stats}</div>
       ${accessGateEnabled() ? `<h3>通行碼</h3><div class="btn-row">${btn('🔒 鎖定此裝置（下次需重新輸入通行碼）', 'lockDevice', {}, { cls: 'btn-ghost' })}</div>` : ''}
       <h3>關於</h3>
+      <div class="row-between"><span>目前版本 <span class="ver-tag">v${APP_VERSION}</span></span>${btn('📋 更新內容', 'changelog', {}, { cls: 'btn-sm' })}</div>
       <p class="copyright left">${COPYRIGHT}</p>
-      <p class="muted">${GAME_TITLE} v1.0・地圖資料 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors，建築資料來自 Overpass API。</p>
+      <p class="muted">${GAME_TITLE} v${APP_VERSION}・地圖資料 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors，建築資料來自 Overpass API。</p>
     </div>`;
   }
 
@@ -161,6 +164,10 @@ export class SettingsPanel {
 
   onAction(action) {
     const g = this.game;
+    if (action === 'changelog') {
+      showChangelog(this.ui);
+      return;
+    }
     if (action === 'lockDevice' && confirm('鎖定後重新整理頁面需要再次輸入通行碼。確定？')) {
       g.save();
       lockDevice();

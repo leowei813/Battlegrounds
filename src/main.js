@@ -9,6 +9,7 @@ import { SaveManager } from './core/SaveManager.js';
 import { CloudSync } from './cloud/CloudSync.js';
 import { createProvider } from './cloud/providers/index.js';
 import { requireAccess } from './security/AccessGate.js';
+import { showWhatsNew, markVersionSeen } from './ui/ChangelogView.js';
 import { gainsHtml } from './ui/components.js';
 import { $ } from './utils/dom.js';
 import { formatDuration } from './utils/math.js';
@@ -41,7 +42,7 @@ function createPhaser(core) {
 }
 
 function showOfflineReport(ui, report) {
-  ui.modal.open({
+  return ui.modal.open({
     title: '🌙 離線收益',
     body: `
       <p>你離開了 <b>${formatDuration(report.elapsed)}</b>${report.capped ? '（已達 24 小時上限）' : ''}。倖存者們持續運作避難所：</p>
@@ -114,8 +115,15 @@ async function boot() {
   game.save();
   cloud.attach(game);
 
-  if (fresh) showWelcome(ui);
-  else if (report) showOfflineReport(ui, report);
+  if (fresh) {
+    markVersionSeen(); // 新玩家不需要看更新內容
+    showWelcome(ui);
+  } else if (report) {
+    // 先看離線收益，關閉後再顯示更新內容
+    showOfflineReport(ui, report).onClose = () => showWhatsNew(ui);
+  } else {
+    showWhatsNew(ui);
+  }
   if (cloudMeta) {
     ui.toastEl.show(`☁️ 已載入雲端最新進度（來自 ${cloudMeta.deviceName || '其他裝置'}）`, 'success', 5000);
   }

@@ -1,7 +1,7 @@
 {
   "name": "jue-di-qiu-sheng",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.9.0",
   "description": "絕地求生 — 基於 OpenStreetMap 真實地圖的放置型生存策略 RPG",
   "license": "UNLICENSED",
   "author": "leowei813",
@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "node scripts/check-data.js",
+    "check": "node scripts/check-data.js && node scripts/check-version.js",
     "server": "node server/index.js",
     "start": "vite build && node server/index.js",
     "test:cloud": "node scripts/test-cloud.js"

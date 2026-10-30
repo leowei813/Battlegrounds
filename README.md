@@ -4,6 +4,8 @@
 
 **技術**：Vite · Phaser 3 · JavaScript (ES Modules) · Leaflet + OpenStreetMap / Overpass API · LocalStorage · 響應式（桌機與手機）
 
+目前版本：**v1.9.0**（各版本改動見 [CHANGELOG.md](CHANGELOG.md)）
+
 ## 快速開始
 
 ```bash
@@ -26,6 +28,7 @@ npm run dev
 | 五、程式碼 | [`src/`](src) |
 | 六、安裝與部署 | [docs/05-DEPLOYMENT.md](docs/05-DEPLOYMENT.md) |
 | 雲端存檔 | [docs/06-CLOUD-SAVE.md](docs/06-CLOUD-SAVE.md) |
+| 更新日誌 | [CHANGELOG.md](CHANGELOG.md) |
 
 ## 功能一覽
 - 🗺️ **真實地圖**：定位或手動座標，OSM 建築自動分類為 9 種地點（住宅、商店、醫院、學校、工廠、加油站、警局、軍事基地、倉庫）
