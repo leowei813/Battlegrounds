@@ -847,7 +847,16 @@ assert(migrated.version === 10 && migrated.bases.length === 1 && migrated.bases[
   gi.research.invalidate();
   const lmg = eq.generate({ level: 5, model: 'm249', rarity: 'common' });
   const knife = eq.generate({ level: 5, model: 'knife', rarity: 'common' });
-  assert(itemSize(lmg) > itemSize(knife) && eq.isWorn(lmg) === false, '物品依大小佔用不同格數');
+  assert(itemSize(lmg) === 1 && itemSize(knife) === 1, '所有物品都只佔一格');
+  // 消耗品同種類堆疊一格、裝備不堆疊
+  gi.state.resources.food = 500;
+  gi.state.resources.wood = 500;
+  gi.survivors.withdraw(lead.id, 'food', 5);
+  gi.survivors.withdraw(lead.id, 'food', 5);
+  gi.survivors.withdraw(lead.id, 'wood', 3);
+  assert(eq.bagSlotsUsed(lead) === 2 && lead.bag.food === 10, '同種類消耗品堆疊在同一格');
+  assert(gi.survivors.deposit(lead.id, 'food', Infinity).ok && !lead.bag.food && eq.bagSlotsUsed(lead) === 1, '可以全部存入倉庫');
+  gi.survivors.deposit(lead.id, 'wood', Infinity);
   // 填滿倉庫
   let added = 0;
   while (eq.addItem(eq.generate({ level: 1, model: 'shovel', rarity: 'common' }), '測試')) added += 1;

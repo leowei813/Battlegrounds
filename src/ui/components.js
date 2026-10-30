@@ -1,6 +1,6 @@
 import { RESOURCES, CURRENCIES } from '../config/constants.js';
 import {
-  RARITIES, SLOTS, AFFIXES, ITEM_TYPES, ITEM_MODELS, itemSize, itemWeight,
+  RARITIES, SLOTS, AFFIXES, ITEM_TYPES, ITEM_MODELS, itemWeight,
 } from '../config/equipment.js';
 import { CLASSES, JOBS, xpToNext } from '../config/survivors.js';
 import { escapeHtml } from '../utils/dom.js';
@@ -90,7 +90,7 @@ export function itemCard(item, {
       <span class="item-icon">${ITEM_MODELS[item.model]?.icon || ITEM_TYPES[item.type]?.icon || '❔'}</span>
       <div class="item-title">
         <b>${escapeHtml(item.name)}</b>${item.locked ? ' 🔒' : ''}
-        <small>${rarityTag(item.rarity)} ${ITEM_TYPES[item.type]?.name || ''}${item.tier ? ` T${item.tier}` : ''} · Lv${item.level} · 戰力 ${item.power} · 📦${itemSize(item)}格 ⚖️${itemWeight(item)} ${compact ? '' : qualityTag(item)}</small>
+        <small>${rarityTag(item.rarity)} ${ITEM_TYPES[item.type]?.name || ''}${item.tier ? ` T${item.tier}` : ''} · Lv${item.level} · 戰力 ${item.power} · ⚖️${itemWeight(item)} ${compact ? '' : qualityTag(item)}</small>
       </div>
     </div>
     ${compact ? '' : `<div class="stat-line">${statLine(item.stats)}</div>

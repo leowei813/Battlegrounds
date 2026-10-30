@@ -237,13 +237,16 @@ export const ITEM_MODELS = {
 };
 export const MODEL_KEYS = Object.keys(ITEM_MODELS);
 
-/** 物品格子：隊員背包初始 10 格（背包裝備增加），倉庫初始 30 格（倉庫升級與研究增加） */
+/**
+ * 物品格子：隊員背包初始 10 格（背包裝備增加），倉庫初始 30 格（倉庫升級與研究增加）。
+ * 每件裝備佔 1 格、不可堆疊；同種類的消耗品（基本資源）堆疊在同一格。
+ */
 export const BAG_BASE_SLOTS = 10;
 export const STORE_BASE_SLOTS = 30;
 export const STORE_SLOTS_PER_LEVEL = 10;
 
 /** 物品佔用的格子數與重量 */
-export const itemSize = (item) => ITEM_MODELS[item.model]?.size ?? ITEM_TYPES[item.type]?.size ?? 1;
+export const itemSize = () => 1;
 export const itemWeight = (item) => ITEM_MODELS[item.model]?.weight ?? ITEM_TYPES[item.type]?.weight ?? 1;
 
 /** 型號強度倍率：tier 1 = 1、tier 10 = 3.25 */
