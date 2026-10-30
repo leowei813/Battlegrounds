@@ -2,9 +2,10 @@ import { MAX_TEAM_SIZE, OFFLINE_CAP_MS, RESOURCES } from '../config/constants.js
 import { POI_TYPES } from '../config/poiTypes.js';
 import { RARITIES } from '../config/equipment.js';
 import {
-  chance, pick, randInt, uid, weightedPick, haversine, clamp, randFloat, lerp,
+  chance, pick, randInt, uid, weightedPick, haversine, randFloat, lerp,
 } from '../utils/math.js';
 import { ALL_ENEMIES } from '../config/enemies.js';
+import { stockOf, dayKey } from './LootStock.js';
 
 /** 每公里單程移動時間（分鐘，未套用速度加成） */
 const MIN_PER_KM_ONE_WAY = 2;
@@ -12,6 +13,46 @@ const MIN_PER_KM_ONE_WAY = 2;
 export const AMBUSH_RADIUS_M = 90;
 /** 每個接近的殭屍群發動襲擊的基礎機率（偵察兵的尋路技能可降低） */
 const AMBUSH_CHANCE = 0.6;
+
+/**
+ * 行程進度（純函式）：去程 → 搜索 → 返程。自己的探索隊與其他玩家的隊伍共用。
+ * @param {{from?:{lat,lon}, to:{lat,lon}, startAt:number, endAt:number, travelMs?:number, searchMs?:number, distanceM?:number}} trip
+ */
+export function tripProgress(trip, now = Date.now()) {
+  const { to } = trip;
+  // 舊存檔沒有行程資料：視為一直在目標地點搜索
+  const travelMs = trip.travelMs || 0;
+  const from = trip.from || to;
+  const t = Math.max(0, now - trip.startAt);
+  const searchEnd = travelMs + (trip.searchMs ?? trip.endAt - trip.startAt);
+  const dist = trip.distanceM ?? Math.round(haversine(from.lat, from.lon, to.lat, to.lon));
+  const at = (r) => ({ lat: lerp(from.lat, to.lat, r), lon: lerp(from.lon, to.lon, r) });
+  let phase;
+  let ratio;
+  let movedM;
+  let phaseRemainingMs;
+  if (t < travelMs) {
+    phase = 'outbound';
+    ratio = t / travelMs;
+    movedM = dist * ratio;
+    phaseRemainingMs = travelMs - t;
+  } else if (t < searchEnd) {
+    phase = 'searching';
+    ratio = 1;
+    movedM = dist;
+    phaseRemainingMs = searchEnd - t;
+  } else {
+    phase = 'returning';
+    const back = travelMs ? Math.min(1, (t - searchEnd) / travelMs) : 1;
+    ratio = 1 - back;
+    movedM = dist * (1 + back);
+    phaseRemainingMs = trip.endAt - now;
+  }
+  return {
+    phase, pos: at(ratio), from, to,
+    movedM: Math.round(movedM), totalM: dist * 2, remainingMs: Math.max(0, trip.endAt - now), phaseRemainingMs: Math.max(0, phaseRemainingMs),
+  };
+}
 
 export const EXP_PHASES = {
   outbound: { name: '前往中', icon: '🚶' },
@@ -76,38 +117,7 @@ export class ExplorationSystem {
   progress(exp, now = Date.now()) {
     const poi = this.poi(exp.poiId);
     if (!poi) return null;
-    // 舊存檔沒有行程資料：視為一直在目標地點搜索
-    const travelMs = exp.travelMs || 0;
-    const from = exp.from || { lat: poi.lat, lon: poi.lon };
-    const t = Math.max(0, now - exp.startAt);
-    const searchEnd = travelMs + (exp.searchMs ?? exp.endAt - exp.startAt);
-    const dist = exp.distanceM || 0;
-    const at = (r) => ({ lat: lerp(from.lat, poi.lat, r), lon: lerp(from.lon, poi.lon, r) });
-    let phase;
-    let ratio;
-    let movedM;
-    let phaseRemainingMs;
-    if (t < travelMs) {
-      phase = 'outbound';
-      ratio = t / travelMs;
-      movedM = dist * ratio;
-      phaseRemainingMs = travelMs - t;
-    } else if (t < searchEnd) {
-      phase = 'searching';
-      ratio = 1;
-      movedM = dist;
-      phaseRemainingMs = searchEnd - t;
-    } else {
-      phase = 'returning';
-      const back = travelMs ? Math.min(1, (t - searchEnd) / travelMs) : 1;
-      ratio = 1 - back;
-      movedM = dist * (1 + back);
-      phaseRemainingMs = exp.endAt - now;
-    }
-    return {
-      phase, pos: at(ratio), from, to: { lat: poi.lat, lon: poi.lon },
-      movedM: Math.round(movedM), totalM: dist * 2, remainingMs: Math.max(0, exp.endAt - now), phaseRemainingMs: Math.max(0, phaseRemainingMs),
-    };
+    return tripProgress({ ...exp, to: { lat: poi.lat, lon: poi.lon } }, now);
   }
 
   validate(poiId, memberIds) {
@@ -244,7 +254,7 @@ export class ExplorationSystem {
         // 自動探索：隊員健康且未超過離線上限則再次出發
         const healthy = exp.memberIds.every((id) => {
           const m = this.game.survivors.get(id);
-          return m && m.injuredUntil <= exp.endAt;
+          return m && !m.severe;
         });
         if (exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
           this.start(exp.poiId, exp.memberIds, exp.durationMin, true, exp.endAt);
@@ -285,32 +295,40 @@ export class ExplorationSystem {
     const fx = members.map((m) => this.game.survivors.skillEffects(m));
     const lootMul = phase.lootMul * (1 + this.game.research.bonus('lootPct'))
       * (1 + Math.max(0, ...fx.map((f) => f.lootPct || 0)))
-      * (1 + memberStats.reduce((s, x) => s + (x.lootBonus || 0), 0))
-      * (1 - (poi.depletion || 0));
-    const itemMul = 1 + Math.max(0, ...fx.map((f) => f.itemPct || 0));
+      * (1 + memberStats.reduce((s, x) => s + (x.lootBonus || 0), 0));
     const forage = Math.max(0, ...fx.map((f) => f.forage || 0));
+    // 今日物資（抵達時判定）：已被搜刮過則為空，每天 00:00 重置
+    const arriveAt = exp.startAt + (exp.travelMs || 0);
+    const stock = stockOf(poi, arriveAt);
+    const remaining = { ...stock.resources };
+    const itemMul = (1 + Math.max(0, ...fx.map((f) => f.itemPct || 0))) * stock.itemMul;
 
     const eventCount = Math.max(1, Math.round(exp.durationMin / 8));
+    const expectedLoot = Math.max(1, Math.round(eventCount * 0.46));
     const gained = {};
     for (let i = 0; i < eventCount; i += 1) {
       const ev = weightedPick({
         loot: 46, zombies: 28 * phase.zombieMul, survivor: 5, special: 10, elite: 3 + danger * phase.danger,
       });
       if (ev === 'loot') {
-        const amount = (10 + danger * 6) * lootMul * randFloat(0.7, 1.3);
-        const picks = [weightedPick(pt.loot), weightedPick(pt.loot)];
-        picks.forEach((k) => {
-          let v = amount / 2;
+        // 從今日物資中搜刮一部分（數量受技能、研究、裝備加成）
+        const found = [];
+        Object.keys(remaining).forEach((k) => {
+          const take = Math.min(remaining[k], (stock.resources[k] / expectedLoot) * randFloat(0.8, 1.25));
+          if (take < 1) return;
+          remaining[k] -= take;
+          let v = take * lootMul;
           if (k === 'food') v *= 1 + forage;
           gained[k] = (gained[k] || 0) + v;
+          found.push(RESOURCES[k].name);
         });
-        report.events.push(`🔍 搜刮到 ${picks.map((k) => RESOURCES[k].name).join('、')}`);
-        if (chance(pt.itemChance * itemMul)) {
+        report.events.push(found.length ? `🔍 搜刮到 ${found.join('、')}` : '🕸️ 這裡已經被搜刮一空（每天 00:00 重置）');
+        if (!stock.empty && chance(pt.itemChance * itemMul)) {
           const item = this.game.equipment.generate({ level, bias: pt.itemBias, boost: danger * 0.05 });
           report.items.push(item);
           report.events.push(`🎁 找到 ${RARITIES[item.rarity].name}「${item.name}」`);
         }
-        if (chance(pt.blueprintChance)) {
+        if (!stock.empty && chance(pt.blueprintChance)) {
           const bp = this.game.equipment.makeBlueprint(level);
           report.blueprints.push(bp);
           report.events.push('📜 找到一張設計圖！');
@@ -324,7 +342,10 @@ export class ExplorationSystem {
         const sp = pick(SPECIAL_EVENTS);
         report.events.push(`✨ ${sp.text}`);
         Object.entries(sp.reward()).forEach(([k, v]) => { if (v) gained[k] = (gained[k] || 0) + v; });
-        if (sp.injure) this.game.survivors.injure(pick(members), 5, 0, exp.endAt);
+        if (sp.injure) {
+          const victim = pick(members);
+          this.game.survivors.damage(victim, this.game.survivors.maxHp(victim) * 0.3, '踩中陷阱', exp.endAt);
+        }
       } else {
         const isElite = ev === 'elite';
         let enemies;
@@ -364,17 +385,11 @@ export class ExplorationSystem {
     report.items.forEach((it) => this.game.equipment.addItem(it, '探索'));
     this.game.state.inventory.blueprints.push(...report.blueprints);
     members.forEach((m) => this.game.survivors.gainXp(m, 4 + exp.durationMin));
-    poi.depletion = clamp((poi.depletion || 0) + 0.08, 0, 0.6);
+    // 探索過的建築物資清空，直到當地時間 00:00 重置
+    poi.lootedDay = dayKey(arriveAt);
+    delete poi.depletion;
     poi.lastVisit = exp.endAt;
     this.game.state.stats.explorations += 1;
     return report;
-  }
-
-  /** 地點物資隨時間恢復 */
-  regenerate(dtMs) {
-    const rate = (dtMs / 1800000) * 0.08; // 每 30 分鐘恢復 8%
-    this.game.state.map.pois.forEach((p) => {
-      if (p.depletion) p.depletion = Math.max(0, p.depletion - rate);
-    });
   }
 }

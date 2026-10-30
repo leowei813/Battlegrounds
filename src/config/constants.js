@@ -2,7 +2,7 @@
 
 export const GAME_TITLE = '絕地求生';
 export const SAVE_KEY = 'jdqs_save_v1';
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export const TICK_MS = 1000;
 export const AUTOSAVE_MS = 30 * 1000;
@@ -32,8 +32,6 @@ export const ZOMBIE_MAX_GROUPS = 60;
 export const EXPLORE_DURATIONS = [5, 15, 30, 60];
 export const MAX_TEAM_SIZE = 4;
 
-/** 防禦建築槽位數 */
-export const DEFENSE_SLOTS = 8;
 /** 同時施工數 */
 export const BUILD_QUEUE_SIZE = 2;
 

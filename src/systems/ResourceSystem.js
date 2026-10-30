@@ -30,7 +30,6 @@ export class ResourceSystem {
     const rb = this.game.research.bonuses();
     const gross = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, 0]));
     const upkeep = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, 0]));
-    const now = Date.now();
 
     // 各據點設施產出加總；發電機只加成所在據點，並消耗燃料
     const genOn = this.generatorActive();
@@ -50,7 +49,7 @@ export class ResourceSystem {
 
     // 倖存者工作
     st.survivors.forEach((sv) => {
-      if (sv.status !== 'idle' || sv.injuredUntil > now) return;
+      if (sv.status !== 'idle' || sv.severe) return;
       if (this.game.survivors.isGarrisoned(sv.id)) return;
       const job = JOBS[sv.job] || JOBS.idle;
       const mul = (job.classBonus?.[sv.classId] || 1) * (1 + sv.level * 0.03);
@@ -67,9 +66,14 @@ export class ResourceSystem {
     return { net, gross, upkeep };
   }
 
-  /** 套用 dtMs 時間的生產，回傳實際變化量 */
+  /**
+   * 套用 dtMs 時間的生產，回傳實際變化量。
+   * 同時計算飢餓：食物見底且淨收入為負時，所有人員進入飢餓狀態；
+   * `lastStarvingMs` 為本區間內處於飢餓的時間（飢餓發生在區間末段）。
+   */
   apply(dtMs) {
     const { net } = this.rates();
+    const foodBefore = this.game.state.resources.food;
     const cap = this.storageCap();
     const res = this.game.state.resources;
     const hours = dtMs / 3600000;
@@ -83,6 +87,16 @@ export class ResourceSystem {
       delta[k] = after - before;
     });
     if (delta.food > 0) this.game.state.stats.foodCollected += delta.food;
+    if (net.food < 0) {
+      const msToEmpty = (foodBefore / -net.food) * 3600000;
+      this.lastStarvingMs = Math.max(0, dtMs - msToEmpty);
+    } else {
+      this.lastStarvingMs = 0;
+    }
+    const starving = res.food <= 0.01 && net.food < 0;
+    if (starving && !this.game.state.starving) this.game.log('🍽️ 食物耗盡，所有人員進入飢餓狀態！', 'danger');
+    if (!starving && this.game.state.starving) this.game.log('🥫 恢復食物供給，飢餓解除', 'success');
+    this.game.state.starving = starving;
     return delta;
   }
 }

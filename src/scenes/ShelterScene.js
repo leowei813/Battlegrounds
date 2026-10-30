@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import { DEFENSES } from '../config/defenses.js';
-import { DEFENSE_SLOTS } from '../config/constants.js';
+import { BASE_SIZES } from '../config/civilization.js';
+
+/** 最大據點的防禦欄位數（場景預先建立的槽位物件數） */
+const MAX_SLOTS = Math.max(...Object.values(BASE_SIZES).map((s) => s.slots));
 import { WORLD } from '../systems/SiegeSystem.js';
 import { bus, EVT } from '../core/EventBus.js';
 
@@ -53,7 +56,7 @@ export class ShelterScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(60);
 
     this.slotObjs = [];
-    for (let i = 0; i < DEFENSE_SLOTS; i += 1) {
+    for (let i = 0; i < MAX_SLOTS; i += 1) {
       const zone = this.add.circle(0, 0, 18, 0x000000, 0.35).setStrokeStyle(2, 0xffffff, 0.4).setDepth(5);
       zone.setInteractive({ useHandCursor: true });
       zone.on('pointerdown', () => bus.emit(EVT.OPEN_SLOT, { slot: i }));
@@ -126,12 +129,19 @@ export class ShelterScene extends Phaser.Scene {
     }
 
     this.staticG.clear();
+    // 此據點規模以外的槽位隱藏
+    this.slotObjs.forEach((o, i) => {
+      if (i < sh.defenses.length) return;
+      o.zone.setVisible(false);
+      o.icon.setVisible(false);
+      o.lv.setVisible(false);
+    });
     // 偵查範圍
     this.staticG.lineStyle(1, 0xffffff, 0.08).strokeCircle(c.x, c.y, WORLD.SPAWN_R * this.k);
     this.staticG.lineStyle(1, 0xffffff, 0.06).strokeCircle(c.x, c.y, WORLD.SLOT_R * this.k);
 
     sh.defenses.forEach((d, i) => {
-      const p = this.siege.slotPos(i, DEFENSE_SLOTS);
+      const p = this.siege.slotPos(i, sh.defenses.length);
       const s = this.toScreen(p.x, p.y);
       const o = this.slotObjs[i];
       const busy = core.shelter.isSlotBusy(sh, i);

@@ -3,6 +3,7 @@ import { RARITIES } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
 import { EXP_PHASES } from '../../systems/ExplorationSystem.js';
+import { isLooted } from '../../systems/LootStock.js';
 import { btn, timerBar, gainsHtml } from '../components.js';
 
 /**
@@ -36,7 +37,7 @@ export class ExplorePanel {
     const nearby = this.nearby()
       .map(({ p, d }) => `<div class="poi-row">
         <span class="poi-pin sm" style="--c:${POI_TYPES[p.type].color}">${POI_TYPES[p.type].icon}</span>
-        <div class="grow"><b>${escapeHtml(p.name)}</b><small class="muted block">${POI_TYPES[p.type].name}・${Math.round(d)}m・☠${g.zombies.areaDanger(p)}・殘量 ${Math.round((1 - (p.depletion || 0)) * 100)}%</small></div>
+        <div class="grow"><b>${escapeHtml(p.name)}</b><small class="muted block">${POI_TYPES[p.type].name}・${Math.round(d)}m・☠${g.zombies.areaDanger(p)}・${isLooted(p) ? '<span class="neg">已搜刮</span>' : '有物資'}</small></div>
         ${btn('探索', 'explore', { id: p.id }, { cls: 'btn-sm btn-primary' })}
       </div>`).join('');
 

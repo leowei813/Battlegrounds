@@ -71,6 +71,25 @@ async function run() {
   assert(events.some((e) => e.rev === 3 && e.deviceId === 'devB'), 'SSE 即時收到其他裝置的更新');
   ctrl.abort();
   await sse;
+
+  // ---- 多人世界 ----
+  const pA = { id: saveIdFromCode(generateCode()), token: tokenFromCode(generateCode()) };
+  const pB = { id: saveIdFromCode(generateCode()), token: tokenFromCode(generateCode()) };
+  const now = Date.now();
+  await api.worldPut(pA.id, pA.token, {
+    name: '玩家A<script>', civ: 120,
+    bases: [{ lat: 25.04, lon: 121.56, name: '基地', primary: true, size: 'large' }],
+    trips: [{ from: { lat: 25.04, lon: 121.56 }, to: { lat: 25.05, lon: 121.57 }, startAt: now, endAt: now + 600000, travelMs: 120000, searchMs: 360000, members: 2, target: '醫院' }],
+  });
+  const seenByB = await api.worldNearby(25.041, 121.561, 5, pB.id);
+  assert(seenByB.length === 1 && seenByB[0].name === '玩家A<script>'.slice(0, 16) && seenByB[0].trips.length === 1, '其他玩家看得到公開的據點與探索隊伍');
+  assert(!('tokenHash' in seenByB[0]), '不會洩漏身分憑證');
+  assert((await api.worldNearby(25.04, 121.56, 5, pA.id)).length === 0, '自己不會出現在自己的列表');
+  assert((await api.worldNearby(35.0, 139.0, 5, pB.id)).length === 0, '遠方玩家不會出現');
+  await expectError(api.worldPut(pA.id, pB.token, { name: 'x', bases: [{ lat: 0, lon: 0 }] }), 'forbidden', '無法冒用他人身分更新');
+  await expectError(api.worldPut(pB.id, pB.token, { name: 'x', bases: [{ lat: 999, lon: 0 }] }), 'server', '無效座標被拒');
+  await api.worldDelete(pA.id, pA.token);
+  assert((await api.worldNearby(25.04, 121.56, 5, pB.id)).length === 0, '停止公開後立即從世界移除');
 }
 
 run()

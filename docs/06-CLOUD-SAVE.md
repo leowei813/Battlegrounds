@@ -81,6 +81,9 @@ VITE_SUPABASE_ANON_KEY=eyJ...
 | GET | `/api/saves/:id` | 下載存檔 `{ meta, data }` |
 | PUT | `/api/saves/:id` | 上傳 `{ baseRev, deviceId, deviceName, data, force? }` → 200 / 409 / 403 |
 | GET | `/api/saves/:id/events?token=` | SSE：其他裝置寫入時推送 meta |
+| PUT | `/api/world/players/:id` | 多人互動：上傳公開資料 `{ name, civ, bases, trips }`（Bearer = 玩家 token） |
+| DELETE | `/api/world/players/:id` | 多人互動：取消公開（Bearer = 玩家 token） |
+| GET | `/api/world/nearby?lat=&lon=&km=` | 多人互動：附近玩家（3 天未更新者不列出） |
 
 驗證：`Authorization: Bearer <token>`。
 - `id = sha256("jdqs-id:" + 同步碼)` 取前 32 字元
@@ -100,3 +103,7 @@ VITE_SUPABASE_ANON_KEY=eyJ...
 | `scripts/test-cloud.js` | 伺服器 + 客戶端整合測試（`npm run test:cloud`） |
 
 本機同步設定存於 LocalStorage `jdqs_cloud_v1`（`{ code, rev, deviceId, lastSyncAt }`），刻意與遊戲存檔分開，所以「匯出存檔」不會帶出同步碼。
+
+## 多人互動
+多人互動與雲端存檔共用同一個後端：內建伺服器會把資料寫到 `DATA_DIR/world.json`；Supabase 則需執行 `supabase/schema.sql` 中新增的 `jdqs_world` 資料表與 3 個 RPC。
+GitHub Pages 版預設 `VITE_CLOUD_PROVIDER=none`，沒有後端時多人互動不會啟用。

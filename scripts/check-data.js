@@ -68,9 +68,11 @@ const reports = g.exploration.update(Date.now() + 3600e3, { silent: true });
 assert(reports.length === 1, 'exploration resolved');
 g.state.player.coins = 1e5;
 Object.keys(g.state.resources).forEach((k) => { g.state.resources[k] = 1e5; });
-assert(g.survivors.recruitRandom().ok, 'recruit');
+const roll = g.survivors.recruitRoll();
+assert(roll.ok && roll.offer.length === 3, '招募一次出現三位候選人');
+assert(g.survivors.pickRecruit(roll.offer[1].id).ok && !g.state.recruitOffer, '選擇其中一位加入');
 assert(g.equipment.craft('pistol').ok, 'craft');
-g.survivors.leader().injuredUntil = 0; // 探索可能讓領袖受傷；確保有人駐守
+Object.assign(g.survivors.leader(), { severe: false, hp: null }); // 探索可能讓領袖重傷；確保有人駐守
 for (let i = 0; i < 1200; i += 1) g.siege.update(0.1);
 assert(g.state.stats.siegeKills > 0, 'siege kills happen');
 const alive = g.siege.of().zombies.length;
@@ -81,9 +83,9 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 4, 'state is serializable');
+assert(save.version === 5, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
-g.state.map.pois[1].depletion = 0.24;
+g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
 const packed = JSON.stringify(SaveManager.pack(g.state));
 const restored = SaveManager.migrate(JSON.parse(packed));
@@ -128,7 +130,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 4 && migrated.bases.length === 1 && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 5 && migrated.bases.length === 1 && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -163,7 +165,7 @@ assert(migrated.version === 4 && migrated.bases.length === 1 && migrated.primary
   assert(g3.exploration.checkAmbush(t0 + ex.travelMs + 1000).length === 0, '搜索中不會遇襲');
   // 戰敗：探索提前結束
   leader.level = 1;
-  leader.injuredUntil = 0;
+  Object.assign(leader, { severe: false, hp: null });
   let aborted = false;
   for (let i = 0; i < 20 && !aborted; i += 1) {
     ex.encountered = [];
@@ -272,6 +274,88 @@ assert(migrated.version === 4 && migrated.bases.length === 1 && migrated.primary
   delete old.survivors[0].equipment.gloves;
   const mig = SaveManager.migrate(old);
   assert(mig.inventory.items[0].rarity === 'poor' && mig.survivors[0].equipment.gloves === null, 'v3 → v4：舊普通裝備轉為劣質、補上新裝備欄');
+}
+
+// ---- 9. v2.0：重傷 / 飢餓 / 死亡 / 招募 / 突破 / 據點規模 / 每日物資 ----
+{
+  const gv = Game.newGame({ playerName: 'Vital', classId: 'warrior', lat: 0, lon: 0 });
+  gv.state.map.pois = fillPois([], 0, 0);
+  gv.shelter.establish(gv.state.map.pois.find((p) => p.type === 'military'));
+  const sv = gv.survivors;
+  const leader = sv.leader();
+  // 重傷懲罰：扣升級所需經驗 10%，不足時降級
+  leader.level = 5;
+  leader.xp = 2;
+  sv.becomeSevere(leader, '測試');
+  assert(leader.severe && leader.level === 4 && sv.hpOf(leader) === 0, `重傷扣經驗並降級（Lv5 → Lv${leader.level}）`);
+  assert(!sv.isAvailable(leader), '重傷無法行動');
+  // 有食物時自然恢復，回到 30% 解除重傷
+  gv.state.starving = false;
+  sv.updateVitals(Date.now(), 60 * 60000, 0);
+  assert(!leader.severe && sv.hpOf(leader) > 0, '有食物時生命恢復並脫離重傷');
+  // 飢餓扣血直到重傷，飢餓時無法治療
+  gv.state.starving = true;
+  const npc = gv.survivors.makeCandidate(5);
+  gv.state.survivors.push(npc);
+  sv.updateVitals(Date.now(), 30 * 60000, 30 * 60000);
+  assert(npc.severe && sv.hpOf(npc) === 0, '飢餓持續扣血直到重傷');
+  gv.state.resources.medicine = 100;
+  assert(!sv.heal(npc.id).ok, '飢餓中無法治療');
+  // 重傷 + 飢餓滿遊戲內 3 天 → 永久死亡（領袖不會死亡）
+  sv.becomeSevere(leader, '測試');
+  leader.zeroSince = Date.now() - 4 * DAY_REAL_MS;
+  npc.zeroSince = Date.now() - 4 * DAY_REAL_MS;
+  sv.updateVitals(Date.now(), 1000, 1000);
+  assert(!gv.state.survivors.includes(npc) && gv.state.survivors.includes(leader), '重傷且飢餓滿 3 天的隊員永久死亡，領袖不會死亡');
+  // 食物收支：人越多消耗越多；食物見底且淨收入為負 → 飢餓
+  gv.state.starving = false;
+  for (let i = 0; i < 6; i += 1) gv.state.survivors.push(gv.survivors.makeCandidate(1));
+  gv.state.resources.food = 1;
+  gv.resources.apply(60 * 60000);
+  assert(gv.state.starving && gv.resources.lastStarvingMs > 0, `人數多、食物見底時進入飢餓（淨收入 ${gv.resources.rates().net.food.toFixed(1)}/時）`);
+  // 人員上限：依領袖等級與據點等級提高，最多 10 人
+  leader.level = 50;
+  gv.state.bases[0].facilities = Object.fromEntries(Object.keys(gv.state.bases[0].facilities).map((k) => [k, { level: 10 }]));
+  assert(sv.housing() === 10, `人員上限最多 10 人（目前 ${sv.housing()}）`);
+  // 品級越高成長越多
+  const a = gv.survivors.makeCandidate(30);
+  const b = { ...a, id: 'x', rarity: 'legendary' };
+  a.rarity = 'poor';
+  assert(sv.stats(b).atk > sv.stats(a).atk, '倖存者品級越高，升級提升的能力越多');
+  // 驅逐
+  const kick = gv.state.survivors.find((s) => !s.isLeader);
+  assert(sv.dismiss(kick.id).ok && !sv.get(kick.id), '可驅逐隊員');
+  // 據點規模：巨型據點可建 20 棟建築
+  const base = gv.shelter.primary();
+  assert(gv.shelter.sizeInfo(base).total === 20 && base.defenses.length === 12, '最大（巨型）據點可建造 20 棟建築');
+  const small = gv.shelter.sizeInfo(gv.state.map.pois.find((p) => p.type === 'gasStation'));
+  assert(small.total < 20, `其他規模可建造數較少（${small.name} ${small.total} 棟）`);
+  // 突破：資源 -25%，建築可能降級或被拆毀
+  Object.keys(gv.state.resources).forEach((k) => { gv.state.resources[k] = 1000; });
+  base.defenses.forEach((d) => Object.assign(d, { type: 'trap', level: 1 }));
+  const siege = gv.siege.of(base.id);
+  let destroyed = 0;
+  for (let i = 0; i < 5 && !destroyed; i += 1) {
+    siege.breach();
+    destroyed = base.defenses.filter((d) => !d.type).length;
+  }
+  assert(Math.round(gv.state.resources.wood) <= 750, `突破損失 25% 資源（木材 1000 → ${Math.round(gv.state.resources.wood)}）`);
+  assert(destroyed > 0, `突破後 1 級建築可能被拆毀（${destroyed} 棟）`);
+  assert(base.facilities.wall.level >= 1, '圍牆最低保留 1 級');
+}
+{
+  // 每日物資：探索後清空，隔天 00:00 重置且隨機
+  const { stockOf, dayKey } = await import('../src/systems/LootStock.js');
+  const poi = { id: 'osm_w1', type: 'shop', name: 'x', lat: 0, lon: 0 };
+  const today = stockOf(poi);
+  assert(!today.empty && Object.keys(today.resources).length >= 1, '建築每天有物資');
+  assert(JSON.stringify(stockOf(poi)) === JSON.stringify(today), '同一天物資固定');
+  poi.lootedDay = dayKey();
+  assert(stockOf(poi).empty, '探索後物資清空');
+  const tomorrow = Date.now() + 86400000;
+  assert(!stockOf(poi, tomorrow).empty, '隔天 00:00 重置');
+  const days = new Set(Array.from({ length: 10 }, (_, i) => JSON.stringify(stockOf({ ...poi, lootedDay: 0 }, Date.now() + i * 86400000).resources)));
+  assert(days.size > 5, '每天物資的種類與數量隨機');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

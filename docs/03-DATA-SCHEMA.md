@@ -140,7 +140,10 @@
   "isLeader": true,
   "status": "idle | exploring",
   "job": "idle | scavenge | farm | workshop | clinic | guard",
-  "injuredUntil": 0,            // > now 代表受傷中
+  "rarity": "common",           // poor|common|uncommon|rare|epic|legendary（升級成長倍率）
+  "hp": 150,                    // 目前生命，null = 滿血
+  "severe": false,              // 重傷：無法行動，生命回到 30% 解除
+  "zeroSince": 0,               // 重傷且飢餓的起始時間（滿遊戲內 3 天死亡）
   "equipment": { "weapon": "it_xxx", "helmet": null, "armor": null, "legs": null, "backpack": null }
 }
 ```
@@ -216,3 +219,15 @@
 1. 變更 state 結構時將 `SAVE_VERSION` +1。
 2. 在 `SaveManager.migrate(data)` 中以 `if (v < N) { ... }` 逐版升級。
 3. 新增的統計欄位會由 `STAT_KEYS` 自動補 0，無需手寫遷移。
+
+## v5 新增欄位（v2.0.0）
+| 位置 | 欄位 | 說明 |
+|---|---|---|
+| `recruitOffer` | `Survivor[] \| null` | 廣播招募的 3 位候選人，選擇或放棄後清空 |
+| `starving` | `boolean` | 目前是否飢餓 |
+| `bases[].size` | `small\|medium\|large\|huge` | 據點規模，決定防禦欄位數（4／6／9／12） |
+| `map.pois[].lootedDay` | `number` | 最後被搜刮的日期編號（當地日期），與今天相同代表已清空 |
+| `player.worldId` / `worldSecret` | `string` | 多人互動的公開身分（只上傳雜湊後的 token） |
+| `settings.shareWorld` | `boolean` | 是否公開據點與探索隊，預設關閉 |
+
+舊存檔遷移（v4 → v5）：補上品級（一般）、生命、重傷欄位，依建築類型決定據點規模並保留已建造的防禦，舊的建築枯竭度忽略。

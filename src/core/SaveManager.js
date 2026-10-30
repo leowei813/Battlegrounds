@@ -2,22 +2,24 @@ import { SAVE_KEY, SAVE_VERSION } from '../config/constants.js';
 import { STAT_KEYS } from './GameState.js';
 import { POI_KEYS } from '../config/poiTypes.js';
 import { SLOT_KEYS } from '../config/equipment.js';
+import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 
 /**
  * 地圖建築改以「欄位陣列」儲存（市區可達數千棟，物件格式體積約大一倍）：
- * [id, 類型索引, 名稱, 緯度, 經度, 是否 OSM(1/0), 枯竭度, 最後探索時間]
+ * [id, 類型索引, 名稱, 緯度, 經度, 是否 OSM(1/0), 被搜刮的日期編號, 最後探索時間]
  */
 function packPois(pois) {
   return {
     types: POI_KEYS,
-    rows: pois.map((p) => [p.id, POI_KEYS.indexOf(p.type), p.name, p.lat, p.lon, p.osm ? 1 : 0, p.depletion ? +p.depletion.toFixed(3) : 0, p.lastVisit || 0]),
+    rows: pois.map((p) => [p.id, POI_KEYS.indexOf(p.type), p.name, p.lat, p.lon, p.osm ? 1 : 0, p.lootedDay || 0, p.lastVisit || 0]),
   };
 }
 
 function unpackPois({ types, rows }) {
-  return rows.map(([id, t, name, lat, lon, osm, depletion, lastVisit]) => {
+  return rows.map(([id, t, name, lat, lon, osm, lootedDay, lastVisit]) => {
     const poi = { id, type: types[t], name, lat, lon, osm: !!osm };
-    if (depletion) poi.depletion = depletion;
+    // v4 以前此欄為枯竭度（小數），不再使用；整數才是被搜刮的日期編號
+    if (Number.isInteger(lootedDay) && lootedDay > 1) poi.lootedDay = lootedDay;
     if (lastVisit) poi.lastVisit = lastVisit;
     return poi;
   }).filter((p) => p.type);
@@ -120,11 +122,31 @@ export class SaveManager {
       delete data.shelter;
     }
     data.bases = data.bases || [];
+    // v5：據點依規模調整防禦欄位數（保留已建造的欄位）
+    data.bases.forEach((b) => {
+      if (b.size) return;
+      const poi = (data.map?.pois || []).find((p) => p.id === b.poiId)
+        || unpackPois(data.map?.poiPack || { types: [], rows: [] }).find((p) => p.id === b.poiId)
+        || { id: b.poiId, type: 'residential' };
+      b.size = baseSizeOf(poi);
+      const lastBuilt = b.defenses.reduce((m, d, i) => (d.type ? i : m), -1);
+      const len = Math.max(BASE_SIZES[b.size].slots, lastBuilt + 1);
+      b.defenses = Array.from({ length: len }, (_, slot) => b.defenses[slot] || { slot, type: null, level: 0, garrisonId: null });
+    });
+    data.recruitOffer = data.recruitOffer || null;
     // v3 -> v4：品級改為 6 階（舊的灰色「普通」→「劣質」），裝備欄新增手套、鞋子、飾品
     if (v < 4) {
       (data.inventory?.items || []).forEach((it) => { if (it.rarity === 'common') it.rarity = 'poor'; });
     }
     (data.survivors || []).concat(data.recruitPool || []).forEach((sv) => {
+      // v4 -> v5：受傷計時改為生命值 / 重傷制，倖存者新增品級
+      if (v < 5) {
+        sv.rarity = sv.rarity || (sv.isLeader ? 'uncommon' : 'common');
+        sv.hp = null;
+        sv.severe = false;
+        sv.zeroSince = 0;
+        delete sv.injuredUntil;
+      }
       sv.equipment = sv.equipment || {};
       SLOT_KEYS.forEach((k) => { if (!(k in sv.equipment)) sv.equipment[k] = null; });
     });

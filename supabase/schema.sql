@@ -82,3 +82,60 @@ revoke all on function public.jdqs_save_put(text, text, integer, text, text, jso
 grant execute on function public.jdqs_save_meta(text, text) to anon, authenticated;
 grant execute on function public.jdqs_save_get(text, text) to anon, authenticated;
 grant execute on function public.jdqs_save_put(text, text, integer, text, text, jsonb, boolean) to anon, authenticated;
+
+-- ============================================================
+-- 多人世界：玩家自願公開的據點與探索隊伍（v2.0.0）
+-- ============================================================
+create table if not exists public.jdqs_world (
+  id          text primary key check (id ~ '^[0-9a-f]{32}$'),
+  token_hash  text not null,
+  lat         double precision not null,   -- 主要據點位置（附近查詢用）
+  lon         double precision not null,
+  payload     jsonb not null,              -- { name, civ, bases[], trips[] }
+  updated_at  bigint not null
+);
+create index if not exists jdqs_world_pos on public.jdqs_world (lat, lon);
+alter table public.jdqs_world enable row level security;
+revoke all on public.jdqs_world from anon, authenticated;
+
+create or replace function public.jdqs_world_put(p_id text, p_token text, p_payload jsonb, p_lat double precision, p_lon double precision)
+returns json language plpgsql security definer set search_path = public as $$
+declare s public.jdqs_world;
+begin
+  if p_id !~ '^[0-9a-f]{32}$' or p_token !~ '^[0-9a-f]{64}$' then return json_build_object('status', 'forbidden'); end if;
+  if octet_length(p_payload::text) > 32768 then raise exception 'payload too large'; end if;
+  select * into s from public.jdqs_world where id = p_id for update;
+  if found and s.token_hash <> p_token then return json_build_object('status', 'forbidden'); end if;
+  insert into public.jdqs_world (id, token_hash, lat, lon, payload, updated_at)
+    values (p_id, p_token, p_lat, p_lon, p_payload, (extract(epoch from clock_timestamp()) * 1000)::bigint)
+    on conflict (id) do update set lat = excluded.lat, lon = excluded.lon, payload = excluded.payload, updated_at = excluded.updated_at;
+  return json_build_object('status', 'ok');
+end $$;
+
+create or replace function public.jdqs_world_delete(p_id text, p_token text)
+returns json language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.jdqs_world where id = p_id and token_hash = p_token;
+  return json_build_object('status', 'ok');
+end $$;
+
+-- 附近玩家（以主要據點位置判斷，排除 3 天未更新者）
+create or replace function public.jdqs_world_nearby(p_lat double precision, p_lon double precision, p_km double precision, p_exclude text)
+returns json language sql security definer set search_path = public as $$
+  select json_build_object('status', 'ok', 'players', coalesce(json_agg(p.payload || jsonb_build_object('id', p.id, 'updatedAt', p.updated_at)), '[]'::json))
+  from (
+    select * from public.jdqs_world
+    where id <> coalesce(p_exclude, '')
+      and abs(lat - p_lat) <= least(p_km, 20) / 111.32
+      and abs(lon - p_lon) <= least(p_km, 20) / (111.32 * greatest(cos(radians(p_lat)), 0.1))
+      and updated_at > (extract(epoch from clock_timestamp()) * 1000)::bigint - 3 * 86400000
+    limit 100
+  ) p;
+$$;
+
+revoke all on function public.jdqs_world_put(text, text, jsonb, double precision, double precision) from public;
+revoke all on function public.jdqs_world_delete(text, text) from public;
+revoke all on function public.jdqs_world_nearby(double precision, double precision, double precision, text) from public;
+grant execute on function public.jdqs_world_put(text, text, jsonb, double precision, double precision) to anon, authenticated;
+grant execute on function public.jdqs_world_delete(text, text) to anon, authenticated;
+grant execute on function public.jdqs_world_nearby(double precision, double precision, double precision, text) to anon, authenticated;

@@ -17,9 +17,9 @@ export const FACILITIES = {
   },
   warehouse: {
     name: '倉庫', icon: '📦', startLevel: 1,
-    desc: '提高資源上限與倖存者床位。',
+    desc: '提高資源上限。',
     cost: (lv) => scale({ wood: 80, metal: 20, cloth: 20 }, lv),
-    effectText: (lv) => `資源上限 ${storageCap(lv)}，床位 ${housingCap(lv)}`,
+    effectText: (lv) => `資源上限 ${storageCap(lv)}`,
   },
   watchtower: {
     name: '監視塔', icon: '🗼', startLevel: 0,

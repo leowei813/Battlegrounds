@@ -1,13 +1,18 @@
 import {
   CLASSES, CLASS_KEYS, JOBS, SURVIVOR_NAMES, MAX_SURVIVOR_LEVEL, xpToNext, recruitCost,
+  SURVIVOR_RARITY, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
 } from '../config/survivors.js';
-import { SLOT_KEYS } from '../config/equipment.js';
+import { DAY_REAL_MS } from '../config/constants.js';
+import { SLOT_KEYS, RARITIES } from '../config/equipment.js';
 import { createSurvivor } from '../core/GameState.js';
-import { clamp, pick, randInt } from '../utils/math.js';
-import { payCost } from './costUtils.js';
+import {
+  clamp, pick, randInt, weightedPick,
+} from '../utils/math.js';
+import { canAfford, payCost } from './costUtils.js';
 
 /**
- * 倖存者系統：屬性計算、經驗/升級、工作指派、招募、受傷。
+ * 倖存者系統：屬性計算、經驗/升級、工作指派、招募（三選一）、
+ * 生命值 / 重傷 / 飢餓 / 永久死亡、驅逐。
  */
 export class SurvivorSystem {
   constructor(game) {
@@ -26,8 +31,26 @@ export class SurvivorSystem {
     return this.list.find((s) => s.isLeader);
   }
 
+  /** 人員上限：3 + 領袖等級 ÷ 5 + 各據點等級總和，最多 10 人（含領袖） */
   housing() {
-    return this.game.shelter.housing();
+    const leaderLv = this.leader()?.level || 1;
+    const baseLv = this.game.state.bases.reduce((s, b) => s + this.game.shelter.baseLevel(b), 0);
+    return Math.min(MAX_SURVIVORS, BASE_SURVIVOR_CAP + Math.floor(leaderLv / LEADER_LEVELS_PER_SLOT) + baseLv);
+  }
+
+  /** 上限明細（UI 說明用） */
+  housingBreakdown() {
+    const leaderLv = this.leader()?.level || 1;
+    return {
+      base: BASE_SURVIVOR_CAP,
+      leader: Math.floor(leaderLv / LEADER_LEVELS_PER_SLOT),
+      bases: this.game.state.bases.reduce((s, b) => s + this.game.shelter.baseLevel(b), 0),
+      max: MAX_SURVIVORS,
+    };
+  }
+
+  growthMul(sv) {
+    return SURVIVOR_RARITY[sv.rarity]?.growth ?? 1;
   }
 
   activeSkills(sv) {
@@ -50,7 +73,8 @@ export class SurvivorSystem {
    */
   stats(sv) {
     const cls = CLASSES[sv.classId];
-    const lv = sv.level - 1;
+    // 品級越高，每級提升的能力越多
+    const lv = (sv.level - 1) * this.growthMul(sv);
     const s = {
       hp: cls.base.hp + cls.growth.hp * lv,
       atk: cls.base.atk + cls.growth.atk * lv,
@@ -97,8 +121,134 @@ export class SurvivorSystem {
     return s;
   }
 
-  isAvailable(sv, now = Date.now()) {
-    return sv.status === 'idle' && sv.injuredUntil <= now && !this.isGarrisoned(sv.id);
+  isAvailable(sv) {
+    return sv.status === 'idle' && !sv.severe && !this.isGarrisoned(sv.id);
+  }
+
+  // ---------------- 生命值 / 重傷 / 飢餓 ----------------
+
+  maxHp(sv) {
+    return this.stats(sv).hp;
+  }
+
+  /** 目前生命（null 代表滿血） */
+  hpOf(sv) {
+    const max = this.maxHp(sv);
+    return sv.hp == null ? max : clamp(sv.hp, 0, max);
+  }
+
+  setHp(sv, value) {
+    const max = this.maxHp(sv);
+    sv.hp = value >= max ? null : Math.max(0, Math.round(value * 10) / 10);
+  }
+
+  isStarving() {
+    return !!this.game.state.starving;
+  }
+
+  /**
+   * 重傷（生命歸零）：無法行動，並扣除經驗（可能降級）。
+   * @param {string} reason 顯示原因
+   */
+  becomeSevere(sv, reason = '', at = Date.now()) {
+    sv.hp = 0;
+    if (sv.severe) return;
+    sv.severe = true;
+    const lost = this.penalizeXp(sv);
+    this.game.log(`🩸 ${sv.name} ${reason}重傷倒地，經驗 -${lost.xp}${lost.levelDown ? `，降為 Lv${sv.level}` : ''}`, 'danger');
+    if (this.isStarving()) sv.zeroSince = sv.zeroSince || at;
+  }
+
+  /**
+   * 重傷懲罰：扣除「目前等級升級所需經驗」的 10%；經驗不足時降一級並從上一級扣除。
+   * @returns {{xp:number, levelDown:boolean}}
+   */
+  penalizeXp(sv) {
+    const loss = Math.max(1, Math.round(xpToNext(sv.level) * VITALS.xpPenaltyPct));
+    if (sv.xp >= loss) {
+      sv.xp -= loss;
+      return { xp: loss, levelDown: false };
+    }
+    if (sv.level <= 1) {
+      const xp = sv.xp;
+      sv.xp = 0;
+      return { xp, levelDown: false };
+    }
+    sv.level -= 1;
+    sv.xp = Math.max(0, xpToNext(sv.level) + sv.xp - loss);
+    return { xp: loss, levelDown: true };
+  }
+
+  /** 醫療站工作的醫生提高全員回復速度 */
+  regenMul() {
+    const medics = this.list.filter((s) => s.classId === 'medic' && s.job === 'clinic' && s.status === 'idle' && !s.severe).length;
+    return 1 + Math.min(1, medics * VITALS.medicRegenBonus) + this.game.research.bonus('injuryReduce');
+  }
+
+  /**
+   * 推進生命狀態。
+   * @param {number} dtMs 經過時間
+   * @param {number} starvingMs 其中處於飢餓狀態的時間（資源系統計算，飢餓發生在區間末段）
+   */
+  updateVitals(now, dtMs, starvingMs = 0) {
+    const fedMin = Math.max(0, dtMs - starvingMs) / 60000;
+    const starveMin = Math.min(dtMs, starvingMs) / 60000;
+    const regenMul = this.regenMul();
+    [...this.list].forEach((sv) => {
+      const max = this.maxHp(sv);
+      let hp = this.hpOf(sv);
+      // 有食物的時段：回復生命
+      if (fedMin > 0) {
+        const rate = sv.severe ? VITALS.severeRegenPctPerMin : VITALS.regenPctPerMin;
+        hp = Math.min(max, hp + max * rate * regenMul * fedMin);
+        sv.zeroSince = 0;
+        if (sv.severe && hp >= max * VITALS.severeRecoverRatio) {
+          sv.severe = false;
+          this.game.log(`💚 ${sv.name} 已脫離重傷`, 'info');
+        }
+      }
+      // 飢餓的時段：持續扣血，直到重傷
+      if (starveMin > 0) {
+        const drain = max * VITALS.starveDrainPctPerMin;
+        const minToZero = hp / drain;
+        hp = Math.max(0, hp - drain * starveMin);
+        if (hp <= 0) {
+          const zeroAt = now - (starveMin - minToZero) * 60000;
+          if (!sv.severe) this.becomeSevere(sv, '因飢餓', zeroAt);
+          sv.zeroSince = sv.zeroSince || zeroAt;
+        }
+      }
+      this.setHp(sv, hp);
+      // 飢餓且生命為 0 持續遊戲內 3 天 → 永久死亡（領袖不會死亡）
+      if (!sv.isLeader && sv.severe && hp <= 0 && sv.zeroSince && this.isStarving()
+        && now - sv.zeroSince >= VITALS.deathGameDays * DAY_REAL_MS) {
+        this.kill(sv, '因長期飢餓');
+      }
+    });
+  }
+
+  /** 距離永久死亡的剩餘時間（毫秒）；不在死亡倒數中則為 null */
+  deathCountdown(sv, now = Date.now()) {
+    if (sv.isLeader || !sv.severe || !sv.zeroSince || !this.isStarving()) return null;
+    return Math.max(0, sv.zeroSince + VITALS.deathGameDays * DAY_REAL_MS - now);
+  }
+
+  kill(sv, reason = '') {
+    this.removeSurvivor(sv.id);
+    this.game.state.stats.deaths = (this.game.state.stats.deaths || 0) + 1;
+    this.game.log(`⚰️ ${sv.name} ${reason}永久死亡`, 'danger');
+    this.game.toast(`⚰️ ${sv.name} ${reason}永久死亡…`, 'danger');
+  }
+
+  /** 移出名單（驅逐或死亡）：卸下裝備（留在背包）、撤回駐守 */
+  removeSurvivor(id) {
+    const sv = this.get(id);
+    if (!sv) return;
+    SLOT_KEYS.forEach((slot) => { sv.equipment[slot] = null; });
+    this.game.state.bases.forEach((b) => b.defenses.forEach((d) => {
+      if (d.garrisonId === id) d.garrisonId = null;
+    }));
+    this.game.state.survivors = this.list.filter((s) => s.id !== id);
   }
 
   isGarrisoned(id) {
@@ -117,23 +267,30 @@ export class SurvivorSystem {
     }
   }
 
-  /** 受傷：teamInjuryReduce 來自隊伍中醫生的技能 */
-  injure(sv, minutes, teamInjuryReduce = 0, at = Date.now()) {
-    const reduce = clamp(this.game.research.bonus('injuryReduce') + teamInjuryReduce, 0, 0.85);
-    sv.injuredUntil = at + minutes * 60000 * (1 - reduce);
-    this.game.log(`🩸 ${sv.name} 受傷了，需要休養`, 'danger');
+  /** 受到傷害（探索陷阱等）；歸零則重傷 */
+  damage(sv, amount, reason = '', at = Date.now()) {
+    const hp = this.hpOf(sv) - amount;
+    if (hp <= 0) this.becomeSevere(sv, reason, at);
+    else this.setHp(sv, hp);
   }
 
   healCost() {
-    return { medicine: 5 };
+    return VITALS.healCost;
   }
 
+  /** 使用藥品治療：回復 50% 最大生命；飢餓中無法治療 */
   heal(id) {
     const sv = this.get(id);
-    if (!sv || sv.injuredUntil <= Date.now()) return { ok: false, reason: '不需要治療' };
+    if (!sv) return { ok: false, reason: '找不到倖存者' };
+    if (this.isStarving()) return { ok: false, reason: '飢餓中無法治療，請先補充食物' };
+    const max = this.maxHp(sv);
+    if (this.hpOf(sv) >= max) return { ok: false, reason: '生命已滿' };
     if (!payCost(this.game.state, this.healCost())) return { ok: false, reason: '藥品不足' };
-    sv.injuredUntil = 0;
-    return { ok: true, msg: `${sv.name} 已痊癒` };
+    const hp = Math.min(max, this.hpOf(sv) + max * VITALS.healPct);
+    this.setHp(sv, hp);
+    if (sv.severe && hp >= max * VITALS.severeRecoverRatio) sv.severe = false;
+    sv.zeroSince = 0;
+    return { ok: true, msg: `${sv.name} 恢復了生命${sv.severe ? '' : '，已可行動'}` };
   }
 
   setJob(id, job) {
@@ -150,29 +307,57 @@ export class SurvivorSystem {
     return pick(free.length ? free : SURVIVOR_NAMES);
   }
 
-  /** 生成候選倖存者（探索遭遇或招募所用） */
+  rollRarity() {
+    return weightedPick(Object.fromEntries(Object.entries(SURVIVOR_RARITY).map(([k, v]) => [k, v.weight])));
+  }
+
+  /** 生成候選倖存者（探索遭遇或招募所用），品級隨機 */
   makeCandidate(level = 1) {
-    return createSurvivor(this.randomName(), pick(CLASS_KEYS), Math.max(1, level));
+    return createSurvivor(this.randomName(), pick(CLASS_KEYS), Math.max(1, level), this.rollRarity());
   }
 
   currentRecruitCost() {
     return recruitCost(this.list.length);
   }
 
-  /** 花費金錢與食物，於避難所廣播招募 */
-  recruitRandom() {
-    if (this.list.length >= this.housing()) return { ok: false, reason: '床位不足，請升級倉庫' };
-    if (!payCost(this.game.state, this.currentRecruitCost())) return { ok: false, reason: '資源不足' };
+  isFull() {
+    return this.list.length >= this.housing();
+  }
+
+  /**
+   * 廣播招募：支付費用後出現 3 位候選人，可選擇其中一位或放棄（放棄不退費）。
+   * @returns {{ok:boolean, offer?:object[], reason?:string}}
+   */
+  recruitRoll() {
+    if (this.game.state.recruitOffer?.length) return { ok: true, offer: this.game.state.recruitOffer };
+    if (this.isFull()) return { ok: false, reason: `人數已達上限（${this.housing()} 人），提升領袖等級或據點等級可增加上限` };
+    if (!canAfford(this.game.state, this.currentRecruitCost())) return { ok: false, reason: '資源不足' };
+    payCost(this.game.state, this.currentRecruitCost());
     const avgLv = Math.max(1, Math.round(this.list.reduce((s, v) => s + v.level, 0) / this.list.length) - 1);
-    const sv = this.makeCandidate(randInt(Math.max(1, avgLv - 2), avgLv + 1));
+    this.game.state.recruitOffer = Array.from({ length: RECRUIT_CHOICES }, () => this.makeCandidate(randInt(Math.max(1, avgLv - 2), avgLv + 1)));
+    return { ok: true, offer: this.game.state.recruitOffer };
+  }
+
+  pickRecruit(id) {
+    const offer = this.game.state.recruitOffer || [];
+    const sv = offer.find((c) => c.id === id);
+    if (!sv) return { ok: false, reason: '候選人已離開' };
+    if (this.isFull()) return { ok: false, reason: '人數已達上限' };
+    this.game.state.recruitOffer = null;
     this.addSurvivor(sv);
-    return { ok: true, msg: `${sv.name}（${CLASSES[sv.classId].name}）加入了避難所` };
+    return { ok: true, msg: `${sv.name}（${RARITIES[sv.rarity].name}・${CLASSES[sv.classId].name}）加入了避難所` };
+  }
+
+  /** 放棄此次招募（費用不退還） */
+  abandonRecruit() {
+    this.game.state.recruitOffer = null;
+    return { ok: true, msg: '已放棄此次招募' };
   }
 
   addSurvivor(sv) {
     this.list.push(sv);
     this.game.state.stats.recruits += 1;
-    this.game.log(`🤝 ${sv.name}（${CLASSES[sv.classId].name} Lv${sv.level}）加入`, 'success');
+    this.game.log(`🤝 ${sv.name}（${RARITIES[sv.rarity]?.name || ''}${CLASSES[sv.classId].name} Lv${sv.level}）加入`, 'success');
   }
 
   /** 接受探索中遇到的倖存者 */
@@ -180,7 +365,7 @@ export class SurvivorSystem {
     const pool = this.game.state.recruitPool;
     const cand = pool.find((c) => c.id === id);
     if (!cand) return { ok: false, reason: '對方已離開' };
-    if (this.list.length >= this.housing()) return { ok: false, reason: '床位不足，請升級倉庫' };
+    if (this.isFull()) return { ok: false, reason: '人數已達上限' };
     this.game.state.recruitPool = pool.filter((c) => c.id !== id);
     this.addSurvivor(cand);
     return { ok: true, msg: `${cand.name} 加入了你的隊伍` };
@@ -191,24 +376,13 @@ export class SurvivorSystem {
     return { ok: true };
   }
 
+  /** 驅逐隊員（裝備留在背包） */
   dismiss(id) {
     const sv = this.get(id);
-    if (!sv || sv.isLeader) return { ok: false, reason: '無法遣散領袖' };
-    if (sv.status === 'exploring') return { ok: false, reason: '探索中' };
-    SLOT_KEYS.forEach((slot) => { sv.equipment[slot] = null; });
-    this.game.state.bases.forEach((b) => b.defenses.forEach((d) => {
-      if (d.garrisonId === id) d.garrisonId = null;
-    }));
-    this.game.state.survivors = this.list.filter((s) => s.id !== id);
-    return { ok: true, msg: `${sv.name} 離開了避難所` };
-  }
-
-  update(now) {
-    this.list.forEach((sv) => {
-      if (sv.injuredUntil && sv.injuredUntil <= now) {
-        sv.injuredUntil = 0;
-        this.game.log(`💚 ${sv.name} 已康復`, 'info');
-      }
-    });
+    if (!sv || sv.isLeader) return { ok: false, reason: '無法驅逐領袖' };
+    if (sv.status === 'exploring') return { ok: false, reason: '探索中無法驅逐' };
+    this.removeSurvivor(id);
+    this.game.log(`🚪 ${sv.name} 被驅逐出避難所`, 'info');
+    return { ok: true, msg: `${sv.name} 已被驅逐` };
   }
 }

@@ -55,6 +55,31 @@ export class SelfHostProvider {
     return this.check(status, res).meta;
   }
 
+  // ---------------- 多人世界 ----------------
+
+  async worldPut(id, token, presence) {
+    const { status, body } = await fetchJson(this.url(`/world/players/${id}`), {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(presence),
+    });
+    this.check(status, body);
+  }
+
+  async worldDelete(id, token) {
+    const { status, body } = await fetchJson(this.url(`/world/players/${id}`), {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    });
+    this.check(status, body);
+  }
+
+  /** @returns {Promise<object[]>} 附近公開分享的玩家 */
+  async worldNearby(lat, lon, km, excludeId) {
+    const q = new URLSearchParams({ lat, lon, km, exclude: excludeId || '' });
+    const { status, body } = await fetchJson(this.url(`/world/nearby?${q}`));
+    return this.check(status, body).players || [];
+  }
+
   /**
    * 即時訂閱存檔版本變化。
    * @returns {(() => void)|null} 取消訂閱函式；不支援時回傳 null（改用輪詢）

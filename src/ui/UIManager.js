@@ -14,6 +14,7 @@ import { ResearchPanel } from './panels/ResearchPanel.js';
 import { QuestPanel } from './panels/QuestPanel.js';
 import { SettingsPanel } from './panels/SettingsPanel.js';
 import { CLOUD_EVT } from '../cloud/CloudSync.js';
+import { WORLD_EVT } from '../multiplayer/WorldSync.js';
 import { APP_VERSION } from '../config/version.js';
 import { showChangelog } from './ChangelogView.js';
 
@@ -88,6 +89,7 @@ export class UIManager {
       if (action === 'openRates') this.showRates();
       if (action === 'openCloud') this.switchTab('settings');
       if (action === 'openCiv') this.switchTab('shelter');
+      if (action === 'openSurvivors') this.switchTab('survivors');
       if (action === 'openChangelog') showChangelog(this);
     });
 
@@ -96,6 +98,8 @@ export class UIManager {
     bus.on(EVT.OPEN_SLOT, ({ slot }) => this.panels.shelter.openSlot(slot));
     bus.on(EVT.OPEN_POI, ({ poiId }) => this.panels.map.openPoi(poiId));
     bus.on('ui:openZombie', ({ groupId }) => this.panels.map.openZombie(groupId));
+    bus.on('ui:openPlayer', ({ playerId }) => this.panels.map.openPlayer(playerId));
+    bus.on(WORLD_EVT, (players) => this.panels.map.onWorld(players));
     bus.on(EVT.MAP_CHANGED, () => this.panels.map.renderMap(true));
     bus.on('expedition:done', () => this.panels.map.renderMap(true));
     window.addEventListener('resize', () => this.applyLayout());
@@ -187,9 +191,12 @@ export class UIManager {
           <span class="phase-icon">${phase.icon}</span>
           <div><b>第 ${g.time.day()} 天 ${g.time.clockText()}</b><small>${phase.name}・${phase.desc}</small></div>
         </div>
+        <div class="hud-badges">
         ${this.cloudBadge()}
         <button class="ver-badge" data-action="openChangelog" title="查看更新內容">v${APP_VERSION}</button>
+        ${st.starving ? '<button class="starve-badge" data-action="openSurvivors" title="食物耗盡，人員持續扣血">🍽️ 飢餓中</button>' : ''}
         <button class="civ-badge" data-action="openCiv" title="文明度：建築、玩家等級、裝備越高，屍潮越強">${tier.icon} 文明 ${g.civilization.value()}</button>
+        </div>
         <div class="wallhp" title="主要據點圍牆耐久">🧱${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', hasBase ? `${Math.floor(g.shelter.wallHp())}/${g.shelter.wallMax()}` : '—')}</div>
       </div>
       <div class="hud-res" data-action="openRates">${res}
