@@ -15,12 +15,15 @@ export const STAT_KEYS = [
 ];
 
 /**
- * 建立據點。第一個據點使用設施初始等級，之後的前哨據點只有 Lv1 圍牆。
+ * 建立據點。避難所使用設施初始等級；前哨站只有 Lv1 圍牆（只能建造防禦設施）。
  * @param {{id:string, name:string, lat:number, lon:number}} poi
+ * @param {'shelter'|'outpost'} kind
  */
-export function createBase(poi, isFirst) {
+export function createBase(poi, kind = 'shelter') {
+  const isFirst = kind === 'shelter';
   return {
     id: uid('base'),
+    kind,
     poiId: poi.id,
     name: poi.name,
     lat: poi.lat,
@@ -104,6 +107,8 @@ export function createInitialState({ playerName, classId, lat, lon }) {
     recruitOffer: null, // 招募中的三位候選人
     expeditions: [],
     reports: [],
+    vehicles: [], // 車庫（見 VehicleSystem）
+    npcs: { list: [], nextSpawnAt: 0 }, // NPC 據點（見 NpcSystem）
     research: { completed: [], active: null },
     quests: { mainIndex: 0, mainClaimable: false, dailyDate: '', dailies: [], achievements: {} },
     stats: Object.fromEntries(STAT_KEYS.map((k) => [k, 0])),

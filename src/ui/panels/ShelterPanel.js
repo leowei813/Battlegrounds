@@ -1,8 +1,8 @@
-import { FACILITIES, FACILITY_MAX_LEVEL } from '../../config/facilities.js';
+import { FACILITIES, FACILITY_MAX_LEVEL, OUTPOST_FACILITIES } from '../../config/facilities.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL } from '../../config/defenses.js';
 import { CLASSES } from '../../config/survivors.js';
-import { PRIMARY_DANGER_COEF, MAX_BASES } from '../../config/civilization.js';
-import { POI_TYPES } from '../../config/poiTypes.js';
+import { PRIMARY_DANGER_COEF, MAX_OUTPOSTS, BASE_SIZES } from '../../config/civilization.js';
+import { openAbandonDialog } from '../AbandonDialog.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { btn, costHtml, timerBar, progressBar } from '../components.js';
 
@@ -34,37 +34,45 @@ export class ShelterPanel {
         <div class="civ-parts"><span>🏗️ 建築 ${b.buildings}</span><span>👑 玩家等級 ${b.player}</span><span>🎒 裝備 ${b.equipment}</span></div>
         <small class="muted block">屍潮強度隨文明度提升（殭屍 +${civ.levelBonus()} 級、頻率 ×${civ.spawnMul().toFixed(2)}），與天數無關。</small>
         <div class="row-between danger-row">
-          <span>☠ 據點危險度 <b>${danger}</b></span>
-          <small class="muted">${isPrimary ? `基礎 ${baseDanger} + 文明度 ${b.total} × ${PRIMARY_DANGER_COEF}` : `基礎 ${baseDanger}（前哨不受文明度加成）`}</small>
+          <span>☠ 據點危險度 <b>${danger}</b>・<span class="zone-tag" style="--zc:${siege.zone().color}">${siege.zone().name}</span></span>
+          <small class="muted">${isPrimary ? `基礎 ${baseDanger} + 文明度 ${b.total} × ${PRIMARY_DANGER_COEF}` : `基礎 ${baseDanger}（前哨站不受文明度加成）`}</small>
         </div>
+        <small class="muted block">${BASE_SIZES[base.size]?.name || ''}據點屍潮 ×${siege.sizeMul().toFixed(2)}（據點越大、區域越危險，屍潮越多）</small>
         <small class="muted block">${siege.active()
-    ? `本據點殭屍 Lv${siege.zombieLevel()}・每 ${siege.spawnInterval().toFixed(1)} 秒一隻`
+    ? `本據點殭屍 Lv${siege.zombieLevel()}・每波約 ${Math.round(siege.waveSize())} 隻`
     : `☀️ 白天殭屍躲在建築內；入夜後本據點殭屍約 Lv${siege.zombieLevel() + 1}`}</small>
       </div>`;
+  }
+
+  waveText(siege) {
+    const w = siege.waveInfo();
+    if (!w.active) return '☀️ 白天無屍潮';
+    if (w.attacking) return `第 ${w.wave} 波進攻中（剩 ${w.left} 隻）`;
+    return `下一波 ${w.nextIn} 秒後`;
   }
 
   render() {
     const g = this.game;
     const st = g.state;
     const sh = this.ui.viewBase();
-    const head = `<div class="drawer-head" data-action="toggleDrawer"><b>${sh && g.shelter.isPrimary(sh) ? '⭐' : '🏠'} ${escapeHtml(sh?.name || '避難所')}</b><span>${this.ui.drawerCollapsed ? '▲ 展開' : '▼ 收合'}</span></div>`;
+    const head = `<div class="drawer-head" data-action="toggleDrawer"><b>${sh && g.shelter.isPrimary(sh) ? '⭐' : '🏴'} ${escapeHtml(sh?.name || '避難所')}</b><span>${this.ui.drawerCollapsed ? '▲ 展開' : '▼ 收合'}</span></div>`;
     if (!sh) {
       return `${head}<div class="empty">尚未建立避難所。<br>${btn('🗺️ 前往地圖選擇建築', 'gotoMap', {}, { cls: 'btn-primary' })}</div>`;
     }
     const now = Date.now();
     const tabs = st.bases.map((b) => {
-      const poi = g.shelter.poiOf(b);
-      return `<button class="chip ${b.id === sh.id ? 'active' : ''}" data-action="viewBase" data-id="${b.id}">${g.shelter.isPrimary(b) ? '⭐' : poi ? POI_TYPES[poi.type].icon : '🏠'} ${escapeHtml(b.name)}</button>`;
+      return `<button class="chip ${b.id === sh.id ? 'active' : ''}" data-action="viewBase" data-id="${b.id}">${g.shelter.isPrimary(b) ? '⭐' : '🏴'} ${escapeHtml(b.name)}</button>`;
     }).join('');
     const baseActions = g.shelter.isPrimary(sh)
-      ? '<small class="muted">⭐ 主要據點：倖存者居住、探索出發、駐守倖存者防衛於此。</small>'
-      : `${btn('⭐ 設為主要據點', 'setPrimary', {}, { cls: 'btn-sm btn-primary' })}${btn('🏚️ 放棄據點', 'abandon', {}, { cls: 'btn-sm btn-ghost' })}`;
+      ? `<small class="muted">⭐ 避難所：倖存者居住、生產、探索出發、駐守倖存者防衛於此。</small>${btn('🏚️ 放棄避難所（搬家）', 'abandon', {}, { cls: 'btn-sm btn-ghost' })}`
+      : `<small class="muted">🏴 前哨站：只有防禦功能，不能生產。</small>${btn('🏚️ 放棄前哨站', 'abandon', {}, { cls: 'btn-sm btn-ghost' })}`;
     const queue = sh.buildQueue.map((q) => {
       const name = q.kind === 'facility' ? FACILITIES[q.id].name : `${DEFENSES[q.id].name}（槽位 ${q.slot + 1}）`;
       return `<div class="queue-item">🔨 ${name} → Lv${q.targetLevel}${timerBar(q.startAt || now, q.endAt, now)}</div>`;
     }).join('');
 
-    const facilities = Object.entries(FACILITIES).map(([id, def]) => {
+    const outpost = g.shelter.isOutpost(sh);
+    const facilities = Object.entries(FACILITIES).filter(([id]) => !outpost || OUTPOST_FACILITIES.includes(id)).map(([id, def]) => {
       const lv = sh.facilities[id].level;
       const busy = g.shelter.isFacilityBusy(sh, id);
       const max = lv >= FACILITY_MAX_LEVEL;
@@ -91,7 +99,8 @@ export class ShelterPanel {
     const logs = st.log.slice(0, 10).map((l) => `<li class="log-${l.type}"><time>${new Date(l.t).toLocaleTimeString().slice(0, 5)}</time>${escapeHtml(l.msg)}</li>`).join('');
     return `${head}
       <div class="drawer-body">
-        <div class="label">據點 ${st.bases.length}/${MAX_BASES} <small>（在地圖點選建築可建立新據點）</small></div>
+        <div class="label">避難所 ${g.shelter.hasShelter() ? 1 : 0}/1・前哨站 ${g.shelter.outposts().length}/${g.shelter.outpostLimit()} <small>（研究「擴張科技」最多 ${MAX_OUTPOSTS} 座，在地圖點選建築建立）</small></div>
+        ${g.shelter.hasShelter() ? '' : `<div class="card warn">🏚️ 目前沒有避難所，無法生產與探索。${btn('🗺️ 到地圖選擇新的避難所', 'gotoMap', {}, { cls: 'btn-sm btn-primary' })}</div>`}
         <div class="chips">${tabs}</div>
         <div class="btn-row">${baseActions}</div>
         ${this.renderCivilization(sh)}
@@ -99,7 +108,7 @@ export class ShelterPanel {
           <div><small>圍牆</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}</div>
           <div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div>
           <div><small>來襲殭屍</small><b>${siege.zombies.length}</b></div>
-          <div><small>屍潮間隔</small><b>${siege.active() ? `${siege.spawnInterval().toFixed(1)} 秒` : '☀️ 白天無屍潮'}</b></div>
+          <div><small>屍潮波次</small><b>${this.waveText(siege)}</b></div>
         </div>
         ${queue ? `<h4>施工佇列</h4>${queue}` : ''}
         <h4>防禦建築 <small class="muted">${(() => { const z = g.shelter.sizeInfo(sh); return `${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築`; })()}</small></h4>
@@ -118,11 +127,7 @@ export class ShelterPanel {
     if (action === 'upgrade') this.ui.result(g.shelter.upgradeFacility(base, data.id));
     if (action === 'slot') this.openSlot(+data.slot);
     if (action === 'viewBase') this.ui.setViewBase(data.id);
-    if (action === 'setPrimary') this.ui.result(g.shelter.setPrimary(base.id));
-    if (action === 'abandon' && confirm(`確定放棄「${base.name}」？該據點的設施與防禦建築都會消失。`)) {
-      const r = this.ui.result(g.shelter.abandon(base.id));
-      if (r.ok) this.ui.setViewBase(null);
-    }
+    if (action === 'abandon') openAbandonDialog(this.ui, base);
   }
 
   slotBody(base, slot) {

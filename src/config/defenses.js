@@ -2,7 +2,7 @@
  * 防禦建築。位於避難所外圍的槽位，在 SiegeSystem 中自動攻擊殭屍。
  * range 以「世界單位」表示（避難所中心到外圍約 100）。
  */
-const scale = (base, lv, g = 1.5) =>
+const scale = (base, lv, g = 1.7) =>
   Object.fromEntries(Object.entries(base).map(([k, v]) => [k, Math.round(v * g ** (lv - 1))]));
 
 export const DEFENSE_MAX_LEVEL = 10;

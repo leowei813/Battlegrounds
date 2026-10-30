@@ -6,6 +6,8 @@ import {
 } from '../utils/math.js';
 import { ALL_ENEMIES } from '../config/enemies.js';
 import { stockOf, dayKey } from './LootStock.js';
+import { zoneAt } from '../config/zones.js';
+import { PERSON_CARRY } from '../config/vehicles.js';
 
 /** 每公里單程移動時間（分鐘，未套用速度加成） */
 const MIN_PER_KM_ONE_WAY = 2;
@@ -82,32 +84,35 @@ export class ExplorationSystem {
     return this.game.state.expeditions;
   }
 
+  /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   poi(id) {
-    return this.game.state.map.pois.find((p) => p.id === id) || null;
+    return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || null;
   }
 
   /**
    * 規劃行程：去程 → 搜索 → 返程。探索隊從主要據點出發。
    * @returns {{from:{lat,lon}, distanceM:number, travelMs:number, searchMs:number, totalMs:number}}
    */
-  plan(poi, members, durationMin, at = Date.now()) {
+  plan(poi, members, durationMin, at = Date.now(), vehicles = []) {
     const sh = this.game.shelter.primary();
     const from = sh ? { lat: sh.lat, lon: sh.lon } : { lat: poi.lat, lon: poi.lon };
     const distanceM = Math.round(haversine(from.lat, from.lon, poi.lat, poi.lon));
+    const trip = this.game.vehicles.tripStats(members.length, vehicles, distanceM);
     // 隊伍速度取最快成員的「技能 + 裝備」探索速度
     const scout = Math.max(0, ...members.map((m) => (this.game.survivors.skillEffects(m).exploreSpeed || 0)
       + (this.game.survivors.stats(m).exploreSpeed || 0)));
     const speed = this.game.time.exploreSpeedMul(at) * (1 + scout + this.game.research.bonus('exploreSpeed'));
-    const travelMs = Math.round(((distanceM / 1000) * MIN_PER_KM_ONE_WAY / speed) * 60000);
+    // 載具只加快路程，不影響搜索時間
+    const travelMs = Math.round(((distanceM / 1000) * MIN_PER_KM_ONE_WAY / (speed * trip.speed)) * 60000);
     const searchMs = Math.round((durationMin / speed) * 60000);
     return {
-      from, distanceM, travelMs, searchMs, totalMs: travelMs * 2 + searchMs,
+      from, distanceM, travelMs, searchMs, totalMs: travelMs * 2 + searchMs, trip,
     };
   }
 
   /** 計算實際探索時間（毫秒） */
-  actualDurationMs(poi, members, durationMin, at = Date.now()) {
-    return this.plan(poi, members, durationMin, at).totalMs;
+  actualDurationMs(poi, members, durationMin, at = Date.now(), vehicles = []) {
+    return this.plan(poi, members, durationMin, at, vehicles).totalMs;
   }
 
   /**
@@ -131,20 +136,31 @@ export class ExplorationSystem {
     return { ok: true, poi, members };
   }
 
-  start(poiId, memberIds, durationMin, auto = false, startAt = Date.now()) {
+  /**
+   * 出發。
+   * @param {{vehicleIds?:string[], kind?:'explore'|'raid'}} [opts] 載具；raid = 攻打 NPC 據點
+   */
+  start(poiId, memberIds, durationMin, auto = false, startAt = Date.now(), { vehicleIds = [], kind = 'explore' } = {}) {
     const v = this.validate(poiId, memberIds);
     if (!v.ok) return v;
     if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
-    const plan = this.plan(v.poi, v.members, durationMin, startAt);
+    const sh = this.game.shelter.primary();
+    const distanceM = Math.round(haversine(sh.lat, sh.lon, v.poi.lat, v.poi.lon));
+    const car = this.game.vehicles.validate(vehicleIds, v.members.length, distanceM);
+    if (!car.ok) return car;
+    const plan = this.plan(v.poi, v.members, durationMin, startAt, car.vehicles);
     v.members.forEach((m) => { m.status = 'exploring'; });
+    this.game.vehicles.depart(car.vehicles, plan.trip.fuel);
     const exp = {
-      id: uid('ex'), poiId, memberIds: [...memberIds], durationMin, auto,
+      id: uid('ex'), poiId, kind, memberIds: [...memberIds], durationMin, auto,
       startAt, endAt: startAt + plan.totalMs, phaseAtStart: this.game.time.phaseId(startAt),
       from: plan.from, distanceM: plan.distanceM, travelMs: plan.travelMs, searchMs: plan.searchMs,
+      vehicleIds: [...vehicleIds], cargo: plan.trip.cargo, ambushes: 0,
       encountered: [], travelEvents: [], travelKills: 0, travelXp: 0,
     };
     this.list.push(exp);
-    return { ok: true, exp, msg: `隊伍出發前往「${v.poi.name}」` };
+    const ride = car.vehicles.length ? `（${car.vehicles.map((x) => this.game.vehicles.def(x).icon).join('')}${plan.trip.fuel ? `・耗油 ${plan.trip.fuel}` : ''}）` : '';
+    return { ok: true, exp, msg: `隊伍出發前往「${v.poi.name}」${ride}` };
   }
 
   /**
@@ -169,6 +185,7 @@ export class ExplorationSystem {
           exp.travelEvents.push(`👣 悄悄避開了附近的${this.game.zombies.groupLabel(g)}`);
           return;
         }
+        exp.ambushes = (exp.ambushes || 0) + 1;
         out.push(this.ambush(exp, g, members, now));
       });
     });
@@ -202,9 +219,10 @@ export class ExplorationSystem {
     // 撤退：探索提前結束，沒有收穫
     this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
     this.free(exp);
+    const wear = this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0);
     const report = {
       id: uid('rp'), poiName: poi?.name || '未知地點', poiType: poi?.type, at: now,
-      events: [...exp.travelEvents, '🏳️ 隊伍帶著傷撤回據點，本次探索沒有收穫。'],
+      events: [...exp.travelEvents, '🏳️ 隊伍帶著傷撤回據點，本次探索沒有收穫。', ...wear],
       resources: {}, items: [], blueprints: [], kills: exp.travelKills, xp: exp.travelXp, success: false,
       members: members.map((m) => m.name),
     };
@@ -234,6 +252,7 @@ export class ExplorationSystem {
       const m = this.game.survivors.get(id);
       if (m && m.status === 'exploring') m.status = 'idle';
     });
+    this.game.vehicles.release(exp.vehicleIds || []);
   }
 
   /**
@@ -248,16 +267,18 @@ export class ExplorationSystem {
       guard += 1;
       due.forEach((exp) => {
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
-        const report = this.resolve(exp);
+        const report = exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp) : this.resolve(exp);
+        report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
         reports.push(report);
         this.free(exp);
-        // 自動探索：隊員健康且未超過離線上限則再次出發
+        // 自動探索：隊員健康且未超過離線上限則再次出發（燃料不足或載具損壞則停止）
         const healthy = exp.memberIds.every((id) => {
           const m = this.game.survivors.get(id);
           return m && !m.severe;
         });
-        if (exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
-          this.start(exp.poiId, exp.memberIds, exp.durationMin, true, exp.endAt);
+        if (exp.kind !== 'raid' && exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
+          const r = this.start(exp.poiId, exp.memberIds, exp.durationMin, true, exp.endAt, { vehicleIds: exp.vehicleIds || [] });
+          if (!r.ok) report.events.push(`⏹️ 自動探索停止：${r.reason}`);
         }
       });
       due = this.list.filter((e) => e.endAt <= now);
@@ -288,6 +309,7 @@ export class ExplorationSystem {
       return report;
     }
     const pt = POI_TYPES[poi.type];
+    const zone = zoneAt(poi.lat, poi.lon);
     const danger = this.game.zombies.areaDanger(poi);
     const level = this.game.zombies.areaLevel(poi);
     const phase = this.game.time.phase(exp.startAt);
@@ -324,9 +346,16 @@ export class ExplorationSystem {
         });
         report.events.push(found.length ? `🔍 搜刮到 ${found.join('、')}` : '🕸️ 這裡已經被搜刮一空（每天 00:00 重置）');
         if (!stock.empty && chance(pt.itemChance * itemMul)) {
-          const item = this.game.equipment.generate({ level, bias: pt.itemBias, boost: danger * 0.05 });
+          const item = this.game.equipment.generate({ level, bias: pt.itemBias, boost: danger * 0.05 + zone.rarityBoost });
           report.items.push(item);
           report.events.push(`🎁 找到 ${RARITIES[item.rarity].name}「${item.name}」`);
+        }
+        if (!stock.empty) {
+          const find = this.game.vehicles.rollFind(poi.type);
+          if (chance(find.chance) && !this.game.vehicles.isFull()) {
+            report.vehicles = [...(report.vehicles || []), find.vehicle];
+            report.events.push(`🚗 找到一台還能用的 ${this.game.vehicles.def(find.vehicle).name}（耐久 ${find.vehicle.durability}）`);
+          }
         }
         if (!stock.empty && chance(pt.blueprintChance)) {
           const bp = this.game.equipment.makeBlueprint(level);
@@ -366,7 +395,7 @@ export class ExplorationSystem {
         if (result.victory) {
           report.events.push(`  ↳ 勝利！擊殺 ${result.kills.length}，獲得 ${result.coins} 金錢`);
           if (isElite) {
-            const item = this.game.equipment.generate({ level: level + 2, bias: pt.itemBias, boost: 0.5, minRarity: 'uncommon' });
+            const item = this.game.equipment.generate({ level: level + 2, bias: pt.itemBias, boost: 0.5 + zone.rarityBoost, minRarity: 'uncommon' });
             report.items.push(item);
             report.events.push(`  ↳ 精英掉落 ${RARITIES[item.rarity].name}「${item.name}」`);
           }
@@ -379,10 +408,19 @@ export class ExplorationSystem {
       }
     }
 
+    // 運載量：徒步每人有限，載具可以帶回更多物資
+    const carry = exp.cargo || members.length * PERSON_CARRY;
+    const total = Object.entries(gained).filter(([k]) => RESOURCES[k]).reduce((s, [, v]) => s + v, 0);
+    if (total > carry) {
+      const ratio = carry / total;
+      Object.keys(gained).forEach((k) => { if (RESOURCES[k]) gained[k] *= ratio; });
+      report.events.push(`🎒 帶不動了！運載量 ${carry}，留下約 ${Math.round(total - carry)} 單位物資（載具可以載更多）`);
+    }
     // 入帳
     const rounded = Object.fromEntries(Object.entries(gained).map(([k, v]) => [k, Math.round(v)]));
     report.resources = this.game.grant(rounded);
     report.items.forEach((it) => this.game.equipment.addItem(it, '探索'));
+    (report.vehicles || []).forEach((v) => this.game.vehicles.add(v, '探索'));
     this.game.state.inventory.blueprints.push(...report.blueprints);
     members.forEach((m) => this.game.survivors.gainXp(m, 4 + exp.durationMin));
     // 探索過的建築物資清空，直到當地時間 00:00 重置

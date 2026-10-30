@@ -52,3 +52,18 @@ export const ALL_ENEMIES = { ...ENEMIES, ...BOSSES };
 
 /** 精英怪倍率 */
 export const ELITE_MUL = { hp: 2.4, atk: 1.6, def: 1.5, xp: 3, coins: 3 };
+
+/** 人類敵人：NPC 據點的掠奪者（不會出現在屍潮或一般探索中） */
+export const RAIDERS = {
+  raider: {
+    name: '掠奪者', icon: '🥷', color: 0x6d4c41, tier: 2,
+    hp: 95, atk: 15, def: 6, crit: 0.1, dodge: 0.1, atkSpeed: 1, speed: 12,
+    xp: 16, coins: 8, partsChance: 0.08,
+  },
+  raiderChief: {
+    name: '掠奪者首領', icon: '🦹', color: 0x4e342e, tier: 4,
+    hp: 320, atk: 30, def: 14, crit: 0.15, dodge: 0.12, atkSpeed: 1, speed: 10,
+    xp: 80, coins: 40, partsChance: 0.5,
+  },
+};
+Object.assign(ALL_ENEMIES, RAIDERS);

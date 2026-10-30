@@ -1,5 +1,6 @@
 import { ZOMBIE_REFRESH_MS, ZOMBIE_MAX_GROUPS, MAX_TEAM_SIZE } from '../config/constants.js';
 import { POI_TYPES } from '../config/poiTypes.js';
+import { zoneAt } from '../config/zones.js';
 import { ALL_ENEMIES, BOSSES } from '../config/enemies.js';
 import {
   chance, pick, randInt, uid, weightedPick, haversine, offsetLatLon, randFloat,
@@ -18,10 +19,10 @@ export class ZombieSpawnSystem {
     return this.game.state.map.zombieGroups;
   }
 
-  /** 依距離避難所增加危險度（越遠越危險） */
+  /** 區域危險度：建築類型 + 所在區域（安全區～深淵區）+ 距離避難所（越遠越危險） */
   areaDanger(poi) {
     const sh = this.game.shelter.primary();
-    const base = POI_TYPES[poi.type].danger;
+    const base = Math.max(1, POI_TYPES[poi.type].danger + zoneAt(poi.lat, poi.lon).danger);
     if (!sh) return base;
     const km = haversine(sh.lat, sh.lon, poi.lat, poi.lon) / 1000;
     return base + Math.min(2, Math.floor(km / 0.6));
@@ -124,7 +125,7 @@ export class ZombieSpawnSystem {
         const item = this.game.equipment.generate({
           level: g.level,
           bias: poi ? POI_TYPES[poi.type].itemBias : undefined,
-          boost: g.boss ? 0.6 : g.elite ? 0.3 : 0.05,
+          boost: (g.boss ? 0.6 : g.elite ? 0.3 : 0.05) + (poi ? zoneAt(poi.lat, poi.lon).rarityBoost : 0),
           minRarity: g.boss ? 'rare' : undefined,
         });
         this.game.equipment.addItem(item, '戰鬥');

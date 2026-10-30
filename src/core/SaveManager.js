@@ -106,6 +106,15 @@ export class SaveManager {
       b.defenses = Array.from({ length: len }, (_, slot) => b.defenses[slot] || { slot, type: null, level: 0, garrisonId: null });
     });
     data.recruitOffer = data.recruitOffer || null;
+    // v6：避難所只有一座，其他據點轉為前哨站；新增載具與 NPC 據點
+    data.bases.forEach((b) => {
+      if (!b.kind) b.kind = b.id === data.primaryBaseId || (!data.primaryBaseId && b === data.bases[0]) ? 'shelter' : 'outpost';
+    });
+    if (!data.bases.some((b) => b.id === data.primaryBaseId && b.kind === 'shelter')) {
+      data.primaryBaseId = data.bases.find((b) => b.kind === 'shelter')?.id || null;
+    }
+    data.vehicles = data.vehicles || [];
+    data.npcs = data.npcs || { list: [], nextSpawnAt: 0 };
     // v3 -> v4：品級改為 6 階（舊的灰色「普通」→「劣質」），裝備欄新增手套、鞋子、飾品
     if (v < 4) {
       (data.inventory?.items || []).forEach((it) => { if (it.rarity === 'common') it.rarity = 'poor'; });

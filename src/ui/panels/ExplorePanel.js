@@ -1,4 +1,5 @@
 import { POI_TYPES } from '../../config/poiTypes.js';
+import { VEHICLES } from '../../config/vehicles.js';
 import { RARITIES } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
@@ -25,7 +26,7 @@ export class ExplorePanel {
       const poi = g.exploration.poi(ex.poiId);
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
       return `<div class="card">
-        <div class="row-between"><b>${poi ? POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
+        <div class="row-between"><b>${poi ? poi.icon || POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.kind === 'raid' ? '<span class="tag tag-red">⚔️ 攻打</span>' : ''}${(ex.vehicleIds || []).length ? `<span class="tag">${ex.vehicleIds.map((id) => { const v = g.vehicles.get(id); return v ? VEHICLES[v.type].icon : ''; }).join('')}</span>` : ''}${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
         <div class="muted">隊員：${names}・搜索 ${ex.durationMin} 分鐘</div>
         ${this.progressHtml(ex, now)}
         ${timerBar(ex.startAt, ex.endAt, now)}

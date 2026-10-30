@@ -9,6 +9,8 @@ import { stockOf, msToReset } from '../../systems/LootStock.js';
 import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
 import { btn, costHtml } from '../components.js';
 import { openTeamPicker } from '../TeamPicker.js';
+import { openAbandonDialog } from '../AbandonDialog.js';
+import { zoneAt, ZONES } from '../../config/zones.js';
 import { showBattle } from '../BattleView.js';
 
 const stars = (n) => '☠'.repeat(Math.min(7, n));
@@ -55,6 +57,58 @@ export class MapPanel {
     if (this.ui.tab !== 'map' && !force) return;
     this.lastRender = Date.now();
     this.service.render(this.game.state);
+    this.service.renderNpcs(this.game.npcs.list);
+  }
+
+  /** NPC 據點資訊與攻打 */
+  npcBody(n) {
+    const g = this.game;
+    const now = Date.now();
+    const zone = zoneAt(n.lat, n.lon);
+    const enemies = g.npcs.garrison(n);
+    const loot = Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => `${RESOURCES[k].icon}${Math.floor(v)}`).join(' ');
+    const sh = g.shelter.primary();
+    const dist = sh ? Math.round(haversine(sh.lat, sh.lon, n.lat, n.lon)) : null;
+    const trip = n.trip && n.trip.endAt > now ? n.trip : null;
+    const aggr = g.npcs.aggression();
+    return `
+      <p>🏴‍☠️ <b>${escapeHtml(n.name)}</b>・Lv${n.level}・<span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span>${dist != null ? `・距避難所 ${dist} 公尺` : ''}</p>
+      <p class="muted">守軍：${enemies.map((e) => `${e.icon}${e.name}`).join('、')}（等級 ${n.level}）</p>
+      <p>💰${n.coins} ${loot}</p>
+      <p class="muted">積極度 ${Math.round(aggr * 100)}%（你的文明度越高，NPC 越常來掠奪）。夜晚屍潮期間 NPC 不會出動。</p>
+      ${trip ? `<p class="${trip.kind === 'raid' ? 'neg' : 'muted'}">${trip.kind === 'raid' ? `⚔️ 掠奪隊正前往「${escapeHtml(trip.target)}」` : `🔍 正在搜刮「${escapeHtml(trip.target)}」`}・剩 ${formatDuration(trip.endAt - now)}</p>` : ''}
+      <p class="muted">攻陷後可搶走據點的物資與金錢（受隊伍運載量限制），據點會被摧毀，一段時間後別處會出現新的勢力。</p>
+      <div class="btn-row">${btn('⚔️ 派隊攻打', 'attackNpc', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}</div>`;
+  }
+
+  openNpc(npcId) {
+    const g = this.game;
+    const n = g.npcs.get(npcId);
+    if (!n) return;
+    this.ui.modal.open({
+      title: `🏴‍☠️ NPC 據點：${n.name}`,
+      body: this.npcBody(n),
+      live: () => (g.npcs.get(npcId) ? this.npcBody(n) : '<p>這個據點已經消失了。</p>'),
+      onAction: (action, _d, m) => {
+        if (action !== 'attackNpc') return;
+        const sh = g.shelter.primary();
+        openTeamPicker(this.ui, {
+          title: `⚔️ 攻打：${n.name}`,
+          intro: `<p class="muted">守軍 Lv${n.level}・建議戰力 ${Math.round(g.npcs.power(n))} 以上。帶載具可以搬走更多物資。</p>`,
+          vehicles: true,
+          distanceM: sh ? haversine(sh.lat, sh.lon, n.lat, n.lon) : 0,
+          confirmLabel: '進攻！',
+          onConfirm: (ids, _dur, _auto, vids) => {
+            const r = this.ui.result(g.exploration.start(n.id, ids, 5, false, Date.now(), { vehicleIds: vids, kind: 'raid' }));
+            if (r.ok) {
+              m.close();
+              this.renderMap(true);
+            }
+            return r;
+          },
+        });
+      },
+    });
   }
 
   renderOverlay() {
@@ -165,7 +219,7 @@ export class MapPanel {
   showLegend() {
     const rows = Object.values(POI_TYPES).map((p) => `<div class="legend-row"><span class="poi-pin" style="--c:${p.color}">${p.icon}</span> ${p.name} <span class="danger">${stars(p.danger)}</span><small>${Object.keys(p.loot).map((k) => RESOURCES[k].icon).join('')}</small></div>`).join('');
     const sizes = Object.entries(BASE_SIZES).map(([k, z]) => `<div class="legend-row"><span class="shelter-pin size-${k}" style="--d:${z.pin}px">${z.icon}<i class="size-tag">${z.name[0]}</i></span> ${z.name}據點 <small>可建 ${FACILITY_COUNT + z.slots} 棟</small></div>`).join('');
-    this.ui.modal.open({ title: '🧾 圖例', body: `${rows}<h4>據點規模</h4>${sizes}<p class="muted">金框是你的據點（⭐ 為主要據點），青框是其他玩家的據點。</p><p class="muted">☠ 越多越危險；距離避難所越遠危險度越高。紅框為探索範圍。</p>` });
+    this.ui.modal.open({ title: '🧾 圖例', body: `${rows}<h4>據點規模</h4>${sizes}<h4>區域危險度</h4>${ZONES.map((z) => `<div class="legend-row"><span class="zone-tag" style="--zc:${z.color}">${z.name}</span><small>物資 ×${z.lootMul}・屍潮 ×${z.siegeMul}・殭屍 +${z.siegeLevel} 級</small></div>`).join('')}<div class="legend-row"><span class="npc-pin" style="width:28px;height:28px;font-size:14px">🏴‍☠️</span> NPC 據點：會升級、探索與掠奪，可攻打搶奪資源</div><p class="muted">金框是你的據點（⭐ 為主要據點），青框是其他玩家的據點。</p><p class="muted">☠ 越多越危險；距離避難所越遠危險度越高。紅框為探索範圍。</p>` });
   }
 
   poiBody(poi) {
@@ -175,31 +229,32 @@ export class MapPanel {
     const base = g.shelter.baseAtPoi(poi.id);
     const dist = sh && !g.shelter.isPrimary(base) ? Math.round(haversine(sh.lat, sh.lon, poi.lat, poi.lon)) : null;
     const danger = g.zombies.areaDanger(poi);
+    const zone = zoneAt(poi.lat, poi.lon);
     const groups = g.state.map.zombieGroups.filter((z) => z.poiId === poi.id);
     const exploring = g.state.expeditions.filter((e) => e.poiId === poi.id).length;
     const actions = [];
     let establish = '';
-    if (!g.shelter.hasShelter()) {
-      actions.push(btn('🏠 設為避難所', 'setShelter', {}, { cls: 'btn-primary' }));
-      const z = g.shelter.sizeInfo(poi);
-      establish = `<small class="muted block">🏗️ ${z.name}據點：可建造 ${z.total} 棟建築（防禦欄位 ${z.slots}）</small>`;
-    }
-    else if (base) {
+    const z = g.shelter.sizeInfo(poi);
+    const sizeLine = `<small class="muted block"><span class="size-chip" style="--sc:${BASE_SIZES[z.id].color}">${BASE_SIZES[z.id].icon} ${z.name}</span>據點：可建造 ${z.total} 棟建築（防禦欄位 ${z.slots}）・屍潮 ×${BASE_SIZES[z.id].siegeMul}</small>`;
+    if (base) {
       actions.push(btn('🏠 進入據點', 'enterShelter', {}, { cls: 'btn-primary' }));
-      if (!g.shelter.isPrimary(base)) actions.push(btn('⭐ 設為主要據點', 'setPrimary', {}, { cls: 'btn-ghost' }));
+      actions.push(btn('🏚️ 放棄', 'abandon', {}, { cls: 'btn-ghost' }));
+    } else if (!g.shelter.hasShelter()) {
+      actions.push(btn('🏠 設為避難所', 'setShelter', {}, { cls: 'btn-primary' }));
+      establish = sizeLine;
     } else {
       const check = g.shelter.canEstablish(poi);
       actions.push(btn('🧭 派遣探索', 'explore', {}, { cls: 'btn-primary' }));
-      actions.push(btn('🏗️ 建立新據點', 'setShelter', {}, { cls: 'btn-ghost', disabled: !check.ok, title: check.reason || '' }));
-      const z = g.shelter.sizeInfo(poi);
-      establish = `<small class="muted block">🏗️ ${z.name}據點：可建造 ${z.total} 棟建築（防禦欄位 ${z.slots}）</small><small class="muted block">建立據點費用：<span class="costs inline">${costHtml(g.state, g.shelter.establishCost())}</span>${check.ok ? '' : `（${check.reason}）`}</small>`;
+      actions.push(btn(`🏴 建立前哨站（${g.shelter.outposts().length}/${g.shelter.outpostLimit()}）`, 'setShelter', {}, { cls: 'btn-ghost', disabled: !check.ok, title: check.reason || '' }));
+      establish = `${sizeLine}<small class="muted block">前哨站只有防禦功能。建立費用：<span class="costs inline">${costHtml(g.state, g.shelter.establishCost())}</span>${check.ok ? '' : `（${check.reason}）`}</small>`;
     }
     return `
       <div class="poi-detail">
         <div class="poi-big" style="--c:${pt.color}">${pt.icon}</div>
         <div>
           <b>${pt.name}</b>${poi.osm ? ' <small class="tag">OSM</small>' : ' <small class="tag">傳聞</small>'}
-          ${base ? `<div><span class="tag tag-amber">${g.shelter.isPrimary(base) ? '⭐ 主要據點' : '🏠 前哨據點'}</span> 據點危險度 <b>${g.shelter.dangerLevel(base)}</b></div>` : `<div>危險度 <span class="danger">${stars(danger)}</span> ${pt.special ? '<span class="tag tag-red">高級怪物</span>' : ''}</div>`}
+          ${base ? `<div><span class="tag tag-amber">${g.shelter.isPrimary(base) ? '⭐ 避難所' : '🏴 前哨站'}</span> 據點危險度 <b>${g.shelter.dangerLevel(base)}</b></div>` : `<div>危險度 <span class="danger">${stars(danger)}</span> ${pt.special ? '<span class="tag tag-red">高級怪物</span>' : ''}</div>`}
+          <div><span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span> <small class="muted">物資 ×${zone.lootMul}・殭屍 +${Math.max(0, zone.danger)} 危險度</small></div>
           ${dist != null ? `<div class="muted">距避難所 ${dist} 公尺</div>` : ''}
           ${this.stockHtml(poi)}
           ${exploring ? `<div class="tag tag-blue">${exploring} 支隊伍探索中</div>` : ''}
@@ -226,9 +281,9 @@ export class MapPanel {
             this.ui.setViewBase(r.base.id);
             this.ui.switchTab('shelter');
           }
-        } else if (action === 'setPrimary') {
-          const r = this.ui.result(this.game.shelter.setPrimary(this.game.shelter.baseAtPoi(poi.id)?.id));
-          if (r.ok) this.renderMap(true);
+        } else if (action === 'abandon') {
+          const base = this.game.shelter.baseAtPoi(poi.id);
+          if (base) openAbandonDialog(this.ui, base, () => { m.close(); this.renderMap(true); });
         } else if (action === 'enterShelter') {
           m.close();
           this.ui.setViewBase(this.game.shelter.baseAtPoi(poi.id)?.id);
@@ -248,10 +303,12 @@ export class MapPanel {
       title: `🧭 探索：${poi.name}`,
       intro: `<p class="muted">${POI_TYPES[poi.type].name}・危險度 ${stars(g.zombies.areaDanger(poi))}・敵人等級約 Lv${g.zombies.areaLevel(poi)}</p>`,
       withDuration: true,
-      estimate: (ids, dur) => g.exploration.actualDurationMs(poi, ids.map((id) => g.survivors.get(id)), dur),
+      vehicles: true,
+      distanceM: g.shelter.primary() ? haversine(g.shelter.primary().lat, g.shelter.primary().lon, poi.lat, poi.lon) : 0,
+      estimate: (ids, dur, vids) => g.exploration.actualDurationMs(poi, ids.map((id) => g.survivors.get(id)), dur, Date.now(), vids.map((id) => g.vehicles.get(id))),
       confirmLabel: '出發！',
-      onConfirm: (ids, dur, auto) => {
-        const r = this.ui.result(g.exploration.start(poi.id, ids, dur, auto));
+      onConfirm: (ids, dur, auto, vids) => {
+        const r = this.ui.result(g.exploration.start(poi.id, ids, dur, auto, Date.now(), { vehicleIds: vids }));
         if (r.ok) this.renderMap(true);
         return r;
       },

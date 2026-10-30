@@ -15,6 +15,8 @@ import { ZombieSpawnSystem } from '../systems/ZombieSpawnSystem.js';
 import { SiegeSystem } from '../systems/SiegeSystem.js';
 import { QuestSystem } from '../systems/QuestSystem.js';
 import { CivilizationSystem } from '../systems/CivilizationSystem.js';
+import { VehicleSystem } from '../systems/VehicleSystem.js';
+import { NpcSystem } from '../systems/NpcSystem.js';
 import { grant } from '../systems/costUtils.js';
 import { fetchPois } from '../map/OverpassService.js';
 import { fillPois } from '../map/PoiGenerator.js';
@@ -42,6 +44,8 @@ export class Game {
     this.siege = new SiegeSystem(this);
     this.quests = new QuestSystem(this);
     this.civilization = new CivilizationSystem(this);
+    this.vehicles = new VehicleSystem(this);
+    this.npcs = new NpcSystem(this);
 
     this.lastPhase = null;
     this.timers = [];
@@ -120,6 +124,7 @@ export class Game {
     this.research.update(now);
     this.survivors.updateVitals(now, dt, this.resources.lastStarvingMs);
     this.exploration.update(now, { silent });
+    this.npcs.update(now);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();
@@ -141,6 +146,7 @@ export class Game {
     this.research.update(now);
     this.survivors.updateVitals(now, elapsed, this.resources.lastStarvingMs);
     const reports = this.exploration.update(now, { silent: true });
+    this.npcs.update(now);
     const defense = this.siege.simulateOffline(elapsed);
     this.state.map.lastZombieRefresh = 0;
     this.zombies.update(now);

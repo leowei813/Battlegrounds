@@ -1,5 +1,7 @@
 import { RESOURCE_KEYS } from '../config/constants.js';
-import { storageCap } from '../config/facilities.js';
+import {
+  storageCap, FARM_FOOD, RAIN_MEDICINE, WORKBENCH,
+} from '../config/facilities.js';
 import { JOBS, FOOD_PER_SURVIVOR_HOUR } from '../config/survivors.js';
 
 /**
@@ -31,17 +33,17 @@ export class ResourceSystem {
     const gross = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, 0]));
     const upkeep = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, 0]));
 
-    // 各據點設施產出加總；發電機只加成所在據點，並消耗燃料
+    // 只有避難所會生產（前哨站只有防禦功能）；發電機消耗燃料加成產出
     const genOn = this.generatorActive();
     let foodPct = rb.foodPct || 0;
-    st.bases.forEach((b) => {
+    st.bases.filter((b) => b.kind !== 'outpost').forEach((b) => {
       const f = b.facilities;
       const mul = genOn ? 1 + f.generator.level * 0.06 : 1;
-      gross.food += f.farm.level * 18 * (1 + f.rainCollector.level * 0.1) * mul;
-      gross.medicine += f.rainCollector.level * 1.5 * mul;
-      gross.wood += f.workbench.level * 8 * mul;
-      gross.metal += f.workbench.level * 5 * mul;
-      gross.cloth += f.workbench.level * 4 * mul;
+      gross.food += f.farm.level * FARM_FOOD * (1 + f.rainCollector.level * 0.1) * mul;
+      gross.medicine += f.rainCollector.level * RAIN_MEDICINE * mul;
+      gross.wood += f.workbench.level * WORKBENCH.wood * mul;
+      gross.metal += f.workbench.level * WORKBENCH.metal * mul;
+      gross.cloth += f.workbench.level * WORKBENCH.cloth * mul;
       if (genOn) upkeep.fuel += f.generator.level * 2;
     });
     gross.medicine += rb.medicinePerHour || 0;

@@ -206,44 +206,54 @@ export const SiegeMapLayer = L.Layer.extend({
     this.drawOtherTrips(ctx, size);
   },
 
-  /** 其他玩家的探索隊伍（依對方上傳的行程時間即時推算位置） */
+  /** 其他玩家的探索隊伍（青色）與 NPC 的探索／掠奪隊（紅色），依行程時間即時推算位置 */
   drawOtherTrips(ctx, size) {
     const now = Date.now();
     (this.game.world?.others || []).forEach((player) => player.trips.forEach((trip) => {
       if (now > trip.endAt) return;
-      const p = tripProgress(trip, now);
-      const a = this.map.latLngToContainerPoint([p.from.lat, p.from.lon]);
-      const b = this.map.latLngToContainerPoint([p.to.lat, p.to.lon]);
-      const m = this.map.latLngToContainerPoint([p.pos.lat, p.pos.lon]);
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.setLineDash([3, 6]);
-      ctx.strokeStyle = 'rgba(38,198,218,0.55)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.setLineDash([]);
-      if (m.x < -60 || m.y < -60 || m.x > size.x + 60 || m.y > size.y + 60) return;
-      const ph = EXP_PHASES[p.phase];
-      ctx.beginPath();
-      ctx.arc(m.x, m.y, 11, 0, Math.PI * 2);
-      ctx.fillStyle = '#00838f';
-      ctx.fill();
-      ctx.strokeStyle = '#e0f7fa';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.font = '13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(ph.icon, m.x, m.y + 1);
-      const label = `👤 ${player.name}・${ph.name}`;
-      ctx.font = 'bold 10px sans-serif';
-      const w = ctx.measureText(label).width + 10;
-      ctx.fillStyle = 'rgba(0,77,64,0.85)';
-      ctx.fillRect(m.x - w / 2, m.y + 14, w, 15);
-      ctx.fillStyle = '#e0f7fa';
-      ctx.fillText(label, m.x, m.y + 22);
+      this.drawTrip(ctx, size, tripProgress(trip, now), `👤 ${player.name}`, ['rgba(38,198,218,0.55)', '#00838f', '#e0f7fa', 'rgba(0,77,64,0.85)']);
     }));
+    this.game.npcs.trips(now).forEach(({ npc, trip, p }) => {
+      const raid = trip.kind === 'raid';
+      this.drawTrip(ctx, size, p, `${raid ? '⚔️' : '🏴‍☠️'} ${npc.name}${raid ? '・掠奪' : ''}`, raid
+        ? ['rgba(229,57,53,0.75)', '#b71c1c', '#ffebee', 'rgba(127,0,0,0.9)']
+        : ['rgba(141,110,99,0.6)', '#4e342e', '#efebe9', 'rgba(62,39,35,0.85)']);
+    });
+  },
+
+  /** @param {[string,string,string,string]} colors 路線、標記底色、外框與文字、標籤底色 */
+  drawTrip(ctx, size, p, name, [line, fill, stroke, labelBg]) {
+    const a = this.map.latLngToContainerPoint([p.from.lat, p.from.lon]);
+    const b = this.map.latLngToContainerPoint([p.to.lat, p.to.lon]);
+    const m = this.map.latLngToContainerPoint([p.pos.lat, p.pos.lon]);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.setLineDash([3, 6]);
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (m.x < -60 || m.y < -60 || m.x > size.x + 60 || m.y > size.y + 60) return;
+    const ph = EXP_PHASES[p.phase];
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, 11, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(ph.icon, m.x, m.y + 1);
+    const label = `${name}・${ph.name}`;
+    ctx.font = 'bold 10px sans-serif';
+    const w = ctx.measureText(label).width + 10;
+    ctx.fillStyle = labelBg;
+    ctx.fillRect(m.x - w / 2, m.y + 14, w, 15);
+    ctx.fillStyle = stroke;
+    ctx.fillText(label, m.x, m.y + 22);
   },
 
   /** 探索隊：沿路線移動的隊伍標記、已走路線、距離與剩餘時間 */

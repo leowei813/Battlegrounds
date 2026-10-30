@@ -83,7 +83,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 5, 'state is serializable');
+assert(save.version === 6, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -116,10 +116,16 @@ g2.civilization.invalidate();
 assert(g2.siege.of().zombieLevel() - lvDay1 <= 1, '天數本身不會提升屍潮強度（夜間 ±1）');
 
 const outpostPoi = g.state.map.pois.find((p) => !g.shelter.baseAtPoi(p.id));
+assert(!g.shelter.canEstablish(outpostPoi).ok, '避難所只能一座，未研究前哨站科技不能建第二個據點');
+g.state.research.completed.push('out1');
+g.research.invalidate();
+Object.assign(g.state.resources, { wood: 5000, metal: 5000, cloth: 5000 });
+g.state.player.coins = 5000;
 const est = g.shelter.establish(outpostPoi);
-assert(est.ok && g.state.bases.length === 2, '建立第二個據點');
-assert(g.shelter.dangerLevel(est.base) === g.shelter.baseDanger(est.base), '前哨據點危險度不受文明度加成');
-assert(g.shelter.setPrimary(est.base.id).ok && g.shelter.dangerLevel(est.base) > g.shelter.baseDanger(est.base), '設為主要據點後危險度隨文明度提升');
+assert(est.ok && g.state.bases.length === 2 && est.base.kind === 'outpost', '研究「前哨站」後可建立前哨站');
+assert(!g.shelter.canEstablish(g.state.map.pois.find((p) => !g.shelter.baseAtPoi(p.id))).ok, '前哨站數量受研究限制');
+assert(g.shelter.dangerLevel(est.base) === g.shelter.baseDanger(est.base), '前哨站危險度不受文明度加成');
+assert(!g.shelter.canUpgradeFacility(est.base, 'farm').ok && g.shelter.canUpgradeFacility(est.base, 'watchtower').ok, '前哨站只能建造防禦設施');
 for (let i = 0; i < 300; i += 1) g.siege.update(0.1);
 assert(g.siege.sieges.size === 2, '每個據點各自承受屍潮');
 
@@ -130,7 +136,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 5 && migrated.bases.length === 1 && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 6 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -356,6 +362,169 @@ assert(migrated.version === 5 && migrated.bases.length === 1 && migrated.primary
   assert(!stockOf(poi, tomorrow).empty, '隔天 00:00 重置');
   const days = new Set(Array.from({ length: 10 }, (_, i) => JSON.stringify(stockOf({ ...poi, lootedDay: 0 }, Date.now() + i * 86400000).resources)));
   assert(days.size > 5, '每天物資的種類與數量隨機');
+}
+
+// ---- 10. v4：區域危險度、屍潮分波、載具、放棄據點、NPC 據點 ----
+{
+  const { ZONES, zoneIndexAt, zoneAt } = await import('../src/config/zones.js');
+  const { stockOf } = await import('../src/systems/LootStock.js');
+  const counts = ZONES.map(() => 0);
+  for (let i = 0; i < 20000; i += 1) counts[zoneIndexAt(25 + (i % 141) * 0.0011, 121 + Math.floor(i / 141) * 0.0011)] += 1;
+  assert(counts.every((c) => c > 0), `六種區域都會出現（${counts.join('/')}）`);
+  assert(zoneIndexAt(25.01, 121.52) === zoneIndexAt(25.01, 121.52), '同一座標的區域固定（所有玩家相同）');
+  // 找一棟安全區與一棟深淵區的建築比較物資
+  const find = (idx) => {
+    for (let i = 0; i < 40000; i += 1) {
+      const lat = 25 + (i % 200) * 0.0009;
+      const lon = 121 + Math.floor(i / 200) * 0.0009;
+      if (zoneIndexAt(lat, lon) === idx) return { lat, lon };
+    }
+    return null;
+  };
+  const safe = find(0);
+  const abyss = find(5);
+  const sum = (pos) => Array.from({ length: 30 }, (_, i) => stockOf({ id: `z${i}`, type: 'shop', name: 'x', ...pos }))
+    .reduce((t, st) => t + Object.values(st.resources).reduce((a2, b2) => a2 + b2, 0), 0);
+  assert(sum(abyss) > sum(safe) * 2.5, '深淵區物資遠多於安全區');
+  assert(zoneAt(abyss.lat, abyss.lon).siegeLevel > zoneAt(safe.lat, safe.lon).siegeLevel, '區域越危險屍潮越強');
+
+  // 屍潮分波 + 據點越大越難守
+  const gw = Game.newGame({ playerName: 'W', classId: 'warrior', lat: 0, lon: 0 });
+  gw.state.map.pois = fillPois([], 0, 0);
+  gw.shelter.establish(gw.state.map.pois[0]);
+  setHour(gw, 21);
+  const sw = gw.siege.of();
+  const seen = [];
+  for (let i = 0; i < 1500; i += 1) {
+    gw.siege.update(0.1);
+    seen.push(sw.waveLeft > 0 ? 1 : 0);
+  }
+  const bursts = seen.reduce((n, v, i) => n + (v && !seen[i - 1] ? 1 : 0), 0);
+  assert(sw.wave >= 2 && bursts >= 2, `夜晚屍潮一波一波來襲（${sw.wave} 波）`);
+  const base = gw.shelter.primary();
+  base.size = 'small';
+  const small = sw.spawnInterval();
+  base.size = 'huge';
+  assert(sw.spawnInterval() < small * 0.6, '巨型據點屍潮比小型據點多');
+
+  // 生產下修、升級成本變陡
+  const { FACILITIES: F } = await import('../src/config/facilities.js');
+  assert(F.farm.cost(10).wood > F.farm.cost(1).wood * 150, '升級成本隨等級快速成長');
+  const rates = gw.resources.rates().gross;
+  assert(rates.food < 15, `生產只是輔助（起始食物 ${rates.food.toFixed(1)}/時）`);
+
+  // 載具：速度、運載量、耗油、磨損、維修
+  const vs = gw.vehicles;
+  const bike = vs.create('bicycle');
+  const truck = vs.create('truck', 0.5);
+  vs.add(bike);
+  vs.add(truck);
+  const walk = vs.tripStats(2, [], 1000);
+  const ride = vs.tripStats(2, [truck], 1000);
+  assert(walk.speed === 1 && ride.speed > 1 && ride.cargo > walk.cargo * 10, '載具提升速度與運載量');
+  assert(vs.tripStats(2, [bike], 1000).seated === false && vs.tripStats(2, [bike], 1000).speed === 1, '座位不足時全隊步行');
+  assert(vs.tripStats(1, [bike], 1000).fuel === 0 && ride.fuel > 0, '腳踏車不耗油，貨車耗油');
+  assert(!vs.validate([bike.id, truck.id], 1, 1000).ok, '每台載具至少需要一名駕駛');
+  gw.state.resources.fuel = 0;
+  assert(!vs.validate([truck.id], 2, 1000).ok, '燃料不足無法出車');
+  gw.state.resources.fuel = 500;
+  const poiFar = gw.state.map.pois.find((p) => p.type === 'warehouse' && !gw.shelter.baseAtPoi(p.id));
+  const plainMs = gw.exploration.plan(poiFar, [gw.survivors.leader()], 15).travelMs;
+  const carMs = gw.exploration.plan(poiFar, [gw.survivors.leader()], 15, Date.now(), [bike]).travelMs;
+  assert(carMs < plainMs, '騎腳踏車縮短路程時間');
+  const r = gw.exploration.start(poiFar.id, ['leader'], 15, false, Date.now(), { vehicleIds: [bike.id] });
+  assert(r.ok && bike.status === 'out', '帶載具出發');
+  const dur0 = bike.durability;
+  gw.exploration.update(Date.now() + 3 * 3600e3, { silent: true });
+  assert(bike.status === 'idle' && bike.durability < dur0, `返回後載具磨損（${dur0} → ${bike.durability}）`);
+  gw.state.resources.metal = 1e4;
+  gw.state.player.parts = 100;
+  assert(vs.repair(truck.id).ok && truck.durability === vs.maxDurability(truck), '維修載具');
+
+  // 運載量限制物資
+  const gc = Game.newGame({ playerName: 'C', classId: 'scout', lat: 0, lon: 0 });
+  gc.state.map.pois = fillPois([], 0, 0);
+  gc.shelter.establish(gc.state.map.pois[0]);
+  setHour(gc, 10);
+  const rich = gc.state.map.pois.find((p) => p.type === 'military');
+  gc.exploration.start(rich.id, ['leader'], 60);
+  gc.state.expeditions[0].cargo = 10;
+  const before = Object.values(gc.state.resources).reduce((a2, b2) => a2 + b2, 0);
+  const [rep] = gc.exploration.update(Date.now() + 6 * 3600e3, { silent: true });
+  const gainedTotal = Object.entries(rep.resources).reduce((a2, [, v]) => a2 + v, 0);
+  assert(gainedTotal <= 12 && Object.values(gc.state.resources).reduce((a2, b2) => a2 + b2, 0) - before <= 12 + 1, `運載量限制帶回的物資（${gainedTotal}）`);
+
+  // 放棄據點：退還 25%，搬家時超過運載量的物資被遺棄
+  const ga = Game.newGame({ playerName: 'A', classId: 'warrior', lat: 0, lon: 0 });
+  ga.state.map.pois = fillPois([], 0, 0);
+  ga.shelter.establish(ga.state.map.pois[0]);
+  const home = ga.shelter.primary();
+  home.facilities.farm.level = 3;
+  const built = ga.shelter.builtCost(home);
+  const preview = ga.shelter.abandonPreview(home.id);
+  assert(preview.refund.wood === Math.floor(built.wood * 0.25), '放棄據點退還 25% 建造資源');
+  Object.keys(ga.state.resources).forEach((k) => { ga.state.resources[k] = 1000; });
+  const ab = ga.shelter.abandon(home.id);
+  const left = Object.values(ga.state.resources).reduce((a2, b2) => a2 + b2, 0);
+  assert(ab.ok && !ga.shelter.hasShelter() && left <= preview.carry + 6, `搬家只能帶走運載量內的物資（剩 ${Math.round(left)} / 可搬 ${preview.carry}）`);
+  assert(ga.shelter.canEstablish(ga.state.map.pois[1]).ok && ga.shelter.establish(ga.state.map.pois[1]).base.kind === 'shelter', '放棄後可重新建立避難所');
+
+  // NPC 據點：生成、升級、探索、掠奪、被攻陷後重生
+  const gn = Game.newGame({ playerName: 'N', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gn.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gn.shelter.establish(gn.state.map.pois[0]);
+  setHour(gn, 10);
+  const t0 = Date.now();
+  gn.npcs.update(t0);
+  gn.npcs.update(t0 + 61000);
+  gn.npcs.update(t0 + 122000);
+  assert(gn.npcs.list.length === 3, `地圖上隨機出現 NPC 據點（${gn.npcs.list.length}）`);
+  const npc = gn.npcs.list[0];
+  const lv = npc.level;
+  npc.nextLevelAt = t0;
+  gn.npcs.update(t0 + 1000);
+  assert(npc.level === lv + 1, 'NPC 據點會升級');
+  npc.trip = null;
+  npc.nextExploreAt = t0;
+  npc.nextRaidAt = t0 + 1e9;
+  gn.npcs.update(t0 + 2000);
+  assert(npc.trip?.kind === 'explore', 'NPC 會外出探索');
+  const target = gn.state.map.pois.find((p) => p.id === npc.trip.poiId);
+  gn.npcs.update(npc.trip.endAt + 1);
+  assert(target.lootedDay, 'NPC 探索後建築被搜刮一空');
+  assert(gn.npcs.aggression() < 0.5, '文明度低時 NPC 不太積極');
+  // 掠奪：玩家沒有防禦且無人在家 → 被搶
+  gn.state.survivors.forEach((s) => { s.status = 'exploring'; });
+  Object.keys(gn.state.resources).forEach((k) => { gn.state.resources[k] = 1000; });
+  npc.level = 30;
+  npc.trip = null;
+  npc.nextRaidAt = t0;
+  gn.npcs.update(t0 + 3000);
+  assert(npc.trip?.kind === 'raid', '白天 NPC 會出動掠奪');
+  gn.npcs.update(npc.trip.startAt + npc.trip.travelMs + 1);
+  assert(gn.state.resources.wood < 1000, `掠奪成功搶走資源（木材 1000 → ${gn.state.resources.wood}）`);
+  // 夜晚屍潮期間不出動
+  npc.trip = null;
+  npc.nextRaidAt = t0;
+  setHour(gn, 22);
+  gn.npcs.update(Date.now());
+  assert(!npc.trip, '夜晚屍潮期間 NPC 不會來襲');
+  // 玩家攻陷 NPC 據點
+  setHour(gn, 10);
+  gn.state.survivors.forEach((s) => { s.status = 'idle'; });
+  const weak = gn.npcs.list[1];
+  weak.level = 1;
+  weak.trip = null;
+  const hero = gn.survivors.leader();
+  hero.level = 50;
+  hero.hp = null;
+  hero.severe = false;
+  const atk = gn.exploration.start(weak.id, ['leader'], 5, false, Date.now(), { kind: 'raid' });
+  assert(atk.ok, '派隊攻打 NPC 據點');
+  const coinsBefore = gn.state.player.coins;
+  const [rr] = gn.exploration.update(Date.now() + 3 * 3600e3, { silent: true });
+  assert(rr.success && !gn.npcs.get(weak.id) && gn.state.player.coins > coinsBefore, '攻陷 NPC 據點搶到資源，據點被摧毀');
+  assert(gn.npcs.state.nextSpawnAt > Date.now(), '被摧毀後一段時間會在別處重生');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
