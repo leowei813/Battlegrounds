@@ -158,7 +158,7 @@ async function boot() {
   game.save();
   cloud.attach(game);
   // 多人互動（與雲端存檔共用後端）
-  game.world = new WorldSync(game, cloud.provider);
+  game.world = new WorldSync(game, cloud.provider, cloud);
   game.world.start();
 
   if (needFullScan) {

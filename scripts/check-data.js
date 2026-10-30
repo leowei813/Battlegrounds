@@ -85,7 +85,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 8, 'state is serializable');
+assert(save.version === 9, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -138,7 +138,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 8 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 9 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -724,6 +724,39 @@ assert(migrated.version === 8 && migrated.bases.length === 1 && migrated.bases[0
   gs.shelter.establish(gs.state.map.pois.find((p) => !gs.shelter.baseAtPoi(p.id)));
   const areas = gs.scanAreas(25.03, 121.56);
   assert(areas.length === 2 && areas[1].radius < areas[0].radius, '重新掃描包含前哨站附近，範圍較小');
+}
+
+// ---- 13. v6.1：起始無產出、主角無品級、刪除進度移除公開資料 ----
+{
+  const gz = Game.newGame({ playerName: 'Z', classId: 'warrior', lat: 0, lon: 0 });
+  gz.state.map.pois = fillPois([], 0, 0);
+  gz.shelter.establish(gz.state.map.pois[0]);
+  const gross = gz.resources.rates().gross;
+  assert(Object.values(gross).every((v) => v === 0), `遊戲起始沒有任何產出（${JSON.stringify(gross)}）`);
+  const leader = gz.survivors.leader();
+  assert(leader.rarity === null && gz.survivors.growthMul(leader) === 1.5, '主角沒有品級，成長比照稀有');
+  const oldSave = JSON.parse(JSON.stringify(gz.state));
+  oldSave.version = 8;
+  oldSave.survivors[0].rarity = 'uncommon';
+  assert(SaveManager.migrate(oldSave).survivors[0].rarity === null, '舊存檔主角的品級移除');
+  // 公開資料以帳號為身分：重新開始仍是同一身分；刪除進度時從世界移除
+  const { WorldSync } = await import('../src/multiplayer/WorldSync.js');
+  const calls = [];
+  const provider = {
+    worldNearby: async () => [], worldPut: async (id) => calls.push(['put', id]), worldDelete: async (id) => calls.push(['del', id]),
+  };
+  const cloud = { cfg: { auth: { id: 'acct1', token: 'tok1' } } };
+  const w1 = new WorldSync(gz, provider, cloud);
+  const gz2 = Game.newGame({ playerName: 'Z2', classId: 'warrior', lat: 0, lon: 0 });
+  const w2 = new WorldSync(gz2, provider, cloud);
+  assert(w1.identity().id === w2.identity().id, '同一帳號重新開始仍使用同一個公開身分（舊據點會被取代）');
+  await w1.sync();
+  assert(calls.some(([t]) => t === 'put'), '有據點時公開');
+  await w2.sync();
+  assert(calls.some(([t, id]) => t === 'del' && id === w2.identity().id), '沒有據點時從其他玩家的地圖移除');
+  calls.length = 0;
+  await w1.clear();
+  assert(calls.length === 1 && calls[0][0] === 'del', '刪除進度時移除公開的據點與探索隊');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

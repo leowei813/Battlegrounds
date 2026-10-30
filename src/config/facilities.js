@@ -40,7 +40,7 @@ export const FACILITIES = {
     effectText: (lv) => `防禦射程 +${lv * 6}%，探索遭遇戰先手率 +${lv * 4}%`,
   },
   farm: {
-    name: '農場', icon: '🌾', startLevel: 1,
+    name: '農場', icon: '🌾', startLevel: 0,
     desc: '持續生產食物。',
     cost: (lv) => scale({ wood: 70, cloth: 20 }, lv),
     effectText: (lv) => `食物 +${lv * FARM_FOOD}/時`,

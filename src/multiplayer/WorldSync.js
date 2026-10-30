@@ -42,8 +42,9 @@ export class WorldSync {
    * @param {import('../core/Game.js').Game} game
    * @param {object|null} provider 與雲端存檔共用的後端
    */
-  constructor(game, provider) {
+  constructor(game, provider, cloud = null) {
     this.game = game;
+    this.cloud = cloud;
     this.provider = provider?.worldNearby ? provider : null;
     this.others = [];
     this.status = this.provider ? 'idle' : 'off';
@@ -60,8 +61,13 @@ export class WorldSync {
     return true;
   }
 
-  /** 玩家身分：存在存檔中（雲端同步後各裝置相同），token 只上傳雜湊 */
+  /**
+   * 玩家身分：由帳號推導（同一帳號重新開始也是同一個身分，舊的據點會被取代），token 只上傳雜湊。
+   * 沒有帳號時（例如測試）才使用存檔中的隨機身分。
+   */
   identity() {
+    const auth = this.cloud?.cfg?.auth;
+    if (auth) return { id: sha256(`jdqs-world:${auth.id}`).slice(0, 32), token: sha256(`jdqs-world-token:${auth.token}`) };
     const p = this.game.state.player;
     if (!p.worldId) {
       p.worldId = sha256(uid('world')).slice(0, 32);
@@ -70,9 +76,27 @@ export class WorldSync {
     return { id: p.worldId, token: sha256(`jdqs-world:${p.worldSecret}`) };
   }
 
+  /** 舊版（存檔內隨機身分）留下的公開資料：刪除後改用帳號身分 */
+  async dropLegacy() {
+    const p = this.game.state.player;
+    if (!this.cloud?.cfg?.auth || !p.worldId || !p.worldSecret) return;
+    const legacy = { id: p.worldId, token: sha256(`jdqs-world:${p.worldSecret}`) };
+    await this.provider.worldDelete(legacy.id, legacy.token).catch(() => {});
+    delete p.worldId;
+    delete p.worldSecret;
+  }
+
+  /** 從世界上移除自己（刪除進度時） */
+  async clear() {
+    if (!this.provider) return;
+    const { id, token } = this.identity();
+    await this.provider.worldDelete(id, token).catch(() => {});
+    this.shared = false;
+  }
+
   start() {
     if (!this.provider || this.timer) return;
-    this.sync();
+    this.dropLegacy().finally(() => this.sync());
     this.timer = setInterval(() => this.sync(), SYNC_MS);
   }
 
@@ -107,7 +131,14 @@ export class WorldSync {
     const center = g.shelter.primary() || g.state.map.center;
     const { id, token } = this.identity();
     try {
-      if (this.sharing && g.state.bases.length) await this.provider.worldPut(id, token, this.presence());
+      if (this.sharing && g.state.bases.length) {
+        await this.provider.worldPut(id, token, this.presence());
+        this.shared = true;
+      } else if (this.shared !== false) {
+        // 沒有據點：從其他玩家的地圖上移除
+        await this.provider.worldDelete(id, token).catch(() => {});
+        this.shared = false;
+      }
       const list = await this.provider.worldNearby(center.lat, center.lon, WORLD_RADIUS_KM, id);
       this.others = list.map(cleanPlayer).filter((p) => p && p.id !== id);
       this.status = 'online';

@@ -188,6 +188,7 @@ export class SaveManager {
       }
       sv.equipment = sv.equipment || {};
       sv.bag = sv.bag || {};
+      if (sv.isLeader) sv.rarity = null; // v9：主角沒有品級
       SLOT_KEYS.forEach((k) => { if (!(k in sv.equipment)) sv.equipment[k] = null; });
     });
     // v3：地圖建築改以精簡格式儲存，載入時還原為物件

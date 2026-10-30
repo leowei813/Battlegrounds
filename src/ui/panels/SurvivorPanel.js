@@ -112,7 +112,7 @@ export class SurvivorPanel {
     void now;
     return `
       <div class="sv-detail" style="--cc:${cls.color}">
-        <div class="sv-head"><span class="sv-icon big">${cls.icon}</span><div><b>${escapeHtml(sv.name)}</b> ${sv.isLeader ? '👑 領袖' : ''}<small class="block">${rarityTag(sv.rarity)} ${cls.name} Lv${sv.level}・戰力 ${s.power}・升級成長 ×${g.survivors.growthMul(sv)}</small></div>${survivorStatus(g, sv)}</div>
+        <div class="sv-head"><span class="sv-icon big">${cls.icon}</span><div><b>${escapeHtml(sv.name)}</b> ${sv.isLeader ? '👑 領袖' : ''}<small class="block">${sv.isLeader ? '' : rarityTag(sv.rarity)} ${cls.name} Lv${sv.level}・戰力 ${s.power}・升級成長 ×${g.survivors.growthMul(sv)}</small></div>${survivorStatus(g, sv)}</div>
         ${hpBar(g, sv)}
         ${progressBar(sv.xp / xpToNext(sv.level), 'xp', `XP ${sv.xp}/${xpToNext(sv.level)}`)}
         <div class="stat-line">${statLine({ hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, critDmg: s.critDmg - 1, dodge: s.dodge })}<span>攻速 ${s.atkSpeed}</span></div>

@@ -121,14 +121,14 @@ export function hpBar(game, sv) {
 export function survivorCard(game, sv, { actions = '', selected = false } = {}) {
   const cls = CLASSES[sv.classId];
   const s = game.survivors.stats(sv);
-  const r = RARITIES[sv.rarity] || RARITIES.common;
+  const r = sv.isLeader ? { color: '#ffd54f' } : RARITIES[sv.rarity] || RARITIES.common;
   return `
   <div class="sv-card r-${sv.rarity} ${sv.severe ? 'severe' : ''} ${selected ? 'selected' : ''}" style="--cc:${cls.color};--rc:${r.color}">
     <div class="sv-head">
       <span class="sv-icon">${cls.icon}</span>
       <div class="sv-title">
         <b>${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b>
-        <small>${rarityTag(sv.rarity)} ${cls.name} Lv${sv.level} · 戰力 ${s.power} · 成長 ×${game.survivors.growthMul(sv)}</small>
+        <small>${sv.isLeader ? '' : rarityTag(sv.rarity)} ${cls.name} Lv${sv.level} · 戰力 ${s.power} · 成長 ×${game.survivors.growthMul(sv)}</small>
       </div>
     </div>
     <div class="sv-status">${survivorStatus(game, sv)}</div>
