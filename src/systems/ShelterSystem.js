@@ -1,21 +1,24 @@
 import { BUILD_QUEUE_SIZE } from '../config/constants.js';
 import {
-  FACILITIES, FACILITY_MAX_LEVEL, facilityBuildTime, wallMaxHp,
+  FACILITIES, FACILITY_MAX_LEVEL, facilityBuildTime, wallMaxHp, OUTPOST_FACILITIES,
 } from '../config/facilities.js';
+import { RESOURCE_KEYS } from '../config/constants.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL, defenseBuildTime } from '../config/defenses.js';
 import { RESEARCH } from '../config/research.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import {
-  MAX_BASES, PRIMARY_DANGER_COEF, baseEstablishCost, BASE_SIZES, FACILITY_COUNT, baseSizeOf,
+  PRIMARY_DANGER_COEF, baseEstablishCost, BASE_SIZES, FACILITY_COUNT, baseSizeOf, ABANDON_REFUND, MAX_OUTPOSTS,
 } from '../config/civilization.js';
 import { createBase } from '../core/GameState.js';
 import { canAfford, payCost, scaleCost } from './costUtils.js';
 
 /**
- * 據點系統：多個據點（每個據點有自己的設施、防禦建築、圍牆與施工佇列），
- * 其中一個為「主要據點」——倖存者居住、探索出發、駐守倖存者防衛的地方。
+ * 據點系統：
+ *  - 避難所（只能一座）：倖存者居住、生產、探索出發、駐守倖存者防衛的地方。
+ *  - 前哨站（研究「前哨站」科技解鎖，最多 3 座）：只有圍牆、監視塔與防禦建築，不能生產。
+ * 每個據點有自己的設施、防禦建築、圍牆與施工佇列；據點可以放棄，退還 25% 建造資源。
  *
- * 大多數方法第一個參數為據點（物件或 ID），省略時代表主要據點。
+ * 大多數方法第一個參數為據點（物件或 ID），省略時代表避難所。
  */
 export class ShelterSystem {
   constructor(game) {
@@ -30,8 +33,23 @@ export class ShelterSystem {
     return this.bases.find((b) => b.id === id) || null;
   }
 
+  /** 避難所（沒有則為 null） */
   primary() {
-    return this.base(this.game.state.primaryBaseId) || this.bases[0] || null;
+    const b = this.base(this.game.state.primaryBaseId);
+    return b && b.kind !== 'outpost' ? b : null;
+  }
+
+  isOutpost(b) {
+    return this.resolve(b)?.kind === 'outpost';
+  }
+
+  outposts() {
+    return this.bases.filter((b) => b.kind === 'outpost');
+  }
+
+  /** 可建立的前哨站數量（研究解鎖） */
+  outpostLimit() {
+    return Math.min(MAX_OUTPOSTS, this.game.research.bonus('outposts'));
   }
 
   /** 據點物件 / ID / undefined（主要據點）→ 據點物件 */
@@ -45,7 +63,7 @@ export class ShelterSystem {
   }
 
   hasShelter() {
-    return this.bases.length > 0;
+    return !!this.primary();
   }
 
   baseAtPoi(poiId) {
@@ -58,9 +76,10 @@ export class ShelterSystem {
 
   // ---------- 跨據點彙總 ----------
 
-  /** 所有據點中該設施的最高等級（研究中心、工作台等「解鎖型」設施使用） */
+  /** 該設施的等級（研究中心、工作台等只在避難所運作；圍牆、監視塔取所有據點最高） */
   maxLevel(fid) {
-    return this.bases.reduce((m, b) => Math.max(m, b.facilities[fid].level), 0);
+    const bases = OUTPOST_FACILITIES.includes(fid) ? this.bases : this.bases.filter((b) => b.kind !== 'outpost');
+    return bases.reduce((m, b) => Math.max(m, b.facilities[fid].level), 0);
   }
 
   /** 所有據點中該設施的等級總和 */
@@ -110,33 +129,42 @@ export class ShelterSystem {
     return Math.round((this.baseDanger(base) + extra) * 10) / 10;
   }
 
-  // ---------- 建立 / 主要據點 / 放棄 ----------
+  // ---------- 建立 / 放棄 ----------
+
+  /** 下一個要建立的據點類型：沒有避難所時建立避難所，否則為前哨站 */
+  nextKind() {
+    return this.primary() ? 'outpost' : 'shelter';
+  }
 
   establishCost() {
-    return this.bases.length ? baseEstablishCost(this.bases.length) : {};
+    return this.primary() ? baseEstablishCost(this.outposts().length + 1) : {};
   }
 
   canEstablish(poi) {
     if (!poi) return { ok: false, reason: '找不到地點' };
     if (this.baseAtPoi(poi.id)) return { ok: false, reason: '這裡已經是你的據點' };
-    if (this.bases.length >= MAX_BASES) return { ok: false, reason: `最多 ${MAX_BASES} 個據點` };
+    if (this.primary()) {
+      const limit = this.outpostLimit();
+      if (!limit) return { ok: false, reason: '需研究「前哨站」科技' };
+      if (this.outposts().length >= limit) return { ok: false, reason: `前哨站最多 ${limit} 座（研究可增加，最多 ${MAX_OUTPOSTS} 座）` };
+    }
     if (!canAfford(this.game.state, this.establishCost())) return { ok: false, reason: '資源不足' };
     return { ok: true };
   }
 
-  /** 在地點建立據點；第一個據點免費且自動成為主要據點 */
+  /** 在地點建立據點：沒有避難所時建立避難所（免費），否則建立前哨站 */
   establish(poi) {
     const check = this.canEstablish(poi);
     if (!check.ok) return check;
     payCost(this.game.state, this.establishCost());
-    const first = !this.bases.length;
-    const base = createBase(poi, first);
+    const kind = this.nextKind();
+    const base = createBase(poi, kind);
     this.bases.push(base);
-    if (first) this.game.state.primaryBaseId = base.id;
+    if (kind === 'shelter') this.game.state.primaryBaseId = base.id;
     this.game.civilization.invalidate();
-    this.game.log(`🏠 ${first ? '建立避難所' : '建立前哨據點'}於「${poi.name}」`, 'success');
+    this.game.log(`🏠 ${kind === 'shelter' ? '建立避難所' : '建立前哨站'}於「${poi.name}」`, 'success');
     this.game.bus.emit('shelter:changed');
-    return { ok: true, base, msg: first ? `避難所設於 ${poi.name}` : `已在 ${poi.name} 建立新據點` };
+    return { ok: true, base, msg: kind === 'shelter' ? `避難所設於 ${poi.name}` : `已在 ${poi.name} 建立前哨站` };
   }
 
   /** 舊 API 相容 */
@@ -144,27 +172,67 @@ export class ShelterSystem {
     return this.establish(poi);
   }
 
-  setPrimary(id) {
+  /** 已建造的建築總成本（避難所的初始設施不計） */
+  builtCost(base) {
+    const total = {};
+    const add = (cost) => Object.entries(cost).forEach(([k, v]) => { total[k] = (total[k] || 0) + v; });
+    Object.entries(base.facilities).forEach(([id, f]) => {
+      const start = base.kind === 'outpost' ? (id === 'wall' ? 1 : 0) : FACILITIES[id].startLevel;
+      for (let lv = start + 1; lv <= f.level; lv += 1) add(FACILITIES[id].cost(lv));
+    });
+    base.defenses.forEach((d) => {
+      if (!d.type) return;
+      for (let lv = 1; lv <= d.level; lv += 1) add(DEFENSES[d.type].cost(lv));
+    });
+    return total;
+  }
+
+  /**
+   * 放棄據點的結果預覽。
+   * 放棄避難所＝搬家：所有資源只能帶走「人 + 有人駕駛的載具」載得動的量，其餘直接遺棄。
+   * @returns {{refund:object, carry?:number, keep?:object, lost?:object}}
+   */
+  abandonPreview(id) {
     const base = this.base(id);
-    if (!base) return { ok: false, reason: '找不到據點' };
-    if (this.isPrimary(base)) return { ok: false, reason: '已經是主要據點' };
-    if (this.game.state.expeditions.length) return { ok: false, reason: '有隊伍在外，無法遷移主要據點' };
-    this.game.state.primaryBaseId = base.id;
-    this.game.log(`⭐ 主要據點遷移至「${base.name}」`, 'info');
-    this.game.bus.emit('shelter:changed');
-    return { ok: true, msg: `「${base.name}」成為主要據點，危險度將隨文明度提升` };
+    if (!base) return null;
+    const refund = Object.fromEntries(Object.entries(this.builtCost(base))
+      .map(([k, v]) => [k, Math.floor(v * ABANDON_REFUND)]).filter(([, v]) => v > 0));
+    if (base.kind === 'outpost') return { refund };
+    const res = this.game.state.resources;
+    const after = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, Math.floor(res[k] + (refund[k] || 0))]));
+    const total = RESOURCE_KEYS.reduce((s, k) => s + after[k], 0);
+    const cap = this.game.vehicles.relocationCapacity();
+    const ratio = total > cap.cargo ? cap.cargo / total : 1;
+    const keep = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, Math.floor(after[k] * ratio)]));
+    const lost = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, after[k] - keep[k]]).filter(([, v]) => v > 0));
+    return {
+      refund, carry: cap.cargo, people: cap.people, vehicles: cap.vehicles, keep, lost,
+    };
   }
 
   abandon(id) {
     const base = this.base(id);
     if (!base) return { ok: false, reason: '找不到據點' };
-    if (this.isPrimary(base)) return { ok: false, reason: '無法放棄主要據點，請先指定其他主要據點' };
     if (base.buildQueue.length) return { ok: false, reason: '施工中無法放棄' };
+    const isShelter = base.kind !== 'outpost';
+    if (isShelter && this.game.state.expeditions.length) return { ok: false, reason: '有隊伍在外，無法放棄避難所' };
+    const preview = this.abandonPreview(id);
+    base.defenses.forEach((d) => { d.garrisonId = null; });
     this.game.state.bases = this.bases.filter((b) => b.id !== id);
+    if (isShelter) {
+      // 搬家：資源只保留帶得走的部分（退還的建材也要搬）
+      Object.assign(this.game.state.resources, preview.keep);
+      this.game.state.primaryBaseId = null;
+    } else {
+      this.game.grant(preview.refund);
+    }
     this.game.civilization.invalidate();
-    this.game.log(`🏚️ 放棄據點「${base.name}」`, 'danger');
+    const lostTotal = Object.values(preview.lost || {}).reduce((s, v) => s + v, 0);
+    this.game.log(`🏚️ 放棄${isShelter ? '避難所' : '前哨站'}「${base.name}」，退還 ${Math.round(ABANDON_REFUND * 100)}% 建造資源${lostTotal ? `，帶不走的 ${lostTotal} 單位物資被遺棄` : ''}`, 'danger');
     this.game.bus.emit('shelter:changed');
-    return { ok: true, msg: `已放棄「${base.name}」` };
+    return {
+      ok: true, preview, msg: isShelter ? `已放棄避難所「${base.name}」，請在地圖上選擇新的避難所` : `已放棄前哨站「${base.name}」`,
+    };
   }
 
   // ---------- 折扣與加成 ----------
@@ -240,6 +308,7 @@ export class ShelterSystem {
     if (!base) return { ok: false, reason: '尚未建立避難所' };
     const fac = base.facilities[id];
     if (!fac) return { ok: false, reason: '未知設施' };
+    if (base.kind === 'outpost' && !OUTPOST_FACILITIES.includes(id)) return { ok: false, reason: '前哨站只有防禦功能，無法建造此設施' };
     if (fac.level >= FACILITY_MAX_LEVEL) return { ok: false, reason: '已達最高等級' };
     if (this.isFacilityBusy(base, id)) return { ok: false, reason: '施工中' };
     if (this.queueFull(base)) return { ok: false, reason: `施工佇列已滿（${BUILD_QUEUE_SIZE}）` };

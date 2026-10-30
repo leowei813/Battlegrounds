@@ -28,7 +28,7 @@ export class ShelterScene extends Phaser.Scene {
   /** 目前檢視的據點（由 UI 設定，預設主要據點） */
   get base() {
     const core = this.core;
-    return core?.shelter.base(this.registry.get('viewBaseId')) || core?.shelter.primary() || null;
+    return core?.shelter.base(this.registry.get('viewBaseId')) || core?.shelter.primary() || core?.state.bases[0] || null;
   }
 
   get siege() {

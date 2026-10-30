@@ -7,6 +7,7 @@ import { bus, EVT } from '../core/EventBus.js';
 import { escapeHtml } from '../utils/dom.js';
 import { SiegeMapLayer } from './SiegeMapLayer.js';
 import { PoiCanvasLayer } from './PoiCanvasLayer.js';
+import { ZoneLayer } from './ZoneLayer.js';
 import { dayKey } from '../systems/LootStock.js';
 
 /**
@@ -37,12 +38,14 @@ export class MapService {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
     }).addTo(this.map);
+    this.zoneLayer = new ZoneLayer().addTo(this.map);
     this.layers.range = L.layerGroup().addTo(this.map);
     this.poiLayer = new PoiCanvasLayer((poiId) => bus.emit(EVT.OPEN_POI, { poiId })).addTo(this.map);
     this.layers.routes = L.layerGroup().addTo(this.map);
     this.layers.zombies = L.layerGroup().addTo(this.map);
     this.layers.shelter = L.layerGroup().addTo(this.map);
     this.layers.others = L.layerGroup().addTo(this.map);
+    this.layers.npcs = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
   }
 
@@ -73,7 +76,7 @@ export class MapService {
     if (!this.map) return;
     const { pois, zombieGroups } = state.map;
     const basePoiIds = new Set(state.bases.map((b) => b.poiId));
-    const sh = state.bases.find((b) => b.id === state.primaryBaseId) || state.bases[0] || null;
+    const sh = state.bases.find((b) => b.id === state.primaryBaseId && b.kind !== 'outpost') || null;
 
     // 建築與殭屍群數量多，只有內容變動時才重建標記
     const today = dayKey();
@@ -114,6 +117,23 @@ export class MapService {
     return { icon: this.icon(html, 'shelter-icon', d), d };
   }
 
+  /** NPC 據點（紅色骷髏旗，標示等級） */
+  renderNpcs(list = []) {
+    if (!this.map) return;
+    const key = list.map((n) => `${n.id}:${n.level}`).join('|');
+    if (key === this.npcKey) return;
+    this.npcKey = key;
+    this.layers.npcs.clearLayers();
+    list.forEach((n) => {
+      L.marker([n.lat, n.lon], {
+        icon: this.icon(`<div class="npc-pin">🏴‍☠️<i class="npc-lv">Lv${n.level}</i></div>`, 'shelter-icon', 34),
+        zIndexOffset: 850,
+      }).on('click', () => bus.emit('ui:openNpc', { npcId: n.id }))
+        .bindTooltip(`🏴‍☠️ ${escapeHtml(n.name)}（Lv${n.level}）`, { direction: 'top', offset: [0, -17] })
+        .addTo(this.layers.npcs);
+    });
+  }
+
   /** 其他玩家公開的據點（多人互動） */
   renderOthers(players = []) {
     if (!this.map) return;
@@ -129,8 +149,6 @@ export class MapService {
 
   /** 據點、探索範圍、補給線與探索路線（數量少，每次重建） */
   renderBases(state, sh) {
-    const { pois } = state.map;
-
     this.layers.shelter.clearLayers();
     this.layers.range.clearLayers();
     if (sh) {
@@ -143,7 +161,7 @@ export class MapService {
       const { icon, d } = this.baseIcon(b.size, primary, 'shelter-pin');
       L.marker([b.lat, b.lon], { icon, zIndexOffset: primary ? 1000 : 900, title: b.name })
         .on('click', () => bus.emit(EVT.OPEN_POI, { poiId: b.poiId }))
-        .bindTooltip(`${primary ? '⭐ ' : ''}${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}據點）`, { direction: 'top', offset: [0, -d / 2] })
+        .bindTooltip(`${primary ? '⭐ 避難所' : '🏴 前哨站'}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）`, { direction: 'top', offset: [0, -d / 2] })
         .addTo(this.layers.shelter);
       // 前哨與主要據點之間的補給線
       if (!primary && sh) {
@@ -154,7 +172,7 @@ export class MapService {
     this.layers.routes.clearLayers();
     if (sh) {
       state.expeditions.forEach((ex) => {
-        const p = pois.find((x) => x.id === ex.poiId);
+        const p = this.game.exploration.poi(ex.poiId);
         if (!p) return;
         const from = ex.from || sh;
         L.polyline([[from.lat, from.lon], [p.lat, p.lon]], {

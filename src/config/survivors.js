@@ -65,10 +65,10 @@ export const CLASS_KEYS = Object.keys(CLASSES);
  */
 export const JOBS = {
   idle: { name: '閒置', icon: '💤', produce: {} },
-  scavenge: { name: '附近拾荒', icon: '🔍', produce: { wood: 4, metal: 2, cloth: 2, fuel: 1 }, classBonus: { scout: 1.6 } },
-  farm: { name: '農場工作', icon: '🌾', produce: { food: 10 }, classBonus: { farmer: 1.8 } },
-  workshop: { name: '工作台', icon: '🛠️', produce: { wood: 4, metal: 4, cloth: 2 }, classBonus: { engineer: 1.8 } },
-  clinic: { name: '醫療站', icon: '🏥', produce: { medicine: 1.5 }, classBonus: { medic: 2 } },
+  scavenge: { name: '附近拾荒', icon: '🔍', produce: { wood: 2, metal: 1, cloth: 1, fuel: 0.5 }, classBonus: { scout: 1.6 } },
+  farm: { name: '農場工作', icon: '🌾', produce: { food: 4 }, classBonus: { farmer: 1.8 } },
+  workshop: { name: '工作台', icon: '🛠️', produce: { wood: 2, metal: 1.5, cloth: 1 }, classBonus: { engineer: 1.8 } },
+  clinic: { name: '醫療站', icon: '🏥', produce: { medicine: 0.6 }, classBonus: { medic: 2 } },
   guard: { name: '防禦駐守', icon: '🛡️', produce: {}, classBonus: { warrior: 1.5 } },
 };
 

@@ -42,9 +42,14 @@ export const SIEGE_SCALING = {
  */
 export const PRIMARY_DANGER_COEF = 0.02;
 
-export const MAX_BASES = 5;
+/** 前哨站上限（研究「前哨站」科技逐步解鎖） */
+export const MAX_OUTPOSTS = 3;
+/** 舊存檔相容：避難所 1 座 + 前哨站 */
+export const MAX_BASES = 1 + MAX_OUTPOSTS;
+/** 放棄據點時退還的建造資源比例 */
+export const ABANDON_REFUND = 0.25;
 
-/** 建立第 n+1 個據點的費用（n = 目前據點數） */
+/** 建立第 n 座前哨站的費用 */
 export const baseEstablishCost = (n) => ({
   coins: 250 * n, wood: 200 * n, metal: 120 * n, cloth: 60 * n,
 });
@@ -60,12 +65,13 @@ export const BREACH_BUILDING_DAMAGE_CHANCE = 0.3;
 
 /**
  * 據點規模：決定可建造的防禦建築數量（設施固定 8 種）。最大的「巨型」據點共可建造 20 棟建築。
+ * 據點越大，圍牆越長越難防守：siegeMul 為屍潮數量倍率。
  */
 export const BASE_SIZES = {
-  small: { name: '小型', slots: 4, icon: '⛺', pin: 30 },
-  medium: { name: '中型', slots: 6, icon: '🏘️', pin: 36 },
-  large: { name: '大型', slots: 9, icon: '🏢', pin: 42 },
-  huge: { name: '巨型', slots: 12, icon: '🏰', pin: 50 },
+  small: { name: '小型', slots: 4, icon: '⛺', pin: 32, mul: 0.88, color: '#b0bec5', siegeMul: 0.85 },
+  medium: { name: '中型', slots: 6, icon: '🏘️', pin: 35, mul: 1, color: '#9ccc65', siegeMul: 1 },
+  large: { name: '大型', slots: 9, icon: '🏢', pin: 38, mul: 1.12, color: '#42a5f5', siegeMul: 1.25 },
+  huge: { name: '巨型', slots: 12, icon: '🏰', pin: 42, mul: 1.25, color: '#ffa726', siegeMul: 1.55 },
 };
 export const FACILITY_COUNT = 8;
 

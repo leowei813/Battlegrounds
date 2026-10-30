@@ -99,6 +99,8 @@ export class UIManager {
     bus.on(EVT.OPEN_POI, ({ poiId }) => this.panels.map.openPoi(poiId));
     bus.on('ui:openZombie', ({ groupId }) => this.panels.map.openZombie(groupId));
     bus.on('ui:openPlayer', ({ playerId }) => this.panels.map.openPlayer(playerId));
+    bus.on('ui:openNpc', ({ npcId }) => this.panels.map.openNpc(npcId));
+    bus.on('npcs:changed', () => this.panels.map.renderMap(true));
     bus.on(WORLD_EVT, (players) => this.panels.map.onWorld(players));
     bus.on(EVT.MAP_CHANGED, () => this.panels.map.renderMap(true));
     bus.on('expedition:done', () => this.panels.map.renderMap(true));
@@ -116,7 +118,7 @@ export class UIManager {
 
   /** 目前檢視的據點（不存在時回到主要據點） */
   viewBase() {
-    return this.game.shelter.base(this.viewBaseId) || this.game.shelter.primary();
+    return this.game.shelter.base(this.viewBaseId) || this.game.shelter.primary() || this.game.state.bases[0] || null;
   }
 
   setViewBase(id) {

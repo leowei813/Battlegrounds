@@ -1,5 +1,6 @@
 import { POI_TYPES } from '../config/poiTypes.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
+import { zoneAt } from '../config/zones.js';
 
 /**
  * 建築每日物資：以「建築 ID + 當地日期」為種子隨機產生當天的物資種類與數量，
@@ -66,9 +67,11 @@ export function stockOf(poi, at = Date.now()) {
   };
   const kinds = 1 + Math.floor(rnd() * 3);
   const resources = {};
+  // 區域越危險物資越豐富
+  const zoneMul = zoneAt(poi.lat, poi.lon).lootMul;
   for (let i = 0; i < kinds; i += 1) {
     const k = pickType();
-    const amount = Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6));
+    const amount = Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zoneMul);
     resources[k] = (resources[k] || 0) + amount;
   }
   return { resources, itemMul: 0.5 + rnd(), empty: false };

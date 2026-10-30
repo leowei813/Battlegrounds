@@ -230,3 +230,13 @@
 | `player.worldId` / `worldSecret` | `string` | 多人互動的公開身分（只上傳雜湊後的 token） |
 
 舊存檔遷移（v4 → v5）：補上品級（一般）、生命、重傷欄位，依建築類型決定據點規模並保留已建造的防禦，舊的建築枯竭度忽略。
+
+## v6 新增欄位（v4.0.0）
+| 位置 | 欄位 | 說明 |
+|---|---|---|
+| `bases[].kind` | `shelter\|outpost` | 避難所只有一座（`primaryBaseId` 指向它），其餘為前哨站 |
+| `vehicles[]` | `{ id, type, durability, status: idle\|out }` | 車庫 |
+| `expeditions[]` | `kind`, `vehicleIds`, `cargo`, `ambushes` | `kind=raid` 為攻打 NPC 據點（`poiId` 為 NPC id） |
+| `npcs` | `{ list: Npc[], nextSpawnAt }` | NPC 據點：`{ id, name, poiId, lat, lon, level, resources, coins, nextLevelAt, nextExploreAt, nextRaidAt, trip }` |
+
+舊存檔遷移（v5 → v6）：原主要據點變成避難所，其他據點轉為前哨站（保留，但超過上限時不能再新建）。區域危險度由座標計算，不存檔。

@@ -1,7 +1,10 @@
 import { DEFENSES } from '../config/defenses.js';
 import { ENEMIES, BOSSES } from '../config/enemies.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
-import { SIEGE_SCALING, BREACH_LOSS, BREACH_BUILDING_DAMAGE_CHANCE } from '../config/civilization.js';
+import {
+  SIEGE_SCALING, BREACH_LOSS, BREACH_BUILDING_DAMAGE_CHANCE, BASE_SIZES,
+} from '../config/civilization.js';
+import { zoneAt } from '../config/zones.js';
 import { FACILITIES } from '../config/facilities.js';
 import { TIME_PHASES, ZOMBIE_HOURS_FRACTION } from '../config/timePhases.js';
 import {
@@ -14,6 +17,10 @@ export const WORLD = {
   SPAWN_R: 150,
 };
 const MAX_ZOMBIES = 45;
+/** 屍潮一波一波來襲：入夜後第一波的延遲、波與波之間的間隔（秒）、同一波殭屍的出現間隔 */
+const FIRST_WAVE_DELAY = 8;
+const WAVE_LULL = 40;
+const WAVE_SPAWN_GAP = 0.45;
 const MAX_FX = 250;
 const BREACH_GRACE = 90;
 /** 殭屍對圍牆的傷害係數（放置遊戲節奏：讓防線有時間反應） */
@@ -29,7 +36,10 @@ export class BaseSiege {
     this.baseId = baseId;
     this.zombies = [];
     this.fx = [];
-    this.spawnTimer = 4;
+    this.spawnTimer = 0;
+    this.wave = 0; // 今晚第幾波
+    this.waveLeft = 0; // 本波尚未出現的殭屍數
+    this.lull = FIRST_WAVE_DELAY; // 距離下一波的秒數
     this.cooldowns = new Map();
     this.guardCd = 1;
     this.bossDay = 0;
@@ -59,11 +69,38 @@ export class BaseSiege {
     return this.game.shelter.dangerLevel(this.base);
   }
 
-  /** 殭屍等級 = 1 + 文明度加成 + 據點危險度加成（夜間 +1） */
+  /** 據點所在區域（安全區～深淵區） */
+  zone() {
+    const b = this.base;
+    return zoneAt(b.lat, b.lon);
+  }
+
+  /** 殭屍等級 = 1 + 文明度加成 + 據點危險度加成 + 區域加成（夜間 +1） */
   zombieLevel() {
     const phase = this.game.time.phase();
     const dangerBonus = Math.floor((this.danger() - 1) * SIEGE_SCALING.dangerLevelMul);
-    return Math.max(1, 1 + this.game.civilization.levelBonus() + dangerBonus + (phase.danger > 1.5 ? 1 : 0));
+    return Math.max(1, 1 + this.game.civilization.levelBonus() + dangerBonus + this.zone().siegeLevel + (phase.danger > 1.5 ? 1 : 0));
+  }
+
+  /** 屍潮數量倍率：據點越大越難防守、區域越危險屍潮越多 */
+  sizeMul() {
+    return (BASE_SIZES[this.base.size]?.siegeMul || 1) * this.zone().siegeMul;
+  }
+
+  /** 每波殭屍數：讓整晚的平均強度等同「每 spawnInterval 秒一隻」 */
+  waveSize() {
+    // 新手保護：文明度未達門檻時每波較小
+    const newbie = this.game.civilization.effective() > 0 ? 1 : 0.6;
+    const n = (WAVE_LULL / this.spawnInterval()) * (1 + Math.min(0.6, this.wave * 0.08)) * newbie;
+    return Math.max(3, Math.round(n * randFloat(0.85, 1.15)));
+  }
+
+  /** 屍潮波次資訊（UI 顯示） */
+  waveInfo() {
+    if (!this.active()) return { active: false };
+    return {
+      active: true, wave: this.wave, attacking: this.waveLeft > 0 || this.zombies.length > 0, nextIn: Math.max(0, Math.ceil(this.lull)), left: this.waveLeft + this.zombies.length,
+    };
   }
 
   /** 現在是否有屍潮（只在夜晚與午夜） */
@@ -78,7 +115,7 @@ export class BaseSiege {
   spawnInterval(phase = this.game.time.phase()) {
     if (!phase.zombies) return Infinity;
     const dangerMul = 1 + (this.danger() - 1) * SIEGE_SCALING.dangerSpawn;
-    return Math.max(0.6, 9 / (phase.zombieMul * this.game.civilization.spawnMul() * dangerMul));
+    return Math.max(0.5, 9 / (phase.zombieMul * this.game.civilization.spawnMul() * dangerMul * this.sizeMul()));
   }
 
   /** 敵人種類依文明度解鎖 */
@@ -124,6 +161,15 @@ export class BaseSiege {
     if (isBoss) this.game.toast(`⚠️ Boss「${def.name}」正在接近「${this.base.name}」！`, 'danger');
   }
 
+  startWave() {
+    this.wave += 1;
+    this.waveLeft = this.waveSize();
+    this.lull = WAVE_LULL * randFloat(0.8, 1.2);
+    this.spawnTimer = 0;
+    if (this.game.shelter.isPrimary(this.base)) this.game.log(`🧟 第 ${this.wave} 波屍潮來襲「${this.base.name}」（${this.waveLeft} 隻）`, 'danger');
+    this.game.bus.emit('siege:wave', { baseId: this.baseId, wave: this.wave, count: this.waveLeft });
+  }
+
   /** dt：秒 */
   update(dt) {
     if (!this.base) return;
@@ -142,12 +188,22 @@ export class BaseSiege {
     const phase = this.game.time.phase();
     const day = this.game.time.day();
 
-    // 生成（只在夜間）
+    // 生成（只在夜間）：一波一波來襲，波與波之間有喘息時間
     const active = phase.zombies;
-    this.spawnTimer -= dt;
-    if (active && this.spawnTimer <= 0) {
-      this.spawnTimer = this.spawnInterval() * randFloat(0.7, 1.3);
-      if (this.zombies.length < MAX_ZOMBIES) this.spawn(this.pickEnemy());
+    if (!active) {
+      this.wave = 0;
+      this.waveLeft = 0;
+      this.lull = FIRST_WAVE_DELAY;
+    } else if (this.waveLeft > 0) {
+      this.spawnTimer -= dt;
+      if (this.spawnTimer <= 0 && this.zombies.length < MAX_ZOMBIES) {
+        this.spawnTimer = WAVE_SPAWN_GAP * randFloat(0.6, 1.4);
+        this.spawn(this.pickEnemy());
+        this.waveLeft -= 1;
+      }
+    } else {
+      this.lull -= dt;
+      if (this.lull <= 0) this.startWave();
     }
     // Boss 只襲擊主要據點：文明度達門檻後，每 3 天的午夜來襲
     if (phase.special && sh.isPrimary(base) && this.game.civilization.unlocked('boss') && day % 3 === 0 && this.bossDay !== day) {
@@ -347,7 +403,8 @@ export class BaseSiege {
     this.zombies.forEach((z) => this.pushFx({ type: 'death', x: z.x, y: z.y, color: z.color }));
     this.zombies = [];
     base.wallHp = sh.wallMax(base) * 0.3;
-    this.spawnTimer = BREACH_GRACE;
+    this.waveLeft = 0;
+    this.lull = BREACH_GRACE;
     this.game.state.stats.breaches += 1;
     const damaged = this.damageBuildings(base);
     const dmgText = damaged.length ? `，${damaged.length} 棟建築損毀` : '';

@@ -460,3 +460,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .auth-tabs .chip { flex: 1; font-size: 14px; padding: 8px 10px; }
 .status.warn { color: #ef9a9a; }
 .account-name { font-size: 16px; }
+.size-chip { display: inline-block; padding: 0 6px; margin-right: 2px; border-radius: 8px; border: 1px solid var(--sc); color: var(--sc); font-weight: 700; }
+.zone-tag { display: inline-block; padding: 0 6px; border-radius: 8px; border: 1px solid var(--zc); background: color-mix(in srgb, var(--zc) 22%, transparent); color: #fff; font-size: 12px; }
+.npc-pin { position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; font-size: 18px; border-radius: 30%; background: #3e2723e6; border: 2px solid #e53935; box-shadow: 0 0 10px #e5393588; }
+.npc-lv { position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-style: normal; font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 6px; background: #b71c1c; color: #fff; white-space: nowrap; }
+.vehicle-card.broken { opacity: .75; border-color: var(--danger); }
