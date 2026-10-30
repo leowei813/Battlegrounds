@@ -533,6 +533,7 @@ assert(migrated.version === 10 && migrated.bases.length === 1 && migrated.bases[
   hero.level = 50;
   hero.hp = null;
   hero.severe = false;
+  gn.territory.noticed = () => false; // 只測攻打本身，不讓路上經過的其他 NPC 警戒範圍影響結果
   const atk = gn.exploration.start(weak.id, ['leader'], 5, false, Date.now(), { kind: 'raid' });
   assert(atk.ok, '派隊攻打 NPC 據點');
   const coinsBefore = gn.state.player.coins;
