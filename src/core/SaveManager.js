@@ -170,8 +170,12 @@ export class SaveManager {
         || Object.keys(ITEM_MODELS)[0];
     });
     data.recruitBoard = data.recruitBoard || { list: [], refreshAt: 0 };
+    // v10：物品位置（倉庫或隊員背包）
+    (data.inventory?.items || []).forEach((it) => { if (!it.loc) it.loc = 'store'; });
     // v8：隨機結果種子
     data.rng = { ...newSeeds(), ...(data.rng || {}) };
+    // v10：與其他玩家的關係
+    data.relations = { players: {}, requestsIn: {}, requestsOut: {}, ...(data.relations || {}) };
     data.npcs = data.npcs || { list: [], nextSpawnAt: 0 };
     // v3 -> v4：品級改為 6 階（舊的灰色「普通」→「劣質」），裝備欄新增手套、鞋子、飾品
     if (v < 4) {

@@ -38,7 +38,7 @@ export class MapPanel {
 
   /** 多人資料更新：重畫其他玩家據點 */
   onWorld(players) {
-    this.service.renderOthers(players);
+    this.service.renderOthers(players, (id) => this.game.territory.relation(id));
     this.lastOverlay = '';
     if (this.ui.tab === 'map') this.renderOverlay();
   }
@@ -97,9 +97,10 @@ export class MapPanel {
           intro: `<p class="muted">守軍 Lv${n.level}・建議戰力 ${Math.round(g.npcs.power(n))} 以上。帶載具可以搬走更多物資。</p>`,
           vehicles: true,
           distanceM: sh ? haversine(sh.lat, sh.lon, n.lat, n.lon) : 0,
+          routeOption: true,
           confirmLabel: '進攻！',
-          onConfirm: (ids, _dur, _auto, vids) => {
-            const r = this.ui.result(g.exploration.start(n.id, ids, 5, false, Date.now(), { vehicleIds: vids, kind: 'raid' }));
+          onConfirm: (ids, _dur, _auto, vids, opts) => {
+            const r = this.ui.result(g.exploration.start(n.id, ids, 5, false, Date.now(), { vehicleIds: vids, kind: 'raid', ...opts }));
             if (r.ok) {
               m.close();
               this.renderMap(true);
@@ -140,26 +141,80 @@ export class MapPanel {
     if (!w?.available) return '';
     const n = w.others.length;
     const trips = w.others.reduce((s, p) => s + p.trips.filter((t) => t.endAt > Date.now()).length, 0);
-    return `<button class="world-chip" data-action="worldSettings">👥 附近玩家 ${n}・隊伍 ${trips}</button>`;
+    const reqs = Object.keys(this.game.territory.rel.requestsIn).length;
+    return `<button class="world-chip" data-action="worldSettings">👥 附近玩家 ${n}・隊伍 ${trips}${reqs ? `・🤝 ${reqs} 個友好請求` : ''}</button>`;
   }
 
   /** 其他玩家資訊 */
-  openPlayer(playerId) {
-    const p = this.game.world?.others.find((x) => x.id === playerId);
-    if (!p) return;
+  playerBody(p) {
+    const g = this.game;
+    const t = g.territory;
     const now = Date.now();
-    const trips = p.trips.filter((t) => t.endAt > now);
+    const rel = t.relation(p.id);
+    const trips = p.trips.filter((x) => x.endAt > now);
+    const relTag = { hostile: '<span class="tag tag-red">⚔️ 敵對</span>', friend: '<span class="tag tag-green">🤝 友好</span>', neutral: '<span class="tag">中立</span>' }[rel];
+    const incoming = !!t.rel.requestsIn[p.id];
+    const outgoing = !!t.rel.requestsOut[p.id];
+    const diplo = rel === 'friend'
+      ? btn('解除友好', 'unfriend', {}, { cls: 'btn-sm btn-ghost' })
+      : incoming
+        ? `${btn('🤝 接受友好', 'acceptFriend', {}, { cls: 'btn-sm btn-primary' })}${btn('拒絕', 'declineFriend', {}, { cls: 'btn-sm btn-ghost' })}`
+        : btn(outgoing ? '已提出友好（等待回覆）' : '🤝 提出友好', 'requestFriend', {}, { cls: 'btn-sm', disabled: outgoing });
+    return `<p>${relTag} 🏛️ 文明度 <b>${p.civ}</b>・據點 ${p.bases.length} 個・外出隊伍 ${trips.length} 支</p>
+      <div class="btn-row">${diplo}</div>
+      <div class="pick-list">${p.bases.map((b, i) => `<div class="pick-row"><span>${b.primary ? '⭐' : '🏴'} ${escapeHtml(b.name)}</span><small class="muted">警戒 ${b.alert}m・駐守 ${b.guards} 人</small>
+        <span>${btn('📍', 'fly', { i }, { cls: 'btn-xs btn-ghost' })}${rel === 'friend' ? '' : btn('⚔️ 攻擊', 'attackBase', { i }, { cls: 'btn-xs btn-danger' })}</span></div>`).join('')}</div>
+      ${trips.length ? `<div class="label">探索中</div><ul class="event-list">${trips.map((x) => `<li>${EXP_PHASES[tripProgress(x, now).phase].icon} 前往「${escapeHtml(x.target || '某處')}」・${x.members} 人・剩 ${formatDuration(x.endAt - now)}</li>`).join('')}</ul>` : ''}
+      <p class="muted">玩家之間預設中立：探索時會繞開對方的警戒範圍。攻擊後雙方變成敵對——敵對時經過對方有駐守人員的據點範圍會遭到攻擊。友好需要雙方同意，友好時不能互相攻擊。</p>`;
+  }
+
+  openPlayer(playerId) {
+    const g = this.game;
+    const p = g.world?.others.find((x) => x.id === playerId);
+    if (!p) return;
     this.ui.modal.open({
       title: `👤 ${p.name}`,
-      body: `<p>🏛️ 文明度 <b>${p.civ}</b>・據點 ${p.bases.length} 個・外出隊伍 ${trips.length} 支</p>
-        <div class="pick-list">${p.bases.map((b, i) => `<button class="pick-row" data-action="fly" data-i="${i}">${b.primary ? '⭐' : '🏴'} ${escapeHtml(b.name)}</button>`).join('')}</div>
-        ${trips.length ? `<div class="label">探索中</div><ul class="event-list">${trips.map((t) => `<li>${EXP_PHASES[tripProgress(t, now).phase].icon} 前往「${escapeHtml(t.target || '某處')}」・${t.members} 人・剩 ${formatDuration(t.endAt - now)}</li>`).join('')}</ul>` : ''}
-        <p class="muted">其他玩家自願公開的據點與隊伍，位置每 30 秒更新。</p>`,
-      onAction: (action, data, m) => {
-        if (action !== 'fly') return;
-        const b = p.bases[+data.i];
-        m.close();
-        this.service.focus(b.lat, b.lon, 17);
+      body: this.playerBody(p),
+      live: () => this.playerBody(g.world?.others.find((x) => x.id === playerId) || p),
+      onAction: async (action, data, m) => {
+        const t = g.territory;
+        if (action === 'fly') {
+          const b = p.bases[+data.i];
+          m.close();
+          this.service.focus(b.lat, b.lon, 17);
+        }
+        if (action === 'requestFriend') this.ui.result(await t.requestFriend(p.id, p.name));
+        if (action === 'acceptFriend') this.ui.result(await t.acceptFriend(p.id, p.name));
+        if (action === 'declineFriend') this.ui.result(t.declineFriend(p.id));
+        if (action === 'unfriend' && confirm(`確定解除與「${p.name}」的友好關係？`)) this.ui.result(await t.removeFriend(p.id));
+        if (action === 'attackBase') {
+          const b = p.bases[+data.i];
+          if (t.relation(p.id) !== 'hostile' && !confirm(`攻擊「${p.name}」後雙方會變成敵對。確定？`)) return;
+          this.openAttackPlayer(p, +data.i, b);
+          return;
+        }
+        if (this.ui.modal.current === m) m.update(this.playerBody(p));
+        this.onWorld(g.world?.others || []);
+      },
+    });
+  }
+
+  /** 派隊突襲其他玩家的據點 */
+  openAttackPlayer(p, index, b) {
+    const g = this.game;
+    const sh = g.shelter.primary();
+    const poiId = `pvp:${p.id}#${index}`;
+    openTeamPicker(this.ui, {
+      title: `⚔️ 突襲：${p.name}・${b.name}`,
+      intro: `<p class="muted">對方駐守 ${b.guards} 人（約 Lv${b.guardLevel}）。勝利可搶走物資（對方損失 10% 資源），帶載具可以搬更多。攻擊後雙方敵對。</p>`,
+      vehicles: true,
+      routeOption: true,
+      distanceM: sh ? haversine(sh.lat, sh.lon, b.lat, b.lon) : 0,
+      confirmLabel: '出發突襲！',
+      onConfirm: (ids, _dur, _auto, vids, opts) => {
+        const r = this.ui.result(g.exploration.start(poiId, ids, 5, false, Date.now(), { vehicleIds: vids, kind: 'pvp', ...opts }));
+        if (r.ok) this.renderMap(true);
+        return r;
       },
     });
   }
@@ -307,9 +362,10 @@ export class MapPanel {
       vehicles: true,
       distanceM: g.shelter.primary() ? haversine(g.shelter.primary().lat, g.shelter.primary().lon, poi.lat, poi.lon) : 0,
       estimate: (ids, dur, vids) => g.exploration.actualDurationMs(poi, ids.map((id) => g.survivors.get(id)), g.exploration.searchMinutes(poi), Date.now(), vids.map((id) => g.vehicles.get(id))),
+      routeOption: true,
       confirmLabel: '出發！',
-      onConfirm: (ids, dur, auto, vids) => {
-        const r = this.ui.result(g.exploration.start(poi.id, ids, dur, auto, Date.now(), { vehicleIds: vids }));
+      onConfirm: (ids, dur, auto, vids, opts) => {
+        const r = this.ui.result(g.exploration.start(poi.id, ids, dur, auto, Date.now(), { vehicleIds: vids, ...opts }));
         if (r.ok) this.renderMap(true);
         return r;
       },

@@ -38,6 +38,7 @@ export function openTeamPicker(ui, opts) {
   const available = game.state.survivors.filter((s) => game.survivors.isAvailable(s));
   const selected = new Set(available.slice(0, Math.min(2, MAX_TEAM_SIZE)).map((s) => s.id));
   const cars = new Set();
+  let avoidHostile = false;
   let duration = EXPLORE_DURATIONS[1];
   let auto = false;
   const autoUnlocked = game.research.hasUnlock('autoExplore');
@@ -67,6 +68,8 @@ export function openTeamPicker(ui, opts) {
       <div class="label">選擇隊員（最多 ${MAX_TEAM_SIZE} 人）・隊伍戰力 <b>${power}</b></div>
       <div class="pick-list">${rows || '<p class="muted">沒有倖存者</p>'}</div>
       ${vehicles}
+      ${opts.routeOption ? `<label class="toggle"><input type="checkbox" data-role="avoid" ${avoidHostile ? 'checked' : ''}> 🛡️ 也繞開敵對據點的警戒範圍（路程較長，但不會遭到駐守人員攻擊）</label>
+        <small class="muted block">預設會繞開中立與友好據點的警戒範圍；NPC 一律敵對。</small>` : ''}
       ${durs}
       <div class="btn-row end"><button class="btn btn-primary" data-action="confirm" ${ids.length ? '' : 'disabled'}>${opts.confirmLabel}</button></div>`;
   };
@@ -84,7 +87,7 @@ export function openTeamPicker(ui, opts) {
       } else if (action === 'dur') {
         duration = +data.d;
       } else if (action === 'confirm') {
-        const res = opts.onConfirm([...selected], duration, auto, [...cars]);
+        const res = opts.onConfirm([...selected], duration, auto, [...cars], { avoidHostile });
         if (res?.ok !== false) m.close();
         return;
       }
@@ -94,6 +97,7 @@ export function openTeamPicker(ui, opts) {
   });
   modal.body.addEventListener('change', (e) => {
     if (e.target.dataset.role === 'auto') auto = e.target.checked;
+    if (e.target.dataset.role === 'avoid') avoidHostile = e.target.checked;
   });
   return modal;
 }

@@ -18,13 +18,13 @@ export const rarityIndex = (r) => RARITY_ORDER.indexOf(r);
 
 export const SLOTS = {
   weapon: { name: '武器', icon: '🔫' },
-  helmet: { name: '頭盔', icon: '⛑️' },
-  armor: { name: '衣服', icon: '🦺' },
-  legs: { name: '護腿', icon: '👖' },
-  gloves: { name: '手套', icon: '🧤' },
-  boots: { name: '鞋子', icon: '🥾' },
-  backpack: { name: '背包', icon: '🎒' },
-  accessory: { name: '飾品', icon: '📿' },
+  helmet: { size: 2, weight: 2, name: '頭盔', icon: '⛑️' },
+  armor: { size: 3, weight: 5, name: '衣服', icon: '🦺' },
+  legs: { size: 2, weight: 3, name: '護腿', icon: '👖' },
+  gloves: { size: 1, weight: 1, name: '手套', icon: '🧤' },
+  boots: { size: 2, weight: 2, name: '鞋子', icon: '🥾' },
+  backpack: { size: 2, weight: 2, name: '背包', icon: '🎒' },
+  accessory: { size: 1, weight: 1, name: '飾品', icon: '📿' },
 };
 export const SLOT_KEYS = Object.keys(SLOTS);
 
@@ -35,17 +35,18 @@ export const emptyEquipment = () => Object.fromEntries(SLOT_KEYS.map((k) => [k, 
  * 裝備類別。base 為等級 1、強度 1 級的數值，perLevel 為每級成長；
  * 實際數值 = (base + perLevel × (等級−1)) × 型號強度倍率 × 品級素質倍率（負值不乘）。
  * gun：槍械製作需要研究「槍械製造」到該等級。
+ * size／weight：佔用的格子數與重量（型號可另外指定）。
  */
 export const ITEM_TYPES = {
   // ---- 武器 ----
-  melee: { name: '近戰武器', slot: 'weapon', icon: '🪓', base: { atk: 11, atkSpeed: 0.1, crit: 0.08, lifeSteal: 0.03 }, perLevel: { atk: 1.9 } },
-  crossbow: { name: '弓弩', slot: 'weapon', icon: '🏹', gun: 2, base: { atk: 18, atkSpeed: -0.2, crit: 0.12, critDmg: 0.2 }, perLevel: { atk: 2.8 } },
-  pistol: { name: '手槍', slot: 'weapon', icon: '🔫', gun: 1, base: { atk: 9, atkSpeed: 0.25, crit: 0.05 }, perLevel: { atk: 1.6 } },
-  smg: { name: '衝鋒槍', slot: 'weapon', icon: '🔫', gun: 3, base: { atk: 8, atkSpeed: 0.55, crit: 0.04 }, perLevel: { atk: 1.5 } },
-  shotgun: { name: '散彈槍', slot: 'weapon', icon: '💥', gun: 4, base: { atk: 22, atkSpeed: -0.15, crit: 0.03 }, perLevel: { atk: 3.6 } },
-  rifle: { name: '步槍', slot: 'weapon', icon: '🪖', gun: 5, base: { atk: 15, atkSpeed: 0.15, crit: 0.06 }, perLevel: { atk: 2.6 } },
-  sniper: { name: '狙擊槍', slot: 'weapon', icon: '🎯', gun: 7, base: { atk: 34, atkSpeed: -0.35, crit: 0.18, critDmg: 0.5 }, perLevel: { atk: 5 } },
-  lmg: { name: '輕機槍', slot: 'weapon', icon: '⚙️', gun: 9, base: { atk: 17, atkSpeed: 0.4, crit: 0.03 }, perLevel: { atk: 2.9 } },
+  melee: { size: 1, weight: 2, name: '近戰武器', slot: 'weapon', icon: '🪓', base: { atk: 11, atkSpeed: 0.1, crit: 0.08, lifeSteal: 0.03 }, perLevel: { atk: 1.9 } },
+  crossbow: { size: 2, weight: 4, name: '弓弩', slot: 'weapon', icon: '🏹', gun: 2, base: { atk: 18, atkSpeed: -0.2, crit: 0.12, critDmg: 0.2 }, perLevel: { atk: 2.8 } },
+  pistol: { size: 1, weight: 2, name: '手槍', slot: 'weapon', icon: '🔫', gun: 1, base: { atk: 9, atkSpeed: 0.25, crit: 0.05 }, perLevel: { atk: 1.6 } },
+  smg: { size: 2, weight: 4, name: '衝鋒槍', slot: 'weapon', icon: '🔫', gun: 3, base: { atk: 8, atkSpeed: 0.55, crit: 0.04 }, perLevel: { atk: 1.5 } },
+  shotgun: { size: 3, weight: 6, name: '散彈槍', slot: 'weapon', icon: '💥', gun: 4, base: { atk: 22, atkSpeed: -0.15, crit: 0.03 }, perLevel: { atk: 3.6 } },
+  rifle: { size: 3, weight: 6, name: '步槍', slot: 'weapon', icon: '🪖', gun: 5, base: { atk: 15, atkSpeed: 0.15, crit: 0.06 }, perLevel: { atk: 2.6 } },
+  sniper: { size: 4, weight: 8, name: '狙擊槍', slot: 'weapon', icon: '🎯', gun: 7, base: { atk: 34, atkSpeed: -0.35, crit: 0.18, critDmg: 0.5 }, perLevel: { atk: 5 } },
+  lmg: { size: 4, weight: 12, name: '輕機槍', slot: 'weapon', icon: '⚙️', gun: 9, base: { atk: 17, atkSpeed: 0.4, crit: 0.03 }, perLevel: { atk: 2.9 } },
   // ---- 防具 ----
   helmet: { name: '頭盔', slot: 'helmet', icon: '⛑️', base: { def: 4, hp: 20 }, perLevel: { def: 0.8, hp: 5 } },
   armor: { name: '衣服', slot: 'armor', icon: '🦺', base: { def: 7, hp: 40 }, perLevel: { def: 1.4, hp: 9 } },
@@ -65,8 +66,8 @@ export const ITEM_TYPES = {
 const m = (type, name, tier, opts = {}) => ({ type, name, tier, ...opts });
 export const ITEM_MODELS = {
   // 近戰
-  knuckles: m('melee', '拳套', 1, { icon: '🥊', simple: true }),
-  knife: m('melee', '小刀', 1, { icon: '🔪', simple: true }),
+  knuckles: m('melee', '拳套', 1, { icon: '🥊', simple: true, weight: 1 }),
+  knife: m('melee', '小刀', 1, { icon: '🔪', simple: true, weight: 1 }),
   cleaver: m('melee', '菜刀', 2, { icon: '🔪' }),
   bat: m('melee', '球棒', 3, { icon: '🏏' }),
   pipe: m('melee', '水管', 3, { icon: '🪈' }),
@@ -74,7 +75,7 @@ export const ITEM_MODELS = {
   machete: m('melee', '開山刀', 5, { icon: '🗡️' }),
   axe: m('melee', '斧頭', 6, { icon: '🪓' }),
   katana: m('melee', '武士刀', 8, { icon: '⚔️' }),
-  chainsaw: m('melee', '電鋸', 10, { icon: '🪚', fuel: 3 }),
+  chainsaw: m('melee', '電鋸', 10, { icon: '🪚', fuel: 3, size: 3, weight: 8 }),
   // 弓弩
   woodBow: m('crossbow', '簡易木弓', 1, { simple: true }),
   recurve: m('crossbow', '反曲弓', 2),
@@ -153,7 +154,7 @@ export const ITEM_MODELS = {
   pkm: m('lmg', 'PKM', 8),
   m60: m('lmg', 'M60', 8),
   mg4: m('lmg', 'MG4', 9),
-  m134: m('lmg', 'M134 迷你砲', 10),
+  m134: m('lmg', 'M134 迷你砲', 10, { size: 6, weight: 20 }),
   // 頭盔
   cap: m('helmet', '棒球帽', 1, { icon: '🧢', simple: true }),
   bikeHelmet: m('helmet', '機車安全帽', 2),
@@ -178,7 +179,7 @@ export const ITEM_MODELS = {
   vest2: m('armor', '二級甲', 7),
   vest3: m('armor', '三級甲', 8),
   ceramic: m('armor', '陶瓷插板背心', 9),
-  eodSuit: m('armor', '重型防爆服', 10),
+  eodSuit: m('armor', '重型防爆服', 10, { size: 4, weight: 10 }),
   // 護腿
   jeans: m('legs', '牛仔褲', 1, { simple: true }),
   sweatpants: m('legs', '運動褲', 1, { simple: true }),
@@ -215,14 +216,14 @@ export const ITEM_MODELS = {
   tacBoots: m('boots', '戰術短靴', 7),
   paraBoots: m('boots', '傘兵靴', 8),
   exoBoots: m('boots', '外骨骼靴', 10),
-  // 背包（七種大小）：carry 為增加的運載量
-  waistPack: m('backpack', '腰包', 1, { simple: true, extra: { carry: 10 } }),
-  schoolBag: m('backpack', '書包', 2, { simple: true, extra: { carry: 20 } }),
-  pack1: m('backpack', '一級包', 3, { extra: { carry: 35 } }),
-  hikingPack: m('backpack', '登山包', 5, { extra: { carry: 55 } }),
-  pack2: m('backpack', '二級包', 6, { extra: { carry: 75 } }),
-  militaryPack: m('backpack', '軍用背包', 8, { extra: { carry: 100 } }),
-  pack3: m('backpack', '三級包', 10, { extra: { carry: 140 } }),
+  // 背包（七種大小）：carry 為增加的負重，slots 為增加的物品格子
+  waistPack: m('backpack', '腰包', 1, { simple: true, extra: { carry: 10, slots: 2 } }),
+  schoolBag: m('backpack', '書包', 2, { simple: true, extra: { carry: 20, slots: 4 } }),
+  pack1: m('backpack', '一級包', 3, { extra: { carry: 35, slots: 6 } }),
+  hikingPack: m('backpack', '登山包', 5, { extra: { carry: 55, slots: 8 } }),
+  pack2: m('backpack', '二級包', 6, { extra: { carry: 75, slots: 10 } }),
+  militaryPack: m('backpack', '軍用背包', 8, { extra: { carry: 100, slots: 12 } }),
+  pack3: m('backpack', '三級包', 10, { extra: { carry: 140, slots: 16 } }),
   // 飾品
   luckyCoin: m('accessory', '幸運硬幣', 1, { simple: true }),
   photo: m('accessory', '家人的照片', 1, { simple: true }),
@@ -235,6 +236,15 @@ export const ITEM_MODELS = {
   nvg: m('accessory', '夜視鏡', 8),
 };
 export const MODEL_KEYS = Object.keys(ITEM_MODELS);
+
+/** 物品格子：隊員背包初始 10 格（背包裝備增加），倉庫初始 30 格（倉庫升級與研究增加） */
+export const BAG_BASE_SLOTS = 10;
+export const STORE_BASE_SLOTS = 30;
+export const STORE_SLOTS_PER_LEVEL = 10;
+
+/** 物品佔用的格子數與重量 */
+export const itemSize = (item) => ITEM_MODELS[item.model]?.size ?? ITEM_TYPES[item.type]?.size ?? 1;
+export const itemWeight = (item) => ITEM_MODELS[item.model]?.weight ?? ITEM_TYPES[item.type]?.weight ?? 1;
 
 /** 型號強度倍率：tier 1 = 1、tier 10 = 3.25 */
 export const tierMul = (tier) => 1 + (tier - 1) * 0.25;

@@ -1,6 +1,7 @@
 import {
   RARITIES, RARITY_ORDER, ITEM_TYPES, AFFIXES, RARITY_PREFIX, SLOT_KEYS, rarityIndex,
   ITEM_MODELS, tierMul, benchFor, craftRarityTable,
+  BAG_BASE_SLOTS, STORE_BASE_SLOTS, STORE_SLOTS_PER_LEVEL, itemSize, itemWeight,
 } from '../config/equipment.js';
 import {
   withSeed,
@@ -133,8 +134,98 @@ export class EquipmentSystem {
     );
   }
 
-  /** 加入背包並更新統計 */
-  addItem(item, source = '') {
+  // ---------- 物品空間（格子與重量） ----------
+
+  /** 是否穿戴中（穿戴中的裝備不佔格子） */
+  isWorn(item) {
+    return !!this.equippedBy(item.id);
+  }
+
+  /** 倉庫格子：初始 30，倉庫每升一級 +10，研究「倉儲擴建」再增加 */
+  storeCap() {
+    const wh = this.game.shelter.primary()?.facilities.warehouse.level || 1;
+    return STORE_BASE_SLOTS + Math.max(0, wh - 1) * STORE_SLOTS_PER_LEVEL + Math.floor(this.game.research.bonus('storeSlots'));
+  }
+
+  storeItems() {
+    return this.items.filter((i) => (i.loc || 'store') === 'store' && !this.isWorn(i));
+  }
+
+  storeUsed() {
+    return this.storeItems().reduce((s, i) => s + itemSize(i), 0);
+  }
+
+  /** 隊員背包的物品格子：初始 10，加上背包裝備的格數 */
+  bagSlotCap(sv) {
+    const bag = this.getItem(sv?.equipment?.backpack);
+    return BAG_BASE_SLOTS + (bag?.stats?.slots || 0);
+  }
+
+  bagItems(sv) {
+    return this.items.filter((i) => i.loc === sv.id && !this.isWorn(i));
+  }
+
+  bagSlotsUsed(sv) {
+    return this.bagItems(sv).reduce((s, i) => s + itemSize(i), 0);
+  }
+
+  /** 背包物品的總重量（計入負重） */
+  bagItemWeight(sv) {
+    return this.bagItems(sv).reduce((s, i) => s + itemWeight(i), 0);
+  }
+
+  /** 能否放進某處：倉庫看格子；隊員背包看格子與負重 */
+  fits(item, loc) {
+    const size = itemSize(item);
+    if (loc === 'store') return this.storeUsed() + size <= this.storeCap();
+    const sv = this.game.survivors.get(loc);
+    if (!sv) return false;
+    return this.bagSlotsUsed(sv) + size <= this.bagSlotCap(sv)
+      && this.game.survivors.bagLoad(sv) + itemWeight(item) <= this.game.survivors.bagCap(sv);
+  }
+
+  /** 找位置放：先倉庫，再依序放進 members 的背包；都放不下回傳 null */
+  placeFor(item, members = []) {
+    if (this.fits(item, 'store')) return 'store';
+    const sv = members.find((m) => this.fits(item, m.id));
+    return sv ? sv.id : null;
+  }
+
+  /** 移到倉庫（需在避難所） */
+  moveToStore(itemId) {
+    const item = this.getItem(itemId);
+    if (!item) return { ok: false, reason: '找不到物品' };
+    const owner = this.game.survivors.get(item.loc);
+    if (owner && !this.game.survivors.atShelter(owner)) return { ok: false, reason: '攜帶者不在避難所' };
+    if (!this.fits(item, 'store')) return { ok: false, reason: '倉庫空間不足' };
+    item.loc = 'store';
+    return { ok: true, msg: `「${item.name}」已放入倉庫` };
+  }
+
+  /** 交給隊員攜帶（需在避難所） */
+  moveToBag(itemId, svId) {
+    const item = this.getItem(itemId);
+    const sv = this.game.survivors.get(svId);
+    if (!item || !sv) return { ok: false, reason: '找不到目標' };
+    if (!this.game.survivors.atShelter(sv)) return { ok: false, reason: '不在避難所' };
+    if (this.isWorn(item)) return { ok: false, reason: '請先卸下裝備' };
+    if (!this.fits(item, svId)) return { ok: false, reason: '背包格子或負重不足' };
+    item.loc = svId;
+    return { ok: true, msg: `${sv.name} 攜帶了「${item.name}」` };
+  }
+
+  /**
+   * 加入物品並更新統計。倉庫放不下時，放進 members 的背包；都放不下則遺棄。
+   * @returns {boolean} 是否成功放入
+   */
+  addItem(item, source = '', members = []) {
+    const loc = this.placeFor(item, members);
+    if (!loc) {
+      this.game.log(`📦 倉庫與背包都沒有空間，${source}獲得的「${item.name}」被留下了`, 'danger');
+      this.game.toast(`📦 空間不足，「${item.name}」被留下了（擴充倉庫或攜帶更大的背包）`, 'danger');
+      return false;
+    }
+    item.loc = loc;
     this.items.push(item);
     const st = this.game.state.stats;
     st.itemsFound += 1;
@@ -146,7 +237,7 @@ export class EquipmentSystem {
     if (rarityIndex(item.rarity) >= rarityIndex('epic')) {
       this.game.log(`${source}獲得 ${RARITIES[item.rarity].name}裝備「${item.name}」`, 'loot');
     }
-    return item;
+    return true;
   }
 
   equip(survivorId, itemId) {
@@ -154,20 +245,46 @@ export class EquipmentSystem {
     const item = this.getItem(itemId);
     if (!sv || !item) return { ok: false, reason: '找不到目標' };
     if (sv.status === 'exploring') return { ok: false, reason: '探索中無法更換裝備' };
+    const prevLoc = item.loc || 'store';
+    const old = this.getItem(sv.equipment[item.slot]);
+    const owners = [];
     // 從其他人身上卸下
     this.game.state.survivors.forEach((s) => {
       SLOT_KEYS.forEach((slot) => {
-        if (s.equipment[slot] === itemId) s.equipment[slot] = null;
+        if (s.equipment[slot] === itemId) {
+          s.equipment[slot] = null;
+          owners.push([s, slot]);
+        }
       });
     });
     sv.equipment[item.slot] = itemId;
+    // 換下來的裝備放回新裝備原本的位置；放不下就放倉庫或自己的背包
+    if (old && old.id !== itemId) {
+      const loc = this.fits(old, prevLoc) ? prevLoc : this.placeFor(old, [sv]);
+      if (!loc) {
+        sv.equipment[item.slot] = old.id;
+        owners.forEach(([s, slot]) => { s.equipment[slot] = itemId; });
+        return { ok: false, reason: '換下的裝備沒有地方放（倉庫與背包已滿）' };
+      }
+      old.loc = loc;
+    }
     return { ok: true };
   }
 
+  /** 卸下：放回倉庫，倉庫滿了放進自己的背包 */
   unequip(survivorId, slot) {
     const sv = this.game.survivors.get(survivorId);
     if (!sv) return { ok: false, reason: '找不到倖存者' };
-    sv.equipment[slot] = null;
+    const item = this.getItem(sv.equipment[slot]);
+    if (item) {
+      sv.equipment[slot] = null;
+      const loc = this.game.survivors.atShelter(sv) ? this.placeFor(item, [sv]) : (this.fits(item, sv.id) ? sv.id : null);
+      if (!loc) {
+        sv.equipment[slot] = item.id;
+        return { ok: false, reason: '倉庫與背包都沒有空間' };
+      }
+      item.loc = loc;
+    }
     return { ok: true };
   }
 
@@ -283,6 +400,7 @@ export class EquipmentSystem {
     if (bp && bp.model !== modelId) return { ok: false, reason: '設計圖型號不符' };
     const check = this.canCraftModel(modelId, !!bp);
     if (!check.ok) return check;
+    if (!this.fits({ model: modelId, type: md.type }, 'store')) return { ok: false, reason: `倉庫空間不足（${this.storeUsed()}/${this.storeCap()} 格）` };
     const cost = this.craftCost(modelId, !!bp);
     if (!payCost(this.game.state, cost)) return { ok: false, reason: '資源不足' };
     if (bp) this.game.state.inventory.blueprints = bpList.filter((b) => b.id !== bp.id);

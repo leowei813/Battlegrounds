@@ -9,6 +9,7 @@ import { SiegeMapLayer } from './SiegeMapLayer.js';
 import { PoiCanvasLayer } from './PoiCanvasLayer.js';
 import { ZoneLayer } from './ZoneLayer.js';
 import { dayKey } from '../systems/LootStock.js';
+import { npcAlert } from '../systems/TerritorySystem.js';
 
 /**
  * 真實地圖（Leaflet + OpenStreetMap 圖磚）。
@@ -125,6 +126,10 @@ export class MapService {
     this.npcKey = key;
     this.layers.npcs.clearLayers();
     list.forEach((n) => {
+      // NPC 一律敵對：紅色警戒範圍
+      L.circle([n.lat, n.lon], {
+        radius: npcAlert(n), color: '#e53935', weight: 1, dashArray: '3 5', fillColor: '#e53935', fillOpacity: 0.05, interactive: false,
+      }).addTo(this.layers.npcs);
       L.marker([n.lat, n.lon], {
         icon: this.icon(`<div class="npc-pin">🏴‍☠️<i class="npc-lv">Lv${n.level}</i></div>`, 'shelter-icon', 34),
         zIndexOffset: 850,
@@ -135,14 +140,20 @@ export class MapService {
   }
 
   /** 其他玩家公開的據點（多人互動） */
-  renderOthers(players = []) {
+  renderOthers(players = [], relationOf = () => 'neutral') {
     if (!this.map) return;
     this.layers.others.clearLayers();
+    const COLORS = { hostile: '#e53935', friend: '#43a047', neutral: '#26c6da' };
     players.forEach((p) => p.bases.forEach((b) => {
-      const { icon, d } = this.baseIcon(b.size, b.primary, 'other-pin');
+      const rel = relationOf(p.id);
+      // 警戒範圍：敵對紅、友好綠、中立青
+      L.circle([b.lat, b.lon], {
+        radius: b.alert || BASE_SIZES[b.size]?.alert || 80, color: COLORS[rel], weight: 1, dashArray: '3 5', fillColor: COLORS[rel], fillOpacity: 0.05, interactive: false,
+      }).addTo(this.layers.others);
+      const { icon, d } = this.baseIcon(b.size, b.primary, `other-pin rel-${rel}`);
       L.marker([b.lat, b.lon], { icon, zIndexOffset: 800 })
         .on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
-        .bindTooltip(`👤 ${escapeHtml(p.name)}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）`, { direction: 'top', offset: [0, -d / 2] })
+        .bindTooltip(`${{ hostile: '⚔️ 敵對', friend: '🤝 友好', neutral: '👤 中立' }[rel]}・${escapeHtml(p.name)}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）`, { direction: 'top', offset: [0, -d / 2] })
         .addTo(this.layers.others);
     }));
   }
@@ -158,6 +169,10 @@ export class MapService {
     }
     state.bases.forEach((b) => {
       const primary = b === sh;
+      // 自己據點的警戒範圍
+      L.circle([b.lat, b.lon], {
+        radius: this.game.territory.alertRadius(b), color: '#ffd54f', weight: 1, dashArray: '2 4', fillOpacity: 0, interactive: false,
+      }).addTo(this.layers.range);
       const { icon, d } = this.baseIcon(b.size, primary, 'shelter-pin');
       L.marker([b.lat, b.lon], { icon, zIndexOffset: primary ? 1000 : 900, title: b.name })
         .on('click', () => bus.emit(EVT.OPEN_POI, { poiId: b.poiId }))
@@ -181,7 +196,7 @@ export class MapService {
         const p = this.game.exploration.poi(ex.poiId);
         if (!p) return;
         const from = ex.from || sh;
-        L.polyline([[from.lat, from.lon], [p.lat, p.lon]], {
+        L.polyline(ex.path ? ex.path.map((q) => [q.lat, q.lon]) : [[from.lat, from.lon], [p.lat, p.lon]], {
           color: '#ffd54f', weight: 3, dashArray: '4 8', className: 'route-line',
         }).addTo(this.layers.routes);
       });

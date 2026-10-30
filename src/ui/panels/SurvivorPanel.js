@@ -147,8 +147,17 @@ export class SurvivorPanel {
         </div>
         <div class="bag-cell store"><span>${RESOURCES[k].icon}</span><small>倉庫</small><b>${Math.floor(res[k])}</b></div>` : ''}
       </div>`).join('');
-    return `<h4>🎒 背包 <small class="muted">負重 ${Math.floor(load)} / ${cap}（徒步 ${g.vehicles.personCarry()} + 背包裝備）</small></h4>
-      ${progressBar(cap ? load / cap : 0, load >= cap ? 'danger' : '', `${Math.floor(load)}/${cap}`)}
+    const eq = g.equipment;
+    const items = eq.bagItems(sv);
+    const itemRows = items.map((it) => itemCard(it, {
+      compact: true,
+      actions: `${btn('裝備', 'equipBag', { item: it.id }, { cls: 'btn-xs btn-primary' })}${home ? btn('放回倉庫', 'itemToStore', { item: it.id }, { cls: 'btn-xs' }) : ''}`,
+    })).join('');
+    return `<h4>🎒 背包 <small class="muted">負重 ${Math.floor(load)} / ${cap}（徒步 ${g.vehicles.personCarry()} + 背包裝備）・物品 ${eq.bagSlotsUsed(sv)} / ${eq.bagSlotCap(sv)} 格</small></h4>
+      ${items.length ? `<div class="grid compact-grid">${itemRows}</div>` : '<p class="muted">背包裡沒有物品（物品佔用格子與重量；背包裝備可增加格數）。</p>'}
+      ${home ? `<div class="btn-row">${btn(`📦 從倉庫拿物品（倉庫 ${eq.storeUsed()}/${eq.storeCap()} 格）`, 'pickFromStore', {}, { cls: 'btn-sm' })}</div>` : ''}
+      <h4>🥫 攜帶的資源</h4>
+      ${progressBar(cap ? load / cap : 0, load >= cap ? 'danger' : '', `負重 ${Math.floor(load)}/${cap}`)}
       ${home ? `<div class="row-between bag-head"><small>隊員背包</small><small>◀ 取出・存入 ▶</small><small>📦 倉庫（上限 ${storage}）</small></div>` : '<p class="muted">不在避難所，無法存取倉庫。</p>'}
       <div class="bag-grid ${home ? 'with-store' : ''}">${rows}</div>
       ${home && load ? `<div class="btn-row end">${btn('全部存入倉庫', 'bagAll', {}, { cls: 'btn-sm' })}</div>` : ''}`;
@@ -169,6 +178,12 @@ export class SurvivorPanel {
           g.changed();
         }
         if (action === 'bagAll') this.ui.result(g.survivors.depositAll(id));
+        if (action === 'equipBag') this.ui.result(g.equipment.equip(id, data.item));
+        if (action === 'itemToStore') this.ui.result(g.equipment.moveToStore(data.item));
+        if (action === 'pickFromStore') {
+          this.pickFromStore(id);
+          return;
+        }
         if (action === 'job') this.ui.result(g.survivors.setJob(id, data.job));
         if (action === 'heal') this.ui.result(g.survivors.heal(id));
         if (action === 'unequip') this.ui.result(g.equipment.unequip(id, data.slot));
@@ -181,6 +196,26 @@ export class SurvivorPanel {
           return;
         }
         m.update(this.detailBody(id));
+      },
+    });
+  }
+
+  /** 從倉庫挑物品放進隊員背包 */
+  pickFromStore(svId) {
+    const g = this.game;
+    const eq = g.equipment;
+    const body = () => {
+      const list = eq.storeItems();
+      return list.length ? `<div class="grid">${list.map((it) => itemCard(it, { compact: true, actions: btn('放進背包', 'take', { id: it.id }, { cls: 'btn-xs btn-primary' }) })).join('')}</div>`
+        : '<p class="muted">倉庫沒有物品。</p>';
+    };
+    this.ui.modal.open({
+      title: `📦 倉庫 → ${g.survivors.get(svId)?.name || ''} 的背包`,
+      body: body(),
+      onAction: (action, data, m) => {
+        if (action !== 'take') return;
+        const r = this.ui.result(eq.moveToBag(data.id, svId));
+        if (r.ok) m.update(body());
       },
     });
   }

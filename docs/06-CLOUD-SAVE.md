@@ -86,6 +86,8 @@ VITE_SUPABASE_ANON_KEY=sb_publishable_...（或舊版 eyJ... anon key）
 | PUT | `/api/world/players/:id` | 多人互動：上傳公開資料 `{ name, civ, bases, trips }`（Bearer = 玩家 token） |
 | DELETE | `/api/world/players/:id` | 多人互動：取消公開（Bearer = 玩家 token） |
 | GET | `/api/world/nearby?lat=&lon=&km=` | 多人互動：附近玩家（3 天未更新者不列出） |
+| POST | `/api/world/players/:id/events` | 送出事件 `{ from, type, data }`（attack／friendRequest／friendAccept／friendRemove；Bearer = 寄件者 token） |
+| GET | `/api/world/players/:id/events` | 讀取並清空自己的事件信箱（Bearer = 本人 token） |
 
 驗證：`Authorization: Bearer <token>`。
 - `id = sha256("jdqs-acct:" + 帳號)` 取前 32 字元
@@ -110,3 +112,5 @@ VITE_SUPABASE_ANON_KEY=sb_publishable_...（或舊版 eyJ... anon key）
 ## 多人互動
 多人互動與雲端存檔共用同一個後端：內建伺服器會把資料寫到 `DATA_DIR/world.json`；Supabase 則需執行 `supabase/schema.sql` 中新增的 `jdqs_world` 資料表與 3 個 RPC。
 GitHub Pages 版預設 `VITE_CLOUD_PROVIDER=none`，沒有後端時多人互動不會啟用。
+
+v7.0.0 起新增事件信箱：Supabase 需重新執行 `supabase/schema.sql`（新增 `jdqs_world_events` 資料表與 `jdqs_world_send`、`jdqs_world_inbox` 兩個 RPC）。

@@ -6,6 +6,9 @@ import crypto from 'node:crypto';
 const STALE_MS = 3 * 24 * 60 * 60 * 1000;
 const MAX_BASES = 5;
 const MAX_TRIPS = 10;
+/** 玩家之間的事件（攻擊、友好請求…） */
+const EVENT_TYPES = new Set(['attack', 'friendRequest', 'friendAccept', 'friendRemove']);
+const MAX_INBOX = 50;
 
 const num = (v, min, max) => (Number.isFinite(v) && v >= min && v <= max ? v : null);
 const str = (v, len) => String(v ?? '').replace(/[\u0000-\u001f]/g, '').slice(0, len);
@@ -19,7 +22,15 @@ const point = (p) => {
 export function sanitizePresence(body) {
   const bases = (Array.isArray(body?.bases) ? body.bases : []).slice(0, MAX_BASES).map((b) => {
     const p = point(b);
-    return p && { ...p, name: str(b.name, 40), primary: !!b.primary, size: str(b.size, 10) };
+    return p && {
+      ...p,
+      name: str(b.name, 40),
+      primary: !!b.primary,
+      size: str(b.size, 10),
+      alert: num(b.alert, 0, 500) ?? 80, // 警戒範圍（公尺）
+      guards: num(b.guards, 0, 20) ?? 0, // 駐守人數
+      guardLevel: num(b.guardLevel, 1, 60) ?? 1,
+    };
   }).filter(Boolean);
   if (!bases.length) return null;
   const trips = (Array.isArray(body?.trips) ? body.trips : []).slice(0, MAX_TRIPS).map((t) => {
@@ -28,8 +39,9 @@ export function sanitizePresence(body) {
     const startAt = num(t.startAt, 0, 9e15);
     const endAt = num(t.endAt, 0, 9e15);
     if (!from || !to || startAt == null || endAt == null || endAt <= startAt) return null;
+    const path = (Array.isArray(t.path) ? t.path : []).slice(0, 20).map(point).filter(Boolean);
     return {
-      from, to, startAt, endAt,
+      from, to, startAt, endAt, ...(path.length >= 2 ? { path } : {}),
       travelMs: num(t.travelMs, 0, 1e9) ?? 0,
       searchMs: num(t.searchMs, 0, 1e9) ?? endAt - startAt,
       members: num(t.members, 1, 10) ?? 1,
@@ -80,7 +92,9 @@ export class WorldStore {
     if (!data) return 'invalid';
     const rec = this.players.get(id);
     if (rec && !WorldStore.matches(rec, token)) return 'forbidden';
-    this.players.set(id, { id, tokenHash: rec?.tokenHash || token, ...data, updatedAt: Date.now() });
+    this.players.set(id, {
+      id, tokenHash: rec?.tokenHash || token, ...data, inbox: rec?.inbox || [], updatedAt: Date.now(),
+    });
     this.persistSoon();
     return 'ok';
   }
@@ -92,6 +106,34 @@ export class WorldStore {
     this.players.delete(id);
     this.persistSoon();
     return 'ok';
+  }
+
+  /**
+   * 送出事件給另一位玩家（寄件者需以自己的 token 驗證）。
+   * @returns {'ok'|'forbidden'|'notfound'|'invalid'}
+   */
+  send(fromId, token, toId, body) {
+    const from = this.players.get(fromId);
+    if (!from || !WorldStore.matches(from, token)) return 'forbidden';
+    const to = this.players.get(toId);
+    if (!to) return 'notfound';
+    const type = str(body?.type, 20);
+    if (!EVENT_TYPES.has(type) || fromId === toId) return 'invalid';
+    const data = body?.data && typeof body.data === 'object' ? JSON.parse(JSON.stringify(body.data).slice(0, 2000)) : {};
+    to.inbox = [...(to.inbox || []), { from: fromId, fromName: from.name, type, data, at: Date.now() }].slice(-MAX_INBOX);
+    this.persistSoon();
+    return 'ok';
+  }
+
+  /** 讀取並清空自己的事件信箱 */
+  take(id, token) {
+    const rec = this.players.get(id);
+    if (!rec) return { status: 'ok', events: [] };
+    if (!WorldStore.matches(rec, token)) return { status: 'forbidden' };
+    const events = rec.inbox || [];
+    rec.inbox = [];
+    if (events.length) this.persistSoon();
+    return { status: 'ok', events };
   }
 
   /** 任一據點在範圍內的玩家（不含自己、不含過期資料） */
@@ -107,7 +149,7 @@ export class WorldStore {
         return;
       }
       if (!p.bases.some((b) => Math.abs(b.lat - lat) <= dLat && Math.abs(b.lon - lon) <= dLon)) return;
-      const { tokenHash, ...pub } = p;
+      const { tokenHash, inbox, ...pub } = p;
       out.push(pub);
     });
     return out.slice(0, 100);

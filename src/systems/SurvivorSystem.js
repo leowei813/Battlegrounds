@@ -253,8 +253,9 @@ export class SurvivorSystem {
     const sv = this.get(id);
     if (!sv) return;
     SLOT_KEYS.forEach((slot) => { sv.equipment[slot] = null; });
-    // 攜帶的物資留在倉庫
+    // 攜帶的物資與物品留在倉庫
     Object.entries(sv.bag || {}).forEach(([k, v]) => { this.game.state.resources[k] += v; });
+    this.game.equipment.items.forEach((it) => { if (it.loc === id) it.loc = 'store'; });
     this.game.state.bases.forEach((b) => b.defenses.forEach((d) => {
       if (d.garrisonId === id) d.garrisonId = null;
     }));
@@ -450,7 +451,7 @@ export class SurvivorSystem {
 
   /** 目前負重（攜帶資源總量） */
   bagLoad(sv) {
-    return Object.values(this.bagOf(sv)).reduce((s, v) => s + v, 0);
+    return Object.values(this.bagOf(sv)).reduce((s, v) => s + v, 0) + this.game.equipment.bagItemWeight(sv);
   }
 
   /** 負重上限：徒步運載量 + 背包容量 */

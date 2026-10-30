@@ -35,7 +35,19 @@ export class SettingsPanel {
     return `<div class="card">
       <p>在地圖上可以看見附近 5 公里內其他玩家的<b>據點</b>與<b>探索隊伍</b>（${status}・目前 ${w.others.length} 位）。</p>
       <small class="muted block">⚠️ 所有玩家的據點與探索隊伍都會公開：附近玩家會看到據點位置與你的玩家名稱「${escapeHtml(this.game.state.player.name)}」。據點是真實地圖上的建築，建議不要設在住家。</small>
-    </div>`;
+    </div>
+    ${this.renderRelations()}`;
+  }
+
+  /** 外交：收到的友好請求、友好與敵對玩家 */
+  renderRelations() {
+    const r = this.game.territory.rel;
+    const reqs = Object.entries(r.requestsIn).map(([id, x]) => `<div class="row-between"><span>🤝 「${escapeHtml(x.name)}」想建立友好</span>
+      <span>${btn('接受', 'relAccept', { id }, { cls: 'btn-xs btn-primary' })}${btn('拒絕', 'relDecline', { id }, { cls: 'btn-xs btn-ghost' })}</span></div>`).join('');
+    const list = Object.entries(r.players).map(([id, x]) => `<div class="row-between"><span>${x.status === 'friend' ? '🤝 友好' : '⚔️ 敵對'}：${escapeHtml(x.name || '玩家')}</span>
+      ${x.status === 'friend' ? btn('解除', 'relRemove', { id }, { cls: 'btn-xs btn-ghost' }) : btn('🤝 提出友好', 'relRequest', { id, name: x.name || '' }, { cls: 'btn-xs', disabled: !!r.requestsOut[id] })}</div>`).join('');
+    if (!reqs && !list) return '<p class="muted">與所有玩家都是中立。點地圖上其他玩家的據點可以提出友好或發動攻擊；NPC 一律敵對。</p>';
+    return `<div class="card">${reqs}${list}</div>`;
   }
 
   /** 帳號與雲端存檔區塊 */
@@ -129,7 +141,7 @@ export class SettingsPanel {
     });
   }
 
-  onAction(action) {
+  onAction(action, data = {}) {
     const g = this.game;
     if (action === 'changelog') {
       showChangelog(this.ui);
@@ -139,6 +151,15 @@ export class SettingsPanel {
       g.save();
       lockDevice();
       location.reload();
+      return;
+    }
+    if (action.startsWith('rel')) {
+      const t = g.territory;
+      const run = {
+        relAccept: () => t.acceptFriend(data.id), relDecline: () => t.declineFriend(data.id),
+        relRemove: () => t.removeFriend(data.id), relRequest: () => t.requestFriend(data.id, data.name),
+      }[action];
+      Promise.resolve(run?.()).then((res) => { this.ui.result(res); this.ui.refresh(true); });
       return;
     }
     if (action.startsWith('cloud')) {

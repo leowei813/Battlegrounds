@@ -80,6 +80,22 @@ export class SelfHostProvider {
     return this.check(status, body).players || [];
   }
 
+  /** 送出事件給其他玩家（攻擊、友好請求…） */
+  async worldSend(fromId, token, toId, type, data = {}) {
+    const { status, body } = await fetchJson(this.url(`/world/players/${toId}/events`), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: fromId, type, data }),
+    });
+    this.check(status, body);
+  }
+
+  /** 讀取並清空自己的事件信箱 */
+  async worldInbox(id, token) {
+    const { status, body } = await fetchJson(this.url(`/world/players/${id}/events`), { headers: { Authorization: `Bearer ${token}` } });
+    return this.check(status, body).events || [];
+  }
+
   /**
    * 即時訂閱存檔版本變化。
    * @returns {(() => void)|null} 取消訂閱函式；不支援時回傳 null（改用輪詢）

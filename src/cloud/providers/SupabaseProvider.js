@@ -88,4 +88,17 @@ export class SupabaseProvider {
     });
     return body.players || [];
   }
+
+  /** 送出事件給其他玩家（攻擊、友好請求…） */
+  async worldSend(fromId, token, toId, type, data = {}) {
+    await this.rpc('jdqs_world_send', {
+      p_from: fromId, p_token: token, p_to: toId, p_type: type, p_data: data,
+    });
+  }
+
+  /** 讀取並清空自己的事件信箱 */
+  async worldInbox(id, token) {
+    const body = await this.rpc('jdqs_world_inbox', { p_id: id, p_token: token });
+    return body.events || [];
+  }
 }

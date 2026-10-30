@@ -116,6 +116,7 @@ export function createInitialState({ playerName, classId, lat, lon }) {
     vehicles: [], // 車庫（見 VehicleSystem）
     rng: newSeeds(), // 製作、招募、探索、戰鬥的隨機種子（重新讀檔結果不變）
     npcs: { list: [], nextSpawnAt: 0 }, // NPC 據點（見 NpcSystem）
+    relations: { players: {}, requestsIn: {}, requestsOut: {} }, // 與其他玩家的關係（見 TerritorySystem）
     research: { levels: {}, active: null }, // 科技等級（見 ResearchSystem）
     quests: { mainIndex: 0, mainClaimable: false, dailyDate: '', dailies: [], achievements: {} },
     stats: Object.fromEntries(STAT_KEYS.map((k) => [k, 0])),
