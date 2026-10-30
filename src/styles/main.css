@@ -186,7 +186,6 @@ h4 { margin: 14px 0 6px; font-size: 14px; color: #c5e1a5; }
 .zombie-pin span { position: absolute; bottom: -4px; right: -6px; font-size: 10px; background: #000; color: #fff; border-radius: 6px; padding: 0 3px; }
 .zombie-pin.elite { border-color: #ffd54f; }
 .zombie-pin.boss { width: 40px; height: 40px; font-size: 22px; border-color: #e040fb; background: #4a148ccc; }
-.shelter-pin { width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; font-size: 26px; border-radius: 50%; background: #33691ee6; border: 3px solid var(--accent); box-shadow: 0 0 16px #ffb300aa; }
 .route-line { animation: dash 1s linear infinite; }
 .legend-row { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
 .danger { color: #ef5350; letter-spacing: -1px; }
@@ -350,7 +349,6 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .civ-parts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; margin: 4px 0; }
 .bar.civ .bar-fill { background: linear-gradient(90deg, #ff8f00, #ffd54f); }
 .danger-row { margin-top: 6px; }
-.shelter-pin.outpost { width: 36px; height: 36px; font-size: 18px; background: #5d4037e6; border-width: 2px; box-shadow: 0 0 8px #ffb30066; }
 .costs.inline { display: inline-flex; }
 @media (max-width: 600px) {
   .hud-left .civ-badge { align-self: center; }
@@ -430,8 +428,6 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 @media (max-width: 600px) { .hud-left .starve-badge { align-self: center; } }
 
 /* ---------- Multiplayer ---------- */
-.other-pin { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 15px; border-radius: 50%; background: #006064e6; border: 2px solid #4dd0e1; box-shadow: 0 0 8px #00acc188; }
-.other-pin.primary { width: 36px; height: 36px; font-size: 19px; border-width: 3px; }
 .world-chip { position: absolute; left: 10px; bottom: 48px; border: 1px solid #4dd0e1; background: #004d40e6; color: #e0f7fa; border-radius: 14px; padding: 5px 12px; font: inherit; font-size: 12px; cursor: pointer; max-width: calc(100% - 20px); }
 .world-chip.invite { animation: pulse 1.6s infinite; }
 .hud-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
@@ -445,3 +441,18 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .hud-left .clock small { display: none; }
   .hud-left .hud-badges { flex: 0 1 auto; justify-content: flex-end; }
 }
+/* 據點圖示：依規模換圖示與大小 */
+.shelter-pin, .other-pin { --d: 36px; position: relative; width: var(--d); height: var(--d); display: flex; align-items: center; justify-content: center; font-size: calc(var(--d) * 0.55); border-radius: 50%; border: 2px solid; box-sizing: border-box; }
+.shelter-pin { background: #5d4037e6; border-color: var(--accent); box-shadow: 0 0 8px #ffb30066; }
+.shelter-pin.primary { background: #33691ee6; border-width: 3px; box-shadow: 0 0 16px #ffb300aa; }
+.other-pin { background: #006064e6; border-color: #4dd0e1; box-shadow: 0 0 8px #00acc188; }
+.other-pin.primary { border-width: 3px; }
+.shelter-pin.size-huge, .other-pin.size-huge { border-radius: 30%; }
+.shelter-pin.size-large, .other-pin.size-large { border-radius: 38%; }
+.size-tag, .star-tag { position: absolute; font-style: normal; line-height: 1; }
+.size-tag { right: -5px; bottom: -5px; font-size: 10px; font-weight: 700; padding: 2px 3px; border-radius: 6px; background: #111d; color: #fff; border: 1px solid currentColor; }
+.size-small .size-tag { color: #b0bec5; }
+.size-medium .size-tag { color: #9ccc65; }
+.size-large .size-tag { color: #42a5f5; }
+.size-huge .size-tag { color: #ffa726; }
+.star-tag { left: -5px; top: -6px; font-size: 13px; }

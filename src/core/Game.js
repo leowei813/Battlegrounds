@@ -165,21 +165,28 @@ export class Game {
    * 取得附近建築（OSM → 失敗則程序化）
    * @param {(done:number,total:number)=>void} [onProgress] 分區查詢進度
    */
-  async scanMap(lat, lon, onProgress) {
+  async scanMap(lat, lon, onProgress, { quick = false, maxWaitMs = 0 } = {}) {
     let pois = [];
     let source = 'overpass';
     try {
-      pois = await fetchPois(lat, lon, POI_SCAN_RADIUS, onProgress);
+      const req = fetchPois(lat, lon, POI_SCAN_RADIUS, onProgress, { buildings: !quick });
+      pois = maxWaitMs
+        ? await Promise.race([req, new Promise((_, rej) => setTimeout(() => rej(new Error('quick scan timeout')), maxWaitMs))])
+        : await req;
     } catch (err) {
       console.warn('[Game] Overpass failed, using generated POIs', err);
       source = 'generated';
     }
     pois = fillPois(pois, lat, lon);
     const map = this.state.map;
-    // 保留所有據點所在的 POI，避免重新掃描後消失
-    this.state.bases.forEach((b) => {
-      const basePoi = map.pois.find((p) => p.id === b.poiId);
-      if (basePoi && !pois.some((p) => p.id === basePoi.id)) pois.push(basePoi);
+    const old = new Map(map.pois.map((p) => [p.id, p]));
+    // 同一棟建築保留今日搜刮紀錄
+    pois.forEach((p) => { if (old.get(p.id)?.lootedDay) p.lootedDay = old.get(p.id).lootedDay; });
+    // 保留據點與探索中目的地的 POI，避免重新掃描後消失
+    const keep = new Set([...this.state.bases.map((b) => b.poiId), ...this.state.expeditions.map((e) => e.poiId)]);
+    keep.forEach((id) => {
+      const p = old.get(id);
+      if (p && !pois.some((q) => q.id === id)) pois.push(p);
     });
     Object.assign(map, {
       center: { lat, lon }, pois, source, fetchedAt: Date.now(), zombieGroups: [], lastZombieRefresh: 0,

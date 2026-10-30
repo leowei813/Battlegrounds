@@ -62,10 +62,10 @@ export const BREACH_BUILDING_DAMAGE_CHANCE = 0.3;
  * 據點規模：決定可建造的防禦建築數量（設施固定 8 種）。最大的「巨型」據點共可建造 20 棟建築。
  */
 export const BASE_SIZES = {
-  small: { name: '小型', slots: 4 },
-  medium: { name: '中型', slots: 6 },
-  large: { name: '大型', slots: 9 },
-  huge: { name: '巨型', slots: 12 },
+  small: { name: '小型', slots: 4, icon: '⛺', pin: 30 },
+  medium: { name: '中型', slots: 6, icon: '🏘️', pin: 36 },
+  large: { name: '大型', slots: 9, icon: '🏢', pin: 42 },
+  huge: { name: '巨型', slots: 12, icon: '🏰', pin: 50 },
 };
 export const FACILITY_COUNT = 8;
 

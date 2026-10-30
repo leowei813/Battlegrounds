@@ -1,3 +1,4 @@
+import { BASE_SIZES } from '../config/civilization.js';
 import { bus } from '../core/EventBus.js';
 import { sha256 } from '../utils/sha256.js';
 import { uid } from '../utils/math.js';
@@ -15,7 +16,10 @@ const validPoint = (p) => p && finite(p.lat) && finite(p.lon) && Math.abs(p.lat)
 function cleanPlayer(p) {
   if (!p || typeof p !== 'object') return null;
   const bases = (Array.isArray(p.bases) ? p.bases : []).filter(validPoint).slice(0, 5)
-    .map((b) => ({ lat: b.lat, lon: b.lon, name: String(b.name || '').slice(0, 40), primary: !!b.primary }));
+    .map((b) => ({
+      lat: b.lat, lon: b.lon, name: String(b.name || '').slice(0, 40), primary: !!b.primary,
+      size: BASE_SIZES[b.size] ? b.size : 'medium',
+    }));
   if (!bases.length) return null;
   const trips = (Array.isArray(p.trips) ? p.trips : []).slice(0, 10).filter((t) => validPoint(t?.from) && validPoint(t?.to)
     && finite(t.startAt) && finite(t.endAt) && t.endAt > t.startAt)
@@ -31,7 +35,7 @@ function cleanPlayer(p) {
 
 /**
  * 多人互動：把自己的據點與探索隊伍公開給附近玩家，並顯示附近其他玩家。
- * 需要伺服器（內建 server/ 或 Supabase）；公開與否由玩家自行選擇（預設不公開）。
+ * 需要伺服器（內建 server/ 或 Supabase）；所有玩家一律公開。
  */
 export class WorldSync {
   /**
@@ -51,9 +55,9 @@ export class WorldSync {
     return !!this.provider;
   }
 
-  /** 是否公開自己（undefined = 尚未選擇） */
+  /** 所有玩家一律公開據點與探索隊伍 */
   get sharing() {
-    return this.game.state.settings.shareWorld === true;
+    return true;
   }
 
   /** 玩家身分：存在存檔中（雲端同步後各裝置相同），token 只上傳雜湊 */
@@ -113,17 +117,5 @@ export class WorldSync {
       this.error = err.message;
     }
     bus.emit(WORLD_EVT, this.others);
-  }
-
-  /** 開啟/關閉公開；關閉時從世界上移除自己 */
-  async setSharing(on) {
-    this.game.state.settings.shareWorld = !!on;
-    this.game.changed();
-    if (!this.provider) return;
-    if (!on) {
-      const { id, token } = this.identity();
-      await this.provider.worldDelete(id, token).catch(() => {});
-    }
-    await this.sync();
   }
 }

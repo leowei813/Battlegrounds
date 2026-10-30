@@ -2,6 +2,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ALL_ENEMIES } from '../config/enemies.js';
 import { POI_SCAN_RADIUS } from '../config/constants.js';
+import { BASE_SIZES } from '../config/civilization.js';
 import { bus, EVT } from '../core/EventBus.js';
 import { escapeHtml } from '../utils/dom.js';
 import { SiegeMapLayer } from './SiegeMapLayer.js';
@@ -101,16 +102,27 @@ export class MapService {
     return this.renderBases(state, sh);
   }
 
+  /**
+   * 據點圖示：依規模換圖示與大小，右下角標出規模；主要據點加上 ⭐。
+   * @param {string} cls shelter-pin（自己）或 other-pin（其他玩家）
+   */
+  baseIcon(size, primary, cls) {
+    const s = BASE_SIZES[size] || BASE_SIZES.medium;
+    const d = s.pin + (primary ? 4 : 0);
+    const html = `<div class="${cls} size-${size} ${primary ? 'primary' : 'outpost'}" style="--d:${d}px">${s.icon}`
+      + `<i class="size-tag">${s.name[0]}</i>${primary ? '<i class="star-tag">⭐</i>' : ''}</div>`;
+    return { icon: this.icon(html, 'shelter-icon', d), d };
+  }
+
   /** 其他玩家公開的據點（多人互動） */
   renderOthers(players = []) {
     if (!this.map) return;
     this.layers.others.clearLayers();
     players.forEach((p) => p.bases.forEach((b) => {
-      L.marker([b.lat, b.lon], {
-        icon: this.icon(`<div class="other-pin ${b.primary ? 'primary' : ''}">🏴</div>`, 'shelter-icon', b.primary ? 36 : 28),
-        zIndexOffset: 800,
-      }).on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
-        .bindTooltip(`👤 ${escapeHtml(p.name)}・${escapeHtml(b.name)}`, { direction: 'top', offset: [0, -14] })
+      const { icon, d } = this.baseIcon(b.size, b.primary, 'other-pin');
+      L.marker([b.lat, b.lon], { icon, zIndexOffset: 800 })
+        .on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
+        .bindTooltip(`👤 ${escapeHtml(p.name)}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）`, { direction: 'top', offset: [0, -d / 2] })
         .addTo(this.layers.others);
     }));
   }
@@ -128,14 +140,10 @@ export class MapService {
     }
     state.bases.forEach((b) => {
       const primary = b === sh;
-      L.marker([b.lat, b.lon], {
-        icon: primary
-          ? this.icon('<div class="shelter-pin">🏰</div>', 'shelter-icon', 46)
-          : this.icon('<div class="shelter-pin outpost">🏠</div>', 'shelter-icon', 36),
-        zIndexOffset: primary ? 1000 : 900,
-        title: b.name,
-      }).on('click', () => bus.emit(EVT.OPEN_POI, { poiId: b.poiId }))
-        .bindTooltip(`${primary ? '⭐ ' : ''}${escapeHtml(b.name)}`, { direction: 'top', offset: [0, primary ? -20 : -16] })
+      const { icon, d } = this.baseIcon(b.size, primary, 'shelter-pin');
+      L.marker([b.lat, b.lon], { icon, zIndexOffset: primary ? 1000 : 900, title: b.name })
+        .on('click', () => bus.emit(EVT.OPEN_POI, { poiId: b.poiId }))
+        .bindTooltip(`${primary ? '⭐ ' : ''}${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}據點）`, { direction: 'top', offset: [0, -d / 2] })
         .addTo(this.layers.shelter);
       // 前哨與主要據點之間的補給線
       if (!primary && sh) {

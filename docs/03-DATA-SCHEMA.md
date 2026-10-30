@@ -228,6 +228,5 @@
 | `bases[].size` | `small\|medium\|large\|huge` | 據點規模，決定防禦欄位數（4／6／9／12） |
 | `map.pois[].lootedDay` | `number` | 最後被搜刮的日期編號（當地日期），與今天相同代表已清空 |
 | `player.worldId` / `worldSecret` | `string` | 多人互動的公開身分（只上傳雜湊後的 token） |
-| `settings.shareWorld` | `boolean` | 是否公開據點與探索隊，預設關閉 |
 
 舊存檔遷移（v4 → v5）：補上品級（一般）、生命、重傷欄位，依建築類型決定據點規模並保留已建造的防禦，舊的建築枯竭度忽略。
