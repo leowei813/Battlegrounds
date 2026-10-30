@@ -85,7 +85,8 @@ Battlegrounds/
     │
     ├── ui/                         # 【DOM UI】
     │   ├── UIManager.js            #   版面、HUD、導覽、分頁
-    │   ├── SetupScreen.js          #   首次進入：名字/職業/座標
+    │   ├── AuthScreen.js           #   首頁：帳號登入／註冊
+    │   ├── SetupScreen.js          #   建立角色：名字/職業/座標
     │   ├── Modal.js                #   彈窗（支援 live 自動重繪）
     │   ├── Toast.js                #   通知
     │   ├── TeamPicker.js           #   隊伍選擇（探索/戰鬥共用）
