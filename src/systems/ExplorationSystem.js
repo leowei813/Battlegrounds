@@ -7,7 +7,6 @@ import {
 import { ALL_ENEMIES } from '../config/enemies.js';
 import { stockOf, dayKey } from './LootStock.js';
 import { zoneAt } from '../config/zones.js';
-import { PERSON_CARRY } from '../config/vehicles.js';
 
 /** 每公里單程移動時間（分鐘，未套用速度加成） */
 const MIN_PER_KM_ONE_WAY = 2;
@@ -97,7 +96,7 @@ export class ExplorationSystem {
     const sh = this.game.shelter.primary();
     const from = sh ? { lat: sh.lat, lon: sh.lon } : { lat: poi.lat, lon: poi.lon };
     const distanceM = Math.round(haversine(from.lat, from.lon, poi.lat, poi.lon));
-    const trip = this.game.vehicles.tripStats(members.length, vehicles, distanceM);
+    const trip = this.game.vehicles.tripStats(members, vehicles, distanceM);
     // 隊伍速度取最快成員的「技能 + 裝備」探索速度
     const scout = Math.max(0, ...members.map((m) => (this.game.survivors.skillEffects(m).exploreSpeed || 0)
       + (this.game.survivors.stats(m).exploreSpeed || 0)));
@@ -146,7 +145,7 @@ export class ExplorationSystem {
     if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
     const sh = this.game.shelter.primary();
     const distanceM = Math.round(haversine(sh.lat, sh.lon, v.poi.lat, v.poi.lon));
-    const car = this.game.vehicles.validate(vehicleIds, v.members.length, distanceM);
+    const car = this.game.vehicles.validate(vehicleIds, v.members, distanceM);
     if (!car.ok) return car;
     const plan = this.plan(v.poi, v.members, durationMin, startAt, car.vehicles);
     v.members.forEach((m) => { m.status = 'exploring'; });
@@ -181,7 +180,7 @@ export class ExplorationSystem {
         exp.encountered.push(g.id);
         const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
         const evade = Math.max(0, ...members.map((m) => this.game.survivors.skillEffects(m).exploreSpeed || 0));
-        if (!chance(AMBUSH_CHANCE * (1 - evade * 1.5))) {
+        if (!chance(AMBUSH_CHANCE * (1 - evade * 1.5) * Math.max(0.2, 1 - this.game.research.bonus('ambushReduce')))) {
           exp.travelEvents.push(`👣 悄悄避開了附近的${this.game.zombies.groupLabel(g)}`);
           return;
         }
@@ -318,19 +317,19 @@ export class ExplorationSystem {
     const lootMul = phase.lootMul * (1 + this.game.research.bonus('lootPct'))
       * (1 + Math.max(0, ...fx.map((f) => f.lootPct || 0)))
       * (1 + memberStats.reduce((s, x) => s + (x.lootBonus || 0), 0));
-    const forage = Math.max(0, ...fx.map((f) => f.forage || 0));
+    const forage = Math.max(0, ...fx.map((f) => f.forage || 0)) + this.game.research.bonus('forageAdd');
     // 今日物資（抵達時判定）：已被搜刮過則為空，每天 00:00 重置
     const arriveAt = exp.startAt + (exp.travelMs || 0);
     const stock = stockOf(poi, arriveAt);
     const remaining = { ...stock.resources };
-    const itemMul = (1 + Math.max(0, ...fx.map((f) => f.itemPct || 0))) * stock.itemMul;
+    const itemMul = (1 + Math.max(0, ...fx.map((f) => f.itemPct || 0)) + this.game.research.bonus('itemFindPct')) * stock.itemMul;
 
     const eventCount = Math.max(1, Math.round(exp.durationMin / 8));
     const expectedLoot = Math.max(1, Math.round(eventCount * 0.46));
     const gained = {};
     for (let i = 0; i < eventCount; i += 1) {
       const ev = weightedPick({
-        loot: 46, zombies: 28 * phase.zombieMul, survivor: 5, special: 10, elite: 3 + danger * phase.danger,
+        loot: 46, zombies: 28 * phase.zombieMul, survivor: 5 * (1 + this.game.research.bonus('survivorFindPct')), special: 10, elite: 3 + danger * phase.danger,
       });
       if (ev === 'loot') {
         // 從今日物資中搜刮一部分（數量受技能、研究、裝備加成）
@@ -357,7 +356,7 @@ export class ExplorationSystem {
             report.events.push(`🚗 找到一台還能用的 ${this.game.vehicles.def(find.vehicle).name}（耐久 ${find.vehicle.durability}）`);
           }
         }
-        if (!stock.empty && chance(pt.blueprintChance)) {
+        if (!stock.empty && chance(pt.blueprintChance * (1 + this.game.research.bonus('blueprintPct')))) {
           const bp = this.game.equipment.makeBlueprint(level);
           report.blueprints.push(bp);
           report.events.push('📜 找到一張設計圖！');
@@ -409,7 +408,7 @@ export class ExplorationSystem {
     }
 
     // 運載量：徒步每人有限，載具可以帶回更多物資
-    const carry = exp.cargo || members.length * PERSON_CARRY;
+    const carry = exp.cargo || this.game.vehicles.personCarry() * members.length;
     const total = Object.entries(gained).filter(([k]) => RESOURCES[k]).reduce((s, [, v]) => s + v, 0);
     if (total > carry) {
       const ratio = carry / total;

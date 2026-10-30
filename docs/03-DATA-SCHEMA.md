@@ -240,3 +240,14 @@
 | `npcs` | `{ list: Npc[], nextSpawnAt }` | NPC 據點：`{ id, name, poiId, lat, lon, level, resources, coins, nextLevelAt, nextExploreAt, nextRaidAt, trip }` |
 
 舊存檔遷移（v5 → v6）：原主要據點變成避難所，其他據點轉為前哨站（保留，但超過上限時不能再新建）。區域危險度由座標計算，不存檔。
+
+## v7 新增欄位（v5.0.0）
+| 位置 | 欄位 | 說明 |
+|---|---|---|
+| `research` | `{ levels: { 科技ID: 等級 }, active: { id, level, startAt, endAt } }` | 研究改為等級制（取代 `completed`） |
+| `inventory.items[]` | `model`, `cat`, `tier` | 具體型號、類別、強度 T1～10 |
+| `inventory.blueprints[]` | `model` | 設計圖對應的型號 |
+| `recruitBoard` | `{ list: Survivor[], refreshAt }` | 每小時固定出現的倖存者 |
+| `survivors[].job` | 新增 `repair` | 修繕圍牆 |
+
+舊存檔遷移（v6 → v7）：已完成的研究轉換為新科技等級；舊裝備依名稱對應型號（找不到則用該類最低型號）。

@@ -105,7 +105,8 @@ export class ShelterPanel {
         <div class="btn-row">${baseActions}</div>
         ${this.renderCivilization(sh)}
         <div class="stat-grid">
-          <div><small>圍牆</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}</div>
+          <div><small>圍牆（不會自行修復）</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}
+            <small class="muted block">🔨 修繕人員 ${g.shelter.repairers().length}・每秒 +${g.shelter.repairRate().toFixed(1)}・每 100 點耗 🪵${Math.round(g.shelter.repairCostPerHp().wood * 100)} 🔩${Math.round(g.shelter.repairCostPerHp().metal * 100)}${g.shelter.repairers().length ? '' : '（到倖存者頁指派「修繕圍牆」工作）'}</small></div>
           <div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div>
           <div><small>來襲殭屍</small><b>${siege.zombies.length}</b></div>
           <div><small>屍潮波次</small><b>${this.waveText(siege)}</b></div>

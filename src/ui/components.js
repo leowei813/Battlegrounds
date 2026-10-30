@@ -1,5 +1,7 @@
 import { RESOURCES, CURRENCIES } from '../config/constants.js';
-import { RARITIES, SLOTS, AFFIXES, ITEM_TYPES } from '../config/equipment.js';
+import {
+  RARITIES, SLOTS, AFFIXES, ITEM_TYPES, ITEM_MODELS,
+} from '../config/equipment.js';
 import { CLASSES, JOBS, xpToNext } from '../config/survivors.js';
 import { escapeHtml } from '../utils/dom.js';
 import { formatNumber, formatDuration } from '../utils/math.js';
@@ -59,6 +61,7 @@ export function statLine(stats) {
     lootBonus: ['搜刮', (v) => `+${(v * 100).toFixed(0)}%`],
     lifeSteal: ['吸血', (v) => `${(v * 100).toFixed(1)}%`],
     exploreSpeed: ['探索速度', (v) => `+${(v * 100).toFixed(1)}%`],
+    carry: ['運載', (v) => `+${v}`],
   };
   return Object.entries(stats)
     .filter(([k]) => fmt[k])
@@ -82,10 +85,10 @@ export function itemCard(item, { actions = '', equippedBy = null, compact = fals
   return `
   <div class="item-card r-${item.rarity} ${compact ? 'compact' : ''}" style="--rc:${r.color}">
     <div class="item-head">
-      <span class="item-icon">${ITEM_TYPES[item.type]?.icon || '❔'}</span>
+      <span class="item-icon">${ITEM_MODELS[item.model]?.icon || ITEM_TYPES[item.type]?.icon || '❔'}</span>
       <div class="item-title">
         <b>${escapeHtml(item.name)}</b>${item.locked ? ' 🔒' : ''}
-        <small>${rarityTag(item.rarity)} ${ITEM_TYPES[item.type]?.name || ''} · Lv${item.level} · 戰力 ${item.power} ${compact ? '' : qualityTag(item)}</small>
+        <small>${rarityTag(item.rarity)} ${ITEM_TYPES[item.type]?.name || ''}${item.tier ? ` T${item.tier}` : ''} · Lv${item.level} · 戰力 ${item.power} ${compact ? '' : qualityTag(item)}</small>
       </div>
     </div>
     ${compact ? '' : `<div class="stat-line">${statLine(item.stats)}</div>

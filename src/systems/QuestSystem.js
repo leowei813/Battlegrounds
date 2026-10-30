@@ -38,7 +38,7 @@ export class QuestSystem {
       case 'defenses':
         return { cur: this.game.shelter.defenseCount(), max: cond.value };
       case 'research':
-        return { cur: st.research.completed.length, max: cond.value };
+        return { cur: Object.values(st.research.levels).reduce((s, v) => s + v, 0), max: cond.value };
       default:
         return { cur: 0, max: 1 };
     }

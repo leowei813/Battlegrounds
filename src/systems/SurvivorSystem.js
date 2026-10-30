@@ -1,6 +1,6 @@
 import {
   CLASSES, CLASS_KEYS, JOBS, SURVIVOR_NAMES, MAX_SURVIVOR_LEVEL, xpToNext, recruitCost,
-  SURVIVOR_RARITY, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
+  SURVIVOR_RARITY, survivorRarityTable, RECRUIT_BOARD_SIZE, RECRUIT_BOARD_MS, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
 } from '../config/survivors.js';
 import { DAY_REAL_MS } from '../config/constants.js';
 import { SLOT_KEYS, RARITIES } from '../config/equipment.js';
@@ -8,7 +8,7 @@ import { createSurvivor } from '../core/GameState.js';
 import {
   clamp, pick, randInt, weightedPick,
 } from '../utils/math.js';
-import { canAfford, payCost } from './costUtils.js';
+import { canAfford, payCost, scaleCost } from './costUtils.js';
 
 /**
  * 倖存者系統：屬性計算、經驗/升級、工作指派、招募（三選一）、
@@ -104,10 +104,15 @@ export class SurvivorSystem {
     const fx = this.skillEffects(sv);
     defPct += fx.defPct || 0;
     const rb = this.game.research.bonuses();
-    atkPct += rb.atkPct || 0;
+    const weapon = this.game.equipment.getItem(sv.equipment.weapon);
+    atkPct += (rb.atkPct || 0) + (weapon ? rb[`catAtk_${weapon.cat}`] || 0 : 0);
     hpPct += rb.hpPct || 0;
+    defPct += rb.defPct || 0;
     s.crit += rb.critAdd || 0;
     s.critDmg += rb.critDmgAdd || 0;
+    s.dodge += rb.dodgeAdd || 0;
+    s.atkSpeed += rb.atkSpeedAdd || 0;
+    s.lifeSteal += rb.lifeStealAdd || 0;
 
     s.atk = Math.round(s.atk * (1 + atkPct));
     s.hp = Math.round(s.hp * (1 + hpPct));
@@ -182,7 +187,7 @@ export class SurvivorSystem {
   /** 醫療站工作的醫生提高全員回復速度 */
   regenMul() {
     const medics = this.list.filter((s) => s.classId === 'medic' && s.job === 'clinic' && s.status === 'idle' && !s.severe).length;
-    return 1 + Math.min(1, medics * VITALS.medicRegenBonus) + this.game.research.bonus('injuryReduce');
+    return 1 + Math.min(1, medics * VITALS.medicRegenBonus) + this.game.research.bonus('regenPct');
   }
 
   /**
@@ -199,7 +204,7 @@ export class SurvivorSystem {
       let hp = this.hpOf(sv);
       // 有食物的時段：回復生命
       if (fedMin > 0) {
-        const rate = sv.severe ? VITALS.severeRegenPctPerMin : VITALS.regenPctPerMin;
+        const rate = sv.severe ? VITALS.severeRegenPctPerMin * (1 + this.game.research.bonus('severeRegenPct')) : VITALS.regenPctPerMin;
         hp = Math.min(max, hp + max * rate * regenMul * fedMin);
         sv.zeroSince = 0;
         if (sv.severe && hp >= max * VITALS.severeRecoverRatio) {
@@ -209,7 +214,7 @@ export class SurvivorSystem {
       }
       // 飢餓的時段：持續扣血，直到重傷
       if (starveMin > 0) {
-        const drain = max * VITALS.starveDrainPctPerMin;
+        const drain = max * VITALS.starveDrainPctPerMin * Math.max(0.3, 1 - this.game.research.bonus('starveResist'));
         const minToZero = hp / drain;
         hp = Math.max(0, hp - drain * starveMin);
         if (hp <= 0) {
@@ -257,7 +262,7 @@ export class SurvivorSystem {
 
   gainXp(sv, amount) {
     if (sv.level >= MAX_SURVIVOR_LEVEL) return;
-    sv.xp += Math.round(amount);
+    sv.xp += Math.round(amount * (1 + this.game.research.bonus('xpPct')));
     while (sv.level < MAX_SURVIVOR_LEVEL && sv.xp >= xpToNext(sv.level)) {
       sv.xp -= xpToNext(sv.level);
       sv.level += 1;
@@ -275,7 +280,7 @@ export class SurvivorSystem {
   }
 
   healCost() {
-    return VITALS.healCost;
+    return scaleCost(VITALS.healCost, Math.max(0.3, 1 - this.game.research.bonus('healCostReduce')));
   }
 
   /** 使用藥品治療：回復 50% 最大生命；飢餓中無法治療 */
@@ -286,7 +291,7 @@ export class SurvivorSystem {
     const max = this.maxHp(sv);
     if (this.hpOf(sv) >= max) return { ok: false, reason: '生命已滿' };
     if (!payCost(this.game.state, this.healCost())) return { ok: false, reason: '藥品不足' };
-    const hp = Math.min(max, this.hpOf(sv) + max * VITALS.healPct);
+    const hp = Math.min(max, this.hpOf(sv) + max * (VITALS.healPct + this.game.research.bonus('healPct')));
     this.setHp(sv, hp);
     if (sv.severe && hp >= max * VITALS.severeRecoverRatio) sv.severe = false;
     sv.zeroSince = 0;
@@ -307,17 +312,56 @@ export class SurvivorSystem {
     return pick(free.length ? free : SURVIVOR_NAMES);
   }
 
-  rollRarity() {
-    return weightedPick(Object.fromEntries(Object.entries(SURVIVOR_RARITY).map(([k, v]) => [k, v.weight])));
+  /** 各品級出現機率（%）：研究「招募技術」提升高品級機率 */
+  rarityOdds() {
+    return survivorRarityTable(this.game.research.level('r_tech'));
   }
 
-  /** 生成候選倖存者（探索遭遇或招募所用），品級隨機 */
+  rollRarity() {
+    return weightedPick(this.rarityOdds());
+  }
+
+  /** 生成候選倖存者（探索遭遇或招募所用），品級隨機；研究「老手」提高等級 */
   makeCandidate(level = 1) {
-    return createSurvivor(this.randomName(), pick(CLASS_KEYS), Math.max(1, level), this.rollRarity());
+    const lv = Math.max(1, level + Math.floor(this.game.research.bonus('recruitLevelAdd')));
+    return createSurvivor(this.randomName(), pick(CLASS_KEYS), lv, this.rollRarity());
   }
 
   currentRecruitCost() {
-    return recruitCost(this.list.length);
+    return scaleCost(recruitCost(this.list.length), Math.max(0.3, 1 - this.game.research.bonus('recruitCostReduce')));
+  }
+
+  /** 招募候選人的等級：目前隊伍平均等級附近 */
+  candidateLevel() {
+    const avgLv = Math.max(1, Math.round(this.list.reduce((s, v) => s + v.level, 0) / Math.max(1, this.list.length)) - 1);
+    return randInt(Math.max(1, avgLv - 2), avgLv + 1);
+  }
+
+  // ---------- 每小時固定出現的倖存者 ----------
+
+  boardSize() {
+    return RECRUIT_BOARD_SIZE + Math.floor(this.game.research.bonus('boardSlots'));
+  }
+
+  /** 到整點更新名單 */
+  updateBoard(now = Date.now()) {
+    const st = this.game.state;
+    const board = st.recruitBoard;
+    if (now < (board.refreshAt || 0) && board.list.length) return;
+    board.list = Array.from({ length: this.boardSize() }, () => this.makeCandidate(this.candidateLevel()));
+    board.refreshAt = (Math.floor(now / RECRUIT_BOARD_MS) + 1) * RECRUIT_BOARD_MS;
+    this.game.bus.emit('recruit:board');
+  }
+
+  hireFromBoard(id) {
+    const board = this.game.state.recruitBoard;
+    const sv = board.list.find((c) => c.id === id);
+    if (!sv) return { ok: false, reason: '對方已離開' };
+    if (this.isFull()) return { ok: false, reason: `人數已達上限（${this.housing()} 人）` };
+    if (!payCost(this.game.state, this.currentRecruitCost())) return { ok: false, reason: '資源不足' };
+    board.list = board.list.filter((c) => c.id !== id);
+    this.addSurvivor(sv);
+    return { ok: true, msg: `${sv.name}（${RARITIES[sv.rarity].name}・${CLASSES[sv.classId].name}）加入了避難所` };
   }
 
   isFull() {
@@ -333,8 +377,7 @@ export class SurvivorSystem {
     if (this.isFull()) return { ok: false, reason: `人數已達上限（${this.housing()} 人），提升領袖等級或據點等級可增加上限` };
     if (!canAfford(this.game.state, this.currentRecruitCost())) return { ok: false, reason: '資源不足' };
     payCost(this.game.state, this.currentRecruitCost());
-    const avgLv = Math.max(1, Math.round(this.list.reduce((s, v) => s + v.level, 0) / this.list.length) - 1);
-    this.game.state.recruitOffer = Array.from({ length: RECRUIT_CHOICES }, () => this.makeCandidate(randInt(Math.max(1, avgLv - 2), avgLv + 1)));
+    this.game.state.recruitOffer = Array.from({ length: RECRUIT_CHOICES }, () => this.makeCandidate(this.candidateLevel()));
     return { ok: true, offer: this.game.state.recruitOffer };
   }
 

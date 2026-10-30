@@ -1,3 +1,4 @@
+import { formatDuration } from '../../utils/math.js';
 import { CLASSES, JOBS, xpToNext } from '../../config/survivors.js';
 import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
@@ -39,6 +40,10 @@ export class SurvivorPanel {
     const offer = (st.recruitOffer || []).map((c) => this.candidateCard(c,
       btn('✅ 選擇', 'pick', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full }))).join('');
     const cost = g.survivors.currentRecruitCost();
+    const board = (st.recruitBoard?.list || []).map((c) => this.candidateCard(c,
+      btn('✅ 招募', 'hire', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full }))).join('');
+    const odds = Object.entries(g.survivors.rarityOdds())
+      .map(([r, p]) => `<span class="odd" style="--rc:${RARITIES[r].color}">${RARITIES[r].name} ${p < 1 ? p.toFixed(2) : p.toFixed(1)}%</span>`).join('');
     const cap = g.survivors.housingBreakdown();
     const list = st.survivors.map((sv) => survivorCard(g, sv, {
       actions: `${btn('詳情 / 裝備', 'detail', { id: sv.id }, { cls: 'btn-sm' })}${sv.severe && !g.survivors.isStarving() ? btn(`💊 治療（藥品 ${g.survivors.healCost().medicine}）`, 'heal', { id: sv.id }, { cls: 'btn-sm btn-primary' }) : ''}${sv.isLeader ? '' : btn('🚪 驅逐', 'dismiss', { id: sv.id }, { cls: 'btn-sm btn-ghost', disabled: sv.status === 'exploring' })}`,
@@ -54,6 +59,9 @@ export class SurvivorPanel {
         ${btn(full ? '人數已達上限' : '招募', 'recruit', {}, { cls: 'btn-primary', disabled: full })}
       </div>`}
       ${pool ? `<h3>🙋 等待加入（探索中遇到）</h3><div class="grid">${pool}</div>` : ''}
+      <h3>🏕️ 附近的倖存者 <small class="muted">每小時更新（${formatDuration(Math.max(0, st.recruitBoard.refreshAt - Date.now()))}後）・費用同廣播招募</small></h3>
+      <div class="grid">${board || '<p class="muted">目前沒有人。</p>'}</div>
+      <div class="odds"><small class="muted">倖存者品級機率（招募技術 Lv${g.research.level('r_tech')}/10）：</small>${odds}</div>
       <div class="grid">${list}</div>
     </div>`;
   }
@@ -64,6 +72,7 @@ export class SurvivorPanel {
     if (action === 'reject') this.ui.result(g.survivors.rejectCandidate(data.id));
     if (action === 'recruit') this.ui.result(g.survivors.recruitRoll());
     if (action === 'pick') this.ui.result(g.survivors.pickRecruit(data.id));
+    if (action === 'hire') this.ui.result(g.survivors.hireFromBoard(data.id));
     if (action === 'abandon' && confirm('放棄此次招募？已支付的費用不會退還。')) this.ui.result(g.survivors.abandonRecruit());
     if (action === 'heal') this.ui.result(g.survivors.heal(data.id));
     if (action === 'dismiss') this.confirmDismiss(data.id);

@@ -21,19 +21,19 @@ export const DEFENSES = {
     stats: (lv) => ({ damage: 4 + lv * 3, fireRate: 2, range: 22, slow: 0.35, aoe: true }),
   },
   machineGun: {
-    name: '機槍塔', icon: '🔫', color: 0x607d8b, requires: 'def1',
+    name: '機槍塔', icon: '🔫', color: 0x607d8b, requires: 'd_mg',
     desc: '高射速單體射擊。',
     cost: (lv) => scale({ metal: 90, fuel: 15 }, lv),
     stats: (lv) => ({ damage: 6 + lv * 4, fireRate: 4, range: 70 }),
   },
   flameTower: {
-    name: '火焰塔', icon: '🔥', color: 0xff7043, requires: 'def2',
+    name: '火焰塔', icon: '🔥', color: 0xff7043, requires: 'd_flame',
     desc: '範圍火焰傷害，對群聚殭屍特別有效。',
     cost: (lv) => scale({ metal: 110, fuel: 40 }, lv),
     stats: (lv) => ({ damage: 10 + lv * 6, fireRate: 1.2, range: 45, aoe: true, aoeRadius: 18 }),
   },
   emTower: {
-    name: '電磁塔', icon: '🌀', color: 0x29b6f6, requires: 'def3',
+    name: '電磁塔', icon: '🌀', color: 0x29b6f6, requires: 'd_em',
     desc: '連鎖電擊並短暫麻痺目標。',
     cost: (lv) => scale({ metal: 140, fuel: 30, parts: 3 }, lv),
     stats: (lv) => ({ damage: 18 + lv * 9, fireRate: 0.8, range: 60, chain: 3, stun: 0.6 }),

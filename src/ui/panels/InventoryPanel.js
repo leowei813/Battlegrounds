@@ -1,13 +1,12 @@
 import {
-  SLOTS, ITEM_TYPES, RARITIES, RARITY_ORDER,
+  SLOTS, ITEM_TYPES, RARITIES, RARITY_ORDER, ITEM_MODELS, benchFor,
 } from '../../config/equipment.js';
-import { RESEARCH } from '../../config/research.js';
 import { CLASSES } from '../../config/survivors.js';
 import { escapeHtml } from '../../utils/dom.js';
 import {
   btn, itemCard, costHtml, progressBar,
 } from '../components.js';
-import { VEHICLES, GARAGE_SIZE, PERSON_CARRY } from '../../config/vehicles.js';
+import { VEHICLES } from '../../config/vehicles.js';
 
 /**
  * 背包分頁：裝備篩選/排序、裝備給隊員、出售、拆解、上鎖，以及工作台製作。
@@ -20,10 +19,11 @@ export class InventoryPanel {
     this.filter = 'all';
     this.rarityFilter = 'all';
     this.sort = 'power';
+    this.craftCat = 'melee';
   }
 
   render() {
-    const tabs = `<div class="seg">${btn('🎒 裝備', 'view', { v: 'items' }, { cls: this.view === 'items' ? 'active' : '' })}${btn('🛠️ 製作', 'view', { v: 'craft' }, { cls: this.view === 'craft' ? 'active' : '' })}${btn(`🚗 車庫 ${this.game.state.vehicles.length}/${GARAGE_SIZE}`, 'view', { v: 'garage' }, { cls: this.view === 'garage' ? 'active' : '' })}</div>`;
+    const tabs = `<div class="seg">${btn('🎒 裝備', 'view', { v: 'items' }, { cls: this.view === 'items' ? 'active' : '' })}${btn('🛠️ 製作', 'view', { v: 'craft' }, { cls: this.view === 'craft' ? 'active' : '' })}${btn(`🚗 車庫 ${this.game.state.vehicles.length}/${this.game.vehicles.garageSize()}`, 'view', { v: 'garage' }, { cls: this.view === 'garage' ? 'active' : '' })}</div>`;
     const body = { items: () => this.renderItems(), craft: () => this.renderCraft(), garage: () => this.renderGarage() }[this.view]();
     return `<div class="panel-inner"><h2>🎒 背包 <small>${this.game.state.inventory.items.length} 件</small></h2>${tabs}${body}</div>`;
   }
@@ -51,7 +51,7 @@ export class InventoryPanel {
         ${btn('製作', 'craftVehicle', { type }, { cls: 'btn-sm btn-primary', disabled: !check.ok, title: check.reason || '' })}</div>`;
     }).join('');
     return `
-      <p class="muted">探索時可帶載具：所有隊員都有座位時全隊以載具速度移動；運載量讓隊伍帶回更多物資（每人徒步 ${PERSON_CARRY}）。每台至少一人駕駛，除滑板車與腳踏車外都會耗油，行駛與遇襲會磨損耐久。更多載具可在探索加油站、倉庫、工廠等地點時找到。</p>
+      <p class="muted">探索時可帶載具：所有隊員都有座位時全隊以載具速度移動；運載量讓隊伍帶回更多物資（每人徒步 ${g.vehicles.personCarry()}，背包可再增加）。每台至少一人駕駛，除滑板車與腳踏車外都會耗油，行駛與遇襲會磨損耐久。更多載具可在探索加油站、倉庫、工廠等地點時找到。</p>
       <div class="grid">${cards || '<p class="muted">車庫是空的。</p>'}</div>
       <h3>🛠️ 製作載具</h3>
       <div class="grid">${crafts}</div>`;
@@ -94,34 +94,45 @@ export class InventoryPanel {
   renderCraft() {
     const g = this.game;
     const st = g.state;
-    const wb = g.shelter.maxLevel('workbench');
-    const types = Object.entries(ITEM_TYPES).map(([id, def]) => {
-      const unlocked = g.equipment.canCraftType(id);
-      return `<div class="fac-card ${unlocked ? '' : 'locked'}">
-        <div class="fac-head"><span class="fac-icon">${def.icon}</span><div><b>${def.name}</b><small class="muted block">${SLOTS[def.slot].name}・製作等級 Lv${g.equipment.craftLevel()}</small></div></div>
-        <div class="row-between"><div class="costs">${costHtml(st, g.equipment.craftCost(id))}</div>
-        ${unlocked ? btn('製作', 'craft', { type: id }, { cls: 'btn-sm btn-primary', disabled: wb < 1 }) : `<span class="tag tag-red">🔒 需研究「${RESEARCH[def.requires].name}」</span>`}</div>
+    const eq = g.equipment;
+    const wb = eq.workbench();
+    const cats = Object.entries(ITEM_TYPES).map(([id, t]) => `<button class="chip ${this.craftCat === id ? 'active' : ''}" data-action="craftCat" data-c="${id}">${t.icon} ${t.name}</button>`).join('');
+    const models = Object.entries(ITEM_MODELS).filter(([, md]) => md.type === this.craftCat).sort((a, b) => a[1].tier - b[1].tier);
+    const cards = models.map(([id, md]) => {
+      const check = eq.canCraftModel(id);
+      const bench = benchFor(md);
+      const extra = md.extra?.carry ? `・📦 運載 +${md.extra.carry}` : md.fuel ? `・⛽ 每場戰鬥耗油 ${md.fuel}` : '';
+      return `<div class="fac-card ${check.ok ? '' : 'locked'}">
+        <div class="fac-head"><span class="fac-icon">${md.icon || ITEM_TYPES[md.type].icon}</span><div><b>${md.name}</b> <span class="tier">${'★'.repeat(Math.ceil(md.tier / 2))}</span>
+          <small class="muted block">強度 T${md.tier}・${bench ? `工作台 Lv${bench}` : '簡易製作（不需工作台）'}・裝備等級 Lv${eq.craftLevel(id)}${extra}</small></div></div>
+        <div class="row-between"><div class="costs">${costHtml(st, eq.craftCost(id))}</div>
+        ${check.ok ? btn('製作', 'craft', { type: id }, { cls: 'btn-sm btn-primary' }) : `<span class="tag tag-red">🔒 ${check.reason}</span>`}</div>
       </div>`;
     }).join('');
-    const bps = st.inventory.blueprints.map((bp) => `
-      <div class="card row-between">
-        <div>📜 <b>${ITEM_TYPES[bp.itemType].name}設計圖</b> <span class="rarity" style="--rc:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</span>
-        <div class="costs">${costHtml(st, g.equipment.craftCost(bp.itemType, true))}</div></div>
-        ${btn('製作', 'craftBp', { id: bp.id, type: bp.itemType }, { cls: 'btn-sm btn-primary', disabled: wb < 1 })}
-      </div>`).join('');
-    const odds = (boost) => Object.entries(g.equipment.rarityOdds(boost))
+    const bps = st.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model]).map((bp) => {
+      const md = ITEM_MODELS[bp.model];
+      const check = eq.canCraftModel(bp.model, true);
+      return `<div class="card row-between">
+        <div>📜 <b>${md.name}設計圖</b> <span class="rarity" style="--rc:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</span>
+        <div class="costs">${costHtml(st, eq.craftCost(bp.model, true))}</div></div>
+        ${btn('製作', 'craftBp', { id: bp.id, type: bp.model }, { cls: 'btn-sm btn-primary', disabled: !check.ok, title: check.reason || '' })}
+      </div>`;
+    }).join('');
+    const odds = Object.entries(eq.rarityOdds())
       .map(([r, p]) => `<span class="odd" style="--rc:${RARITIES[r].color}">${RARITIES[r].name} ${(p * 100).toFixed(p < 0.01 ? 2 : 1)}%</span>`).join('');
     return `
-      <p class="muted">工作台 Lv${wb}：製作裝備等級 = 工作台等級 × 5。製作出的<b>品級與素質皆為隨機</b>，工作台等級越高越容易出現高品級。設計圖可無視研究限制，並保證最低品級。</p>
-      <div class="odds"><small class="muted">目前製作品級機率：</small>${odds(g.equipment.craftBoost(false))}</div>
+      <p class="muted">工作台 Lv${wb}：簡易製作不需要工作台；其餘裝備需要對應等級的工作台，工作台等級越高<b>可製作的型號越多</b>。槍械另需研究「槍械製造」。製作品級只受研究「製作技術」影響（Lv${eq.craftTech()}/10）。</p>
+      <div class="odds"><small class="muted">製作品級機率：</small>${odds}</div>
       ${bps ? `<h3>設計圖</h3>${bps}` : ''}
-      <h3>基礎製作</h3><div class="grid">${types}</div>`;
+      <div class="chips">${cats}</div>
+      <div class="grid">${cards}</div>`;
   }
 
   onAction(action, data) {
     const g = this.game;
     switch (action) {
       case 'view': this.view = data.v; break;
+      case 'craftCat': this.craftCat = data.c; break;
       case 'filter': this.filter = data.f; break;
       case 'sort': this.sort = data.s; break;
       case 'rfilter': this.rarityFilter = data.r; break;

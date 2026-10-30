@@ -123,6 +123,7 @@ export class Game {
     this.shelter.update(now, Math.min(dt, 5000));
     this.research.update(now);
     this.survivors.updateVitals(now, dt, this.resources.lastStarvingMs);
+    this.survivors.updateBoard(now);
     this.exploration.update(now, { silent });
     this.npcs.update(now);
     this.zombies.update(now);

@@ -6,7 +6,7 @@
  *  - { type: 'stat', key, value }          累計統計
  *  - { type: 'survivors', value }          倖存者人數
  *  - { type: 'defenses', value }           防禦建築數量
- *  - { type: 'research', value }           完成研究數
+ *  - { type: 'research', value }           科技總等級
  *  - { type: 'bases', value }              據點數量
  *  - { type: 'civilization', value }       目前文明度
  * 每日任務使用 { type: 'statDelta', key, value }：自每日重置起的增量。
@@ -19,14 +19,14 @@ export const MAIN_QUESTS = [
   { id: 'm5', name: '築起防線', desc: '建造 1 座防禦建築', cond: { type: 'defenses', value: 1 }, reward: { coins: 100, metal: 120 } },
   { id: 'm6', name: '清理街道', desc: '累計擊殺 30 隻殭屍', cond: { type: 'stat', key: 'kills', value: 30 }, reward: { coins: 150, parts: 2 } },
   { id: 'm7', name: '知識就是力量', desc: '建造研究中心', cond: { type: 'facility', id: 'researchCenter', value: 1 }, reward: { coins: 150, cloth: 120 } },
-  { id: 'm8', name: '科學家', desc: '完成 1 項研究', cond: { type: 'research', value: 1 }, reward: { coins: 200, parts: 3 } },
+  { id: 'm8', name: '科學家', desc: '完成 1 個科技等級', cond: { type: 'research', value: 1 }, reward: { coins: 200, parts: 3 } },
   { id: 'm9', name: '精良裝備', desc: '獲得 1 件精良（藍色）以上的裝備', cond: { type: 'stat', key: 'rareItems', value: 1 }, reward: { coins: 200, fuel: 100 } },
   { id: 'm10', name: '銅牆鐵壁', desc: '將圍牆升到 Lv5', cond: { type: 'facility', id: 'wall', value: 5 }, reward: { coins: 300, parts: 5 } },
   { id: 'm11', name: '屠龍者', desc: '擊敗 1 隻 Boss', cond: { type: 'stat', key: 'bossKills', value: 1 }, reward: { coins: 500, parts: 8, item: 'epic' } },
   { id: 'm12', name: '一週生還', desc: '存活 7 天', cond: { type: 'stat', key: 'daysSurvived', value: 7 }, reward: { coins: 600, parts: 10 } },
   { id: 'm12b', name: '開疆拓土', desc: '擁有 2 個據點', cond: { type: 'bases', value: 2 }, reward: { coins: 600, wood: 400, metal: 300 } },
   { id: 'm12c', name: '文明的火種', desc: '文明度達到 200（城鎮）', cond: { type: 'civilization', value: 200 }, reward: { coins: 800, parts: 12 } },
-  { id: 'm13', name: '重建文明', desc: '完成 12 項研究', cond: { type: 'research', value: 12 }, reward: { coins: 1500, parts: 25, item: 'legendary' } },
+  { id: 'm13', name: '重建文明', desc: '科技總等級達 30', cond: { type: 'research', value: 30 }, reward: { coins: 1500, parts: 25, item: 'legendary' } },
 ];
 
 export const DAILY_POOL = [
@@ -53,7 +53,7 @@ export const ACHIEVEMENTS = [
   { id: 'a_day30', name: '末日之王', desc: '存活 30 天', cond: { type: 'stat', key: 'daysSurvived', value: 30 }, reward: { coins: 3000, parts: 30 } },
   { id: 'a_team5', name: '小隊成形', desc: '擁有 5 名倖存者', cond: { type: 'survivors', value: 5 }, reward: { coins: 300 } },
   { id: 'a_team10', name: '倖存者聯盟', desc: '擁有 10 名倖存者', cond: { type: 'survivors', value: 10 }, reward: { coins: 1500, parts: 10 } },
-  { id: 'a_research', name: '末日學者', desc: '完成全部 20 項研究', cond: { type: 'research', value: 20 }, reward: { coins: 5000, item: 'legendary' } },
+  { id: 'a_research', name: '末日學者', desc: '科技總等級達 200', cond: { type: 'research', value: 200 }, reward: { coins: 5000, item: 'legendary' } },
   { id: 'a_civ100', name: '聚落成形', desc: '文明度達到 100', cond: { type: 'civilization', value: 100 }, reward: { coins: 300 } },
   { id: 'a_civ550', name: '新文明', desc: '文明度達到 550', cond: { type: 'civilization', value: 550 }, reward: { coins: 5000, item: 'legendary' } },
   { id: 'a_bases5', name: '據點網路', desc: '擁有 5 個據點', cond: { type: 'bases', value: 5 }, reward: { coins: 2000, parts: 20 } },

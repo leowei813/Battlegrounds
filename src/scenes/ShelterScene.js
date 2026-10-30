@@ -59,7 +59,11 @@ export class ShelterScene extends Phaser.Scene {
     for (let i = 0; i < MAX_SLOTS; i += 1) {
       const zone = this.add.circle(0, 0, 18, 0x000000, 0.35).setStrokeStyle(2, 0xffffff, 0.4).setDepth(5);
       zone.setInteractive({ useHandCursor: true });
-      zone.on('pointerdown', () => bus.emit(EVT.OPEN_SLOT, { slot: i }));
+      // 只接受直接點在畫布上的點擊（避免點到上層的面板、彈窗時誤開槽位選單）
+      zone.on('pointerdown', (pointer) => {
+        if (pointer.event && pointer.event.target !== this.game.canvas) return;
+        bus.emit(EVT.OPEN_SLOT, { slot: i });
+      });
       zone.on('pointerover', () => zone.setStrokeStyle(3, 0xffd54f, 1));
       zone.on('pointerout', () => zone.setStrokeStyle(2, 0xffffff, 0.4));
       const icon = this.add.text(0, 0, '+', { fontSize: '20px', color: '#fff' }).setOrigin(0.5).setDepth(6);
