@@ -1,7 +1,8 @@
 import { POI_TYPES } from '../../config/poiTypes.js';
 import { RARITIES } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
-import { haversine } from '../../utils/math.js';
+import { haversine, formatDuration } from '../../utils/math.js';
+import { EXP_PHASES } from '../../systems/ExplorationSystem.js';
 import { btn, timerBar, gainsHtml } from '../components.js';
 
 /**
@@ -24,9 +25,11 @@ export class ExplorePanel {
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
       return `<div class="card">
         <div class="row-between"><b>${poi ? POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
-        <div class="muted">隊員：${names}・預定 ${ex.durationMin} 分鐘</div>
+        <div class="muted">隊員：${names}・搜索 ${ex.durationMin} 分鐘</div>
+        ${this.progressHtml(ex, now)}
         ${timerBar(ex.startAt, ex.endAt, now)}
-        <div class="btn-row">${btn(ex.auto ? '停止自動' : '🔁 自動探索', 'auto', { id: ex.id }, { cls: 'btn-sm btn-ghost', disabled: !g.research.hasUnlock('autoExplore') })}${btn('召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' })}</div>
+        ${(ex.travelEvents || []).length ? `<ul class="event-list">${ex.travelEvents.slice(-3).map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul>` : ''}
+        <div class="btn-row">${btn('🗺️ 在地圖上追蹤', 'track', { id: ex.id }, { cls: 'btn-sm btn-primary' })}${btn(ex.auto ? '停止自動' : '🔁 自動探索', 'auto', { id: ex.id }, { cls: 'btn-sm btn-ghost', disabled: !g.research.hasUnlock('autoExplore') })}${btn('召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' })}</div>
       </div>`;
     }).join('');
 
@@ -65,6 +68,20 @@ export class ExplorePanel {
     </div>`;
   }
 
+  /** 行程三段（去程/搜索/返程）與移動距離 */
+  progressHtml(ex, now) {
+    const p = this.game.exploration.progress(ex, now);
+    if (!p) return '';
+    const km = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} km` : `${v} m`);
+    const steps = Object.entries(EXP_PHASES).map(([id, ph]) => `<span class="step ${id === p.phase ? 'on' : ''}">${ph.icon} ${ph.name}</span>`).join('<span class="arrow">›</span>');
+    return `<div class="exp-steps">${steps}</div>
+      <div class="row-between exp-stats">
+        <span>📏 已移動 <b>${km(p.movedM)}</b> / ${km(p.totalM)}</span>
+        <span>⏱ 剩餘 <b>${formatDuration(p.remainingMs)}</b>${p.phase !== 'returning' ? `<small class="muted">（本階段 ${formatDuration(p.phaseRemainingMs)}）</small>` : ''}</span>
+      </div>
+      ${p.phase !== 'searching' && this.game.state.map.zombieGroups.length ? '<div class="tag tag-red">🌙 夜間移動中：經過殭屍群附近可能遇襲</div>' : ''}`;
+  }
+
   onAction(action, data) {
     const g = this.game;
     if (action === 'auto') this.ui.result(g.exploration.toggleAuto(data.id));
@@ -72,6 +89,14 @@ export class ExplorePanel {
     if (action === 'explore') {
       const poi = g.exploration.poi(data.id);
       if (poi) this.ui.panels.map.openExplore(poi);
+    }
+    if (action === 'track') {
+      const ex = g.state.expeditions.find((e) => e.id === data.id);
+      const p = ex && g.exploration.progress(ex);
+      if (p) {
+        this.ui.switchTab('map');
+        this.ui.panels.map.service.focus(p.pos.lat, p.pos.lon, 17);
+      }
     }
     if (action === 'toggleReport') {
       this.openReport = this.openReport === data.id ? null : data.id;

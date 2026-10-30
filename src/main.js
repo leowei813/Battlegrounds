@@ -121,6 +121,7 @@ async function boot() {
   if (import.meta.env.DEV) {
     window.__game = game;
     window.__cloud = cloud;
+    window.__ui = ui;
   }
 }
 

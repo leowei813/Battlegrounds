@@ -27,6 +27,8 @@ export function classify(tags = {}) {
   if (/^(industrial|factory|manufacture)$/.test(tags.building || '') || tags.landuse === 'industrial' || tags.man_made === 'works' || tags.craft) return 'factory';
   if (tags.shop || SHOP_AMENITY.test(tags.amenity || '') || /^(retail|commercial|supermarket)$/.test(tags.building || '')) return 'shop';
   if (RESIDENTIAL.test(tags.building || '') || tags.landuse === 'residential') return 'residential';
+  // 沒有標註用途的一般建築（OSM 中最常見）視為住宅
+  if (tags.building === 'yes') return 'residential';
   return null;
 }
 
@@ -45,7 +47,7 @@ export function nameFromTags(tags = {}) {
 function buildQuery(lat, lon, r) {
   const a = `(around:${r},${lat},${lon})`;
   const big = `(around:${r * 2},${lat},${lon})`;
-  return `[out:json][timeout:30];
+  return `[out:json][timeout:60][maxsize:134217728];
 (
   nwr["shop"]${a};
   nwr["amenity"~"^(hospital|clinic|doctors|school|university|college|kindergarten|library|fuel|charging_station|police|fire_station|restaurant|cafe|fast_food|food_court|marketplace|pharmacy|bank|bar|pub)$"]${a};
@@ -56,9 +58,9 @@ function buildQuery(lat, lon, r) {
   nwr["landuse"="industrial"]${a};
   nwr["man_made"="works"]${a};
   nwr["craft"]${a};
-  way["building"~"^(apartments|residential|dormitory|house|terrace|detached|semidetached_house)$"]${a};
+  way["building"~"^(apartments|residential|dormitory|house|terrace|detached|semidetached_house|yes)$"]${a};
 );
-out center tags 4000;`;
+out center tags 25000;`;
 }
 
 async function fetchWithTimeout(url, body, ms) {
@@ -109,7 +111,7 @@ export async function fetchPois(lat, lon, radius) {
   let lastErr = null;
   for (const url of ENDPOINTS) {
     try {
-      data = await fetchWithTimeout(url, query, 30000);
+      data = await fetchWithTimeout(url, query, 70000);
       break;
     } catch (err) {
       lastErr = err;

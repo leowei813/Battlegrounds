@@ -123,6 +123,7 @@ export class Game {
     this.exploration.update(now, { silent });
     this.exploration.regenerate(dt);
     this.zombies.update(now);
+    if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();
   }
 
