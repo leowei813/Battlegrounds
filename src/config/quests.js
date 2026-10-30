@@ -7,6 +7,8 @@
  *  - { type: 'survivors', value }          倖存者人數
  *  - { type: 'defenses', value }           防禦建築數量
  *  - { type: 'research', value }           完成研究數
+ *  - { type: 'bases', value }              據點數量
+ *  - { type: 'civilization', value }       目前文明度
  * 每日任務使用 { type: 'statDelta', key, value }：自每日重置起的增量。
  */
 export const MAIN_QUESTS = [
@@ -22,6 +24,8 @@ export const MAIN_QUESTS = [
   { id: 'm10', name: '銅牆鐵壁', desc: '將圍牆升到 Lv5', cond: { type: 'facility', id: 'wall', value: 5 }, reward: { coins: 300, parts: 5 } },
   { id: 'm11', name: '屠龍者', desc: '擊敗 1 隻 Boss', cond: { type: 'stat', key: 'bossKills', value: 1 }, reward: { coins: 500, parts: 8, item: 'epic' } },
   { id: 'm12', name: '一週生還', desc: '存活 7 天', cond: { type: 'stat', key: 'daysSurvived', value: 7 }, reward: { coins: 600, parts: 10 } },
+  { id: 'm12b', name: '開疆拓土', desc: '擁有 2 個據點', cond: { type: 'bases', value: 2 }, reward: { coins: 600, wood: 400, metal: 300 } },
+  { id: 'm12c', name: '文明的火種', desc: '文明度達到 200（城鎮）', cond: { type: 'civilization', value: 200 }, reward: { coins: 800, parts: 12 } },
   { id: 'm13', name: '重建文明', desc: '完成 12 項研究', cond: { type: 'research', value: 12 }, reward: { coins: 1500, parts: 25, item: 'legendary' } },
 ];
 
@@ -50,5 +54,8 @@ export const ACHIEVEMENTS = [
   { id: 'a_team5', name: '小隊成形', desc: '擁有 5 名倖存者', cond: { type: 'survivors', value: 5 }, reward: { coins: 300 } },
   { id: 'a_team10', name: '倖存者聯盟', desc: '擁有 10 名倖存者', cond: { type: 'survivors', value: 10 }, reward: { coins: 1500, parts: 10 } },
   { id: 'a_research', name: '末日學者', desc: '完成全部 20 項研究', cond: { type: 'research', value: 20 }, reward: { coins: 5000, item: 'legendary' } },
+  { id: 'a_civ100', name: '聚落成形', desc: '文明度達到 100', cond: { type: 'civilization', value: 100 }, reward: { coins: 300 } },
+  { id: 'a_civ550', name: '新文明', desc: '文明度達到 550', cond: { type: 'civilization', value: 550 }, reward: { coins: 5000, item: 'legendary' } },
+  { id: 'a_bases5', name: '據點網路', desc: '擁有 5 個據點', cond: { type: 'bases', value: 5 }, reward: { coins: 2000, parts: 20 } },
   { id: 'a_breach', name: '浴火重生', desc: '避難所首次被突破後存活', cond: { type: 'stat', key: 'breaches', value: 1 }, reward: { coins: 100, wood: 300 } },
 ];

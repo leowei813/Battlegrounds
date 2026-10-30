@@ -30,9 +30,9 @@ export class ExplorePanel {
       </div>`;
     }).join('');
 
-    const sh = st.shelter;
-    const nearby = sh.lat == null ? [] : st.map.pois
-      .filter((p) => p.id !== sh.poiId)
+    const sh = g.shelter.primary();
+    const nearby = !sh ? [] : st.map.pois
+      .filter((p) => !g.shelter.baseAtPoi(p.id))
       .map((p) => ({ p, d: haversine(sh.lat, sh.lon, p.lat, p.lon) }))
       .sort((a, b) => a.d - b.d)
       .slice(0, 30)

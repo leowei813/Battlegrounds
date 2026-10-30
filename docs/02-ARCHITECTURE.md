@@ -26,9 +26,15 @@ flowchart TB
     Combat[CombatSystem]
     Explore[ExplorationSystem]
     Zombie[ZombieSpawnSystem]
-    Siege[SiegeSystem]
+    Siege["SiegeSystem<br/>（每據點一個 BaseSiege）"]
+    Civ[CivilizationSystem]
     Research[ResearchSystem]
     Quest[QuestSystem]
+  end
+
+  subgraph Cloud["雲端同步"]
+    Sync["CloudSync"]
+    Prov["Provider<br/>SelfHost / Supabase"]
   end
 
   subgraph Data["資料層 Data"]
@@ -51,6 +57,9 @@ flowchart TB
   Game --> Overpass
   Game --> Gen
   Save <--> LS[("LocalStorage")]
+  Game -- "game:save" --> Sync
+  Sync --> Prov
+  Prov <--> CloudDB[("server/ 或 Supabase")]
   Overpass <--> OSM[("Overpass API")]
   Leaflet <--> Tiles[("tile.openstreetmap.org")]
 ```
@@ -120,13 +129,14 @@ flowchart LR
 | `core/SaveManager` | LocalStorage、版本遷移、Base64 匯出入 | `load() save() migrate() exportString() importString()` |
 | `TimeSystem` | 日夜時段（由建檔時間推導） | `day() hour() phase() exploreSpeedMul()` |
 | `ResourceSystem` | 產出/消耗速率、套用、上限 | `rates() apply(dt) storageCap()` |
-| `ShelterSystem` | 選址、設施、防禦建築、施工佇列、圍牆 | `setShelter() upgradeFacility() buildDefense() garrison()` |
+| `ShelterSystem` | 多據點、主要據點、據點危險度、設施、防禦建築、施工佇列、圍牆 | `establish() setPrimary() abandon() dangerLevel() upgradeFacility(base,id) buildDefense(base,slot,type)` |
+| `CivilizationSystem` | 文明度計算（建築／玩家等級／裝備）、屍潮強度係數 | `breakdown() value() tier() levelBonus() spawnMul()` |
 | `SurvivorSystem` | 屬性計算、經驗、技能、招募、受傷、工作 | `stats() gainXp() injure() recruitRandom() setJob()` |
 | `EquipmentSystem` | 隨機生成、詞綴、穿脫、出售、拆解、製作 | `generate() equip() sell() dismantle() craft()` |
 | `CombatSystem` | 自動戰鬥模擬、結果套用 | `createEnemy() simulate() applyOutcome()` |
 | `ExplorationSystem` | 派遣、時間計算、事件結算、自動探索 | `start() update() resolve() recall()` |
 | `ZombieSpawnSystem` | 地圖殭屍群刷新、區域危險度、攻擊 | `refresh() areaDanger() attack()` |
-| `SiegeSystem` | 屍潮即時模擬（世界座標）、離線防守 | `update(dt) drainFx() defenseDps() simulateOffline()` |
+| `SiegeSystem` | 管理所有據點的 `BaseSiege`；每個據點獨立的屍潮即時模擬（強度依文明度與據點危險度）、離線防守 | `of(baseId) update(dt) simulateOffline()`；`BaseSiege.zombieLevel() spawnInterval() defenseDps() drainFx()` |
 | `ResearchSystem` | 研究條件、進度、效果彙總（快取） | `start() bonuses() hasUnlock()` |
 | `QuestSystem` | 主線/每日/成就條件與領獎 | `progress() claimMain() claimDaily() claimAchievement()` |
 | `map/OverpassService` | 組 Overpass QL、多端點容錯、OSM 標籤分類 | `fetchPois() classify()` |
@@ -144,7 +154,8 @@ flowchart LR
 | `time:phaseChanged` | Game.tick | （擴充用） | 日夜轉換 |
 | `map:changed` | Game.scanMap、ZombieSpawn | MapPanel | 重繪地圖 |
 | `expedition:done` | ExplorationSystem | MapPanel | 更新路線 |
-| `shelter:changed` | ShelterSystem | ShelterScene | 重繪槽位 |
+| `shelter:changed` | ShelterSystem | ShelterScene、UIManager | 重繪槽位、更新檢視中的據點 |
+| `cloud:status` / `cloud:locked` | CloudSync | UIManager | 雲端狀態徽章、鎖定畫面 |
 | `ui:openDefenseSlot` | ShelterScene | ShelterPanel | 點槽位開建造窗 |
 | `ui:openPoi` / `ui:openZombie` | MapService | MapPanel | 地圖互動 |
 | `siege:breach` | SiegeSystem | （擴充用） | 防線失守 |

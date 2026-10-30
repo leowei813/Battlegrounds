@@ -9,13 +9,14 @@
 
 ```jsonc
 {
-  "version": 1,               // 存檔版本，SaveManager.migrate() 依此升級
+  "version": 2,               // 存檔版本，SaveManager.migrate() 依此升級
   "createdAt": 0,             // 建檔時間（同時是遊戲時鐘的基準）
   "lastSaveAt": 0,            // 最後存檔時間
   "lastTickAt": 0,            // 最後一次邏輯更新時間（離線結算依據）
   "player":       { /* §2 */ },
   "map":          { /* §3 地圖進度 */ },
-  "shelter":      { /* §4 建築資料 */ },
+  "bases":        [ /* §4 據點（建築資料） */ ],
+  "primaryBaseId": "base_xxx",  // ⭐ 主要據點
   "resources":    { /* §5 */ },
   "inventory":    { /* §6 裝備資料 */ },
   "survivors":    [ /* §7 倖存者資料 */ ],
@@ -64,11 +65,14 @@
 }
 ```
 
-## 4. shelter — 建築資料
+## 4. bases — 據點（建築資料）
+最多 5 個；`primaryBaseId` 指向主要據點。每個據點各自擁有設施、防禦建築、圍牆與施工佇列。
 ```jsonc
-{
-  "poiId": "osm_w123456",       // null = 尚未建立
+[{
+  "id": "base_xxx",
+  "poiId": "osm_w123456",       // 據點所在的地圖建築
   "name": "全聯福利中心", "lat": 25.0341, "lon": 121.5651,
+  "createdAt": 0,
   "facilities": {               // key 對應 config/facilities.js
     "wall": { "level": 1 }, "warehouse": { "level": 1 }, "watchtower": { "level": 0 },
     "farm": { "level": 1 }, "generator": { "level": 0 }, "rainCollector": { "level": 0 },
@@ -79,15 +83,18 @@
     { "slot": 1, "type": null, "level": 0, "garrisonId": null }
   ],
   "wallHp": 790.0,              // null = 滿血
-  "buildQueue": [{              // 最多 2 筆
+  "buildQueue": [{              // 每個據點最多 2 筆
     "kind": "facility | defense",
     "id": "farm",               // 設施 ID 或防禦類型
     "slot": 0,                  // 僅 defense
     "targetLevel": 2,
     "startAt": 0, "endAt": 0
   }]
-}
+}]
 ```
+
+> **文明度不存檔**：由 bases、領袖等級與已裝備裝備即時計算（`CivilizationSystem`），統計 `stats.peakCivilization` 記錄歷史最高值。
+> **v1 → v2 遷移**：舊版單一 `shelter` 物件會被轉成 `bases[0]` 並設為主要據點。
 
 ## 5. resources — 資源
 ```json
@@ -177,13 +184,14 @@
 | `crafted` | 製作次數 | `upgrades` | 建築升級 |
 | `recruits` | 招募人數 | `researchDone` | 完成研究 |
 | `breaches` | 防線失守 | `daysSurvived` | 存活天數 |
-| `foodCollected` | 累計產出食物 | | |
+| `foodCollected` | 累計產出食物 | `peakCivilization` | 歷史最高文明度 |
 
 ## 12. 靜態設定資料（config/，不存檔）
 
 | 檔案 | 內容 | 主鍵 |
 |---|---|---|
 | `constants.js` | 全域常數、資源定義、初始值 | — |
+| `civilization.js` | 文明度權重、階段、屍潮係數、主要據點危險度係數、據點上限與費用 | — |
 | `timePhases.js` | 日夜時段修正 | `day/dusk/night/midnight` |
 | `facilities.js` | 設施費用、效果公式 | `wall/warehouse/...` |
 | `defenses.js` | 防禦建築數值 | `barricade/trap/machineGun/flameTower/emTower/watchPost` |

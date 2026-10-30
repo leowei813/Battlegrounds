@@ -50,6 +50,7 @@ export class UIManager {
     this.toastEl = new Toast($('#toasts'));
     this.modal = new Modal($('#modal-root'));
     this.tab = 'shelter';
+    this.viewBaseId = null; // 避難所分頁目前檢視的據點（null = 主要據點）
     this.drawerCollapsed = false;
     this.lastHtml = '';
 
@@ -84,6 +85,7 @@ export class UIManager {
       if (action === 'openSettings') this.switchTab('settings');
       if (action === 'openRates') this.showRates();
       if (action === 'openCloud') this.switchTab('settings');
+      if (action === 'openCiv') this.switchTab('shelter');
     });
 
     bus.on(EVT.TOAST, ({ msg, type }) => this.toastEl.show(msg, type));
@@ -97,8 +99,23 @@ export class UIManager {
     bus.on(CLOUD_EVT.STATUS, () => this.renderHud());
     bus.on(CLOUD_EVT.LOCKED, (meta) => this.showCloudLock(meta));
 
+    bus.on('shelter:changed', () => {
+      this.phaser.registry.set('viewBaseId', this.viewBase()?.id || null);
+    });
+    this.phaser.registry.set('viewBaseId', this.viewBase()?.id || null);
     this.panels.map.init();
     this.switchTab(this.game.shelter.hasShelter() ? 'shelter' : 'map');
+  }
+
+  /** 目前檢視的據點（不存在時回到主要據點） */
+  viewBase() {
+    return this.game.shelter.base(this.viewBaseId) || this.game.shelter.primary();
+  }
+
+  setViewBase(id) {
+    this.viewBaseId = id;
+    this.phaser.registry.set('viewBaseId', this.viewBase()?.id || null);
+    this.refresh(true);
   }
 
   switchTab(id) {
@@ -157,7 +174,9 @@ export class UIManager {
       return `<div class="res ${full ? 'full' : ''} ${v < 1 && r < 0 ? 'empty' : ''}" title="${RESOURCES[k].name}：${Math.floor(v)}/${cap}（${r >= 0 ? '+' : ''}${r.toFixed(1)}/時）">
         <span>${RESOURCES[k].icon}</span><b>${formatNumber(v)}</b><small class="${r < 0 ? 'neg' : ''}">${r >= 0 ? '+' : ''}${formatNumber(r)}</small></div>`;
     }).join('');
-    const wallRatio = g.shelter.hasShelter() ? g.shelter.wallHp() / g.shelter.wallMax() : 1;
+    const hasBase = g.shelter.hasShelter();
+    const wallRatio = hasBase ? g.shelter.wallHp() / g.shelter.wallMax() : 1;
+    const tier = g.civilization.tier();
     this.hud.innerHTML = `
       <div class="hud-left">
         <div class="clock phase-${g.time.phaseId()}" title="${phase.desc}">
@@ -165,7 +184,8 @@ export class UIManager {
           <div><b>第 ${g.time.day()} 天 ${g.time.clockText()}</b><small>${phase.name}・${phase.desc}</small></div>
         </div>
         ${this.cloudBadge()}
-        <div class="wallhp" title="圍牆耐久">🧱${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp())}/${g.shelter.wallMax()}`)}</div>
+        <button class="civ-badge" data-action="openCiv" title="文明度：建築、玩家等級、裝備越高，屍潮越強">${tier.icon} 文明 ${g.civilization.value()}</button>
+        <div class="wallhp" title="主要據點圍牆耐久">🧱${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', hasBase ? `${Math.floor(g.shelter.wallHp())}/${g.shelter.wallMax()}` : '—')}</div>
       </div>
       <div class="hud-res" data-action="openRates">${res}
         <div class="res cur" title="${CURRENCIES.coins.name}"><span>${CURRENCIES.coins.icon}</span><b>${formatNumber(st.player.coins)}</b></div>

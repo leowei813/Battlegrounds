@@ -22,9 +22,13 @@ export class QuestSystem {
     const st = this.game.state;
     switch (cond.type) {
       case 'shelterSet':
-        return { cur: st.shelter.poiId ? 1 : 0, max: 1 };
+        return { cur: st.bases.length ? 1 : 0, max: 1 };
       case 'facility':
-        return { cur: st.shelter.facilities[cond.id].level, max: cond.value };
+        return { cur: this.game.shelter.maxLevel(cond.id), max: cond.value };
+      case 'bases':
+        return { cur: st.bases.length, max: cond.value };
+      case 'civilization':
+        return { cur: this.game.civilization.value(), max: cond.value };
       case 'stat':
         return { cur: st.stats[cond.key] || 0, max: cond.value };
       case 'statDelta':
@@ -32,7 +36,7 @@ export class QuestSystem {
       case 'survivors':
         return { cur: st.survivors.length, max: cond.value };
       case 'defenses':
-        return { cur: st.shelter.defenses.filter((d) => d.level > 0).length, max: cond.value };
+        return { cur: this.game.shelter.defenseCount(), max: cond.value };
       case 'research':
         return { cur: st.research.completed.length, max: cond.value };
       default:

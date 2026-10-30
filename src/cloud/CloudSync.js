@@ -152,7 +152,7 @@ export class CloudSync {
     if (!code) throw new CloudError('forbidden', '同步碼格式錯誤（應為 24 個英數字）');
     const remote = await this.provider.pull(saveIdFromCode(code), tokenFromCode(code));
     const state = SaveManager.migrate(remote.data);
-    if (!state?.player || !state?.shelter) throw new CloudError('server', '雲端存檔格式錯誤');
+    if (!state?.player || !Array.isArray(state?.bases)) throw new CloudError('server', '雲端存檔格式錯誤');
     this.cfg = { ...this.cfg, code, rev: remote.meta.rev, lastSyncAt: Date.now() };
     this.persist();
     return { state, meta: remote.meta };

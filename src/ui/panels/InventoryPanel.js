@@ -54,7 +54,7 @@ export class InventoryPanel {
   renderCraft() {
     const g = this.game;
     const st = g.state;
-    const wb = st.shelter.facilities.workbench.level;
+    const wb = g.shelter.maxLevel('workbench');
     const types = Object.entries(ITEM_TYPES).map(([id, def]) => {
       const unlocked = g.equipment.canCraftType(id);
       return `<div class="fac-card ${unlocked ? '' : 'locked'}">

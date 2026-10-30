@@ -179,7 +179,7 @@ export class EquipmentSystem {
   // ---- 製作 ----
 
   craftLevel() {
-    return Math.max(1, this.game.state.shelter.facilities.workbench.level * 5);
+    return Math.max(1, this.game.shelter.maxLevel('workbench') * 5);
   }
 
   canCraftType(typeId) {
@@ -199,7 +199,7 @@ export class EquipmentSystem {
 
   craft(typeId, blueprintId = null) {
     if (!ITEM_TYPES[typeId]) return { ok: false, reason: '未知裝備類型' };
-    if (this.game.state.shelter.facilities.workbench.level < 1) return { ok: false, reason: '需要工作台' };
+    if (this.game.shelter.maxLevel('workbench') < 1) return { ok: false, reason: '需要工作台' };
     const bpList = this.game.state.inventory.blueprints;
     const bp = blueprintId ? bpList.find((b) => b.id === blueprintId) : null;
     if (blueprintId && !bp) return { ok: false, reason: '找不到設計圖' };

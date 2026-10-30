@@ -1,7 +1,6 @@
 import {
   CLASSES, CLASS_KEYS, JOBS, SURVIVOR_NAMES, MAX_SURVIVOR_LEVEL, xpToNext, recruitCost,
 } from '../config/survivors.js';
-import { housingCap } from '../config/facilities.js';
 import { SLOT_KEYS } from '../config/equipment.js';
 import { createSurvivor } from '../core/GameState.js';
 import { clamp, pick, randInt } from '../utils/math.js';
@@ -28,7 +27,7 @@ export class SurvivorSystem {
   }
 
   housing() {
-    return housingCap(this.game.state.shelter.facilities.warehouse.level);
+    return this.game.shelter.housing();
   }
 
   activeSkills(sv) {
@@ -100,7 +99,7 @@ export class SurvivorSystem {
   }
 
   isGarrisoned(id) {
-    return this.game.state.shelter.defenses.some((d) => d.garrisonId === id);
+    return !!this.game.shelter.garrisonOf(id);
   }
 
   gainXp(sv, amount) {
@@ -194,9 +193,9 @@ export class SurvivorSystem {
     if (!sv || sv.isLeader) return { ok: false, reason: '無法遣散領袖' };
     if (sv.status === 'exploring') return { ok: false, reason: '探索中' };
     SLOT_KEYS.forEach((slot) => { sv.equipment[slot] = null; });
-    this.game.state.shelter.defenses.forEach((d) => {
+    this.game.state.bases.forEach((b) => b.defenses.forEach((d) => {
       if (d.garrisonId === id) d.garrisonId = null;
-    });
+    }));
     this.game.state.survivors = this.list.filter((s) => s.id !== id);
     return { ok: true, msg: `${sv.name} 離開了避難所` };
   }

@@ -12,7 +12,15 @@ Battlegrounds/
 │   └── favicon.svg                 # 網站圖示
 │
 ├── scripts/
-│   └── check-data.js               # 設定檔參照檢查 + 無頭邏輯模擬（npm run check）
+│   ├── check-data.js               # 設定檔參照檢查 + 無頭邏輯模擬（npm run check）
+│   └── test-cloud.js               # 雲端存檔整合測試（npm run test:cloud）
+│
+├── server/                         # 雲端存檔伺服器（零相依 Node，npm run server）
+│   ├── index.js
+│   └── SaveStore.js
+│
+├── supabase/
+│   └── schema.sql                  # Supabase 雲端存檔資料表與 RPC
 │
 ├── docs/
 │   ├── 01-GDD.md                   # 第一階段：遊戲設計書
@@ -20,13 +28,15 @@ Battlegrounds/
 │   ├── 03-DATA-SCHEMA.md           # 第三階段：資料結構
 │   ├── save-example.json           #   └ 實際存檔範例
 │   ├── 04-PROJECT-STRUCTURE.md     # 第四階段：本文件
-│   └── 05-DEPLOYMENT.md            # 第六階段：安裝與部署
+│   ├── 05-DEPLOYMENT.md            # 第六階段：安裝與部署
+│   └── 06-CLOUD-SAVE.md            # 雲端存檔
 │
 └── src/
     ├── main.js                     # 進入點：讀檔/新遊戲 → 掃描地圖 → 啟動 Phaser + UI
     │
     ├── config/                     # 【資料層】所有平衡數值與靜態內容（純資料）
     │   ├── constants.js            #   全域常數、資源定義、初始值
+    │   ├── civilization.js         #   文明度權重、屍潮係數、據點設定
     │   ├── timePhases.js           #   日夜時段與修正值
     │   ├── facilities.js           #   避難所設施（費用/效果公式）
     │   ├── defenses.js             #   防禦建築
@@ -46,16 +56,22 @@ Battlegrounds/
     ├── systems/                    # 【領域邏輯】不依賴 DOM / Phaser，可在 Node 執行
     │   ├── TimeSystem.js           #   日夜
     │   ├── ResourceSystem.js       #   放置收益
-    │   ├── ShelterSystem.js        #   避難所、施工、防禦建築
+    │   ├── ShelterSystem.js        #   多據點、主要據點、施工、防禦建築
+    │   ├── CivilizationSystem.js   #   文明度
     │   ├── SurvivorSystem.js       #   倖存者屬性、經驗、招募、受傷
     │   ├── EquipmentSystem.js      #   裝備生成、詞綴、製作
     │   ├── CombatSystem.js         #   自動戰鬥
     │   ├── ExplorationSystem.js    #   探索與事件
     │   ├── ZombieSpawnSystem.js    #   地圖殭屍生成
-    │   ├── SiegeSystem.js          #   屍潮防守模擬
+    │   ├── SiegeSystem.js          #   屍潮防守模擬（每據點一個 BaseSiege）
     │   ├── ResearchSystem.js       #   研究
     │   ├── QuestSystem.js          #   任務與成就
     │   └── costUtils.js            #   成本/獎勵共用函式
+    │
+    ├── cloud/                      # 【雲端存檔】
+    │   ├── CloudSync.js            #   同步管理（開機決策、自動上傳、即時鎖定、接管）
+    │   ├── syncCode.js             #   同步碼
+    │   └── providers/              #   SelfHostProvider / SupabaseProvider
     │
     ├── map/                        # 【真實地圖】
     │   ├── OverpassService.js      #   OSM Overpass 查詢與標籤分類

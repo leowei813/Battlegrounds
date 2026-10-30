@@ -54,11 +54,12 @@ export class MapService {
   render(state) {
     if (!this.map) return;
     const { pois, zombieGroups } = state.map;
-    const sh = state.shelter;
+    const basePoiIds = new Set(state.bases.map((b) => b.poiId));
+    const sh = state.bases.find((b) => b.id === state.primaryBaseId) || state.bases[0] || null;
 
     this.layers.pois.clearLayers();
     pois.forEach((p) => {
-      if (p.id === sh.poiId) return;
+      if (basePoiIds.has(p.id)) return;
       const pt = POI_TYPES[p.type];
       const dep = p.depletion ? ` style="opacity:${1 - p.depletion * 0.8}"` : '';
       const m = L.marker([p.lat, p.lon], {
@@ -84,21 +85,30 @@ export class MapService {
 
     this.layers.shelter.clearLayers();
     this.layers.range.clearLayers();
-    if (sh.lat != null) {
+    if (sh) {
       L.circle([sh.lat, sh.lon], {
         radius: POI_SCAN_RADIUS, color: '#ff5252', weight: 1, dashArray: '6 6', fillOpacity: 0.03,
       }).addTo(this.layers.range);
-      L.marker([sh.lat, sh.lon], {
-        icon: this.icon(`<div class="shelter-pin">🏰</div>`, 'shelter-icon', 46),
-        zIndexOffset: 1000,
-        title: sh.name,
-      }).on('click', () => bus.emit(EVT.OPEN_POI, { poiId: sh.poiId }))
-        .bindTooltip(escapeHtml(sh.name), { direction: 'top', offset: [0, -20] })
-        .addTo(this.layers.shelter);
     }
+    state.bases.forEach((b) => {
+      const primary = b === sh;
+      L.marker([b.lat, b.lon], {
+        icon: primary
+          ? this.icon('<div class="shelter-pin">🏰</div>', 'shelter-icon', 46)
+          : this.icon('<div class="shelter-pin outpost">🏠</div>', 'shelter-icon', 36),
+        zIndexOffset: primary ? 1000 : 900,
+        title: b.name,
+      }).on('click', () => bus.emit(EVT.OPEN_POI, { poiId: b.poiId }))
+        .bindTooltip(`${primary ? '⭐ ' : ''}${escapeHtml(b.name)}`, { direction: 'top', offset: [0, primary ? -20 : -16] })
+        .addTo(this.layers.shelter);
+      // 前哨與主要據點之間的補給線
+      if (!primary && sh) {
+        L.polyline([[sh.lat, sh.lon], [b.lat, b.lon]], { color: '#ffb300', weight: 2, opacity: 0.5 }).addTo(this.layers.range);
+      }
+    });
 
     this.layers.routes.clearLayers();
-    if (sh.lat != null) {
+    if (sh) {
       state.expeditions.forEach((ex) => {
         const p = pois.find((x) => x.id === ex.poiId);
         if (!p) return;

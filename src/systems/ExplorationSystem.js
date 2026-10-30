@@ -33,8 +33,9 @@ export class ExplorationSystem {
 
   /** 計算實際探索時間（毫秒） */
   actualDurationMs(poi, members, durationMin, at = Date.now()) {
-    const sh = this.game.state.shelter;
-    const km = sh.lat != null ? haversine(sh.lat, sh.lon, poi.lat, poi.lon) / 1000 : 0;
+    // 探索隊從主要據點出發
+    const sh = this.game.shelter.primary();
+    const km = sh ? haversine(sh.lat, sh.lon, poi.lat, poi.lon) / 1000 : 0;
     const travelMin = km * 4; // 單程 + 回程，約每公里 4 分鐘
     const scout = Math.max(0, ...members.map((m) => this.game.survivors.skillEffects(m).exploreSpeed || 0));
     const speed = this.game.time.exploreSpeedMul(at) * (1 + scout + this.game.research.bonus('exploreSpeed'));
@@ -199,7 +200,7 @@ export class ExplorationSystem {
           enemies = Array.from({ length: n }, () => this.game.combat.createEnemy(weightedPick(pt.enemies), level));
           report.events.push(`🧟 遭遇 ${n} 隻殭屍`);
         }
-        const fs = this.game.state.shelter.facilities.watchtower.level * 0.04;
+        const fs = this.game.shelter.primary().facilities.watchtower.level * 0.04;
         const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs });
         this.game.combat.applyOutcome(members, result, exp.endAt);
         report.kills += result.kills.length;

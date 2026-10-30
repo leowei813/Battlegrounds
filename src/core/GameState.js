@@ -9,8 +9,29 @@ import { uid } from '../utils/math.js';
 export const STAT_KEYS = [
   'kills', 'siegeKills', 'bossKills', 'eliteKills', 'explorations', 'battlesWon', 'battlesLost',
   'itemsFound', 'rareItems', 'legendaryItems', 'crafted', 'upgrades', 'recruits',
-  'researchDone', 'breaches', 'daysSurvived', 'foodCollected',
+  'researchDone', 'breaches', 'daysSurvived', 'foodCollected', 'peakCivilization',
 ];
+
+/**
+ * 建立據點。第一個據點使用設施初始等級，之後的前哨據點只有 Lv1 圍牆。
+ * @param {{id:string, name:string, lat:number, lon:number}} poi
+ */
+export function createBase(poi, isFirst) {
+  return {
+    id: uid('base'),
+    poiId: poi.id,
+    name: poi.name,
+    lat: poi.lat,
+    lon: poi.lon,
+    createdAt: Date.now(),
+    facilities: Object.fromEntries(
+      Object.entries(FACILITIES).map(([id, def]) => [id, { level: isFirst ? def.startLevel : id === 'wall' ? 1 : 0 }]),
+    ),
+    defenses: Array.from({ length: DEFENSE_SLOTS }, (_, slot) => ({ slot, type: null, level: 0, garrisonId: null })),
+    wallHp: null, // null = 滿血（首次計算時填入）
+    buildQueue: [],
+  };
+}
 
 export function createLeader(name, classId = 'warrior') {
   return {
@@ -49,9 +70,6 @@ export function createSurvivor(name, classId, level = 1) {
  */
 export function createInitialState({ playerName, classId, lat, lon }) {
   const now = Date.now();
-  const facilities = Object.fromEntries(
-    Object.entries(FACILITIES).map(([id, def]) => [id, { level: def.startLevel }]),
-  );
   return {
     version: SAVE_VERSION,
     createdAt: now,
@@ -66,16 +84,9 @@ export function createInitialState({ playerName, classId, lat, lon }) {
       zombieGroups: [],
       lastZombieRefresh: 0,
     },
-    shelter: {
-      poiId: null,
-      name: '',
-      lat: null,
-      lon: null,
-      facilities,
-      defenses: Array.from({ length: DEFENSE_SLOTS }, (_, slot) => ({ slot, type: null, level: 0, garrisonId: null })),
-      wallHp: null, // null = 滿血（首次計算時填入）
-      buildQueue: [],
-    },
+    bases: [], // 據點列表（見 createBase）
+    primaryBaseId: null, // 主要據點
+
     resources: { ...STARTING_RESOURCES },
     inventory: { items: [], blueprints: [] },
     survivors: [createLeader(playerName, classId)],

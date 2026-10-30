@@ -4,7 +4,7 @@ import { ALL_ENEMIES } from '../../config/enemies.js';
 import { RESOURCES } from '../../config/constants.js';
 import { delegateActions } from '../../utils/dom.js';
 import { haversine } from '../../utils/math.js';
-import { btn } from '../components.js';
+import { btn, costHtml } from '../components.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { showBattle } from '../BattleView.js';
 
@@ -26,8 +26,7 @@ export class MapPanel {
     root.innerHTML = '<div id="map-canvas"></div><div id="map-overlay" class="map-overlay"></div>';
     this.overlay = root.querySelector('#map-overlay');
     this.service = new MapService(root.querySelector('#map-canvas'));
-    const sh = this.game.state.shelter;
-    const c = sh.lat != null ? sh : this.game.state.map.center;
+    const c = this.game.shelter.primary() || this.game.state.map.center;
     this.service.init(c.lat, c.lon);
     delegateActions(this.overlay, (action) => this.onAction(action));
   }
@@ -63,14 +62,14 @@ export class MapPanel {
   }
 
   async onAction(action) {
-    const sh = this.game.state.shelter;
-    if (action === 'gotoShelter' && sh.lat != null) this.service.focus(sh.lat, sh.lon);
+    const sh = this.game.shelter.primary();
+    if (action === 'gotoShelter' && sh) this.service.focus(sh.lat, sh.lon);
     if (action === 'legend') this.showLegend();
     if (action === 'rescan') {
       if (this.scanning) return;
       this.scanning = true;
       this.renderOverlay();
-      const c = sh.lat != null ? sh : this.game.state.map.center;
+      const c = sh || this.game.state.map.center;
       this.ui.toastEl.show('📡 掃描附近建築中…', 'info');
       const r = await this.game.scanMap(c.lat, c.lon);
       this.scanning = false;
@@ -87,25 +86,30 @@ export class MapPanel {
   poiBody(poi) {
     const g = this.game;
     const pt = POI_TYPES[poi.type];
-    const sh = g.state.shelter;
-    const isShelter = poi.id === sh.poiId;
-    const dist = sh.lat != null ? Math.round(haversine(sh.lat, sh.lon, poi.lat, poi.lon)) : null;
+    const sh = g.shelter.primary();
+    const base = g.shelter.baseAtPoi(poi.id);
+    const dist = sh && !g.shelter.isPrimary(base) ? Math.round(haversine(sh.lat, sh.lon, poi.lat, poi.lon)) : null;
     const danger = g.zombies.areaDanger(poi);
     const groups = g.state.map.zombieGroups.filter((z) => z.poiId === poi.id);
     const exploring = g.state.expeditions.filter((e) => e.poiId === poi.id).length;
     const actions = [];
+    let establish = '';
     if (!g.shelter.hasShelter()) actions.push(btn('🏠 設為避難所', 'setShelter', {}, { cls: 'btn-primary' }));
-    else if (isShelter) actions.push(btn('🏠 進入避難所', 'enterShelter', {}, { cls: 'btn-primary' }));
-    else {
+    else if (base) {
+      actions.push(btn('🏠 進入據點', 'enterShelter', {}, { cls: 'btn-primary' }));
+      if (!g.shelter.isPrimary(base)) actions.push(btn('⭐ 設為主要據點', 'setPrimary', {}, { cls: 'btn-ghost' }));
+    } else {
+      const check = g.shelter.canEstablish(poi);
       actions.push(btn('🧭 派遣探索', 'explore', {}, { cls: 'btn-primary' }));
-      actions.push(btn('🏚️ 搬遷至此（💰200 ⛽50）', 'setShelter', {}, { cls: 'btn-ghost' }));
+      actions.push(btn('🏗️ 建立新據點', 'setShelter', {}, { cls: 'btn-ghost', disabled: !check.ok, title: check.reason || '' }));
+      establish = `<small class="muted block">建立據點費用：<span class="costs inline">${costHtml(g.state, g.shelter.establishCost())}</span>${check.ok ? '' : `（${check.reason}）`}</small>`;
     }
     return `
       <div class="poi-detail">
         <div class="poi-big" style="--c:${pt.color}">${pt.icon}</div>
         <div>
           <b>${pt.name}</b>${poi.osm ? ' <small class="tag">OSM</small>' : ' <small class="tag">傳聞</small>'}
-          <div>危險度 <span class="danger">${stars(danger)}</span> ${pt.special ? '<span class="tag tag-red">高級怪物</span>' : ''}</div>
+          ${base ? `<div><span class="tag tag-amber">${g.shelter.isPrimary(base) ? '⭐ 主要據點' : '🏠 前哨據點'}</span> 據點危險度 <b>${g.shelter.dangerLevel(base)}</b></div>` : `<div>危險度 <span class="danger">${stars(danger)}</span> ${pt.special ? '<span class="tag tag-red">高級怪物</span>' : ''}</div>`}
           ${dist != null ? `<div class="muted">距避難所 ${dist} 公尺</div>` : ''}
           <div class="muted">可能物資：${Object.keys(pt.loot).map((k) => `${RESOURCES[k].icon}${RESOURCES[k].name}`).join(' ')}</div>
           <div class="muted">物資殘量：${Math.round((1 - (poi.depletion || 0)) * 100)}%・裝備掉率 ${Math.round(pt.itemChance * 100)}%</div>
@@ -113,7 +117,7 @@ export class MapPanel {
         </div>
       </div>
       ${groups.length ? `<div class="label">附近殭屍</div>${groups.map((z) => `<div class="row-between"><span>${ALL_ENEMIES[z.enemyId].icon} ${g.zombies.groupLabel(z)}</span>${btn('⚔️ 攻擊', 'attack', { id: z.id }, { cls: 'btn-danger btn-sm', disabled: !g.shelter.hasShelter() })}</div>`).join('')}` : ''}
-      <div class="btn-row">${actions.join('')}</div>`;
+      <div class="btn-row">${actions.join('')}</div>${establish}`;
   }
 
   openPoi(poiId) {
@@ -125,15 +129,20 @@ export class MapPanel {
       live: () => this.poiBody(poi),
       onAction: (action, data, m) => {
         if (action === 'setShelter') {
-          const r = this.ui.result(this.game.shelter.setShelter(poi));
+          const r = this.ui.result(this.game.shelter.establish(poi));
           if (r.ok) {
             m.close();
             this.renderMap(true);
             this.game.zombies.refresh();
+            this.ui.setViewBase(r.base.id);
             this.ui.switchTab('shelter');
           }
+        } else if (action === 'setPrimary') {
+          const r = this.ui.result(this.game.shelter.setPrimary(this.game.shelter.baseAtPoi(poi.id)?.id));
+          if (r.ok) this.renderMap(true);
         } else if (action === 'enterShelter') {
           m.close();
+          this.ui.setViewBase(this.game.shelter.baseAtPoi(poi.id)?.id);
           this.ui.switchTab('shelter');
         } else if (action === 'explore') {
           this.openExplore(poi);

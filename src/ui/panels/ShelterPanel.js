@@ -1,6 +1,8 @@
 import { FACILITIES, FACILITY_MAX_LEVEL } from '../../config/facilities.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL } from '../../config/defenses.js';
 import { CLASSES } from '../../config/survivors.js';
+import { PRIMARY_DANGER_COEF, MAX_BASES } from '../../config/civilization.js';
+import { POI_TYPES } from '../../config/poiTypes.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { btn, costHtml, timerBar, progressBar } from '../components.js';
 
@@ -13,15 +15,48 @@ export class ShelterPanel {
     this.game = ui.game;
   }
 
+  /** 文明度卡片 */
+  renderCivilization(base) {
+    const g = this.game;
+    const civ = g.civilization;
+    const b = civ.breakdown();
+    const tier = civ.tier(b.total);
+    const next = tier.next;
+    const ratio = next ? (b.total - tier.min) / (next.min - tier.min) : 1;
+    const siege = g.siege.of(base.id);
+    const isPrimary = g.shelter.isPrimary(base);
+    const baseDanger = g.shelter.baseDanger(base);
+    const danger = g.shelter.dangerLevel(base);
+    return `
+      <div class="civ-card">
+        <div class="row-between"><b>${tier.icon} 文明度 ${b.total}</b><span class="tag tag-amber">${tier.name}</span></div>
+        ${progressBar(ratio, 'civ', next ? `距「${next.name}」${next.min - b.total}` : '已達最高階段')}
+        <div class="civ-parts"><span>🏗️ 建築 ${b.buildings}</span><span>👑 玩家等級 ${b.player}</span><span>🎒 裝備 ${b.equipment}</span></div>
+        <small class="muted block">屍潮強度隨文明度提升（殭屍 +${civ.levelBonus()} 級、頻率 ×${civ.spawnMul().toFixed(2)}），與天數無關。</small>
+        <div class="row-between danger-row">
+          <span>☠ 據點危險度 <b>${danger}</b></span>
+          <small class="muted">${isPrimary ? `基礎 ${baseDanger} + 文明度 ${b.total} × ${PRIMARY_DANGER_COEF}` : `基礎 ${baseDanger}（前哨不受文明度加成）`}</small>
+        </div>
+        <small class="muted block">本據點殭屍 Lv${siege.zombieLevel()}・每 ${siege.spawnInterval().toFixed(1)} 秒一隻</small>
+      </div>`;
+  }
+
   render() {
     const g = this.game;
     const st = g.state;
-    const sh = st.shelter;
-    const head = `<div class="drawer-head" data-action="toggleDrawer"><b>🏠 ${escapeHtml(sh.name || '避難所')}</b><span>${this.ui.drawerCollapsed ? '▲ 展開' : '▼ 收合'}</span></div>`;
-    if (!g.shelter.hasShelter()) {
+    const sh = this.ui.viewBase();
+    const head = `<div class="drawer-head" data-action="toggleDrawer"><b>${sh && g.shelter.isPrimary(sh) ? '⭐' : '🏠'} ${escapeHtml(sh?.name || '避難所')}</b><span>${this.ui.drawerCollapsed ? '▲ 展開' : '▼ 收合'}</span></div>`;
+    if (!sh) {
       return `${head}<div class="empty">尚未建立避難所。<br>${btn('🗺️ 前往地圖選擇建築', 'gotoMap', {}, { cls: 'btn-primary' })}</div>`;
     }
     const now = Date.now();
+    const tabs = st.bases.map((b) => {
+      const poi = g.shelter.poiOf(b);
+      return `<button class="chip ${b.id === sh.id ? 'active' : ''}" data-action="viewBase" data-id="${b.id}">${g.shelter.isPrimary(b) ? '⭐' : poi ? POI_TYPES[poi.type].icon : '🏠'} ${escapeHtml(b.name)}</button>`;
+    }).join('');
+    const baseActions = g.shelter.isPrimary(sh)
+      ? '<small class="muted">⭐ 主要據點：倖存者居住、探索出發、駐守倖存者防衛於此。</small>'
+      : `${btn('⭐ 設為主要據點', 'setPrimary', {}, { cls: 'btn-sm btn-primary' })}${btn('🏚️ 放棄據點', 'abandon', {}, { cls: 'btn-sm btn-ghost' })}`;
     const queue = sh.buildQueue.map((q) => {
       const name = q.kind === 'facility' ? FACILITIES[q.id].name : `${DEFENSES[q.id].name}（槽位 ${q.slot + 1}）`;
       return `<div class="queue-item">🔨 ${name} → Lv${q.targetLevel}${timerBar(q.startAt || now, q.endAt, now)}</div>`;
@@ -29,14 +64,14 @@ export class ShelterPanel {
 
     const facilities = Object.entries(FACILITIES).map(([id, def]) => {
       const lv = sh.facilities[id].level;
-      const busy = g.shelter.isFacilityBusy(id);
+      const busy = g.shelter.isFacilityBusy(sh, id);
       const max = lv >= FACILITY_MAX_LEVEL;
-      const check = g.shelter.canUpgradeFacility(id);
+      const check = g.shelter.canUpgradeFacility(sh, id);
       return `
       <div class="fac-card ${lv === 0 ? 'unbuilt' : ''}">
         <div class="fac-head"><span class="fac-icon">${def.icon}</span><div><b>${def.name}</b> <small>Lv${lv}</small><small class="muted block">${def.desc}</small></div></div>
         <div class="fac-effect">${lv > 0 ? def.effectText(lv) : '尚未建造'}${max ? '' : `<span class="next">→ ${def.effectText(lv + 1)}</span>`}</div>
-        ${max ? '<div class="tag">MAX</div>' : `<div class="row-between"><div class="costs">${costHtml(st, g.shelter.facilityCost(id))}</div>
+        ${max ? '<div class="tag">MAX</div>' : `<div class="row-between"><div class="costs">${costHtml(st, g.shelter.facilityCost(sh, id))}</div>
           ${btn(busy ? '施工中' : lv === 0 ? '建造' : '升級', 'upgrade', { id }, { cls: 'btn-sm btn-primary', disabled: !check.ok, title: check.reason || '' })}</div>`}
       </div>`;
     }).join('');
@@ -49,15 +84,20 @@ export class ShelterPanel {
       </button>`;
     }).join('');
 
-    const wallRatio = g.shelter.wallHp() / g.shelter.wallMax();
+    const siege = g.siege.of(sh.id);
+    const wallRatio = g.shelter.wallHp(sh) / g.shelter.wallMax(sh);
     const logs = st.log.slice(0, 10).map((l) => `<li class="log-${l.type}"><time>${new Date(l.t).toLocaleTimeString().slice(0, 5)}</time>${escapeHtml(l.msg)}</li>`).join('');
     return `${head}
       <div class="drawer-body">
+        <div class="label">據點 ${st.bases.length}/${MAX_BASES} <small>（在地圖點選建築可建立新據點）</small></div>
+        <div class="chips">${tabs}</div>
+        <div class="btn-row">${baseActions}</div>
+        ${this.renderCivilization(sh)}
         <div class="stat-grid">
-          <div><small>圍牆</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp())}/${g.shelter.wallMax()}`)}</div>
-          <div><small>防禦 DPS</small><b>${g.siege.defenseDps()}</b></div>
-          <div><small>來襲殭屍</small><b>${g.siege.zombies.length}</b></div>
-          <div><small>屍潮間隔</small><b>${g.siege.spawnInterval().toFixed(1)} 秒</b></div>
+          <div><small>圍牆</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}</div>
+          <div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div>
+          <div><small>來襲殭屍</small><b>${siege.zombies.length}</b></div>
+          <div><small>屍潮間隔</small><b>${siege.spawnInterval().toFixed(1)} 秒</b></div>
         </div>
         ${queue ? `<h4>施工佇列</h4>${queue}` : ''}
         <h4>防禦建築 <small class="muted">（點擊場景中的槽位也可建造）</small></h4>
@@ -72,15 +112,22 @@ export class ShelterPanel {
   onAction(action, data) {
     const g = this.game;
     if (action === 'gotoMap') this.ui.switchTab('map');
-    if (action === 'upgrade') this.ui.result(g.shelter.upgradeFacility(data.id));
+    const base = this.ui.viewBase();
+    if (action === 'upgrade') this.ui.result(g.shelter.upgradeFacility(base, data.id));
     if (action === 'slot') this.openSlot(+data.slot);
+    if (action === 'viewBase') this.ui.setViewBase(data.id);
+    if (action === 'setPrimary') this.ui.result(g.shelter.setPrimary(base.id));
+    if (action === 'abandon' && confirm(`確定放棄「${base.name}」？該據點的設施與防禦建築都會消失。`)) {
+      const r = this.ui.result(g.shelter.abandon(base.id));
+      if (r.ok) this.ui.setViewBase(null);
+    }
   }
 
-  slotBody(slot) {
+  slotBody(base, slot) {
     const g = this.game;
     const st = g.state;
-    const d = st.shelter.defenses[slot];
-    const busy = g.shelter.isSlotBusy(slot);
+    const d = base.defenses[slot];
+    const busy = g.shelter.isSlotBusy(base, slot);
     if (!d.type) {
       return `<p class="muted">選擇要在此槽位建造的防禦建築：</p>
       ${Object.entries(DEFENSES).map(([type, def]) => {
@@ -117,19 +164,20 @@ export class ShelterPanel {
 
   openSlot(slot) {
     const g = this.game;
-    if (!g.shelter.hasShelter()) {
+    const base = this.ui.viewBase();
+    if (!base) {
       this.ui.toastEl.show('請先建立避難所', 'danger');
       return;
     }
     this.ui.modal.open({
-      title: `🛡️ 防禦槽位 ${slot + 1}`,
-      body: this.slotBody(slot),
-      live: () => this.slotBody(slot),
+      title: `🛡️ ${base.name}・防禦槽位 ${slot + 1}`,
+      body: this.slotBody(base, slot),
+      live: () => this.slotBody(base, slot),
       onAction: (action, data, m) => {
-        if (action === 'build') this.ui.result(g.shelter.buildDefense(slot, data.type));
-        if (action === 'demolish' && confirm('確定拆除？（不退還資源）')) this.ui.result(g.shelter.demolish(slot));
-        if (action === 'garrison') this.ui.result(g.shelter.garrison(slot, data.id || null));
-        m.update(this.slotBody(slot));
+        if (action === 'build') this.ui.result(g.shelter.buildDefense(base, slot, data.type));
+        if (action === 'demolish' && confirm('確定拆除？（不退還資源）')) this.ui.result(g.shelter.demolish(base, slot));
+        if (action === 'garrison') this.ui.result(g.shelter.garrison(base, slot, data.id || null));
+        m.update(this.slotBody(base, slot));
       },
     });
   }

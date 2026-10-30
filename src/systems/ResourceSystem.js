@@ -11,15 +11,15 @@ export class ResourceSystem {
     this.game = game;
   }
 
+  /** 資源上限：所有據點倉庫容量加總 */
   storageCap() {
-    const st = this.game.state;
-    return Math.round(storageCap(st.shelter.facilities.warehouse.level) * (1 + this.game.research.bonus('storagePct')));
+    const sum = this.game.state.bases.reduce((s, b) => s + (b.facilities.warehouse.level > 0 ? storageCap(b.facilities.warehouse.level) : 0), 0);
+    return Math.round(Math.max(storageCap(0), sum) * (1 + this.game.research.bonus('storagePct')));
   }
 
-  /** 發電機是否運作中（有燃料） */
+  /** 發電機是否有燃料可運作 */
   generatorActive() {
-    const lv = this.game.state.shelter.facilities.generator.level;
-    return lv > 0 && this.game.state.resources.fuel > 0.5;
+    return this.game.state.resources.fuel > 0.5;
   }
 
   /**
@@ -27,18 +27,25 @@ export class ResourceSystem {
    */
   rates() {
     const st = this.game.state;
-    const f = st.shelter.facilities;
     const rb = this.game.research.bonuses();
     const gross = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, 0]));
     const upkeep = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, 0]));
     const now = Date.now();
 
-    let foodPct = (rb.foodPct || 0) + f.rainCollector.level * 0.1;
-    gross.food += f.farm.level * 18;
-    gross.medicine += f.rainCollector.level * 1.5 + (rb.medicinePerHour || 0);
-    gross.wood += f.workbench.level * 8;
-    gross.metal += f.workbench.level * 5;
-    gross.cloth += f.workbench.level * 4;
+    // 各據點設施產出加總；發電機只加成所在據點，並消耗燃料
+    const genOn = this.generatorActive();
+    let foodPct = rb.foodPct || 0;
+    st.bases.forEach((b) => {
+      const f = b.facilities;
+      const mul = genOn ? 1 + f.generator.level * 0.06 : 1;
+      gross.food += f.farm.level * 18 * (1 + f.rainCollector.level * 0.1) * mul;
+      gross.medicine += f.rainCollector.level * 1.5 * mul;
+      gross.wood += f.workbench.level * 8 * mul;
+      gross.metal += f.workbench.level * 5 * mul;
+      gross.cloth += f.workbench.level * 4 * mul;
+      if (genOn) upkeep.fuel += f.generator.level * 2;
+    });
+    gross.medicine += rb.medicinePerHour || 0;
     gross.fuel += rb.fuelPerHour || 0;
 
     // 倖存者工作
@@ -54,11 +61,6 @@ export class ResourceSystem {
     });
     gross.food *= 1 + foodPct;
 
-    if (this.generatorActive()) {
-      const mul = 1 + f.generator.level * 0.06;
-      RESOURCE_KEYS.forEach((k) => { gross[k] *= mul; });
-      upkeep.fuel += f.generator.level * 2;
-    }
     upkeep.food += st.survivors.length * FOOD_PER_SURVIVOR_HOUR;
 
     const net = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, gross[k] - upkeep[k]]));

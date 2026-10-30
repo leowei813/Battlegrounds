@@ -46,7 +46,7 @@ export class ResearchSystem {
   }
 
   labLevel() {
-    return this.game.state.shelter.facilities.researchCenter.level;
+    return this.game.shelter.maxLevel('researchCenter');
   }
 
   /** 研究時間（秒）受研究中心等級加速 */

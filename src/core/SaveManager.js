@@ -54,7 +54,7 @@ export class SaveManager {
   static importString(str) {
     const json = decodeURIComponent(escape(atob(str.trim())));
     const data = SaveManager.migrate(JSON.parse(json));
-    if (!data?.player || !data?.shelter) throw new Error('存檔格式錯誤');
+    if (!data?.player || !Array.isArray(data?.bases)) throw new Error('存檔格式錯誤');
     return data;
   }
 
@@ -68,7 +68,28 @@ export class SaveManager {
     if (v > SAVE_VERSION) {
       console.warn('[SaveManager] save is from a newer version');
     }
-    // v0 -> v1 範例：補 stats
+    // v1 -> v2：單一避難所 shelter 改為多據點 bases + primaryBaseId
+    if (v < 2 && data.shelter) {
+      const { shelter } = data;
+      data.bases = shelter.poiId
+        ? [{
+          id: 'base_legacy',
+          poiId: shelter.poiId,
+          name: shelter.name,
+          lat: shelter.lat,
+          lon: shelter.lon,
+          createdAt: data.createdAt,
+          facilities: shelter.facilities,
+          defenses: shelter.defenses,
+          wallHp: shelter.wallHp,
+          buildQueue: shelter.buildQueue || [],
+        }]
+        : [];
+      data.primaryBaseId = data.bases[0]?.id || null;
+      delete data.shelter;
+    }
+    data.bases = data.bases || [];
+    // 補 stats
     data.stats = data.stats || {};
     STAT_KEYS.forEach((k) => {
       if (typeof data.stats[k] !== 'number') data.stats[k] = 0;

@@ -21,17 +21,16 @@ export class ZombieSpawnSystem {
 
   /** 依距離避難所增加危險度（越遠越危險） */
   areaDanger(poi) {
-    const sh = this.game.state.shelter;
+    const sh = this.game.shelter.primary();
     const base = POI_TYPES[poi.type].danger;
-    if (sh.lat == null) return base;
+    if (!sh) return base;
     const km = haversine(sh.lat, sh.lon, poi.lat, poi.lon) / 1000;
     return base + Math.min(2, Math.floor(km / 0.6));
   }
 
-  /** 區域敵人等級 */
+  /** 區域敵人等級：區域危險度 + 文明度加成（不隨天數成長） */
   areaLevel(poi) {
-    const day = this.game.time.day();
-    return Math.max(1, Math.round(this.areaDanger(poi) * 1.5 - 1) + Math.floor(day / 2));
+    return Math.max(1, Math.round(this.areaDanger(poi) * 1.5 - 1) + this.game.civilization.levelBonus());
   }
 
   update(now) {
@@ -48,7 +47,7 @@ export class ZombieSpawnSystem {
     // 過期的群體散去
     map.zombieGroups = this.groups.filter((g) => now - g.spawnedAt < ZOMBIE_REFRESH_MS * 3);
     const target = Math.round(ZOMBIE_MAX_GROUPS * Math.min(1, 0.45 * phase.zombieMul));
-    const candidates = map.pois.filter((p) => p.id !== this.game.state.shelter.poiId);
+    const candidates = map.pois.filter((p) => !this.game.shelter.baseAtPoi(p.id));
     let guard = 0;
     while (map.zombieGroups.length < target && candidates.length && guard < 200) {
       guard += 1;
@@ -103,7 +102,7 @@ export class ZombieSpawnSystem {
     if (members.some((m) => !this.game.survivors.isAvailable(m))) return { ok: false, reason: '有隊員無法出戰' };
 
     const enemies = Array.from({ length: g.count }, () => this.game.combat.createEnemy(g.enemyId, g.level, g.elite));
-    const firstStrike = this.game.state.shelter.facilities.watchtower.level * 0.04;
+    const firstStrike = this.game.shelter.primary().facilities.watchtower.level * 0.04;
     const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: firstStrike });
     this.game.combat.applyOutcome(members, result);
 

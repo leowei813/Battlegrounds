@@ -1,6 +1,7 @@
 import { DEFENSES } from '../config/defenses.js';
 import { ENEMIES, BOSSES } from '../config/enemies.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
+import { SIEGE_SCALING, BREACH_LOSS } from '../config/civilization.js';
 import {
   chance, pick, randFloat, weightedPick, clamp,
 } from '../utils/math.js';
@@ -12,18 +13,18 @@ export const WORLD = {
 };
 const MAX_ZOMBIES = 45;
 const MAX_FX = 250;
-const BREACH_LOSS = 0.08;
 const BREACH_GRACE = 90;
 /** 殭屍對圍牆的傷害係數（放置遊戲節奏：讓防線有時間反應） */
 const WALL_DMG_MUL = 0.3;
 
 /**
- * 避難所防守（屍潮）模擬。純邏輯，以「世界座標」運作（中心 0,0），
- * 由 ShelterScene 每幀呼叫 update(dt) 並讀取 zombies / 消耗 fx 來繪製。
+ * 單一據點的屍潮防守模擬。純邏輯，以「世界座標」運作（中心 0,0）。
+ * 強度取決於「文明度」與「據點危險度」，與遊戲天數無關。
  */
-export class SiegeSystem {
-  constructor(game) {
+export class BaseSiege {
+  constructor(game, baseId) {
     this.game = game;
+    this.baseId = baseId;
     this.zombies = [];
     this.fx = [];
     this.spawnTimer = 4;
@@ -48,26 +49,38 @@ export class SiegeSystem {
     return out;
   }
 
+  get base() {
+    return this.game.shelter.base(this.baseId);
+  }
+
+  danger() {
+    return this.game.shelter.dangerLevel(this.base);
+  }
+
+  /** 殭屍等級 = 1 + 文明度加成 + 據點危險度加成（夜間 +1） */
   zombieLevel() {
     const phase = this.game.time.phase();
-    return Math.max(1, 1 + Math.floor(this.game.time.day() / 2) + (phase.danger > 1.5 ? 1 : 0));
+    const dangerBonus = Math.floor((this.danger() - 1) * SIEGE_SCALING.dangerLevelMul);
+    return Math.max(1, 1 + this.game.civilization.levelBonus() + dangerBonus + (phase.danger > 1.5 ? 1 : 0));
   }
 
+  /** 屍潮間隔（秒）：文明度與據點危險度越高越密集 */
   spawnInterval() {
     const phase = this.game.time.phase();
-    const day = Math.min(this.game.time.day(), 40);
-    return Math.max(0.6, 9 / (phase.zombieMul * (1 + day * 0.06)));
+    const dangerMul = 1 + (this.danger() - 1) * SIEGE_SCALING.dangerSpawn;
+    return Math.max(0.6, 9 / (phase.zombieMul * this.game.civilization.spawnMul() * dangerMul));
   }
 
+  /** 敵人種類依文明度解鎖 */
   pickEnemy() {
-    const day = this.game.time.day();
+    const civ = this.game.civilization;
     const phase = this.game.time.phase();
     return weightedPick({
       walker: 10,
-      infected: day >= 2 ? 6 : 1,
-      berserker: day >= 3 || phase.danger > 1.5 ? 3 : 0,
-      mutant: day >= 5 ? 2 : 0,
-      nightStalker: phase.special ? 3 : 0,
+      infected: civ.unlocked('infected') ? 6 : 1,
+      berserker: civ.unlocked('berserker') || (phase.danger > 1.5 && civ.unlocked('infected')) ? 3 : 0,
+      mutant: civ.unlocked('mutant') ? 2 : 0,
+      nightStalker: phase.special && civ.unlocked('nightStalker') ? 3 : 0,
     });
   }
 
@@ -75,15 +88,18 @@ export class SiegeSystem {
     const def = isBoss ? BOSSES[enemyId] : ENEMIES[enemyId];
     const e = this.game.combat.createEnemy(enemyId, this.zombieLevel() + (isBoss ? 3 : 0));
     const a = randFloat(0, Math.PI * 2);
+    // 屍潮殭屍額外受文明度強化（地圖戰鬥的敵人不受此影響）
+    const hpMul = this.game.civilization.siegeHpMul();
+    const atkMul = this.game.civilization.siegeAtkMul();
     this.zombies.push({
       id: this.nextId++,
       enemyId,
       boss: isBoss,
       x: Math.cos(a) * WORLD.SPAWN_R,
       y: Math.sin(a) * WORLD.SPAWN_R,
-      hp: e.maxHp,
-      maxHp: e.maxHp,
-      atk: e.atk,
+      hp: Math.round(e.maxHp * hpMul),
+      maxHp: Math.round(e.maxHp * hpMul),
+      atk: e.atk * atkMul,
       atkSpeed: def.atkSpeed,
       speed: def.speed * randFloat(0.85, 1.15),
       color: def.color,
@@ -95,12 +111,12 @@ export class SiegeSystem {
       partsChance: def.partsChance,
       t: 0,
     });
-    if (isBoss) this.game.toast(`⚠️ Boss「${def.name}」正在接近避難所！`, 'danger');
+    if (isBoss) this.game.toast(`⚠️ Boss「${def.name}」正在接近「${this.base.name}」！`, 'danger');
   }
 
   /** dt：秒 */
   update(dt) {
-    if (!this.game.shelter.hasShelter()) return;
+    if (!this.base) return;
     let remain = Math.min(dt, 1);
     while (remain > 0) {
       const step = Math.min(remain, 0.1);
@@ -112,6 +128,7 @@ export class SiegeSystem {
   step(dt) {
     const now = performance.now() / 1000;
     const sh = this.game.shelter;
+    const base = this.base;
     const phase = this.game.time.phase();
     const day = this.game.time.day();
 
@@ -121,19 +138,20 @@ export class SiegeSystem {
       this.spawnTimer = this.spawnInterval() * randFloat(0.7, 1.3);
       if (this.zombies.length < MAX_ZOMBIES) this.spawn(this.pickEnemy());
     }
-    if (phase.special && day >= 3 && day % 3 === 0 && this.bossDay !== day) {
+    // Boss 只襲擊主要據點：文明度達門檻後，每 3 天的午夜來襲
+    if (phase.special && sh.isPrimary(base) && this.game.civilization.unlocked('boss') && day % 3 === 0 && this.bossDay !== day) {
       this.bossDay = day;
       this.spawn(pick(Object.keys(BOSSES)), true);
     }
 
     // 減速光環（路障、陷阱）
-    const defenses = sh.state.defenses.filter((d) => d.type && d.level > 0);
+    const defenses = base.defenses.filter((d) => d.type && d.level > 0);
     const auras = defenses
       .filter((d) => d.type === 'barricade' || d.type === 'trap')
       .map((d) => ({ ...this.slotPos(d.slot), ...DEFENSES[d.type].stats(d.level) }));
 
     // 移動與攻擊圍牆
-    const reduction = sh.wallReduction();
+    const reduction = sh.wallReduction(base);
     for (const z of this.zombies) {
       z.t += dt;
       const dist = Math.hypot(z.x, z.y);
@@ -151,15 +169,15 @@ export class SiegeSystem {
         if (z.atkCd <= 0) {
           z.atkCd = 1 / z.atkSpeed;
           const dmg = z.atk * WALL_DMG_MUL * (1 - reduction);
-          sh.state.wallHp = sh.wallHp() - dmg;
+          base.wallHp = sh.wallHp(base) - dmg;
           this.pushFx({ type: 'wallHit', x: z.x, y: z.y, dmg: Math.round(dmg) });
         }
       }
     }
 
     // 防禦塔
-    const dmgMul = sh.towerDamageMul();
-    const rangeMul = sh.rangeMul();
+    const dmgMul = sh.towerDamageMul(base);
+    const rangeMul = sh.rangeMul(base);
     defenses.forEach((d) => {
       const def = DEFENSES[d.type];
       const st = def.stats(d.level);
@@ -200,10 +218,12 @@ export class SiegeSystem {
 
     this.collectDead();
 
-    if (sh.wallHp() <= 0) this.breach();
+    if (sh.wallHp(base) <= 0) this.breach();
   }
 
+  /** 防禦駐守的倖存者住在主要據點，只防衛主要據點 */
   guards() {
+    if (!this.game.shelter.isPrimary(this.base)) return [];
     const now = Date.now();
     return this.game.state.survivors
       .filter((s) => s.job === 'guard' && s.status === 'idle' && s.injuredUntil <= now && !this.game.survivors.isGarrisoned(s.id))
@@ -284,13 +304,13 @@ export class SiegeSystem {
       xp += z.xp;
       if (chance(z.partsChance * 0.5)) parts += z.boss ? 5 : 1;
       this.pushFx({ type: 'death', x: z.x, y: z.y, color: z.color, boss: z.boss });
-      if (z.boss) this.game.log('👑 避難所防線擊殺了 Boss！', 'success');
+      if (z.boss) this.game.log(`👑 「${this.base.name}」防線擊殺了 Boss！`, 'success');
     });
     this.game.grant({ coins, parts });
     // 經驗分給防守人員
     const defenders = [
       ...this.guards().map((g) => g.sv),
-      ...this.game.state.shelter.defenses.map((d) => this.game.survivors.get(d.garrisonId)).filter(Boolean),
+      ...this.base.defenses.map((d) => this.game.survivors.get(d.garrisonId)).filter(Boolean),
     ];
     const recipients = defenders.length ? defenders : [this.game.survivors.leader()];
     recipients.forEach((sv) => this.game.survivors.gainXp(sv, (xp * 0.5) / recipients.length));
@@ -298,28 +318,33 @@ export class SiegeSystem {
 
   breach() {
     const sh = this.game.shelter;
+    const base = this.base;
+    const rate = sh.isPrimary(base) ? BREACH_LOSS.primary : BREACH_LOSS.outpost;
+    const pct = Math.round(rate * 100);
     const res = this.game.state.resources;
     const lost = {};
     RESOURCE_KEYS.forEach((k) => {
-      lost[k] = Math.floor(res[k] * BREACH_LOSS);
+      lost[k] = Math.floor(res[k] * rate);
       res[k] -= lost[k];
     });
     this.zombies.forEach((z) => this.pushFx({ type: 'death', x: z.x, y: z.y, color: z.color }));
     this.zombies = [];
-    sh.state.wallHp = sh.wallMax() * 0.3;
+    base.wallHp = sh.wallMax(base) * 0.3;
     this.spawnTimer = BREACH_GRACE;
     this.game.state.stats.breaches += 1;
-    this.game.log('💥 避難所防線被突破！損失 8% 資源', 'danger');
-    this.game.toast('💥 防線被突破！損失 8% 資源，請強化圍牆與防禦塔', 'danger');
-    this.game.bus.emit('siege:breach', lost);
+    this.game.log(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源`, 'danger');
+    this.game.toast(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源，請強化圍牆與防禦塔`, 'danger');
+    this.game.bus.emit('siege:breach', { baseId: base.id, lost });
   }
 
   /** 防禦總 DPS（離線估算與 UI 顯示） */
   defenseDps() {
     const sh = this.game.shelter;
-    const mul = sh.towerDamageMul();
+    const base = this.base;
+    if (!base) return 0;
+    const mul = sh.towerDamageMul(base);
     let dps = 0;
-    sh.state.defenses.forEach((d) => {
+    base.defenses.forEach((d) => {
       if (!d.type || d.level < 1) return;
       const st = DEFENSES[d.type].stats(d.level);
       if (d.type === 'watchPost') {
@@ -333,22 +358,58 @@ export class SiegeSystem {
     return Math.round(dps);
   }
 
+  /** 離線時估算此據點的擊殺數（以平均時段倍率 1.4 估算屍潮頻率） */
+  estimateOfflineKills(seconds) {
+    const spawns = (seconds / this.spawnInterval()) * (1.4 / Math.max(0.1, this.game.time.phase().zombieMul));
+    const avgHp = this.game.combat.createEnemy('infected', this.zombieLevel()).maxHp;
+    const capacity = (this.defenseDps() * seconds * 0.25) / avgHp;
+    return Math.floor(clamp(Math.min(spawns, capacity), 0, 5000));
+  }
+}
+
+/**
+ * 管理所有據點的屍潮。每個據點同時承受屍潮（背景據點不繪製但持續模擬），
+ * ShelterScene 只繪製目前檢視的據點。
+ */
+export class SiegeSystem {
+  constructor(game) {
+    this.game = game;
+    /** @type {Map<string, BaseSiege>} */
+    this.sieges = new Map();
+  }
+
+  /** 取得據點的屍潮（省略為主要據點） */
+  of(baseId) {
+    const id = baseId || this.game.shelter.primary()?.id;
+    if (!id) return null;
+    if (!this.sieges.has(id)) this.sieges.set(id, new BaseSiege(this.game, id));
+    return this.sieges.get(id);
+  }
+
+  update(dt) {
+    const ids = new Set(this.game.state.bases.map((b) => b.id));
+    this.sieges.forEach((_, id) => { if (!ids.has(id)) this.sieges.delete(id); });
+    ids.forEach((id) => this.of(id).update(dt));
+  }
+
+  /** 背景據點不繪製：丟棄其特效佇列避免累積 */
+  drainOthers(viewId) {
+    this.sieges.forEach((s, id) => { if (id !== viewId) s.drainFx(); });
+  }
+
   /**
-   * 離線防守收益（需研究解鎖）：以防禦 DPS 估算可擊殺數量。
+   * 離線防守收益（需研究解鎖）：以各據點防禦 DPS 估算可擊殺數量。
    */
   simulateOffline(ms) {
     if (!this.game.research.hasUnlock('offlineDefense')) return null;
     const seconds = ms / 1000;
-    const avgInterval = 9 / (1.4 * (1 + Math.min(this.game.time.day(), 40) * 0.06));
-    const spawns = seconds / avgInterval;
-    const avgHp = this.game.combat.createEnemy('infected', this.zombieLevel()).maxHp;
-    const capacity = (this.defenseDps() * seconds * 0.25) / avgHp;
-    const kills = Math.floor(clamp(Math.min(spawns, capacity), 0, 5000));
+    const kills = this.game.state.bases.reduce((s, b) => s + this.of(b.id).estimateOfflineKills(seconds), 0);
     if (!kills) return { kills: 0, coins: 0 };
     const coins = kills * 2;
+    const parts = Math.floor(kills / 60);
     this.game.state.stats.kills += kills;
     this.game.state.stats.siegeKills += kills;
-    this.game.grant({ coins, parts: Math.floor(kills / 60) });
-    return { kills, coins, parts: Math.floor(kills / 60) };
+    this.game.grant({ coins, parts });
+    return { kills, coins, parts };
   }
 }

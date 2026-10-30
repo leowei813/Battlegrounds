@@ -15,6 +15,7 @@ import { ExplorationSystem } from '../systems/ExplorationSystem.js';
 import { ZombieSpawnSystem } from '../systems/ZombieSpawnSystem.js';
 import { SiegeSystem } from '../systems/SiegeSystem.js';
 import { QuestSystem } from '../systems/QuestSystem.js';
+import { CivilizationSystem } from '../systems/CivilizationSystem.js';
 import { grant } from '../systems/costUtils.js';
 import { fetchPois } from '../map/OverpassService.js';
 import { fillPois } from '../map/PoiGenerator.js';
@@ -41,6 +42,7 @@ export class Game {
     this.zombies = new ZombieSpawnSystem(this);
     this.siege = new SiegeSystem(this);
     this.quests = new QuestSystem(this);
+    this.civilization = new CivilizationSystem(this);
 
     this.lastPhase = null;
     this.timers = [];
@@ -153,9 +155,11 @@ export class Game {
     }
     pois = fillPois(pois, lat, lon);
     const map = this.state.map;
-    // 保留目前避難所的 POI，避免重新掃描後消失
-    const shelterPoi = map.pois.find((p) => p.id === this.state.shelter.poiId);
-    if (shelterPoi && !pois.some((p) => p.id === shelterPoi.id)) pois.push(shelterPoi);
+    // 保留所有據點所在的 POI，避免重新掃描後消失
+    this.state.bases.forEach((b) => {
+      const basePoi = map.pois.find((p) => p.id === b.poiId);
+      if (basePoi && !pois.some((p) => p.id === basePoi.id)) pois.push(basePoi);
+    });
     Object.assign(map, {
       center: { lat, lon }, pois, source, fetchedAt: Date.now(), zombieGroups: [], lastZombieRefresh: 0,
     });

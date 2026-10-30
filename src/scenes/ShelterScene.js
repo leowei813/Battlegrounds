@@ -22,6 +22,17 @@ export class ShelterScene extends Phaser.Scene {
     return this.registry.get('core');
   }
 
+  /** 目前檢視的據點（由 UI 設定，預設主要據點） */
+  get base() {
+    const core = this.core;
+    return core?.shelter.base(this.registry.get('viewBaseId')) || core?.shelter.primary() || null;
+  }
+
+  get siege() {
+    const b = this.base;
+    return b ? this.core.siege.of(b.id) : null;
+  }
+
   create() {
     this.ground = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, 'ground').setOrigin(0);
     this.staticG = this.add.graphics();
@@ -57,6 +68,11 @@ export class ShelterScene extends Phaser.Scene {
 
     this.scale.on('resize', () => this.layout());
     this.registry.events.on('changedata-viewInset', () => this.layout());
+    this.registry.events.on('changedata-viewBaseId', () => {
+      this.zombieSprites.forEach((s) => s.destroy());
+      this.zombieSprites.clear();
+      this.refreshStatic(true);
+    });
     this.unsubs = [
       bus.on('shelter:changed', () => this.refreshStatic()),
       bus.on(EVT.STATE_CHANGED, () => this.refreshStatic()),
@@ -86,17 +102,22 @@ export class ShelterScene extends Phaser.Scene {
   refreshStatic(force = false) {
     const core = this.core;
     if (!core || !this.staticG) return;
-    const sh = core.state.shelter;
-    const key = JSON.stringify([sh.poiId, sh.defenses, sh.buildQueue.length, this.cx, this.cy, this.k]);
+    const sh = this.base;
+    const key = JSON.stringify([sh?.id, core.state.primaryBaseId, sh?.defenses, sh?.buildQueue.length, this.cx, this.cy, this.k]);
     if (!force && key === this.lastStaticKey) return;
     this.lastStaticKey = key;
 
-    const has = core.shelter.hasShelter();
+    const has = !!sh;
     const c = this.toScreen(0, 0);
     this.centerIcon.setPosition(c.x, c.y).setFontSize(Math.round(30 * this.k));
-    this.centerIcon.setText(has ? '🏠' : '🏚️');
-    this.nameText.setPosition(c.x, c.y + 26 * this.k).setText(has ? sh.name : '');
+    this.centerIcon.setText(!has ? '🏚️' : core.shelter.isPrimary(sh) ? '🏰' : '🏠');
+    this.nameText.setPosition(c.x, c.y + 26 * this.k).setText(has ? `${core.shelter.isPrimary(sh) ? '⭐ ' : ''}${sh.name}` : '');
     this.hintText.setPosition(c.x, c.y - 70 * this.k).setText(has ? '' : '尚未建立避難所\n請到「地圖」選擇一棟建築');
+    if (!has) {
+      this.slotObjs.forEach((o) => { o.zone.setVisible(false); o.icon.setVisible(false); o.lv.setVisible(false); });
+      this.staticG.clear();
+      return;
+    }
 
     this.staticG.clear();
     // 偵查範圍
@@ -104,10 +125,10 @@ export class ShelterScene extends Phaser.Scene {
     this.staticG.lineStyle(1, 0xffffff, 0.06).strokeCircle(c.x, c.y, WORLD.SLOT_R * this.k);
 
     sh.defenses.forEach((d, i) => {
-      const p = core.siege.slotPos(i, DEFENSE_SLOTS);
+      const p = this.siege.slotPos(i, DEFENSE_SLOTS);
       const s = this.toScreen(p.x, p.y);
       const o = this.slotObjs[i];
-      const busy = core.shelter.isSlotBusy(i);
+      const busy = core.shelter.isSlotBusy(sh, i);
       o.zone.setPosition(s.x, s.y).setRadius(Math.max(16, 13 * this.k));
       o.zone.setVisible(has);
       o.icon.setVisible(has).setPosition(s.x, s.y);
@@ -118,7 +139,7 @@ export class ShelterScene extends Phaser.Scene {
         o.icon.setText(def.icon).setFontSize(Math.round(14 * this.k));
         o.lv.setText(busy ? '🔨' : `Lv${d.level}`);
         if (d.level > 0 && def.stats(d.level).range && d.type !== 'barricade') {
-          const r = def.stats(d.level).range * (d.type === 'trap' ? 1 : core.shelter.rangeMul());
+          const r = def.stats(d.level).range * (d.type === 'trap' ? 1 : core.shelter.rangeMul(sh));
           this.staticG.lineStyle(1, def.color, 0.18).strokeCircle(s.x, s.y, r * this.k);
         }
       } else {
@@ -133,13 +154,14 @@ export class ShelterScene extends Phaser.Scene {
     const core = this.core;
     const c = this.toScreen(0, 0);
     this.wallG.clear();
-    if (!core.shelter.hasShelter()) return;
-    const ratio = Phaser.Math.Clamp(core.shelter.wallHp() / core.shelter.wallMax(), 0, 1);
+    const base = this.base;
+    if (!base) return;
+    const ratio = Phaser.Math.Clamp(core.shelter.wallHp(base) / core.shelter.wallMax(base), 0, 1);
     const color = Phaser.Display.Color.Interpolate.ColorWithColor(
       Phaser.Display.Color.ValueToColor(0xe53935), Phaser.Display.Color.ValueToColor(0x8d6e63), 100, ratio * 100,
     );
     const col = Phaser.Display.Color.GetColor(color.r, color.g, color.b);
-    const lv = core.state.shelter.facilities.wall.level;
+    const lv = base.facilities.wall.level;
     this.wallG.lineStyle(Math.max(3, (3 + lv * 0.6) * this.k), col, 1);
     this.wallG.strokeCircle(c.x, c.y, WORLD.WALL_R * this.k);
     // 耐久弧
@@ -150,10 +172,9 @@ export class ShelterScene extends Phaser.Scene {
   }
 
   syncZombies() {
-    const core = this.core;
     const alive = new Set();
     this.hpG.clear();
-    core.siege.zombies.forEach((z) => {
+    (this.siege?.zombies || []).forEach((z) => {
       alive.add(z.id);
       let spr = this.zombieSprites.get(z.id);
       if (!spr) {
@@ -180,7 +201,10 @@ export class ShelterScene extends Phaser.Scene {
   }
 
   spawnFx() {
-    const fx = this.core.siege.drainFx();
+    const siege = this.siege;
+    if (!siege) return;
+    this.core.siege.drainOthers(siege.baseId);
+    const fx = siege.drainFx();
     fx.forEach((e) => {
       if (e.type === 'shot' || e.type === 'flame') {
         const a = this.toScreen(e.x1, e.y1);

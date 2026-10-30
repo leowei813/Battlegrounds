@@ -343,3 +343,15 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .sync-code { font-size: 14px; letter-spacing: 0; }
   .hud-left .cloud-badge { align-self: center; }
 }
+
+/* ---------- Civilization / bases ---------- */
+.civ-badge { border: 1px solid #ffb30066; background: #ffb30018; color: #ffe082; border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; align-self: flex-start; white-space: nowrap; }
+.civ-card { margin: 8px 0; padding: 10px 12px; border-radius: var(--radius); border: 1px solid #ffb30055; background: linear-gradient(135deg, #3e2f0a55, #26291f); }
+.civ-parts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; margin: 4px 0; }
+.bar.civ .bar-fill { background: linear-gradient(90deg, #ff8f00, #ffd54f); }
+.danger-row { margin-top: 6px; }
+.shelter-pin.outpost { width: 36px; height: 36px; font-size: 18px; background: #5d4037e6; border-width: 2px; box-shadow: 0 0 8px #ffb30066; }
+.costs.inline { display: inline-flex; }
+@media (max-width: 600px) {
+  .hud-left .civ-badge { align-self: center; }
+}

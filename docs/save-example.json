@@ -1,8 +1,8 @@
 {
-  "version": 1,
-  "createdAt": 1793343169172,
-  "lastSaveAt": 1793343169172,
-  "lastTickAt": 1793343169172,
+  "version": 2,
+  "createdAt": 1793345080242,
+  "lastSaveAt": 1793345080242,
+  "lastTickAt": 1793345080242,
   "player": {
     "name": "阿傑",
     "coins": 999,
@@ -22,14 +22,14 @@
         "lon": 121.5651,
         "osm": true,
         "depletion": 0.08,
-        "lastVisit": 1793343169172
+        "lastVisit": 1793345080242
       },
       {
-        "id": "gen_residential_1_qv1yi",
+        "id": "gen_residential_1_we42e",
         "type": "residential",
-        "name": "廢棄的住宅區",
-        "lat": 25.0287,
-        "lon": 121.5579,
+        "name": "荒廢的住宅區",
+        "lat": 25.028,
+        "lon": 121.569,
         "osm": false
       }
     ],
@@ -37,84 +37,89 @@
     "fetchedAt": 0,
     "zombieGroups": [
       {
-        "id": "zg_mvum7xcm128mt",
-        "poiId": "gen_residential_1_qv1yi",
-        "lat": 25.0287,
-        "lon": 121.5577,
+        "id": "zg_mvuncvxw2opok",
+        "poiId": "gen_residential_1_we42e",
+        "lat": 25.0277,
+        "lon": 121.5686,
         "enemyId": "walker",
-        "count": 2,
+        "count": 3,
         "level": 2,
         "elite": false,
         "boss": false,
-        "spawnedAt": 1793343169173
+        "spawnedAt": 1793345080244
       }
     ],
     "lastZombieRefresh": 0
   },
-  "shelter": {
-    "poiId": "osm_w123456",
-    "name": "全聯福利中心",
-    "lat": 25.0341,
-    "lon": 121.5651,
-    "facilities": {
-      "wall": {
-        "level": 1
+  "bases": [
+    {
+      "id": "base_mvuncvxv1ti5u",
+      "poiId": "osm_w123456",
+      "name": "全聯福利中心",
+      "lat": 25.0341,
+      "lon": 121.5651,
+      "createdAt": 1793345080243,
+      "facilities": {
+        "wall": {
+          "level": 1
+        },
+        "warehouse": {
+          "level": 1
+        },
+        "watchtower": {
+          "level": 0
+        },
+        "farm": {
+          "level": 1
+        },
+        "generator": {
+          "level": 0
+        },
+        "rainCollector": {
+          "level": 0
+        },
+        "workbench": {
+          "level": 1
+        },
+        "researchCenter": {
+          "level": 0
+        }
       },
-      "warehouse": {
-        "level": 1
-      },
-      "watchtower": {
-        "level": 0
-      },
-      "farm": {
-        "level": 1
-      },
-      "generator": {
-        "level": 0
-      },
-      "rainCollector": {
-        "level": 0
-      },
-      "workbench": {
-        "level": 1
-      },
-      "researchCenter": {
-        "level": 0
-      }
-    },
-    "defenses": [
-      {
-        "slot": 0,
-        "type": "barricade",
-        "level": 0,
-        "garrisonId": null
-      },
-      {
-        "slot": 1,
-        "type": null,
-        "level": 0,
-        "garrisonId": null
-      }
-    ],
-    "wallHp": null,
-    "buildQueue": [
-      {
-        "kind": "facility",
-        "id": "farm",
-        "targetLevel": 2,
-        "startAt": 1793343169175,
-        "endAt": 1793343182175
-      },
-      {
-        "kind": "defense",
-        "slot": 0,
-        "id": "barricade",
-        "targetLevel": 1,
-        "startAt": 1793343169175,
-        "endAt": 1793343175175
-      }
-    ]
-  },
+      "defenses": [
+        {
+          "slot": 0,
+          "type": "barricade",
+          "level": 0,
+          "garrisonId": null
+        },
+        {
+          "slot": 1,
+          "type": null,
+          "level": 0,
+          "garrisonId": null
+        }
+      ],
+      "wallHp": null,
+      "buildQueue": [
+        {
+          "kind": "facility",
+          "id": "farm",
+          "targetLevel": 2,
+          "startAt": 1793345080246,
+          "endAt": 1793345093246
+        },
+        {
+          "kind": "defense",
+          "slot": 0,
+          "id": "barricade",
+          "targetLevel": 1,
+          "startAt": 1793345080246,
+          "endAt": 1793345086246
+        }
+      ]
+    }
+  ],
+  "primaryBaseId": "base_mvuncvxv1ti5u",
   "resources": {
     "food": 200,
     "wood": 32,
@@ -126,12 +131,12 @@
   "inventory": {
     "items": [
       {
-        "id": "it_mvum7xcne2a9l",
+        "id": "it_mvuncvxyf1lbt",
         "type": "rifle",
         "slot": "weapon",
         "rarity": "rare",
         "level": 5,
-        "name": "強化的AK-47",
+        "name": "戰術M16A4",
         "stats": {
           "atk": 37,
           "atkSpeed": 0.15,
@@ -139,12 +144,12 @@
         },
         "affixes": [
           {
-            "id": "crit",
-            "value": 0.037
+            "id": "atkSpeed",
+            "value": 0.071
           },
           {
             "id": "atkPct",
-            "value": 0.071
+            "value": 0.079
           }
         ],
         "locked": false,
@@ -153,8 +158,8 @@
     ],
     "blueprints": [
       {
-        "id": "bp_mvum7xcnf1wzz",
-        "itemType": "helmet",
+        "id": "bp_mvuncvxygvboe",
+        "itemType": "shotgun",
         "rarity": "rare"
       }
     ]
@@ -171,7 +176,7 @@
       "job": "guard",
       "injuredUntil": 0,
       "equipment": {
-        "weapon": "it_mvum7xcne2a9l",
+        "weapon": "it_mvuncvxyf1lbt",
         "helmet": null,
         "armor": null,
         "legs": null,
@@ -179,9 +184,9 @@
       }
     },
     {
-      "id": "sv_mvum7xcnge8yz",
-      "name": "宗翰",
-      "classId": "engineer",
+      "id": "sv_mvuncvxyh6nng",
+      "name": "志明",
+      "classId": "farmer",
       "level": 2,
       "xp": 0,
       "isLeader": false,
@@ -199,9 +204,9 @@
   ],
   "recruitPool": [
     {
-      "id": "sv_mvum7xcnhhtie",
-      "name": "Yuki",
-      "classId": "farmer",
+      "id": "sv_mvuncvxzinxhy",
+      "name": "建國",
+      "classId": "warrior",
       "level": 1,
       "xp": 0,
       "isLeader": false,
@@ -219,15 +224,15 @@
   ],
   "expeditions": [
     {
-      "id": "ex_mvum7xcoio32z",
-      "poiId": "gen_residential_1_qv1yi",
+      "id": "ex_mvuncvxzjp2rl",
+      "poiId": "gen_residential_1_we42e",
       "memberIds": [
-        "sv_mvum7xcnge8yz"
+        "sv_mvuncvxyh6nng"
       ],
       "durationMin": 15,
       "auto": false,
-      "startAt": 1793343169175,
-      "endAt": 1793344071239,
+      "startAt": 1793345080247,
+      "endAt": 1793345951154,
       "phaseAtStart": "day"
     }
   ],
@@ -236,7 +241,7 @@
       "id": "rp_x",
       "poiName": "燒毀的醫院",
       "poiType": "hospital",
-      "at": 1793343169176,
+      "at": 1793345080247,
       "events": [
         "🔍 搜刮到 藥品、布料"
       ],
@@ -260,8 +265,8 @@
     ],
     "active": {
       "id": "def1",
-      "startAt": 1793343169176,
-      "endAt": 1793343223176
+      "startAt": 1793345080247,
+      "endAt": 1793345134247
     }
   },
   "quests": {
@@ -270,7 +275,7 @@
     "dailyDate": "2026-10-30",
     "dailies": [
       {
-        "id": "d_build",
+        "id": "d_defend",
         "baseline": {
           "kills": 0,
           "...": "全部統計快照"
@@ -297,7 +302,8 @@
     "researchDone": 0,
     "breaches": 0,
     "daysSurvived": 0,
-    "foodCollected": 0
+    "foodCollected": 0,
+    "peakCivilization": 12
   },
   "settings": {
     "autoSave": true,
@@ -305,7 +311,7 @@
   },
   "log": [
     {
-      "t": 1793343169176,
+      "t": 1793345080247,
       "msg": "🏠 建立避難所於「全聯福利中心」",
       "type": "success"
     }
