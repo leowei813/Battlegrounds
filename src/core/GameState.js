@@ -101,6 +101,7 @@ export function createInitialState({ playerName, classId, lat, lon }) {
       fetchedAt: 0,
       zombieGroups: [],
       lastZombieRefresh: 0,
+      detected: {}, // GPS 今日偵測過的建築
     },
     bases: [], // 據點列表（見 createBase）
     primaryBaseId: null, // 主要據點

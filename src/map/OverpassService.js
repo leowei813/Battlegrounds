@@ -222,3 +222,38 @@ export async function fetchPois(lat, lon, radius, onProgress = () => {}, { build
   });
   return result;
 }
+
+/**
+ * GPS 偵測用：查詢某點附近（radius 公尺）的建築，一次查完（範圍很小）。
+ * @returns {Promise<Array<{id,type,name,lat,lon,osm:true}>>}
+ */
+export async function fetchNearby(lat, lon, radius = 60) {
+  const r = Math.round(radius);
+  const q = `[out:json][timeout:20];
+(
+  way["building"](around:${r},${lat},${lon});
+  nwr["shop"](around:${r},${lat},${lon});
+  nwr["amenity"](around:${r},${lat},${lon});
+  nwr["healthcare"](around:${r},${lat},${lon});
+);
+out center tags qt;`;
+  const elements = await runQuery(q).catch((err) => {
+    if (err.truncated) return err.partial;
+    throw err;
+  });
+  const seen = new Set();
+  const out = [];
+  elements.forEach((el) => {
+    const type = classify(el.tags);
+    const pLat = el.lat ?? el.center?.lat;
+    const pLon = el.lon ?? el.center?.lon;
+    if (!type || pLat == null || pLon == null) return;
+    const id = `osm_${el.type[0]}${el.id}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push({
+      id, type, name: nameFromTags(el.tags) || `${POI_TYPES[type].name}`, lat: +pLat.toFixed(6), lon: +pLon.toFixed(6), osm: true,
+    });
+  });
+  return out;
+}

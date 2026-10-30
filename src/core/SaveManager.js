@@ -170,6 +170,12 @@ export class SaveManager {
         || Object.keys(ITEM_MODELS)[0];
     });
     data.recruitBoard = data.recruitBoard || { list: [], refreshAt: 0 };
+    // v11：倉庫分為消耗品倉庫與物品倉庫（沿用原倉庫等級，避免格子變少）
+    data.bases.forEach((b) => {
+      if (b.facilities && !b.facilities.itemStore) b.facilities.itemStore = { level: b.kind === 'outpost' ? 0 : Math.max(1, b.facilities.warehouse?.level || 1) };
+    });
+    data.map = data.map || {};
+    data.map.detected = data.map.detected || {};
     // v10：物品位置（倉庫或隊員背包）
     (data.inventory?.items || []).forEach((it) => { if (!it.loc) it.loc = 'store'; });
     // v8：隨機結果種子

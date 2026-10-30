@@ -242,6 +242,8 @@ export const MODEL_KEYS = Object.keys(ITEM_MODELS);
  * 每件裝備佔 1 格、不可堆疊；同種類的消耗品（基本資源）堆疊在同一格。
  */
 export const BAG_BASE_SLOTS = 10;
+/** 消耗品每格堆疊上限 */
+export const STACK_MAX = 999;
 export const STORE_BASE_SLOTS = 30;
 export const STORE_SLOTS_PER_LEVEL = 10;
 

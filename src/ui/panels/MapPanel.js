@@ -5,7 +5,7 @@ import { RESOURCES } from '../../config/constants.js';
 import { BASE_SIZES, FACILITY_COUNT } from '../../config/civilization.js';
 import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
-import { isLooted, msToReset } from '../../systems/LootStock.js';
+import { isLooted, msToReset, stockOf } from '../../systems/LootStock.js';
 import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
 import { btn, costHtml } from '../components.js';
 import { openTeamPicker } from '../TeamPicker.js';
@@ -124,15 +124,32 @@ export class MapPanel {
         ${btn('🏰', 'gotoShelter', {}, { cls: 'btn-icon', disabled: !has, title: '回到避難所' })}
         ${btn(this.scanning ? '⏳' : '🔄', 'rescan', {}, { cls: 'btn-icon', disabled: this.scanning, title: '重新掃描附近建築' })}
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
+        ${btn('📍', 'gps', {}, { cls: `btn-icon ${this.game.gps.enabled ? 'on' : ''}`, title: 'GPS 偵測附近 50 公尺的建築' })}
       </div>
       ${this.siegeBanner()}
       ${this.scanning ? `<div class="scan-progress">📡 掃描建築中 ${this.scanProgress || ''}</div>` : ''}
       ${this.worldChip()}
+      ${this.gpsChip()}
       <div class="map-info">建築 ${st.map.pois.length}・殭屍群 ${st.map.zombieGroups.length}・資料：${src}</div>`;
     if (html !== this.lastOverlay) {
       this.lastOverlay = html;
       this.overlay.innerHTML = html;
     }
+  }
+
+  /** GPS 偵測狀態 */
+  gpsChip() {
+    const gps = this.game.gps;
+    if (!gps.enabled) return '';
+    const text = {
+      locating: '📡 GPS 定位中…',
+      active: `📡 GPS 偵測：50m 內 ${gps.nearby.length} 棟建築（可看今日物資）`,
+      inBase: '🏠 在據點範圍內，不偵測',
+      denied: '📡 未允許定位，請在瀏覽器設定開啟位置權限',
+      unsupported: '📡 此裝置不支援定位',
+      error: `📡 定位失敗：${gps.error || ''}`,
+    }[gps.status] || '📡 GPS';
+    return `<button class="world-chip gps-chip" data-action="gpsFocus">${text}</button>`;
   }
 
   /** 多人互動狀態：附近玩家數與隊伍數 */
@@ -223,6 +240,11 @@ export class MapPanel {
   stockHtml(poi) {
     const reset = `每天 00:00 重置（${formatDuration(msToReset())}後）`;
     if (isLooted(poi)) return `<div class="muted">🕸️ 今日已被搜刮一空・${reset}</div>`;
+    if (this.game.gps.isDetected(poi)) {
+      const st = stockOf(poi);
+      const list = Object.entries(st.resources).map(([k, v]) => `${RESOURCES[k].icon}${RESOURCES[k].name} ${v}`).join('、');
+      return `<div class="pos">📡 GPS 偵測到今日物資：${list}・${reset}</div>`;
+    }
     const list = Object.keys(POI_TYPES[poi.type].loot).map((k) => `${RESOURCES[k].icon}${RESOURCES[k].name}`).join('、');
     return `<div class="muted">📦 可能出現：${list}（實際所得於探索時隨機）・${reset}</div>`;
   }
@@ -246,6 +268,12 @@ export class MapPanel {
     const sh = this.game.shelter.primary();
     if (action === 'gotoShelter' && sh) this.service.focus(sh.lat, sh.lon);
     if (action === 'legend') this.showLegend();
+    if (action === 'gps') {
+      const on = !this.game.gps.enabled;
+      this.game.gps.setEnabled(on);
+      this.ui.toastEl.show(on ? '📡 已開啟 GPS 偵測：靠近建築 50 公尺內即可看到今日物資' : '已關閉 GPS 偵測', 'info');
+    }
+    if (action === 'gpsFocus' && this.game.gps.pos) this.service.focus(this.game.gps.pos.lat, this.game.gps.pos.lon, 18);
     if (action === 'worldSettings') this.ui.switchTab('settings');
     if (action === 'flyTo') {
       const b = this.game.shelter.base(data.id);

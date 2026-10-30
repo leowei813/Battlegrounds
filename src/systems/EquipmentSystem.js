@@ -1,7 +1,7 @@
 import {
   RARITIES, RARITY_ORDER, ITEM_TYPES, AFFIXES, RARITY_PREFIX, SLOT_KEYS, rarityIndex,
   ITEM_MODELS, tierMul, benchFor, craftRarityTable,
-  BAG_BASE_SLOTS, STORE_BASE_SLOTS, STORE_SLOTS_PER_LEVEL, itemSize, itemWeight,
+  BAG_BASE_SLOTS, STORE_BASE_SLOTS, STORE_SLOTS_PER_LEVEL, STACK_MAX, itemSize, itemWeight,
 } from '../config/equipment.js';
 import {
   withSeed,
@@ -141,10 +141,10 @@ export class EquipmentSystem {
     return !!this.equippedBy(item.id);
   }
 
-  /** 倉庫格子：初始 30，倉庫每升一級 +10，研究「倉儲擴建」再增加 */
+  /** 物品倉庫格子：初始 30，物品倉庫每升一級 +10，研究「物品倉儲」再增加 */
   storeCap() {
-    const wh = this.game.shelter.primary()?.facilities.warehouse.level || 1;
-    return STORE_BASE_SLOTS + Math.max(0, wh - 1) * STORE_SLOTS_PER_LEVEL + Math.floor(this.game.research.bonus('storeSlots'));
+    const lv = this.game.shelter.primary()?.facilities.itemStore?.level || 1;
+    return STORE_BASE_SLOTS + Math.max(0, lv - 1) * STORE_SLOTS_PER_LEVEL + Math.floor(this.game.research.bonus('storeSlots'));
   }
 
   storeItems() {
@@ -167,7 +167,7 @@ export class EquipmentSystem {
 
   /** 背包已用格數：每件裝備 1 格，每種消耗品（堆疊）1 格 */
   bagSlotsUsed(sv) {
-    const stacks = Object.values(sv.bag || {}).filter((v) => v > 0).length;
+    const stacks = Object.values(sv.bag || {}).reduce((s, v) => s + (v > 0 ? Math.ceil(v / STACK_MAX) : 0), 0);
     return this.bagItems(sv).length + stacks;
   }
 
