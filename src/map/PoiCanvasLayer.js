@@ -49,8 +49,10 @@ export const PoiCanvasLayer = L.Layer.extend({
     this.canvas.remove();
   },
 
-  setData(pois) {
+  /** @param {Record<string, number>} [detected] GPS 今日偵測過的建築（id → 日期） */
+  setData(pois, detected = {}) {
     this.pois = pois;
+    this.detected = detected;
     if (this.map) this.redraw();
   },
 
@@ -108,6 +110,14 @@ export const PoiCanvasLayer = L.Layer.extend({
         if (r >= 12) this.sizeTag(ctx, pt.x + rr * 0.8, pt.y + rr * 0.8, bs);
       }
       ctx.globalAlpha = 1;
+      // GPS 偵測過的建築：青色外圈
+      if (this.detected?.[poi.id] === today) {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, rr + 3, 0, Math.PI * 2);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#26c6da';
+        ctx.stroke();
+      }
       this.drawn.push({ poi, x: pt.x, y: pt.y, r: rr });
     });
   },

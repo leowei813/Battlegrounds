@@ -10,6 +10,7 @@ import { PoiCanvasLayer } from './PoiCanvasLayer.js';
 import { ZoneLayer } from './ZoneLayer.js';
 import { dayKey } from '../systems/LootStock.js';
 import { npcAlert } from '../systems/TerritorySystem.js';
+import { GPS_RADIUS } from '../systems/GpsSystem.js';
 
 /**
  * 真實地圖（Leaflet + OpenStreetMap 圖磚）。
@@ -47,6 +48,7 @@ export class MapService {
     this.layers.shelter = L.layerGroup().addTo(this.map);
     this.layers.others = L.layerGroup().addTo(this.map);
     this.layers.npcs = L.layerGroup().addTo(this.map);
+    this.layers.gps = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
   }
 
@@ -83,10 +85,11 @@ export class MapService {
     const today = dayKey();
     let looted = 0;
     for (const p of pois) if (p.lootedDay === today) looted += 1;
-    const poiKey = `${state.map.fetchedAt}|${pois.length}|${[...basePoiIds].join(',')}|${today}|${looted}`;
+    const detected = state.map.detected || {};
+    const poiKey = `${state.map.fetchedAt}|${pois.length}|${[...basePoiIds].join(',')}|${today}|${looted}|${Object.keys(detected).length}`;
     if (poiKey !== this.poiKey) {
       this.poiKey = poiKey;
-      this.poiLayer.setData(pois.filter((p) => !basePoiIds.has(p.id)));
+      this.poiLayer.setData(pois.filter((p) => !basePoiIds.has(p.id)), detected);
     }
 
     const zombieKey = zombieGroups.map((g) => `${g.id}:${g.count}`).join(',');
@@ -116,6 +119,20 @@ export class MapService {
     const html = `<div class="${cls} size-${size} ${primary ? 'primary' : 'outpost'}" style="--d:${d}px">${s.icon}`
       + `<i class="size-tag">${s.name[0]}</i>${primary ? '<i class="star-tag">⭐</i>' : ''}</div>`;
     return { icon: this.icon(html, 'shelter-icon', d), d };
+  }
+
+  /** 自己的 GPS 位置與 50 公尺偵測範圍（在據點內時為灰色，不偵測） */
+  renderGps(gps) {
+    if (!this.map) return;
+    this.layers.gps.clearLayers();
+    if (!gps?.pos || gps.status === 'off') return;
+    const inBase = gps.status === 'inBase';
+    L.circle([gps.pos.lat, gps.pos.lon], {
+      radius: GPS_RADIUS, color: inBase ? '#9e9e9e' : '#29b6f6', weight: 2, fillColor: inBase ? '#9e9e9e' : '#29b6f6', fillOpacity: 0.08, interactive: false,
+    }).addTo(this.layers.gps);
+    L.circleMarker([gps.pos.lat, gps.pos.lon], {
+      radius: 7, color: '#fff', weight: 2, fillColor: '#1e88e5', fillOpacity: 1, interactive: false,
+    }).addTo(this.layers.gps);
   }
 
   /** NPC 據點（紅色骷髏旗，標示等級） */

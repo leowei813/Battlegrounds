@@ -85,7 +85,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 10, 'state is serializable');
+assert(save.version === 11, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -138,7 +138,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 10 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 11 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -335,7 +335,7 @@ assert(migrated.version === 10 && migrated.bases.length === 1 && migrated.bases[
   assert(sv.dismiss(kick.id).ok && !sv.get(kick.id), '可驅逐隊員');
   // 據點規模：巨型據點可建 20 棟建築
   const base = gv.shelter.primary();
-  assert(gv.shelter.sizeInfo(base).total === 20 && base.defenses.length === 12, '最大（巨型）據點可建造 20 棟建築');
+  assert(gv.shelter.sizeInfo(base).total === 20 && base.defenses.length === 11, '最大（巨型）據點可建造 20 棟建築');
   const small = gv.shelter.sizeInfo(gv.state.map.pois.find((p) => p.type === 'gasStation'));
   assert(small.total < 20, `其他規模可建造數較少（${small.name} ${small.total} 棟）`);
   // 突破：資源 -50%，建築可能降級或被拆毀，當晚不再來襲
@@ -492,7 +492,7 @@ assert(migrated.version === 10 && migrated.bases.length === 1 && migrated.bases[
   gn.npcs.update(t0 + 122000);
   const perCell = {};
   gn.npcs.list.forEach((n) => { perCell[n.cell] = (perCell[n.cell] || 0) + 1; });
-  assert(gn.npcs.list.length >= 3 && Object.values(perCell).every((c) => c <= 3) && Object.values(perCell).some((c) => c === 3), `每平方公里約 3 個 NPC 據點（共 ${gn.npcs.list.length} 個、${Object.keys(perCell).length} 格）`);
+  assert(gn.npcs.list.length >= 2 && Object.values(perCell).every((c) => c <= 2) && Object.values(perCell).some((c) => c === 2), `每平方公里約 2 個 NPC 據點（共 ${gn.npcs.list.length} 個、${Object.keys(perCell).length} 格）`);
   const npc = gn.npcs.list[0];
   const lv = npc.level;
   npc.nextLevelAt = t0;
@@ -838,11 +838,11 @@ assert(migrated.version === 10 && migrated.bases.length === 1 && migrated.bases[
   const eq = gi.equipment;
   const lead = gi.survivors.leader();
   assert(eq.storeCap() === STORE_BASE_SLOTS && eq.bagSlotCap(lead) === BAG_BASE_SLOTS, `倉庫初始 ${STORE_BASE_SLOTS} 格、隊員背包初始 ${BAG_BASE_SLOTS} 格`);
-  gi.shelter.primary().facilities.warehouse.level = 3;
+  gi.shelter.primary().facilities.itemStore.level = 3;
   gi.state.research.levels.i_shelves = 2;
   gi.research.invalidate();
-  assert(eq.storeCap() === STORE_BASE_SLOTS + 20 + 10, '升級倉庫與研究可增加倉庫格子');
-  gi.shelter.primary().facilities.warehouse.level = 1;
+  assert(eq.storeCap() === STORE_BASE_SLOTS + 20 + 10, '升級物品倉庫與研究可增加物品格子');
+  gi.shelter.primary().facilities.itemStore.level = 1;
   gi.state.research.levels.i_shelves = 0;
   gi.research.invalidate();
   const lmg = eq.generate({ level: 5, model: 'm249', rarity: 'common' });
@@ -884,6 +884,49 @@ assert(migrated.version === 10 && migrated.bases.length === 1 && migrated.bases[
   const old = JSON.parse(JSON.stringify(gi.state));
   old.inventory.items.forEach((it) => { delete it.loc; });
   assert(SaveManager.migrate(old).inventory.items.every((it) => it.loc === 'store'), '舊存檔的物品都放在倉庫');
+}
+
+// ---- 16. v7.2：倉庫分類、堆疊上限、GPS 偵測 ----
+{
+  const { STACK_MAX } = await import('../src/config/equipment.js');
+  const { FACILITIES } = await import('../src/config/facilities.js');
+  const gq = Game.newGame({ playerName: 'Q', classId: 'warrior', lat: 25, lon: 121 });
+  gq.state.map.pois = fillPois([], 25, 121);
+  gq.shelter.establish(gq.state.map.pois[0]);
+  const home = gq.shelter.primary();
+  assert(FACILITIES.warehouse.name === '消耗品倉庫' && FACILITIES.itemStore.name === '物品倉庫' && home.facilities.itemStore.level === 1, '倉庫分為消耗品倉庫與物品倉庫');
+  const cap0 = gq.resources.storageCap();
+  const slots0 = gq.equipment.storeCap();
+  home.facilities.warehouse.level = 3;
+  assert(gq.resources.storageCap() > cap0 && gq.equipment.storeCap() === slots0, '消耗品倉庫只提高消耗品上限');
+  home.facilities.itemStore.level = 3;
+  assert(gq.equipment.storeCap() === slots0 + 20, '物品倉庫提高物品格子');
+  assert(gq.shelter.sizeInfo(home).total <= 20, '據點建築總數上限仍為 20');
+  // 堆疊上限 999
+  const lead = gq.survivors.leader();
+  gq.vehicles.memberCarry = () => 1e6;
+  gq.state.resources.food = 5000;
+  home.facilities.warehouse.level = 10;
+  assert(gq.survivors.withdraw(lead.id, 'food', 1500).ok && gq.equipment.bagSlotsUsed(lead) === 2, `消耗品每格最多堆疊 ${STACK_MAX}（1500 佔 2 格）`);
+  lead.bag = {};
+  gq.state.resources.food = 50000;
+  const max = gq.survivors.withdraw(lead.id, 'food', 1e6);
+  assert(max.n === gq.equipment.bagSlotCap(lead) * STACK_MAX, '背包格子決定可攜帶的消耗品上限');
+  lead.bag = {};
+  // GPS：50 公尺內的建築被偵測；在據點範圍內不偵測
+  const poi = gq.state.map.pois.find((p) => !gq.shelter.baseAtPoi(p.id) && Math.hypot((p.lat - home.lat) * 111320, (p.lon - home.lon) * 100000) > 300);
+  gq.gps.discover = async () => {};
+  gq.gps.onPosition(poi.lat + 0.0002, poi.lon);
+  assert(gq.gps.status === 'active' && gq.gps.nearby.some((p) => p.id === poi.id) && gq.gps.isDetected(poi), 'GPS 偵測 50 公尺內的建築');
+  assert(gq.gps.nearby.every((p) => Math.hypot((p.lat - poi.lat - 0.0002) * 111320, (p.lon - poi.lon) * 100800) <= 55), '只偵測 50 公尺內');
+  gq.gps.onPosition(home.lat, home.lon);
+  assert(gq.gps.status === 'inBase' && gq.gps.nearby.length === 0, '人在自己的據點範圍內時不偵測');
+  // 舊存檔：物品倉庫沿用原倉庫等級
+  const old = JSON.parse(JSON.stringify(gq.state));
+  old.version = 10;
+  delete old.bases[0].facilities.itemStore;
+  old.bases[0].facilities.warehouse.level = 4;
+  assert(SaveManager.migrate(old).bases[0].facilities.itemStore.level === 4, '舊存檔的物品倉庫沿用原倉庫等級');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

@@ -28,10 +28,16 @@ export const FACILITIES = {
     effectText: (lv) => `耐久 ${wallMaxHp(lv)}，減傷 ${Math.round(lv * 3)}%`,
   },
   warehouse: {
-    name: '倉庫', icon: '📦', startLevel: 1,
-    desc: '提高資源上限。',
+    name: '消耗品倉庫', icon: '📦', startLevel: 1,
+    desc: '存放食物、木材等消耗品，提高消耗品上限。',
     cost: (lv) => scale({ wood: 100, metal: 30, cloth: 30 }, lv),
-    effectText: (lv) => `資源上限 ${storageCap(lv)}`,
+    effectText: (lv) => `消耗品上限 ${storageCap(lv)}`,
+  },
+  itemStore: {
+    name: '物品倉庫', icon: '🗄️', startLevel: 1,
+    desc: '存放裝備等物品，每升一級增加物品格子。',
+    cost: (lv) => scale({ wood: 90, metal: 50, cloth: 20 }, lv),
+    effectText: (lv) => `物品格子 ${itemStoreSlots(lv)} 格`,
   },
   watchtower: {
     name: '監視塔', icon: '🗼', startLevel: 0,
@@ -76,4 +82,6 @@ export const facilityBuildTime = (lv) => Math.round(20 * 1.75 ** (lv - 1));
 
 export const wallMaxHp = (lv) => 400 + lv * 350 + lv * lv * 40;
 export const storageCap = (lv) => 600 + lv * 700 + lv * lv * 120;
+/** 物品倉庫格子：Lv1 30 格，每升一級 +10 */
+export const itemStoreSlots = (lv) => 30 + Math.max(0, lv - 1) * 10;
 export const housingCap = (lv) => 3 + lv * 2;

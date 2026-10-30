@@ -7,7 +7,7 @@ import {
   btn, costHtml, survivorCard, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus,
 } from '../components.js';
 import {
-  RARITIES, ITEM_MODELS, ITEM_TYPES, itemWeight,
+  RARITIES, ITEM_MODELS, ITEM_TYPES, itemWeight, STACK_MAX,
 } from '../../config/equipment.js';
 
 /**
@@ -141,9 +141,10 @@ export class SurvivorPanel {
     const slots = eq.bagSlotCap(sv);
     // 背包格子：每件裝備一格；同種類消耗品堆疊在一格
     const cells = [
-      ...RESOURCE_KEYS.filter((k) => bag[k] > 0).map((k) => `
+      // 每格最多堆疊 999，超過時分成多格顯示
+      ...RESOURCE_KEYS.filter((k) => bag[k] > 0).flatMap((k) => Array.from({ length: Math.ceil(bag[k] / STACK_MAX) }, (_, i) => [k, Math.min(STACK_MAX, bag[k] - i * STACK_MAX)])).map(([k, qty]) => `
         <div class="slot-cell stack">
-          <div class="slot-main"><span class="slot-icon">${RESOURCES[k].icon}</span><b>${RESOURCES[k].name}</b><span class="slot-qty">×${Math.floor(bag[k])}</span></div>
+          <div class="slot-main"><span class="slot-icon">${RESOURCES[k].icon}</span><b>${RESOURCES[k].name}</b><span class="slot-qty">×${Math.floor(qty)}</span></div>
           ${home ? `<div class="slot-ctrl"><input type="number" min="1" step="1" value="${Math.floor(bag[k])}" inputmode="numeric" aria-label="數量">
             ${btn('存入倉庫', 'bagIn', { key: k }, { cls: 'btn-xs' })}${btn('全部', 'bagInAll', { key: k }, { cls: 'btn-xs btn-ghost' })}</div>` : ''}
         </div>`),
@@ -157,7 +158,7 @@ export class SurvivorPanel {
     return `<h4>🎒 背包 <small class="muted">${eq.bagSlotsUsed(sv)} / ${slots} 格・負重 ${Math.floor(load)} / ${cap}</small></h4>
       ${progressBar(cap ? load / cap : 0, load >= cap ? 'danger' : '', `負重 ${Math.floor(load)}/${cap}`)}
       <div class="slot-grid-bag">${cells.join('')}</div>
-      <small class="muted block">每件裝備佔 1 格、不可堆疊；同種類消耗品堆疊在 1 格。背包裝備可增加格數與負重。</small>
+      <small class="muted block">每件裝備佔 1 格、不可堆疊；同種類消耗品每格最多堆疊 ${STACK_MAX}。背包裝備可增加格數與負重。</small>
       ${home ? `<div class="btn-row">${btn('📦 從倉庫拿取', 'pickFromStore', {}, { cls: 'btn-sm btn-primary' })}${eq.bagSlotsUsed(sv) ? btn('全部存入倉庫', 'bagAll', {}, { cls: 'btn-sm' }) : ''}</div>` : '<p class="muted">不在避難所，無法存取倉庫。</p>'}`;
   }
 

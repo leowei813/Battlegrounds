@@ -104,6 +104,12 @@ export class UIManager {
     bus.on('ui:openNpc', ({ npcId }) => this.panels.map.openNpc(npcId));
     bus.on('npcs:changed', () => this.panels.map.renderMap(true));
     bus.on('relations:changed', () => this.panels.map.onWorld(this.game.world?.others || []));
+    bus.on('gps:update', (gps) => {
+      this.panels.map.service?.renderGps(gps);
+      this.panels.map.lastOverlay = '';
+      if (this.tab === 'map') this.panels.map.renderOverlay();
+    });
+    if (this.game.gps.enabled) this.game.gps.start();
     bus.on(WORLD_EVT, (players) => this.panels.map.onWorld(players));
     bus.on(EVT.MAP_CHANGED, () => this.panels.map.renderMap(true));
     bus.on('expedition:done', () => this.panels.map.renderMap(true));

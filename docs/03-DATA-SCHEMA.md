@@ -269,3 +269,10 @@
 | `npcs.list[].trip` | `path`, `crossings` | NPC 路線與會穿過的玩家警戒範圍 |
 | `inventory.items[].loc` | `store` 或倖存者 ID | 物品放在倉庫或某位隊員的背包 |
 | 公開資料 `bases[]` | `alert`, `guards`, `guardLevel` | 警戒範圍、駐守人數與等級 |
+
+## v11 新增欄位（v7.2.0）
+| 位置 | 欄位 | 說明 |
+|---|---|---|
+| `bases[].facilities.itemStore` | `{ level }` | 物品倉庫（舊存檔沿用原倉庫等級） |
+| `map.detected` | `{ 建築ID: 日期編號 }` | GPS 今日偵測過的建築 |
+| `settings.gps` | `boolean` | 是否開啟 GPS 偵測 |

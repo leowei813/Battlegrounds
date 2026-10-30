@@ -18,6 +18,7 @@ import { CivilizationSystem } from '../systems/CivilizationSystem.js';
 import { VehicleSystem } from '../systems/VehicleSystem.js';
 import { NpcSystem } from '../systems/NpcSystem.js';
 import { TerritorySystem } from '../systems/TerritorySystem.js';
+import { GpsSystem } from '../systems/GpsSystem.js';
 import { grant } from '../systems/costUtils.js';
 import { fetchPois } from '../map/OverpassService.js';
 import { fillPois } from '../map/PoiGenerator.js';
@@ -48,6 +49,7 @@ export class Game {
     this.vehicles = new VehicleSystem(this);
     this.npcs = new NpcSystem(this);
     this.territory = new TerritorySystem(this);
+    this.gps = new GpsSystem(this);
 
     this.lastPhase = null;
     this.timers = [];

@@ -3,7 +3,7 @@ import {
   SURVIVOR_RARITY, survivorRarityTable, hireFee, RECRUIT_BOARD_SIZE, RECRUIT_BOARD_MS, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
 } from '../config/survivors.js';
 import { DAY_REAL_MS } from '../config/constants.js';
-import { SLOT_KEYS, RARITIES } from '../config/equipment.js';
+import { SLOT_KEYS, RARITIES, STACK_MAX } from '../config/equipment.js';
 import { createSurvivor } from '../core/GameState.js';
 import {
   withSeed,
@@ -484,16 +484,25 @@ export class SurvivorSystem {
     return { ok: true, n };
   }
 
+  /** 這種消耗品還能放多少（只看格子：每格堆疊 999） */
+  stackRoom(sv, key) {
+    const eq = this.game.equipment;
+    const cur = this.bagOf(sv)[key] || 0;
+    const otherSlots = eq.bagSlotsUsed(sv) - Math.ceil(cur / STACK_MAX);
+    return Math.max(0, (eq.bagSlotCap(sv) - otherSlots) * STACK_MAX - cur);
+  }
+
   /** 從倉庫取出放進背包（受負重上限限制） */
   withdraw(id, key, amount) {
     const sv = this.get(id);
     if (!this.atShelter(sv)) return { ok: false, reason: '不在避難所，無法存取倉庫' };
     const bag = this.bagOf(sv);
     const res = this.game.state.resources;
-    // 新的消耗品種類要有空格（同種類堆疊在同一格）
-    if (!bag[key] && this.game.equipment.bagSlotsUsed(sv) >= this.game.equipment.bagSlotCap(sv)) return { ok: false, reason: '背包格子已滿' };
+    // 同種類消耗品堆疊（每格最多 999），需要新格子時要有空格
+    const slotRoom = this.stackRoom(sv, key);
+    if (slotRoom <= 0) return { ok: false, reason: '背包格子已滿' };
     const room = Math.max(0, this.bagCap(sv) - this.bagLoad(sv));
-    const n = Math.floor(Math.min(amount, res[key], room));
+    const n = Math.floor(Math.min(amount, res[key], room, slotRoom));
     if (n <= 0) return { ok: false, reason: room <= 0 ? '負重已滿' : '倉庫沒有這項物資' };
     res[key] -= n;
     bag[key] = (bag[key] || 0) + n;
@@ -519,8 +528,7 @@ export class SurvivorSystem {
       let rest = Math.floor(v);
       members.forEach((sv) => {
         if (rest <= 0) return;
-        if (!this.bagOf(sv)[k] && this.game.equipment.bagSlotsUsed(sv) >= this.game.equipment.bagSlotCap(sv)) return;
-        const n = Math.min(rest, Math.max(0, this.bagCap(sv) - this.bagLoad(sv)));
+        const n = Math.min(rest, Math.max(0, this.bagCap(sv) - this.bagLoad(sv)), this.stackRoom(sv, k));
         if (n <= 0) return;
         this.bagOf(sv)[k] = (this.bagOf(sv)[k] || 0) + n;
         rest -= n;

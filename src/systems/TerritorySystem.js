@@ -4,7 +4,7 @@ import { planRoute, crossings } from '../map/routing.js';
 import { uid, chance, randFloat } from '../utils/math.js';
 
 /** NPC 據點的警戒範圍（公尺） */
-export const npcAlert = (n) => 100 + n.level * 2;
+export const npcAlert = (n) => 60 + n.level;
 /** 攻擊其他玩家成功時，對方損失的資源比例 */
 export const PVP_LOSS = 0.1;
 
@@ -25,9 +25,9 @@ export class TerritorySystem {
 
   // ---------- 警戒範圍 ----------
 
-  /** 自己據點的警戒範圍：依規模，監視塔每級 +5 公尺 */
+  /** 自己據點的警戒範圍：依規模，監視塔每級 +3 公尺 */
   alertRadius(base) {
-    return (BASE_SIZES[base.size]?.alert || 80) + base.facilities.watchtower.level * 5;
+    return (BASE_SIZES[base.size]?.alert || 55) + base.facilities.watchtower.level * 3;
   }
 
   /** 自己據點的駐守人員：避難所為「防禦駐守」工作的人與瞭望塔駐守；前哨站只有瞭望塔駐守 */
