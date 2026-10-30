@@ -6,7 +6,9 @@ import { escapeHtml } from '../../utils/dom.js';
 import {
   btn, costHtml, survivorCard, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus,
 } from '../components.js';
-import { RARITIES } from '../../config/equipment.js';
+import {
+  RARITIES, ITEM_MODELS, ITEM_TYPES, itemWeight,
+} from '../../config/equipment.js';
 
 /**
  * 倖存者分頁：招募、隊員列表、詳細資料（技能/裝備/工作指派）。
@@ -131,36 +133,32 @@ export class SurvivorPanel {
    */
   bagHtml(sv) {
     const g = this.game;
+    const eq = g.equipment;
     const bag = g.survivors.bagOf(sv);
     const load = g.survivors.bagLoad(sv);
     const cap = g.survivors.bagCap(sv);
     const home = g.survivors.atShelter(sv);
-    const res = g.state.resources;
-    const storage = g.resources.storageCap();
-    const rows = RESOURCE_KEYS.map((k) => `
-      <div class="bag-row" data-key="${k}">
-        <div class="bag-cell ${bag[k] ? '' : 'empty'}"><span>${RESOURCES[k].icon}</span><small>${RESOURCES[k].name}</small><b>${Math.floor(bag[k] || 0)}</b></div>
-        ${home ? `<div class="bag-ctrl">
-          ${btn('◀', 'bagOut', { key: k }, { cls: 'btn-xs', title: '從倉庫取出' })}
-          <input type="number" min="1" step="1" value="10" inputmode="numeric" aria-label="數量">
-          ${btn('▶', 'bagIn', { key: k }, { cls: 'btn-xs', title: '存入倉庫' })}
-        </div>
-        <div class="bag-cell store"><span>${RESOURCES[k].icon}</span><small>倉庫</small><b>${Math.floor(res[k])}</b></div>` : ''}
-      </div>`).join('');
-    const eq = g.equipment;
-    const items = eq.bagItems(sv);
-    const itemRows = items.map((it) => itemCard(it, {
-      compact: true,
-      actions: `${btn('裝備', 'equipBag', { item: it.id }, { cls: 'btn-xs btn-primary' })}${home ? btn('放回倉庫', 'itemToStore', { item: it.id }, { cls: 'btn-xs' }) : ''}`,
-    })).join('');
-    return `<h4>🎒 背包 <small class="muted">負重 ${Math.floor(load)} / ${cap}（徒步 ${g.vehicles.personCarry()} + 背包裝備）・物品 ${eq.bagSlotsUsed(sv)} / ${eq.bagSlotCap(sv)} 格</small></h4>
-      ${items.length ? `<div class="grid compact-grid">${itemRows}</div>` : '<p class="muted">背包裡沒有物品（物品佔用格子與重量；背包裝備可增加格數）。</p>'}
-      ${home ? `<div class="btn-row">${btn(`📦 從倉庫拿物品（倉庫 ${eq.storeUsed()}/${eq.storeCap()} 格）`, 'pickFromStore', {}, { cls: 'btn-sm' })}</div>` : ''}
-      <h4>🥫 攜帶的資源</h4>
+    const slots = eq.bagSlotCap(sv);
+    // 背包格子：每件裝備一格；同種類消耗品堆疊在一格
+    const cells = [
+      ...RESOURCE_KEYS.filter((k) => bag[k] > 0).map((k) => `
+        <div class="slot-cell stack">
+          <div class="slot-main"><span class="slot-icon">${RESOURCES[k].icon}</span><b>${RESOURCES[k].name}</b><span class="slot-qty">×${Math.floor(bag[k])}</span></div>
+          ${home ? `<div class="slot-ctrl"><input type="number" min="1" step="1" value="${Math.floor(bag[k])}" inputmode="numeric" aria-label="數量">
+            ${btn('存入倉庫', 'bagIn', { key: k }, { cls: 'btn-xs' })}${btn('全部', 'bagInAll', { key: k }, { cls: 'btn-xs btn-ghost' })}</div>` : ''}
+        </div>`),
+      ...eq.bagItems(sv).map((it) => `
+        <div class="slot-cell item" style="--rc:${RARITIES[it.rarity].color}">
+          <div class="slot-main"><span class="slot-icon">${ITEM_MODELS[it.model]?.icon || ITEM_TYPES[it.type]?.icon || '❔'}</span><b>${escapeHtml(it.name)}</b><small class="muted">戰力 ${it.power}・⚖️${itemWeight(it)}</small></div>
+          <div class="slot-ctrl">${btn('裝備', 'equipBag', { item: it.id }, { cls: 'btn-xs btn-primary' })}${home ? btn('存入倉庫', 'itemToStore', { item: it.id }, { cls: 'btn-xs' }) : ''}</div>
+        </div>`),
+    ];
+    while (cells.length < slots) cells.push('<div class="slot-cell empty">空</div>');
+    return `<h4>🎒 背包 <small class="muted">${eq.bagSlotsUsed(sv)} / ${slots} 格・負重 ${Math.floor(load)} / ${cap}</small></h4>
       ${progressBar(cap ? load / cap : 0, load >= cap ? 'danger' : '', `負重 ${Math.floor(load)}/${cap}`)}
-      ${home ? `<div class="row-between bag-head"><small>隊員背包</small><small>◀ 取出・存入 ▶</small><small>📦 倉庫（上限 ${storage}）</small></div>` : '<p class="muted">不在避難所，無法存取倉庫。</p>'}
-      <div class="bag-grid ${home ? 'with-store' : ''}">${rows}</div>
-      ${home && load ? `<div class="btn-row end">${btn('全部存入倉庫', 'bagAll', {}, { cls: 'btn-sm' })}</div>` : ''}`;
+      <div class="slot-grid-bag">${cells.join('')}</div>
+      <small class="muted block">每件裝備佔 1 格、不可堆疊；同種類消耗品堆疊在 1 格。背包裝備可增加格數與負重。</small>
+      ${home ? `<div class="btn-row">${btn('📦 從倉庫拿取', 'pickFromStore', {}, { cls: 'btn-sm btn-primary' })}${eq.bagSlotsUsed(sv) ? btn('全部存入倉庫', 'bagAll', {}, { cls: 'btn-sm' }) : ''}</div>` : '<p class="muted">不在避難所，無法存取倉庫。</p>'}`;
   }
 
   openDetail(id) {
@@ -171,13 +169,18 @@ export class SurvivorPanel {
       body: this.detailBody(id),
       live: () => this.detailBody(id),
       onAction: (action, data, m, el) => {
-        if (action === 'bagIn' || action === 'bagOut') {
-          const n = Math.max(1, Math.floor(+el.closest('.bag-row').querySelector('input').value || 1));
-          const r = action === 'bagIn' ? g.survivors.deposit(id, data.key, n) : g.survivors.withdraw(id, data.key, n);
+        if (action === 'bagIn' || action === 'bagInAll') {
+          const n = action === 'bagInAll' ? Infinity : Math.max(1, Math.floor(+el.closest('.slot-cell').querySelector('input').value || 1));
+          const r = g.survivors.deposit(id, data.key, n);
           if (!r.ok) this.ui.toastEl.show(r.reason, 'danger');
           g.changed();
         }
-        if (action === 'bagAll') this.ui.result(g.survivors.depositAll(id));
+        if (action === 'bagAll') {
+          const sv = g.survivors.get(id);
+          const r = g.survivors.depositAll(id);
+          g.equipment.bagItems(sv).forEach((it) => g.equipment.moveToStore(it.id));
+          this.ui.result(r.ok || !g.equipment.bagItems(sv).length ? { ok: true, msg: '已存入倉庫' } : r);
+        }
         if (action === 'equipBag') this.ui.result(g.equipment.equip(id, data.item));
         if (action === 'itemToStore') this.ui.result(g.equipment.moveToStore(data.item));
         if (action === 'pickFromStore') {
@@ -200,22 +203,39 @@ export class SurvivorPanel {
     });
   }
 
-  /** 從倉庫挑物品放進隊員背包 */
+  /** 從倉庫拿取：消耗品可選數量或全部；裝備一件一格 */
   pickFromStore(svId) {
     const g = this.game;
     const eq = g.equipment;
     const body = () => {
+      const sv = g.survivors.get(svId);
+      const res = g.state.resources;
+      const head = `<p class="muted">${escapeHtml(sv?.name || '')} 的背包 ${eq.bagSlotsUsed(sv)} / ${eq.bagSlotCap(sv)} 格・負重 ${Math.floor(g.survivors.bagLoad(sv))} / ${g.survivors.bagCap(sv)}</p>`;
+      const stacks = RESOURCE_KEYS.filter((k) => res[k] >= 1).map((k) => `
+        <div class="slot-cell stack">
+          <div class="slot-main"><span class="slot-icon">${RESOURCES[k].icon}</span><b>${RESOURCES[k].name}</b><span class="slot-qty">倉庫 ${Math.floor(res[k])}</span></div>
+          <div class="slot-ctrl"><input type="number" min="1" step="1" value="10" inputmode="numeric" aria-label="數量">
+            ${btn('放入背包', 'take', { key: k }, { cls: 'btn-xs btn-primary' })}${btn('全部', 'takeAll', { key: k }, { cls: 'btn-xs btn-ghost' })}</div>
+        </div>`).join('');
       const list = eq.storeItems();
-      return list.length ? `<div class="grid">${list.map((it) => itemCard(it, { compact: true, actions: btn('放進背包', 'take', { id: it.id }, { cls: 'btn-xs btn-primary' }) })).join('')}</div>`
-        : '<p class="muted">倉庫沒有物品。</p>';
+      const items = list.map((it) => itemCard(it, { compact: true, actions: btn('放入背包', 'takeItem', { id: it.id }, { cls: 'btn-xs btn-primary' }) })).join('');
+      return `${head}<h4>🥫 消耗品</h4><div class="slot-grid-bag">${stacks || '<p class="muted">倉庫沒有消耗品。</p>'}</div>
+        <h4>🎒 裝備（倉庫 ${eq.storeUsed()} / ${eq.storeCap()} 格）</h4><div class="grid">${items || '<p class="muted">倉庫沒有裝備。</p>'}</div>`;
     };
     this.ui.modal.open({
-      title: `📦 倉庫 → ${g.survivors.get(svId)?.name || ''} 的背包`,
+      title: '📦 從倉庫拿取',
+      wide: true,
       body: body(),
-      onAction: (action, data, m) => {
-        if (action !== 'take') return;
-        const r = this.ui.result(eq.moveToBag(data.id, svId));
-        if (r.ok) m.update(body());
+      onAction: (action, data, m, el) => {
+        let r = null;
+        if (action === 'take' || action === 'takeAll') {
+          const n = action === 'takeAll' ? Infinity : Math.max(1, Math.floor(+el.closest('.slot-cell').querySelector('input').value || 1));
+          r = g.survivors.withdraw(svId, data.key, n);
+        }
+        if (action === 'takeItem') r = eq.moveToBag(data.id, svId);
+        if (r && !r.ok) this.ui.toastEl.show(r.reason, 'danger');
+        g.changed();
+        m.update(body());
       },
     });
   }

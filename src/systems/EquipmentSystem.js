@@ -165,8 +165,10 @@ export class EquipmentSystem {
     return this.items.filter((i) => i.loc === sv.id && !this.isWorn(i));
   }
 
+  /** 背包已用格數：每件裝備 1 格，每種消耗品（堆疊）1 格 */
   bagSlotsUsed(sv) {
-    return this.bagItems(sv).reduce((s, i) => s + itemSize(i), 0);
+    const stacks = Object.values(sv.bag || {}).filter((v) => v > 0).length;
+    return this.bagItems(sv).length + stacks;
   }
 
   /** 背包物品的總重量（計入負重） */

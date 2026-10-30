@@ -490,9 +490,11 @@ export class SurvivorSystem {
     if (!this.atShelter(sv)) return { ok: false, reason: '不在避難所，無法存取倉庫' };
     const bag = this.bagOf(sv);
     const res = this.game.state.resources;
+    // 新的消耗品種類要有空格（同種類堆疊在同一格）
+    if (!bag[key] && this.game.equipment.bagSlotsUsed(sv) >= this.game.equipment.bagSlotCap(sv)) return { ok: false, reason: '背包格子已滿' };
     const room = Math.max(0, this.bagCap(sv) - this.bagLoad(sv));
     const n = Math.floor(Math.min(amount, res[key], room));
-    if (n <= 0) return { ok: false, reason: room <= 0 ? '背包已滿' : '倉庫沒有這項物資' };
+    if (n <= 0) return { ok: false, reason: room <= 0 ? '負重已滿' : '倉庫沒有這項物資' };
     res[key] -= n;
     bag[key] = (bag[key] || 0) + n;
     return { ok: true, n };
@@ -517,6 +519,7 @@ export class SurvivorSystem {
       let rest = Math.floor(v);
       members.forEach((sv) => {
         if (rest <= 0) return;
+        if (!this.bagOf(sv)[k] && this.game.equipment.bagSlotsUsed(sv) >= this.game.equipment.bagSlotCap(sv)) return;
         const n = Math.min(rest, Math.max(0, this.bagCap(sv) - this.bagLoad(sv)));
         if (n <= 0) return;
         this.bagOf(sv)[k] = (this.bagOf(sv)[k] || 0) + n;
