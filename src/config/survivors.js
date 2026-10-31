@@ -144,3 +144,5 @@ export const xpToNext = (level) => Math.round(40 * level ** 1.6);
 export const recruitCost = (count) => ({ coins: 60 + count * 45, food: 40 + count * 20 });
 /** 人數對應每小時食物消耗 */
 export const FOOD_PER_SURVIVOR_HOUR = 5;
+/** 離線期間（以及分頁在背景超過 1 分鐘）每人每小時的食物消耗 */
+export const FOOD_PER_SURVIVOR_HOUR_OFFLINE = 2;

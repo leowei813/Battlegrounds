@@ -1,6 +1,6 @@
 import { formatDuration } from '../../utils/math.js';
 import {
-  CLASSES, JOBS, xpToNext, survivorRarityTable, FOOD_PER_SURVIVOR_HOUR,
+  CLASSES, JOBS, xpToNext, survivorRarityTable, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE,
 } from '../../config/survivors.js';
 import { RESOURCE_KEYS } from '../../config/constants.js';
 import { SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS } from '../../config/supplies.js';
@@ -65,7 +65,7 @@ export class SurvivorPanel {
     const { net } = g.resources.rates();
     return `<div class="panel-inner">
       <h2>👥 倖存者 <small>${st.survivors.length}/${g.survivors.housing()} 人（上限 ${cap.max}）</small></h2>
-      <p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 5（${cap.leader}）+ 各據點等級（${cap.bases}），最多 ${cap.max} 人。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物，目前食物淨收入 <b class="${net.food < 0 ? 'neg' : 'pos'}">${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時</b>。</p>
+      <p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 5（${cap.leader}）+ 各據點等級（${cap.bases}），最多 ${cap.max} 人。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），目前食物淨收入 <b class="${net.food < 0 ? 'neg' : 'pos'}">${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時</b>。</p>
       ${oddsCard}
       ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷，飢餓時無法治療。重傷且持續飢餓滿遊戲內 3 天的隊員會永久死亡（領袖除外）。</div>' : ''}
       ${offer ? `<h3>📻 招募候選人（三選一）</h3><div class="grid">${offer}</div><div class="btn-row">${btn('放棄此次招募（不退費）', 'abandon', {}, { cls: 'btn-ghost btn-sm' })}</div>` : `

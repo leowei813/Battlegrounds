@@ -134,7 +134,8 @@ export class Game {
   }
 
   applyElapsed(now, dt, silent) {
-    this.resources.apply(dt);
+    // 分頁在背景超過 1 分鐘視同離線：食物消耗較低
+    this.resources.apply(dt, { offline: silent });
     this.shelter.update(now, Math.min(dt, 5000));
     this.research.update(now);
     this.survivors.updateVitals(now, dt, this.resources.lastStarvingMs);
@@ -158,7 +159,7 @@ export class Game {
     const before = { ...this.state.resources, coins: this.state.player.coins, parts: this.state.player.parts };
     const killsBefore = this.state.stats.kills;
     const survivorsBefore = this.state.survivors.length;
-    this.resources.apply(elapsed);
+    this.resources.apply(elapsed, { offline: true });
     this.shelter.update(now, elapsed);
     this.research.update(now);
     this.survivors.updateVitals(now, elapsed, this.resources.lastStarvingMs);
