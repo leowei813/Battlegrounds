@@ -364,17 +364,52 @@ export class ExplorationSystem {
 
   /** 是否還能召回：已經在返程（或被擊敗撤回中）的隊伍不需要召回 */
   canRecall(exp, now = Date.now()) {
-    if (!exp || exp.defeated) return false;
+    if (!exp || exp.defeated || exp.recalled) return false;
     return this.progress(exp, now)?.phase !== 'returning';
   }
 
-  recall(expId) {
+  /**
+   * 隊伍立刻折返：從目前位置走回避難所（需要移動時間），途中的搜索、交戰都取消。
+   * 召回與被攔截擊敗共用。
+   */
+  turnBack(exp, now = Date.now()) {
+    const p = this.progress(exp, now);
+    const home = this.game.shelter.primary() || exp.from;
+    if (!p || !home) return false;
+    const dist = haversine(p.pos.lat, p.pos.lon, home.lat, home.lon);
+    const travelMs = exp.distanceM ? Math.round(exp.travelMs * (dist / exp.distanceM)) : 0;
+    Object.assign(exp, {
+      from: { lat: home.lat, lon: home.lon }, path: [{ lat: home.lat, lon: home.lon }, p.pos],
+      distanceM: Math.round(dist), travelMs, searchMs: 0, startAt: now - travelMs, endAt: now + travelMs,
+      threats: [], auto: false,
+    });
+    return true;
+  }
+
+  /** 召回：隊伍從目前位置走回避難所，這趟沒有收穫 */
+  recall(expId, now = Date.now()) {
     const exp = this.list.find((e) => e.id === expId);
     if (!exp) return { ok: false, reason: '找不到隊伍' };
-    if (!this.canRecall(exp)) return { ok: false, reason: '隊伍已經在返程中' };
-    this.free(exp);
-    this.game.state.expeditions = this.list.filter((e) => e.id !== expId);
-    return { ok: true, msg: '隊伍已召回（無收穫）' };
+    if (!this.canRecall(exp, now)) return { ok: false, reason: '隊伍已經在返程中' };
+    if (!this.turnBack(exp, now)) return { ok: false, reason: '找不到隊伍的位置' };
+    exp.recalled = true;
+    // 還沒抵達的攔截、獵殺不再交戰
+    exp.icptDone = true;
+    exp.huntDone = true;
+    exp.travelEvents = [...(exp.travelEvents || []), '↩️ 收到召回命令，隊伍折返避難所'];
+    return { ok: true, msg: `隊伍折返中，約 ${Math.max(1, Math.round(exp.travelMs / 60000))} 分鐘後回到避難所（無收穫）` };
+  }
+
+  /** 召回的隊伍回到避難所時的報告 */
+  recalledReport(exp) {
+    const poi = this.poi(exp.poiId);
+    const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+    return {
+      id: uid('rp'), poiName: poi?.name || exp.huntTarget?.label || exp.icptTarget?.name || '未知地點', poiType: poi?.type, at: exp.endAt,
+      events: [...(exp.travelEvents || []), '🏠 隊伍回到避難所，這趟沒有收穫。'],
+      resources: {}, items: [], blueprints: [], kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: false,
+      members: members.map((m) => m.name),
+    };
   }
 
   toggleAuto(expId) {
@@ -416,7 +451,8 @@ export class ExplorationSystem {
           return;
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
-        const report = exp.defeated ? this.game.intercept.defeatedReport(exp)
+        const report = exp.recalled ? this.recalledReport(exp)
+          : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)
             : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
@@ -429,7 +465,7 @@ export class ExplorationSystem {
           const m = this.game.survivors.get(id);
           return m && !m.severe;
         });
-        if (exp.kind === 'explore' && !exp.defeated && exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
+        if (exp.kind === 'explore' && !exp.defeated && !exp.recalled && exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
           const r = this.start(exp.poiId, exp.memberIds, exp.durationMin, true, exp.endAt, { vehicleIds: exp.vehicleIds || [], avoidHostile: exp.avoidHostile });
           if (!r.ok) report.events.push(`⏹️ 自動探索停止：${r.reason}`);
         }

@@ -734,6 +734,7 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
   const ex = gs.exploration.start(huge.id, ['leader'], 60);
   assert(ex.ok && ex.exp.durationMin === gs.exploration.searchMinutes(huge), '派遣探索不再選擇時長，由地點決定');
   gs.exploration.recall(ex.exp.id);
+  gs.exploration.update(Date.now() + 5000, { silent: true });
 
   // 個人背包與倉庫
   gs.state.resources.food = 500;
@@ -1008,7 +1009,7 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
     return out;
   };
   const res = kinds('residential');
-  assert(res.has('food') && !res.has('ammo') && !res.has('part') && PT.residential.itemChance === 0, `住宅區：食物、布料、低階藥品（${[...res]}）`);
+  assert(res.has('food') && !res.has('ammo') && PT.residential.itemChance === 0 && PT.residential.loot.part < PT.residential.loot.food, `住宅區：食物、布料、低階藥品，少量零件（${[...res]}）`);
   const resMeds = new Set();
   days.forEach((d) => Object.keys(stock({ id: 'rm', type: 'residential', lat: 25, lon: 121 }, d).resources).forEach((k) => { if (sup.SUPPLIES[k]?.cat === 'med') resMeds.add(sup.SUPPLIES[k].tier); }));
   assert([...resMeds].every((t) => t <= 2), '住宅區只出現低階藥品');
@@ -1052,6 +1053,7 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
   const ex = gk.exploration.start(far.id, [lead.id], 5);
   assert(ex.ok && lead.bag.ammo9 === sup.AMMO_FOR.pistol.perFight * sup.AMMO_PACK_FIGHTS, '出發時自動從倉庫補充彈藥');
   gk.exploration.recall(ex.exp.id);
+  gk.exploration.update(Date.now() + 5000, { silent: true });
 
   // 殘留物資：帶不走的留在建築裡，地圖顯示剩餘數量
   const target = gk.state.map.pois.find((p) => p.type === 'supermarket' && !gk.shelter.baseAtPoi(p.id));
@@ -1421,6 +1423,24 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
   assert(gh.survivors.leader().status === 'exploring', '交戰後還要走回避難所');
   const rep = gh.exploration.update(r.exp.endAt + 1, { silent: true })[0];
   assert(rep && rep.success && gh.survivors.leader().status === 'idle', '返回避難所後結算報告');
+}
+
+// ---- 30. v8.12：召回需要移動時間 ----
+{
+  const gr3 = Game.newGame({ playerName: 'R3', classId: 'warrior', lat: 25, lon: 121 });
+  gr3.state.map.pois = fillPois([], 25, 121);
+  gr3.shelter.establish(gr3.state.map.pois[0]);
+  setHour(gr3, 10);
+  const sh3 = gr3.shelter.primary();
+  const far3 = gr3.state.map.pois.filter((p) => !gr3.shelter.baseAtPoi(p.id)).sort((a, b) => haversine(sh3.lat, sh3.lon, b.lat, b.lon) - haversine(sh3.lat, sh3.lon, a.lat, a.lon))[0];
+  const r3 = gr3.exploration.start(far3.id, ['leader'], 5);
+  const half = r3.exp.startAt + r3.exp.travelMs * 0.5;
+  const rc = gr3.exploration.recall(r3.exp.id, half);
+  assert(rc.ok && gr3.state.expeditions.length === 1 && gr3.survivors.leader().status === 'exploring', '召回後隊伍還在外面，要走回避難所');
+  assert(Math.abs(r3.exp.endAt - half - r3.exp.travelMs) < 2000 && r3.exp.recalled, `折返時間約等於已走的路程（${Math.round((r3.exp.endAt - half) / 1000)} 秒）`);
+  assert(!gr3.exploration.canRecall(r3.exp, half + 1000), '召回中不能再召回');
+  const rep3 = gr3.exploration.update(r3.exp.endAt + 1, { silent: true })[0];
+  assert(rep3 && !rep3.success && !Object.keys(rep3.resources).length && gr3.survivors.leader().status === 'idle', '回到避難所後結算，沒有收穫');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

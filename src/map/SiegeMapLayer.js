@@ -334,8 +334,8 @@ export const SiegeMapLayer = L.Layer.extend({
 
       // 資訊標籤：階段・已移動/總路程・剩餘時間
       const km = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)}km` : `${v}m`);
-      const phName = exp.defeated ? '🏳️ 撤回中' : `${ph.icon} ${ph.name}`;
-      const line1 = exp.defeated ? `${phName}・剩 ${km(Math.max(0, p.totalM - p.movedM))}` : p.totalM ? `${phName}・${km(p.movedM)} / ${km(p.totalM)}` : phName;
+      const phName = exp.defeated ? '🏳️ 撤回中' : exp.recalled ? '↩️ 召回中' : `${ph.icon} ${ph.name}`;
+      const line1 = exp.defeated || exp.recalled ? `${phName}・剩 ${km(Math.max(0, p.totalM - p.movedM))}` : p.totalM ? `${phName}・${km(p.movedM)} / ${km(p.totalM)}` : phName;
       const line2 = `⏱ 剩 ${formatDuration(p.remainingMs)}`;
       ctx.font = 'bold 11px sans-serif';
       const w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + 12;
