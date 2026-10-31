@@ -485,7 +485,7 @@ export class ShelterSystem {
   }
 
   /** 純木材修繕（缺少釘子等零件時）：每點耐久的木材倍率與速度倍率 */
-  static WOOD_ONLY = { woodMul: 2, speedMul: 0.5 };
+  static WOOD_ONLY = { woodMul: 1.5, speedMul: 0.5 };
 
   /** 目前的修繕狀態：normal 正常、woodOnly 缺零件改用純木材、noWood 木材不足、none 無人修繕 */
   repairStatus() {
