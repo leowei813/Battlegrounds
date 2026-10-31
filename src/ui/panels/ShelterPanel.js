@@ -59,7 +59,9 @@ export class ShelterPanel {
     const g = this.game;
     const st = g.state;
     const sh = this.ui.viewBase();
-    const head = `<div class="drawer-head" data-action="toggleDrawer"><b>${sh && g.shelter.isPrimary(sh) ? '⭐' : '🏴'} ${escapeHtml(sh?.name || '避難所')}</b><span>${this.ui.drawerCollapsed ? '▲ 展開' : '▼ 收合'}</span></div>`;
+    const ui = this.ui;
+    const head = `<div class="drawer-head"><b data-action="toggleDrawer">${sh && g.shelter.isPrimary(sh) ? '⭐' : '🏴'} ${escapeHtml(sh?.name || '避難所')}</b>
+      <span class="drawer-ctrl">${ui.drawerCollapsed ? '' : `<button class="btn btn-xs btn-ghost mobile-only" data-action="drawerFull">${ui.drawerFull ? '⤓ 縮小' : '⤢ 全螢幕'}</button>`}<button class="btn btn-xs btn-ghost" data-action="toggleDrawer">${ui.drawerCollapsed ? '▲ 展開' : '▼ 收合'}</button></span></div>`;
     if (!sh) {
       return `${head}<div class="empty">尚未建立避難所。<br>${btn('🗺️ 前往地圖選擇建築', 'gotoMap', {}, { cls: 'btn-primary' })}</div>`;
     }
@@ -101,29 +103,34 @@ export class ShelterPanel {
     const siege = g.siege.of(sh.id);
     const wallRatio = g.shelter.wallHp(sh) / g.shelter.wallMax(sh);
     const logs = st.log.slice(0, 10).map((l) => `<li class="log-${l.type}"><time>${new Date(l.t).toLocaleTimeString().slice(0, 5)}</time>${escapeHtml(l.msg)}</li>`).join('');
-    return `${head}
-      <div class="drawer-body">
+    const z = g.shelter.sizeInfo(sh);
+    const tab = ['overview', 'facilities', 'defense', 'log'].includes(ui.shelterTab) ? ui.shelterTab : 'overview';
+    const tabBtn = (id, label) => `<button class="seg-btn ${tab === id ? 'active' : ''}" data-action="shelterTab" data-t="${id}">${label}</button>`;
+    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('log', '📜 紀錄')}</div>`;
+    const sections = {
+      overview: `
         <div class="label">避難所 ${g.shelter.hasShelter() ? 1 : 0}/1・前哨站 ${g.shelter.outposts().length}/${g.shelter.outpostLimit()} <small>（研究「擴張科技」最多 ${MAX_OUTPOSTS} 座，在地圖點選建築建立）</small></div>
         ${g.shelter.hasShelter() ? '' : `<div class="card warn">🏚️ 目前沒有避難所，無法生產與探索。${btn('🗺️ 到地圖選擇新的避難所', 'gotoMap', {}, { cls: 'btn-sm btn-primary' })}</div>`}
         <div class="chips">${tabs}</div>
-        <div class="btn-row">${baseActions}</div>
-        <div class="btn-row">${btn(`🗄️ 物品倉庫（裝備 ${st.inventory.items.length}）`, 'openStorage', {}, { cls: 'btn-sm' })}${btn(`🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`, 'openGarage', {}, { cls: 'btn-sm' })}</div>
-        ${this.renderCivilization(sh)}
         <div class="stat-grid">
-          <div><small>圍牆（不會自行修復）</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}
+          <div class="wide"><small>圍牆（不會自行修復）</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}
             <small class="muted block">🔨 修繕人員 ${g.shelter.repairers().length}・每秒 +${g.shelter.repairRate().toFixed(1)}・每 100 點耗 ${Object.entries(g.shelter.repairCostPerHp()).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name}${Math.round(v * 100)}`).join(' ')}${g.shelter.repairers().length ? '' : '（到倖存者頁指派「修繕圍牆」工作）'}</small></div>
           <div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div>
           <div><small>來襲殭屍</small><b>${siege.zombies.length}</b></div>
-          <div><small>屍潮波次</small><b>${this.waveText(siege)}</b></div>
+          <div class="wide"><small>屍潮波次</small><b>${this.waveText(siege)}</b></div>
         </div>
         ${queue ? `<h4>施工佇列</h4>${queue}` : ''}
-        <h4>防禦建築 <small class="muted">${(() => { const z = g.shelter.sizeInfo(sh); return `${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築`; })()}</small></h4>
+        <div class="btn-row">${btn(`🗄️ 物品倉庫（裝備 ${st.inventory.items.length}）`, 'openStorage', {}, { cls: 'btn-sm' })}${btn(`🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`, 'openGarage', {}, { cls: 'btn-sm' })}</div>
+        ${this.renderCivilization(sh)}
+        <div class="btn-row">${baseActions}</div>`,
+      facilities: `${queue ? `<h4>施工佇列</h4>${queue}` : ''}<div class="fac-list">${facilities}</div>`,
+      defense: `<p class="muted">${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築。點空地建造，點已建造的防禦建築升級或派人駐守（也可以直接點上方場景中的槽位）。</p>
         <div class="slot-grid">${defenses}</div>
-        <h4>設施</h4>
-        <div class="fac-list">${facilities}</div>
-        <h4>事件紀錄</h4>
-        <ul class="log-list">${logs}</ul>
-      </div>`;
+        <div class="stat-grid"><div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div><div><small>屍潮波次</small><b>${this.waveText(siege)}</b></div></div>`,
+      log: `<ul class="log-list">${logs}</ul>`,
+    };
+    return `<div class="drawer-top">${head}${ui.drawerCollapsed ? '' : tabs2}</div>
+      <div class="drawer-body">${sections[tab]}</div>`;
   }
 
   onAction(action, data) {

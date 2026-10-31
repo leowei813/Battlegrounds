@@ -57,6 +57,7 @@ export const STARTING_RESOURCES = {
 };
 /** 新遊戲初始材料物品（零件、布料、藥品、彈藥；見 config/supplies.js） */
 export const STARTING_SUPPLIES = {
-  nail: 40, screw: 40, scrap: 30, bolt: 15, wire: 10, tape: 10, coarse: 25, cotton: 20, linen: 10, bandage: 5, gauze: 5, arrow: 20,
+  nail: 40, screw: 40, scrap: 30, bolt: 15, wire: 10, tape: 10, glass: 20, ironWire: 25, rubber: 10, plastic: 10, bulb: 10,
+  coarse: 25, cotton: 20, linen: 10, bandage: 5, gauze: 5, arrow: 20,
 };
 export const STARTING_COINS = 150;

@@ -31,6 +31,8 @@ const TABS = [
 
 const DESKTOP_BP = 900;
 const DRAWER_W = 400;
+/** 手機避難所抽屜佔畫面的比例（與 CSS 一致） */
+const DRAWER_MOBILE = 0.6;
 
 /**
  * UI 總管：HUD、導覽列、分頁切換、面板渲染、彈窗與通知。
@@ -56,6 +58,8 @@ export class UIManager {
     this.tab = 'shelter';
     this.viewBaseId = null; // 避難所分頁目前檢視的據點（null = 主要據點）
     this.drawerCollapsed = false;
+    this.drawerFull = false; // 手機：抽屜展開成全螢幕
+    this.shelterTab = 'overview'; // 避難所抽屜分頁
     this.lastHtml = '';
 
     this.panels = {
@@ -80,7 +84,22 @@ export class UIManager {
     delegateActions(this.panelEl, (action, data, el) => {
       if (action === 'toggleDrawer') {
         this.drawerCollapsed = !this.drawerCollapsed;
+        if (this.drawerCollapsed) this.drawerFull = false;
         this.applyLayout();
+        this.refresh(true);
+        return;
+      }
+      if (action === 'drawerFull') {
+        this.drawerFull = !this.drawerFull;
+        this.drawerCollapsed = false;
+        this.applyLayout();
+        this.refresh(true);
+        return;
+      }
+      if (action === 'shelterTab') {
+        this.shelterTab = data.t;
+        this.panelEl.scrollTop = 0;
+        this.refresh(true);
         return;
       }
       this.panels[this.tab].onAction?.(action, data, el);
@@ -155,10 +174,12 @@ export class UIManager {
     const isMap = this.tab === 'map';
     const isShelter = this.tab === 'shelter';
     this.mapRoot.classList.toggle('hidden', !isMap);
-    this.panelEl.className = `panel ${isMap ? 'hidden' : isShelter ? 'drawer' : 'full'} ${this.drawerCollapsed ? 'collapsed' : ''}`;
+    this.panelEl.className = `panel ${isMap ? 'hidden' : isShelter ? 'drawer' : 'full'} ${this.drawerCollapsed ? 'collapsed' : ''} ${this.drawerFull && !desktop ? 'drawer-full' : ''}`;
     let inset = { right: 0, bottom: 0, top: 0 };
     if (isShelter && !this.drawerCollapsed) {
-      inset = desktop ? { right: DRAWER_W, bottom: 0, top: 0 } : { right: 0, bottom: Math.round(window.innerHeight * 0.42), top: 0 };
+      // 手機的抽屜高度依實際版面量測（預設約 60%，全螢幕時場景不需置中）
+      const stageH = this.panelEl.parentElement?.clientHeight || window.innerHeight;
+      inset = desktop ? { right: DRAWER_W, bottom: 0, top: 0 } : { right: 0, bottom: Math.round(stageH * (this.drawerFull ? 0 : DRAWER_MOBILE)), top: 0 };
     }
     this.phaser.registry.set('viewInset', inset);
   }

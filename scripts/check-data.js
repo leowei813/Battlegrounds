@@ -1192,6 +1192,15 @@ assert(migrated.version === 12 && migrated.bases.length === 1 && migrated.bases[
   assert(z.hp < 1e6, '近戰可以攻擊貼在圍牆上的殭屍');
 }
 
+// ---- 20. v8.2：開局材料足夠升級第一批設施 ----
+{
+  const gs0 = Game.newGame({ playerName: 'N', classId: 'warrior', lat: 25, lon: 121 });
+  gs0.state.map.pois = fillPois([], 25, 121);
+  gs0.shelter.establish(gs0.state.map.pois[0]);
+  gs0.state.resources.wood = 1000; // 木材可從樹林取得，這裡只檢查零件與布料
+  ['wall', 'warehouse', 'itemStore', 'farm'].forEach((id) => assert(gs0.shelter.canUpgradeFacility(null, id).ok, `開局的零件與布料足夠升級${FACILITIES[id].name}`));
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
