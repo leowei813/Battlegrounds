@@ -1,6 +1,6 @@
 import { DEFENSES } from '../config/defenses.js';
 import { ENEMIES, BOSSES } from '../config/enemies.js';
-import { RESOURCE_KEYS } from '../config/constants.js';
+import { RESOURCE_KEYS, DAY_REAL_MS } from '../config/constants.js';
 import {
   SIEGE_SCALING, BREACH_LOSS, BREACH_BUILDING_DAMAGE_CHANCE, BASE_SIZES,
 } from '../config/civilization.js';
@@ -54,8 +54,20 @@ export class BaseSiege {
     this.breachedTonight = false;
   }
 
+  /** 今晚的編號（夜晚跨過午夜，以入夜那天計） */
+  nightKey(now = Date.now()) {
+    return this.game.time.day(now - (6 / 24) * DAY_REAL_MS);
+  }
+
+  /** 今晚已來過幾波（存在據點上，重新整理或離線再回來也不會重新計算） */
+  savedWaves() {
+    const n = this.base?.nightWaves;
+    return n && n.night === this.nightKey() ? n.waves : 0;
+  }
+
   /** 入夜：開始統計今晚的防守 */
   startNight() {
+    this.wave = Math.max(this.wave, this.savedWaves());
     this.nightKills = 0;
     this.nightWallStart = this.game.shelter.wallHp(this.base);
     this.breachedTonight = false;
@@ -202,6 +214,7 @@ export class BaseSiege {
 
   startWave() {
     this.wave += 1;
+    if (this.base) this.base.nightWaves = { night: this.nightKey(), waves: this.wave };
     this.waveLeft = this.waveSize();
     this.lull = WAVE_LULL * randFloat(0.8, 1.2);
     this.spawnTimer = 0;
