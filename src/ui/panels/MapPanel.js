@@ -15,7 +15,6 @@ import { MAX_MARKERS } from '../../systems/MarkerSystem.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { zoneAt, ZONES } from '../../config/zones.js';
-import { showBattle } from '../BattleView.js';
 
 const stars = (n) => '☠'.repeat(Math.min(7, n));
 
@@ -559,17 +558,25 @@ export class MapPanel {
     const g = this.game;
     const gr = g.state.map.zombieGroups.find((z) => z.id === groupId);
     if (!gr) return;
+    const sh = g.shelter.primary();
+    const label = g.zombies.groupLabel(gr);
     openTeamPicker(this.ui, {
-      title: `⚔️ 攻擊 ${g.zombies.groupLabel(gr)}`,
-      intro: '<p class="muted">戰鬥為自動進行。倒下的隊員會受傷，需要休養或使用藥品治療。</p>',
-      confirmLabel: '開戰！',
-      onConfirm: (ids) => {
-        const r = g.zombies.attack(groupId, ids);
-        if (!r.ok) return this.ui.result(r);
-        g.changed();
-        this.renderMap(true);
-        setTimeout(() => showBattle(this.ui, r.result, r.loot, `⚔️ ${g.zombies.groupLabel(r.group)}`), 0);
-        return { ok: true };
+      title: `⚔️ 攻擊 ${label}`,
+      intro: '<p class="muted">隊伍會先移動到殭屍群的位置，抵達時自動交戰，再返回避難所。倒下的隊員會受傷，需要休養或使用藥品治療。天亮前沒趕到的話殭屍會躲回建築內。</p>',
+      vehicles: true,
+      distanceM: sh ? haversine(sh.lat, sh.lon, gr.lat, gr.lon) : 0,
+      trip: {
+        poi: {
+          id: `hunt:${gr.id}`, lat: gr.lat, lon: gr.lon, type: 'military', hunt: true,
+        },
+        searchMin: 0,
+      },
+      routeOption: true,
+      confirmLabel: '出發攻擊！',
+      onConfirm: (ids, _dur, _auto, vids, opts) => {
+        const r = this.ui.result(g.exploration.startHunt(groupId, ids, { vehicleIds: vids, ...opts }));
+        if (r.ok) this.renderMap(true);
+        return r;
       },
     });
   }
