@@ -19,7 +19,7 @@ import {
 } from '../config/supplies.js';
 
 /** 每公里單程移動時間（分鐘，未套用速度加成） */
-const MIN_PER_KM_ONE_WAY = 2;
+const MIN_PER_KM_ONE_WAY = 2.5;
 /** 移動途中，殭屍群在此距離內（公尺）就可能發動襲擊 */
 export const AMBUSH_RADIUS_M = 90;
 /** 每個接近的殭屍群發動襲擊的基礎機率（偵察兵的尋路技能可降低） */
@@ -134,7 +134,7 @@ export class ExplorationSystem {
   }
 
   /**
-   * 搜索時間（分鐘，未套用速度加成）：依建築大小與危險度，最大型、最危險的地點需要 30 分鐘。
+   * 搜索時間（分鐘，未套用速度加成）：依建築大小與危險度，最大型、最危險的地點需要 24 分鐘。
    */
   searchMinutes(poi) {
     if (!poi || poi.npc) return 5;

@@ -79,10 +79,10 @@ export const BREACH_BUILDING_DAMAGE_CHANCE = 0.3;
  * 據點越大，圍牆越長越難防守：siegeMul 為屍潮數量倍率。
  */
 export const BASE_SIZES = {
-  small: { name: '小型', slots: 3, icon: '⛺', pin: 32, mul: 0.88, color: '#b0bec5', siegeMul: 0.85, searchMin: 8, alert: 40 },
-  medium: { name: '中型', slots: 5, icon: '🏘️', pin: 35, mul: 1, color: '#9ccc65', siegeMul: 1, searchMin: 14, alert: 55 },
-  large: { name: '大型', slots: 8, icon: '🏢', pin: 38, mul: 1.12, color: '#42a5f5', siegeMul: 1.25, searchMin: 22, alert: 70 },
-  huge: { name: '巨型', slots: 11, icon: '🏰', pin: 42, mul: 1.25, color: '#ffa726', siegeMul: 1.55, searchMin: 30, alert: 90 },
+  small: { name: '小型', slots: 3, icon: '⛺', pin: 32, mul: 0.88, color: '#b0bec5', siegeMul: 0.85, searchMin: 6, alert: 40 },
+  medium: { name: '中型', slots: 5, icon: '🏘️', pin: 35, mul: 1, color: '#9ccc65', siegeMul: 1, searchMin: 11, alert: 55 },
+  large: { name: '大型', slots: 8, icon: '🏢', pin: 38, mul: 1.12, color: '#42a5f5', siegeMul: 1.25, searchMin: 18, alert: 70 },
+  huge: { name: '巨型', slots: 11, icon: '🏰', pin: 42, mul: 1.25, color: '#ffa726', siegeMul: 1.55, searchMin: 24, alert: 90 },
 };
 export const FACILITY_COUNT = 9;
 
