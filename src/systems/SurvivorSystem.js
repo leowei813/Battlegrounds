@@ -1,7 +1,7 @@
 import { dormCap, clinicRegen } from '../config/facilities.js';
 import {
   CLASSES, CLASS_KEYS, JOBS, SURVIVOR_NAMES, MAX_SURVIVOR_LEVEL, xpToNext, recruitCost,
-  SURVIVOR_RARITY, survivorRarityTable, hireFee, RECRUIT_BOARD_SIZE, RECRUIT_BOARD_MS, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
+  SURVIVOR_RARITY, survivorRarityTable, hireFee, RECRUIT_BOARD_SIZE, RECRUIT_BOARD_MS, RECRUIT_STAY_MS, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
 } from '../config/survivors.js';
 import { DAY_REAL_MS } from '../config/constants.js';
 import { SLOT_KEYS, RARITIES, STACK_MAX } from '../config/equipment.js';
@@ -419,6 +419,7 @@ export class SurvivorSystem {
   /** 到整點更新名單 */
   /** 附近的倖存者（使用存檔種子） */
   updateBoard(now = Date.now()) {
+    this.expireCandidates(now);
     return withSeed(this.game.state.rng, 'recruit', () => this.updateBoardNow(now));
   }
 
@@ -455,22 +456,45 @@ export class SurvivorSystem {
     return withSeed(this.game.state.rng, 'recruit', () => this.recruitRollNow());
   }
 
-  recruitRollNow() {
+  recruitRollNow(now = Date.now()) {
+    this.expireCandidates(now);
     if (this.game.state.recruitOffer?.length) return { ok: true, offer: this.game.state.recruitOffer };
-    if (this.isFull()) return { ok: false, reason: this.fullReason() };
+    // 人數已滿也可以廣播：候選人會停留 1 小時，期間擴充宿舍或空出位置後再雇用
     if (!canAfford(this.game.state, this.currentRecruitCost())) return { ok: false, reason: '資源不足' };
     payCost(this.game.state, this.currentRecruitCost());
     this.game.state.recruitOffer = Array.from({ length: RECRUIT_CHOICES }, () => this.makeCandidate(this.candidateLevel()));
+    this.game.state.recruitOfferUntil = now + RECRUIT_STAY_MS;
     return { ok: true, offer: this.game.state.recruitOffer };
+  }
+
+  /** 候選人停留時間到期就離開（廣播招募的三人、探索遇到的倖存者） */
+  expireCandidates(now = Date.now()) {
+    const st = this.game.state;
+    if (st.recruitOffer?.length) {
+      st.recruitOfferUntil = st.recruitOfferUntil || now + RECRUIT_STAY_MS;
+      if (now >= st.recruitOfferUntil) {
+        st.recruitOffer = null;
+        st.recruitOfferUntil = 0;
+        this.game.log('📻 廣播招募的候選人等不到回覆，已經離開了', 'info');
+      }
+    }
+    const pool = st.recruitPool || [];
+    pool.forEach((c) => { c.leaveAt = c.leaveAt || now + RECRUIT_STAY_MS; });
+    const left = pool.filter((c) => now >= c.leaveAt);
+    if (left.length) {
+      st.recruitPool = pool.filter((c) => now < c.leaveAt);
+      this.game.log(`🚶 ${left.map((c) => c.name).join('、')} 等不到回覆，已經離開了`, 'info');
+    }
   }
 
   pickRecruit(id) {
     const offer = this.game.state.recruitOffer || [];
     const sv = offer.find((c) => c.id === id);
     if (!sv) return { ok: false, reason: '候選人已離開' };
-    if (this.isFull()) return { ok: false, reason: '人數已達上限' };
+    if (this.isFull()) return { ok: false, reason: `${this.fullReason()}（候選人會停留到時間結束）` };
     if (!payCost(this.game.state, this.hireCost(sv))) return { ok: false, reason: '金錢不足，無法支付雇用費' };
     this.game.state.recruitOffer = null;
+    this.game.state.recruitOfferUntil = 0;
     this.addSurvivor(sv);
     return { ok: true, msg: `${sv.name}（${RARITIES[sv.rarity].name}・${CLASSES[sv.classId].name}）加入了避難所` };
   }
@@ -478,6 +502,7 @@ export class SurvivorSystem {
   /** 放棄此次招募（費用不退還） */
   abandonRecruit() {
     this.game.state.recruitOffer = null;
+    this.game.state.recruitOfferUntil = 0;
     return { ok: true, msg: '已放棄此次招募' };
   }
 
@@ -492,7 +517,7 @@ export class SurvivorSystem {
     const pool = this.game.state.recruitPool;
     const cand = pool.find((c) => c.id === id);
     if (!cand) return { ok: false, reason: '對方已離開' };
-    if (this.isFull()) return { ok: false, reason: '人數已達上限' };
+    if (this.isFull()) return { ok: false, reason: `${this.fullReason()}（對方會停留到時間結束）` };
     this.game.state.recruitPool = pool.filter((c) => c.id !== id);
     this.addSurvivor(cand);
     return { ok: true, msg: `${cand.name} 加入了你的隊伍` };

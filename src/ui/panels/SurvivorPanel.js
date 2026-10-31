@@ -41,10 +41,13 @@ export class SurvivorPanel {
     const g = this.game;
     const st = g.state;
     const full = g.survivors.isFull();
+    const now = Date.now();
+    const stay = (at) => `<span class="tag">⏱ ${formatDuration(Math.max(0, (at || now) - now))}後離開</span>`;
     const pool = st.recruitPool.map((c) => this.candidateCard(c,
-      `${btn('✅ 接納', 'accept', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full })}${btn('拒絕', 'reject', { id: c.id }, { cls: 'btn-sm btn-ghost' })}`)).join('');
+      `${btn('✅ 接納', 'accept', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full, title: full ? g.survivors.fullReason() : '' })}${btn('拒絕', 'reject', { id: c.id }, { cls: 'btn-sm btn-ghost' })}${stay(c.leaveAt)}`)).join('');
     const offer = (st.recruitOffer || []).map((c) => this.candidateCard(c,
-      btn(`✅ 雇用 💰${g.survivors.hireCost(c).coins}`, 'pick', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full }))).join('');
+      `${btn(`✅ 雇用 💰${g.survivors.hireCost(c).coins}`, 'pick', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full, title: full ? g.survivors.fullReason() : '' })}${stay(st.recruitOfferUntil)}`)).join('');
+    const fullNote = full ? `<div class="card warn">🛏️ 人數已滿：${escapeHtml(g.survivors.fullReason())}。候選人會停留 1 小時，期間擴充宿舍或空出位置就能雇用。</div>` : '';
     const cost = g.survivors.currentRecruitCost();
     const board = (st.recruitBoard?.list || []).map((c) => this.candidateCard(c,
       btn(`✅ 雇用 💰${g.survivors.hireCost(c).coins}`, 'hire', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full }))).join('');
@@ -68,12 +71,13 @@ export class SurvivorPanel {
       <p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 5（${cap.leader}）+ 各據點等級（${cap.bases}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級（${g.shelter.maxLevel('clinic') ? `Lv${g.shelter.maxLevel('clinic')}` : '<b class="neg">尚未建造，不會自然回復</b>'}），主要仍需藥品治療。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），目前食物淨收入 <b class="${net.food < 0 ? 'neg' : 'pos'}">${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時</b>。</p>
       ${oddsCard}
       ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷，飢餓時無法治療。重傷且持續飢餓滿遊戲內 3 天的隊員會永久死亡（領袖除外）。</div>' : ''}
+      ${fullNote}
       ${offer ? `<h3>📻 招募候選人（三選一）</h3><div class="grid">${offer}</div><div class="btn-row">${btn('放棄此次招募（不退費）', 'abandon', {}, { cls: 'btn-ghost btn-sm' })}</div>` : `
       <div class="card row-between">
-        <div><b>📻 廣播招募</b><small class="muted block">支付廣播費用後出現 3 位隨機職業與品級的倖存者，選擇後還要支付雇用費；也可以放棄（廣播費用不退還）</small><div class="costs">${costHtml(st, cost)}</div></div>
-        ${btn(full ? '人數已達上限' : '招募', 'recruit', {}, { cls: 'btn-primary', disabled: full })}
+        <div><b>📻 廣播招募</b><small class="muted block">支付廣播費用後出現 3 位隨機職業與品級的倖存者，會停留 1 小時（現實時間）；選擇後還要支付雇用費，也可以放棄（廣播費用不退還）。人數已滿也可以廣播，等有空位再雇用。</small><div class="costs">${costHtml(st, cost)}</div></div>
+        ${btn('招募', 'recruit', {}, { cls: 'btn-primary' })}
       </div>`}
-      ${pool ? `<h3>🙋 等待加入（探索中遇到）</h3><div class="grid">${pool}</div>` : ''}
+      ${pool ? `<h3>🙋 等待加入（探索中遇到，停留 1 小時）</h3><div class="grid">${pool}</div>` : ''}
       <h3>🏕️ 附近的倖存者 <small class="muted">每小時更新（${formatDuration(Math.max(0, st.recruitBoard.refreshAt - Date.now()))}後）・雇用需支付金錢</small></h3>
       <div class="grid">${board || '<p class="muted">目前沒有人。</p>'}</div>
       <div class="grid">${list}</div>

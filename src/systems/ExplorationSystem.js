@@ -1,3 +1,4 @@
+import { RECRUIT_STAY_MS } from '../config/survivors.js';
 import {
   MAX_TEAM_SIZE, MAX_EXPEDITIONS, OFFLINE_CAP_MS, RESOURCES,
 } from '../config/constants.js';
@@ -638,8 +639,9 @@ export class ExplorationSystem {
       } else if (ev === 'survivor') {
         const cand = this.game.survivors.makeCandidate(randInt(1, Math.max(1, level - 1)));
         const pool = this.game.state.recruitPool;
+        cand.leaveAt = Math.max(Date.now(), exp.endAt) + RECRUIT_STAY_MS;
         if (pool.length < 5) pool.push(cand);
-        report.events.push(`🙋 遇到倖存者 ${cand.name}，對方願意加入（請到倖存者頁面確認）`);
+        report.events.push(`🙋 遇到倖存者 ${cand.name}，對方願意加入（會在避難所附近等 1 小時，請到倖存者頁面確認）`);
       } else if (ev === 'special') {
         const sp = pick(SPECIAL_EVENTS);
         report.events.push(`✨ ${sp.text}`);

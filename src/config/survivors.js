@@ -119,6 +119,8 @@ export const hireFee = (sv) => Math.round((40 + sv.level * 15) * (HIRE_FEE_MUL[s
 /** 固定出現的可招募倖存者：每小時更新 */
 export const RECRUIT_BOARD_SIZE = 2;
 export const RECRUIT_BOARD_MS = 60 * 60 * 1000;
+/** 廣播招募的候選人、探索遇到的倖存者停留時間（現實時間） */
+export const RECRUIT_STAY_MS = 60 * 60 * 1000;
 
 /** 人員上限：3 + 領袖等級 ÷ 5 + 各據點等級總和，最多 10 人（含領袖） */
 export const MAX_SURVIVORS = 10;
