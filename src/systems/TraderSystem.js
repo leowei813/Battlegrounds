@@ -120,6 +120,39 @@ export class TraderSystem {
     return Math.round(RARITIES[item.rarity].sell * TRADER.gearMarkup * (1 + item.level * 0.08) * tierMul(item.tier || 1));
   }
 
+  /** 回收比例：約為販售價的 1/8，越稀有（階級越高）比例越好（1 階 10% → 5 階 15%） */
+  buybackRate(key) {
+    const tier = SUPPLIES[key]?.tier || 1;
+    return (0.8 + 0.1 * (tier - 1)) / 8;
+  }
+
+  /** 回收單價（可能有小數，成交時總價取整數） */
+  buybackUnit(key) {
+    return this.supplyPrice(key) * this.buybackRate(key);
+  }
+
+  /** 回收總價 */
+  buybackPrice(key, qty) {
+    return Math.floor(this.buybackUnit(key) * qty);
+  }
+
+  /** 把倉庫裡的材料物品賣給商人 */
+  sell(key, qty) {
+    const g = this.game;
+    if (!this.isHere()) return { ok: false, reason: '流浪商人已經離開了' };
+    if (!SUPPLIES[key]) return { ok: false, reason: '商人不收這種東西' };
+    const have = g.state.supplies?.[key] || 0;
+    const n = Math.min(have, Math.max(0, Math.floor(qty)));
+    if (n <= 0) return { ok: false, reason: '倉庫裡沒有這項物資' };
+    const price = this.buybackPrice(key, n);
+    if (price <= 0) return { ok: false, reason: '數量太少，商人不收（多賣一些才值錢）' };
+    g.state.supplies[key] = have - n;
+    if (g.state.supplies[key] <= 0) delete g.state.supplies[key];
+    g.state.player.coins += price;
+    g.log(`🧳 賣給流浪商人 ${SUPPLIES[key].name} ×${n}（💰${price}）`, 'loot');
+    return { ok: true, msg: `賣出 ${SUPPLIES[key].name} ×${n}，得到 💰${price}` };
+  }
+
   /** 購買一項商品 */
   buy(goodId) {
     const g = this.game;

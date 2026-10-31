@@ -146,7 +146,8 @@ export class MapService {
   /** NPC 據點（紅色骷髏旗，標示等級） */
   renderNpcs(list = []) {
     if (!this.map) return;
-    const key = list.map((n) => `${n.id}:${n.level}`).join('|');
+    const iv = (n) => this.game.npcs.intelView(n).levelShort;
+    const key = list.map((n) => `${n.id}:${iv(n)}`).join('|');
     if (key === this.npcKey) return;
     this.npcKey = key;
     this.layers.npcs.clearLayers();
@@ -156,10 +157,10 @@ export class MapService {
         radius: npcAlert(n), color: '#e53935', weight: 1, dashArray: '3 5', fillColor: '#e53935', fillOpacity: 0.05, interactive: false,
       }).addTo(this.layers.npcs);
       L.marker([n.lat, n.lon], {
-        icon: this.icon(`<div class="npc-pin">🏴‍☠️<i class="npc-lv">Lv${n.level}</i></div>`, 'shelter-icon', 34),
+        icon: this.icon(`<div class="npc-pin">🏴‍☠️<i class="npc-lv">${iv(n)}</i></div>`, 'shelter-icon', 34),
         zIndexOffset: 850,
       }).on('click', () => bus.emit('ui:openNpc', { npcId: n.id }))
-        .bindTooltip(`🏴‍☠️ ${escapeHtml(n.name)}（Lv${n.level}）`, { direction: 'top', offset: [0, -17] })
+        .bindTooltip(`🏴‍☠️ ${escapeHtml(n.name)}（${iv(n)}）`, { direction: 'top', offset: [0, -17] })
         .addTo(this.layers.npcs);
     });
   }

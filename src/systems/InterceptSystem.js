@@ -37,21 +37,22 @@ export class InterceptSystem {
       const n = g.npcs.get(team.npcId);
       const trip = n?.trip;
       if (!n || !trip || trip.hidden || trip.endAt <= now) return null;
-      const pos = tripProgress(trip, now).pos;
+      const p = tripProgress(trip, now);
       return {
         kind: 'npc', id: `icpt:npc:${n.id}:${trip.startAt}`, npcId: n.id, tripStart: trip.startAt, endAt: trip.endAt,
         name: `${n.name}${trip.kind === 'raid' ? '（掠奪隊）' : '（探索隊）'}`, owner: n.name, level: n.level, members: this.npcTeamSize(n),
-        lat: pos.lat, lon: pos.lon,
+        lat: p.pos.lat, lon: p.pos.lon, phase: p.phase, searchEnd: trip.startAt + (trip.travelMs || 0) + (trip.searchMs || 0),
       };
     }
     const p = (g.world?.others || []).find((x) => x.id === team.playerId);
     const trip = p?.trips.find((t) => t.id === team.tripId);
     if (!p || !trip || trip.defeated || trip.endAt <= now) return null;
-    const pos = tripProgress(trip, now).pos;
+    const pr = tripProgress(trip, now);
     return {
       kind: 'player', id: `icpt:pl:${p.id}:${trip.id}`, playerId: p.id, tripId: trip.id, endAt: trip.endAt,
       name: `${p.name}的探索隊`, owner: p.name, level: trip.level || 1, members: trip.members || 1,
-      lat: pos.lat, lon: pos.lon,
+      lat: pr.pos.lat, lon: pr.pos.lon, phase: pr.phase,
+      searchEnd: trip.startAt + (trip.travelMs || 0) + (trip.searchMs ?? trip.endAt - trip.startAt),
     };
   }
 
@@ -75,6 +76,8 @@ export class InterceptSystem {
     if (!t) return { ok: false, reason: '隊伍已經離開了' };
     if (t.kind === 'player' && g.territory.relation(t.playerId) === 'friend') return { ok: false, reason: '不能攻擊友好玩家的隊伍' };
     if (g.state.expeditions.some((e) => e.poiId === t.id)) return { ok: false, reason: '已經派隊攔截這支隊伍了' };
+    // 移動中的隊伍追不上：只能在對方停在建築搜索時攔截
+    if (t.phase !== 'searching') return { ok: false, reason: '對方正在移動中，只能在對方停下搜索時攔截', target: t };
     return { ok: true, target: t };
   }
 
@@ -82,6 +85,8 @@ export class InterceptSystem {
   start(team, memberIds, opts = {}) {
     const check = this.canIntercept(team);
     if (!check.ok) return check;
+    // 已經在外面移動的隊員不能改派攔截
+    if (memberIds.some((id) => { const sv = this.game.survivors.get(id); return !sv || !this.game.survivors.isAvailable(sv); })) return { ok: false, reason: '在外移動中的隊員不能派去攔截' };
     const t = check.target;
     this.cache.set(t.id, t);
     const r = this.game.exploration.start(t.id, memberIds, 0, false, Date.now(), { ...opts, kind: 'intercept' });
@@ -117,7 +122,7 @@ export class InterceptSystem {
     }
     if (t.kind === 'npc') {
       const n = g.npcs.get(t.npcId);
-      if (!n || !n.trip || n.trip.startAt !== t.tripStart || n.trip.hidden || at >= n.trip.endAt) {
+      if (!n || !n.trip || n.trip.startAt !== t.tripStart || n.trip.hidden || at >= n.trip.endAt || at >= (t.searchEnd ?? Infinity)) {
         out.missed = true;
         out.events.push(`🏳️ 抵達時「${t.owner}」的隊伍已經離開，撲空了。`);
         return;
@@ -128,6 +133,8 @@ export class InterceptSystem {
       exp.travelKills = (exp.travelKills || 0) + result.kills.length;
       exp.travelXp = (exp.travelXp || 0) + result.xp;
       out.events.push(`⚔️ 攔截「${t.owner}」的隊伍（${enemies.length} 人・Lv${n.level}）`);
+      // NPC 隊伍被擊倒的人員要回據點養傷
+      g.npcs.wound(n, Math.min(result.kills.length, g.npcs.fullCount(n)), at);
       if (result.victory) {
         out.win = true;
         g.state.stats.battlesWon += 1;
@@ -152,9 +159,9 @@ export class InterceptSystem {
       return;
     }
     // 其他玩家：以公開的隊伍人數與等級估算對方戰力，交戰後透過事件信箱通知對方
-    if (at >= t.endAt) {
+    if (at >= t.endAt || at >= (t.searchEnd ?? Infinity)) {
       out.missed = true;
-      out.events.push(`🏳️ 抵達時「${t.owner}」的隊伍已經回到據點，撲空了。`);
+      out.events.push(`🏳️ 抵達時「${t.owner}」的隊伍已經離開搜索地點，撲空了。`);
       return;
     }
     const enemies = Array.from({ length: Math.max(1, Math.min(6, t.members)) }, () => g.combat.createEnemy('raider', t.level));
@@ -184,11 +191,14 @@ export class InterceptSystem {
   npcCarried(n, at) {
     const trip = n.trip;
     const p = tripProgress(trip, at);
-    if (trip.kind === 'explore' && p.phase === 'returning') {
+    if (trip.kind === 'explore' && (p.phase === 'returning' || p.phase === 'searching')) {
       const poi = this.game.state.map.pois.find((x) => x.id === trip.poiId);
       if (poi) {
+        // 搜索中只搜到一部分
+        const done = p.phase === 'searching' && trip.searchMs ? Math.min(1, (at - trip.startAt - trip.travelMs) / trip.searchMs) : 1;
         const stock = stockOf(poi, trip.startAt + trip.travelMs, this.game.state.map.remain);
-        return Object.fromEntries(Object.entries(stock.resources).map(([k, v]) => [k, Math.max(1, Math.round(v * 0.6))]));
+        const out = Object.fromEntries(Object.entries(stock.resources).map(([k, v]) => [k, Math.round(v * 0.6 * done)]).filter(([, v]) => v > 0));
+        if (Object.keys(out).length) return out;
       }
     }
     return { food: randInt(5, 20), scrap: randInt(2, 8), ...(chance(0.4) ? { ammo9: randInt(5, 20) } : {}) };

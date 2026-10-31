@@ -44,9 +44,14 @@ export class NpcSystem {
     };
   }
 
-  /** 據點守備：掠奪者人數與等級 */
+  /** 滿編時的掠奪者人數（不含首領） */
+  fullCount(n) {
+    return Math.min(6, 2 + Math.floor(n.level / 5));
+  }
+
+  /** 據點守備：掠奪者人數（扣除傷亡）與等級 */
   garrison(n) {
-    const count = Math.min(6, 2 + Math.floor(n.level / 5));
+    const count = Math.max(0, this.fullCount(n) - (n.wounded || 0));
     const enemies = Array.from({ length: count }, () => this.game.combat.createEnemy('raider', n.level));
     enemies.push(this.game.combat.createEnemy('raiderChief', n.level));
     return enemies;
@@ -155,7 +160,20 @@ export class NpcSystem {
       if (first && added) this.game.log(`🏴‍☠️ 附近出現 ${added} 個 NPC 勢力據點（每平方公里約 ${NPC_CONFIG.perCell} 個）`, 'danger');
       st.nextSpawnAt = now + 60000;
     }
+    const phase = this.game.time.phase(now);
+    const night = this.game.time.nightKey(now);
     this.list.forEach((n) => {
+      // 傷亡人員逐漸補回
+      if (n.wounded > 0) {
+        n.healAt = n.healAt || now + NPC_CONFIG.woundHealMs;
+        while (n.wounded > 0 && now >= n.healAt) {
+          n.wounded -= 1;
+          n.healAt += NPC_CONFIG.woundHealMs;
+        }
+        if (!n.wounded) n.healAt = 0;
+      }
+      // 夜晚：NPC 據點也要抵禦屍群（每晚一次）
+      if (phase.zombies && n.siegeNight !== night) this.nightSiege(n, night, now);
       // 升級
       let guard = 0;
       while (now >= n.nextLevelAt && guard < 20) {
@@ -169,10 +187,90 @@ export class NpcSystem {
         n.trip.resolved = true;
         this.resolveIncoming(n, n.trip, now);
       }
+      if (!this.list.includes(n)) return;
       if (n.trip && now >= n.trip.endAt) this.finishTrip(n, now);
       if (!n.trip && now >= n.nextRaidAt) this.launchRaid(n, now);
       if (!n.trip && now >= n.nextExploreAt) this.launchExplore(n, now);
     });
+  }
+
+  /** NPC 人員傷亡（每人 20 分鐘補回） */
+  wound(n, count, now = Date.now()) {
+    if (count <= 0) return;
+    n.wounded = Math.min(this.fullCount(n), (n.wounded || 0) + count);
+    if (!n.healAt || n.healAt < now) n.healAt = now + NPC_CONFIG.woundHealMs;
+  }
+
+  /**
+   * NPC 據點抵禦屍群（每晚一次）：依區域危險度、等級與目前傷亡判定結果。
+   * 守住會有少量傷亡；被突破會損失物資、人員與等級；本來就元氣大傷的據點可能被屍群攻陷。
+   */
+  nightSiege(n, night, now) {
+    n.siegeNight = night;
+    const zone = zoneAt(n.lat, n.lon);
+    const weak = (n.wounded || 0) / Math.max(1, this.fullCount(n));
+    const r = randFloat(0.5, 1.5) * (1 + Math.max(0, zone.danger) * 0.08) + weak * 0.6;
+    let result;
+    if (r < 0.85) {
+      result = 'held';
+      this.wound(n, chance(0.4) ? 1 : 0, now);
+    } else if (r < 1.3) {
+      result = 'hurt';
+      this.wound(n, randInt(1, 2), now);
+      Object.keys(n.resources).forEach((k) => { n.resources[k] = Math.floor(n.resources[k] * 0.9); });
+    } else {
+      result = 'breached';
+      this.wound(n, randInt(2, 3), now);
+      Object.keys(n.resources).forEach((k) => { n.resources[k] = Math.floor(n.resources[k] * 0.7); });
+      n.level = Math.max(1, n.level - 1);
+    }
+    n.lastSiege = { night, result };
+    // 人員全數倒下：據點被屍群攻陷
+    if (result === 'breached' && this.garrison(n).length <= 1 && r > 1.6) {
+      if (this.intel() >= 1) this.game.log(`🧟 NPC 勢力「${n.name}」的據點被屍群攻陷了`, 'info');
+      this.destroy(n, now);
+    }
+  }
+
+  /** 偵查等級（研究「偵查」）：越高可得知越詳細的 NPC 情報 */
+  intel() {
+    return this.game.research.level('s_recon');
+  }
+
+  /**
+   * 依偵查等級顯示的 NPC 情報。
+   *  0：只知道名稱；1：大約等級；3：確切等級、守軍與傷亡；5：大約物資；7：確切物資與建議戰力；9：下次掠奪時間
+   */
+  intelView(n, now = Date.now()) {
+    const lv = this.intel();
+    const approx = (v, step) => `約 ${Math.max(0, Math.round(v / step) * step)}`;
+    const low = Math.max(1, Math.floor((n.level - 1) / 5) * 5 + 1);
+    const view = {
+      lv,
+      level: lv >= 3 ? `Lv${n.level}` : lv >= 1 ? `Lv${low}～${low + 4}` : 'Lv?',
+      levelShort: lv >= 3 ? `Lv${n.level}` : lv >= 1 ? `Lv${low}+` : 'Lv?',
+      garrison: null,
+      wounded: null,
+      siege: null,
+      resources: null,
+      coins: null,
+      power: null,
+      nextRaid: null,
+    };
+    if (lv >= 3) {
+      const g = this.garrison(n);
+      view.garrison = g;
+      view.wounded = n.wounded || 0;
+      const s = n.lastSiege;
+      if (s) view.siege = { held: '守住了屍群', hurt: '守住屍群但有傷亡', breached: '被屍群突破、損失慘重' }[s.result];
+    }
+    if (lv >= 5) {
+      view.resources = Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => [k, lv >= 7 ? `${Math.floor(v)}` : approx(v, 50)]);
+      view.coins = lv >= 7 ? `${n.coins}` : approx(n.coins, 100);
+    }
+    if (lv >= 7) view.power = Math.round(this.power(n));
+    if (lv >= 9) view.nextRaid = Math.max(0, n.nextRaidAt - now);
+    return view;
   }
 
   /** 玩家據點看起來的防禦強度（防禦塔與駐守人員的武器）；NPC 不知道據點還有沒有彈藥 */
@@ -265,7 +363,7 @@ export class NpcSystem {
       startAt: now, endAt: now + t.travelMs * 2, ...t,
     };
     this.game.log(`🏴‍☠️「${n.name}」的掠奪隊正朝「${base.name}」前進！`, 'danger');
-    this.game.toast(`🏴‍☠️「${n.name}」（Lv${n.level}）的掠奪隊正朝「${base.name}」前進！`, 'danger');
+    this.game.toast(`🏴‍☠️「${n.name}」（${this.intelView(n).levelShort}）的掠奪隊正朝「${base.name}」前進！`, 'danger');
   }
 
   /** NPC 行程抵達目的地的時間 */
@@ -322,13 +420,31 @@ export class NpcSystem {
       g.combat.applyOutcome(defenders, result, now);
       victory = result.victory;
     }
-    const injured = ShelterSystem.newlySevere(severeBefore, defenders);
-    const kills = (this.garrison(n).length - enemies.length) + (result?.kills.length || 0);
+    const raiders = this.garrison(n).length;
+    const kills = (raiders - enemies.length) + (result?.kills.length || 0);
+    // NPC 的傷亡：被防禦塔或防守人員擊倒的掠奪者（首領不計），需要時間補回
+    this.wound(n, Math.min(kills, this.fullCount(n)), now);
+    const label = `NPC「${n.name}」（${this.intelView(n).levelShort}）`;
     if (victory) {
+      // 守住也不會毫髮無傷：交火時防守人員受傷、圍牆受損（依掠奪者人數）
+      const scale = Math.min(1, raiders / 5);
+      const hurt = [];
+      defenders.forEach((sv) => {
+        if (sv.severe) return;
+        const max = g.survivors.maxHp(sv);
+        const loss = Math.round(max * randFloat(...NPC_CONFIG.skirmishHp) * (0.5 + scale));
+        const hp = g.survivors.hpOf(sv);
+        if (loss <= 0) return;
+        g.survivors.setHp(sv, Math.max(1, hp - loss));
+        hurt.push(`${sv.name} −${Math.min(loss, hp - 1)}`);
+      });
+      const wallBefore = g.shelter.wallHp(base);
+      base.wallHp = Math.max(0, wallBefore - g.shelter.wallMax(base) * NPC_CONFIG.skirmishWall * raiders);
+      const injured = ShelterSystem.newlySevere(severeBefore, defenders);
       g.state.stats.battlesWon += 1;
       g.shelter.recordDefense({
-        base, attacker: `NPC「${n.name}」（Lv${n.level}）`, success: true, kills, injured,
-        note: defenders.length ? `防守人員：${defenders.map((d) => d.name).join('、')}` : '防禦塔擊退了掠奪隊',
+        base, attacker: label, success: true, kills, injured, wallLost: wallBefore - base.wallHp,
+        note: `${defenders.length ? `防守人員：${defenders.map((d) => d.name).join('、')}` : '防禦塔擊退了掠奪隊'}${hurt.length ? `；受傷：${hurt.join('、')}` : ''}`,
       });
       g.toast(`🛡️「${base.name}」擊退了「${n.name}」的掠奪隊！`, 'success');
       n.level = Math.max(1, n.level - 1);
@@ -350,7 +466,7 @@ export class NpcSystem {
     base.wallHp = wallBefore * (1 - NPC_CONFIG.raidWallDamage);
     g.state.stats.battlesLost += 1;
     g.shelter.recordDefense({
-      base, attacker: `NPC「${n.name}」（Lv${n.level}）`, success: false, lost: stolen, coins, kills, injured,
+      base, attacker: label, success: false, lost: stolen, coins, kills, injured: ShelterSystem.newlySevere(severeBefore, defenders),
       wallLost: wallBefore - base.wallHp, note: defenders.length ? `防守人員：${defenders.map((d) => d.name).join('、')}` : '沒有人在據點防守',
     });
     const total = Object.values(stolen).reduce((s, v) => s + v, 0);
@@ -385,14 +501,15 @@ export class NpcSystem {
       return report;
     }
     const enemies = this.garrison(n);
-    report.events.push(`⚔️ 攻打「${n.name}」（Lv${n.level}）：守軍 ${enemies.length} 人`);
+    report.events.push(`⚔️ 攻打「${n.name}」（Lv${n.level}）：守軍 ${enemies.length} 人${n.wounded ? `（另有 ${n.wounded} 人傷亡中）` : ''}`);
     const result = g.combat.simulate(members, enemies);
     g.combat.applyOutcome(members, result, exp.endAt);
     report.kills += result.kills.length;
     report.xp += result.xp;
     if (!result.victory) {
       g.state.stats.battlesLost += 1;
-      report.events.push('💀 攻打失敗，隊伍撤退！');
+      this.wound(n, Math.min(result.kills.length, this.fullCount(n)), exp.endAt);
+      report.events.push(`💀 攻打失敗，隊伍撤退！${result.kills.length ? `（擊倒對方 ${result.kills.length} 人，對方需要時間補回人手）` : ''}`);
       return report;
     }
     // 勝利：搶走據點資源（受運載量限制），據點被摧毀
