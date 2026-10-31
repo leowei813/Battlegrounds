@@ -133,7 +133,7 @@ export class MapPanel {
           intro: `<p class="muted">守軍 Lv${n.level}・建議戰力 ${Math.round(g.npcs.power(n))} 以上。帶載具可以搬走更多物資。</p>`,
           vehicles: true,
           distanceM: sh ? haversine(sh.lat, sh.lon, n.lat, n.lon) : 0,
-          trip: { poi: g.npcs.asPoi(n.id), searchMin: 5, searchLabel: '攻打' },
+          trip: { poi: g.npcs.asPoi(n.id), searchMin: 2, searchLabel: '攻打' },
           routeOption: true,
           confirmLabel: '進攻！',
           onConfirm: (ids, _dur, _auto, vids, opts) => {
@@ -265,7 +265,7 @@ export class MapPanel {
       vehicles: true,
       routeOption: true,
       distanceM: sh ? haversine(sh.lat, sh.lon, b.lat, b.lon) : 0,
-      trip: { poi: g.territory.asPoi(poiId), searchMin: 5, searchLabel: '突襲' },
+      trip: { poi: g.territory.asPoi(poiId), searchMin: 2, searchLabel: '突襲' },
       confirmLabel: '出發突襲！',
       onConfirm: (ids, _dur, _auto, vids, opts) => {
         const r = this.ui.result(g.exploration.start(poiId, ids, 5, false, Date.now(), { vehicleIds: vids, kind: 'pvp', ...opts }));

@@ -21,7 +21,7 @@ import {
 } from '../config/supplies.js';
 
 /** 每公里單程移動時間（分鐘，未套用速度加成） */
-const MIN_PER_KM_ONE_WAY = 2.5;
+const MIN_PER_KM_ONE_WAY = 1.2;
 /** 移動途中，殭屍群在此距離內（公尺）就可能發動襲擊 */
 export const AMBUSH_RADIUS_M = 90;
 /** 每個接近的殭屍群發動襲擊的基礎機率（偵察兵的尋路技能可降低） */
@@ -136,13 +136,13 @@ export class ExplorationSystem {
   }
 
   /**
-   * 搜索時間（分鐘，未套用速度加成）：依建築大小與危險度，最大型、最危險的地點需要 24 分鐘。
+   * 搜索時間（分鐘，未套用速度加成）：依建築大小與危險度，最大型、最危險的地點需要 8 分鐘。
    */
   searchMinutes(poi) {
-    if (!poi || poi.npc) return 5;
+    if (!poi || poi.npc) return 2;
     const size = BASE_SIZES[baseSizeOf(poi)];
     const danger = this.game.zombies.areaDanger(poi);
-    return Math.max(3, Math.round(size.searchMin * (0.6 + 0.4 * Math.min(1, (danger - 1) / 5))));
+    return Math.max(1, Math.round(size.searchMin * (0.6 + 0.4 * Math.min(1, (danger - 1) / 5))));
   }
 
   /** 計算實際探索時間（毫秒） */
@@ -181,7 +181,7 @@ export class ExplorationSystem {
     if (!v.ok) return v;
     if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'intercept' || kind === 'hunt' ? 0 : kind === 'raid' || kind === 'pvp' ? 5 : this.searchMinutes(v.poi);
+    durationMin = kind === 'intercept' || kind === 'hunt' ? 0 : kind === 'raid' || kind === 'pvp' ? 2 : this.searchMinutes(v.poi);
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
