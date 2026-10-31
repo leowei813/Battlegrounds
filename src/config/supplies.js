@@ -108,6 +108,9 @@ export const AMMO_FOR = {
   lmg: { ammo: 'ammo762', perFight: 25 },
   crossbow: { ammo: 'arrow', perFight: 4 },
 };
+/** 避難所防守時每次射擊消耗的彈藥（衝鋒槍、輕機槍連發較耗彈） */
+export const ammoPerShot = (type) => Math.max(1, Math.round((AMMO_FOR[type]?.perFight || 6) / 6));
+
 /** 出發時自動從倉庫補給的彈藥（場數） */
 export const AMMO_PACK_FIGHTS = 4;
 

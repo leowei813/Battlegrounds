@@ -22,6 +22,7 @@ const setHour = (game, hour) => {
   game.state.createdAt = Date.now() - (((hour - START_HOUR + 24) % 24) / 24) * DAY_REAL_MS;
 };
 import { SaveManager } from '../src/core/SaveManager.js';
+import { WORLD as WORLDC } from '../src/systems/SiegeSystem.js';
 import { STAT_KEYS } from '../src/core/GameState.js';
 import { PRIMARY_DANGER_COEF } from '../src/config/civilization.js';
 import { hashAccessCode, ACCESS_ITERATIONS } from '../src/security/accessHash.js';
@@ -1156,6 +1157,39 @@ assert(migrated.version === 12 && migrated.bases.length === 1 && migrated.bases[
   old.version = 11;
   old.quests.mainIndex = 5; // 舊版第 6 個主線（m6 清理街道）
   assert(MQ[SaveManager.migrate(old).quests.mainIndex].id === 'm6', '舊存檔的主線進度依任務 ID 換算');
+}
+
+// ---- 19. v8.1：避難所防守消耗據點庫存彈藥，沒有彈藥只能近戰 ----
+{
+  const gd = Game.newGame({ playerName: 'D', classId: 'warrior', lat: 25, lon: 121 });
+  gd.state.map.pois = fillPois([], 25, 121);
+  gd.shelter.establish(gd.state.map.pois[0]);
+  setHour(gd, 21);
+  const lead = gd.survivors.leader();
+  const rifle = gd.equipment.generate({ level: 5, model: 'ak47', rarity: 'common' });
+  gd.equipment.addItem(rifle, '測試');
+  gd.equipment.equip(lead.id, rifle.id);
+  lead.job = 'guard';
+  lead.bag = {};
+  const sd = gd.siege.of();
+  gd.state.supplies.ammo556 = 3;
+  assert(sd.canShoot(lead), '據點庫存有彈藥時可以遠程射擊');
+  const full = gd.survivors.stats(lead);
+  const a1 = sd.attackPower(lead, full);
+  assert(a1.ranged && a1.value === full.atk && gd.state.supplies.ammo556 === 2, '防守射擊消耗據點庫存的彈藥');
+  gd.state.supplies.ammo556 = 0;
+  const a2 = sd.attackPower(lead, full);
+  assert(!sd.canShoot(lead) && !a2.ranged && a2.value < full.atk, '沒有彈藥時只能近戰（失去武器攻擊力）');
+  // 近戰只打得到貼在圍牆上的殭屍
+  sd.zombies = [];
+  sd.spawn('walker');
+  const z = sd.zombies[0];
+  Object.assign(z, { x: 0, y: 70, speed: 0, hp: 1e6, maxHp: 1e6 });
+  for (let i = 0; i < 30; i += 1) sd.step(0.1);
+  assert(z.hp === 1e6, '沒有彈藥時打不到遠處的殭屍');
+  z.y = WORLDC.WALL_R + 2;
+  for (let i = 0; i < 30; i += 1) sd.step(0.1);
+  assert(z.hp < 1e6, '近戰可以攻擊貼在圍牆上的殭屍');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
