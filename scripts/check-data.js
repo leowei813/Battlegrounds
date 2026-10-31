@@ -1341,6 +1341,24 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
   void gear;
 }
 
+// ---- 26. v8.8：施工佇列 3 條、同時最多 5 支隊伍 ----
+{
+  const { BUILD_QUEUE_SIZE, MAX_EXPEDITIONS } = await import('../src/config/constants.js');
+  assert(BUILD_QUEUE_SIZE === 3 && MAX_EXPEDITIONS === 5, '施工佇列 3 條、隊伍上限 5 組');
+  const gq3 = Game.newGame({ playerName: 'Q3', classId: 'warrior', lat: 25, lon: 121 });
+  gq3.state.map.pois = fillPois([], 25, 121);
+  gq3.shelter.establish(gq3.state.map.pois[0]);
+  fillSupplies(gq3);
+  Object.keys(gq3.state.resources).forEach((k) => { gq3.state.resources[k] = 1e5; });
+  gq3.state.player.coins = 1e6;
+  const ups = ['farm', 'workbench', 'generator', 'rainCollector'].map((id) => gq3.shelter.upgradeFacility(null, id).ok);
+  assert(ups[0] && ups[1] && ups[2] && !ups[3], `施工佇列最多 3 條（${ups}）`);
+  for (let i = 0; i < 6; i += 1) gq3.state.survivors.push(gq3.survivors.makeCandidate(3));
+  const targets = gq3.state.map.pois.filter((p) => !gq3.shelter.baseAtPoi(p.id));
+  const res = gq3.state.survivors.slice(0, 7).map((sv, i) => gq3.exploration.start(targets[i].id, [sv.id], 5).ok);
+  assert(res.filter(Boolean).length === 5 && !res[5], `同時最多派出 5 支隊伍（${res}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

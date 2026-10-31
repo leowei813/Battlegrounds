@@ -1,4 +1,6 @@
-import { MAX_TEAM_SIZE, OFFLINE_CAP_MS, RESOURCES } from '../config/constants.js';
+import {
+  MAX_TEAM_SIZE, MAX_EXPEDITIONS, OFFLINE_CAP_MS, RESOURCES,
+} from '../config/constants.js';
 
 /** 探索帶回的物資（基本資源與材料物品，受運載量限制） */
 const isLootKey = (k) => !!RESOURCES[k] || !!SUPPLIES[k];
@@ -163,6 +165,7 @@ export class ExplorationSystem {
     if (!poi) return { ok: false, reason: '找不到地點' };
     if (!this.game.shelter.hasShelter()) return { ok: false, reason: '請先建立避難所' };
     if (!memberIds.length) return { ok: false, reason: '請至少選擇一名隊員' };
+    if (this.list.length >= MAX_EXPEDITIONS) return { ok: false, reason: `同時最多派出 ${MAX_EXPEDITIONS} 支隊伍` };
     if (memberIds.length > MAX_TEAM_SIZE) return { ok: false, reason: `隊伍最多 ${MAX_TEAM_SIZE} 人` };
     const members = memberIds.map((id) => this.game.survivors.get(id));
     if (members.some((m) => !m || !this.game.survivors.isAvailable(m))) return { ok: false, reason: '有隊員無法出發' };

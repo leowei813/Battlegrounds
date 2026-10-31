@@ -34,8 +34,10 @@ export const ZOMBIE_MAX_GROUPS = 60;
 export const EXPLORE_DURATIONS = [5, 15, 30, 60];
 export const MAX_TEAM_SIZE = 4;
 
-/** 同時施工數 */
-export const BUILD_QUEUE_SIZE = 2;
+/** 每個據點同時施工數 */
+export const BUILD_QUEUE_SIZE = 3;
+/** 同時在外的隊伍上限（探索、攻打、突襲、攔截都算） */
+export const MAX_EXPEDITIONS = 5;
 
 export const MAX_LOG = 80;
 
