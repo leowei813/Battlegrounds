@@ -728,7 +728,7 @@ assert(migrated.version === 12 && migrated.bases.length === 1 && migrated.bases[
   const huge = gs.state.map.pois.find((p) => baseSizeOf(p) === 'huge');
   const smallP = gs.state.map.pois.find((p) => baseSizeOf(p) === 'small');
   const mins = gs.state.map.pois.map((p) => gs.exploration.searchMinutes(p));
-  assert(Math.max(...mins) <= 30 && gs.exploration.searchMinutes(huge) > gs.exploration.searchMinutes(smallP), `搜索時間依大小與危險度（最長 ${Math.max(...mins)} 分鐘）`);
+  assert(Math.max(...mins) <= 24 && gs.exploration.searchMinutes(huge) > gs.exploration.searchMinutes(smallP), `搜索時間依大小與危險度（最長 ${Math.max(...mins)} 分鐘）`);
   const lead = gs.survivors.leader();
   Object.assign(lead, { status: 'idle', severe: false, hp: null });
   const ex = gs.exploration.start(huge.id, ['leader'], 60);
