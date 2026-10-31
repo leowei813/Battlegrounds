@@ -33,18 +33,14 @@ export const MAIN_QUESTS = [
   { id: 'm13', name: '重建文明', desc: '科技總等級達 30', cond: { type: 'research', value: 30 }, reward: { coins: 1500, parts: 25, item: 'legendary' } },
 ];
 
+/** 每日任務：只放隨時都能做到的目標（不放受時間、運氣或夜晚限制的，例如研究、建築升級、找到裝備、治療、守夜） */
 export const DAILY_POOL = [
-  { id: 'd_kill', name: '日常清剿', desc: '擊殺 25 隻殭屍', cond: { type: 'statDelta', key: 'kills', value: 25 }, reward: { coins: 80, parts: 1 } },
+  { id: 'd_kill', name: '日常清剿', desc: '擊殺 15 隻殭屍', cond: { type: 'statDelta', key: 'kills', value: 15 }, reward: { coins: 80, parts: 1 } },
   { id: 'd_explore', name: '日常搜索', desc: '完成 3 次探索', cond: { type: 'statDelta', key: 'explorations', value: 3 }, reward: { coins: 80, food: 120 } },
-  { id: 'd_build', name: '日常修繕', desc: '完成 2 次建築升級', cond: { type: 'statDelta', key: 'upgrades', value: 2 }, reward: { coins: 60, wood: 150 } },
   { id: 'd_battle', name: '日常戰鬥', desc: '在地圖上贏得 2 場戰鬥', cond: { type: 'statDelta', key: 'battlesWon', value: 2 }, reward: { coins: 100, scrap: 20, nail: 20, ammo9: 20 } },
   { id: 'd_craft', name: '日常製作', desc: '製作 1 件裝備', cond: { type: 'statDelta', key: 'crafted', value: 1 }, reward: { coins: 60, coarse: 15, cotton: 15 } },
-  { id: 'd_items', name: '日常尋寶', desc: '獲得 3 件裝備', cond: { type: 'statDelta', key: 'itemsFound', value: 3 }, reward: { coins: 90, fuel: 60 } },
-  { id: 'd_heal', name: '日常醫護', desc: '使用藥品治療 2 次', cond: { type: 'statDelta', key: 'healed', value: 2 }, reward: { coins: 60, gauze: 4, vitamin: 3 } },
-  { id: 'd_ammo', name: '日常軍火', desc: '製作 2 批彈藥或箭矢', cond: { type: 'statDelta', key: 'ammoCrafted', value: 2 }, reward: { coins: 70, scrap: 15, spring: 3 } },
+  { id: 'd_ammo', name: '日常軍火', desc: '製作 1 批彈藥或箭矢', cond: { type: 'statDelta', key: 'ammoCrafted', value: 1 }, reward: { coins: 70, scrap: 15, spring: 3 } },
   { id: 'd_forest', name: '日常伐木', desc: '探索樹林 1 次', cond: { type: 'statDelta', key: 'forestVisits', value: 1 }, reward: { coins: 50, wood: 200 } },
-  { id: 'd_research', name: '日常研究', desc: '完成 1 個科技等級', cond: { type: 'statDelta', key: 'researchDone', value: 1 }, reward: { coins: 90, wire: 8, battery: 2 } },
-  { id: 'd_defend', name: '日常守夜', desc: '防禦塔擊殺 15 隻殭屍', cond: { type: 'statDelta', key: 'siegeKills', value: 15 }, reward: { coins: 80, bandage: 4, arrow: 20 } },
 ];
 export const DAILY_COUNT = 4;
 

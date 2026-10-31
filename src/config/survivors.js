@@ -135,7 +135,7 @@ export const RECRUIT_CHOICES = 3;
 export const VITALS = {
   regenPctPerMin: 0.02, // （舊）已改由診療室決定休息回復速度
   severeRegenPctPerMin: 0.008,
-  severeBaseRegenPctPerMin: 0.0015, // 重傷者沒有診療室時仍會極慢地恢復（避免卡死）
+  medicCarePctPerMin: 0.001, // 醫生在據點或隊伍中照顧隊友：每分鐘回復 0.1%（比診療室慢，醫生等級越高越快）
   severeClinicMul: 0.6, // 重傷者在診療室的回復為一般的 60%
   severeRecoverRatio: 0.3, // 生命回到 30% 才解除重傷
   starveDrainPctPerMin: 0.04, // 飢餓時每分鐘流失最大生命 4%（約 25 分鐘歸零）
