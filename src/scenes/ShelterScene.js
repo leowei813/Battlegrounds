@@ -60,11 +60,6 @@ export class ShelterScene extends Phaser.Scene {
       const lv = this.add.text(0, 0, '', {
         fontSize: '11px', color: '#fff', fontFamily: 'sans-serif', stroke: '#000', strokeThickness: 3,
       }).setOrigin(0.5).setDepth(11);
-      icon.setInteractive({ useHandCursor: true });
-      icon.on('pointerdown', (pointer) => {
-        if (pointer.event && pointer.event.target !== this.game.canvas) return;
-        bus.emit('ui:shelterTab', { tab: 'facilities' });
-      });
       return {
         id, icon, lv, hasImg,
       };
@@ -74,14 +69,6 @@ export class ShelterScene extends Phaser.Scene {
     this.slotObjs = [];
     for (let i = 0; i < MAX_SLOTS; i += 1) {
       const zone = this.add.ellipse(0, 0, 36, 20, 0x000000, 0.01).setDepth(9);
-      zone.setInteractive({ useHandCursor: true });
-      // 只接受直接點在畫布上的點擊（避免點到上層的面板、彈窗時誤開槽位選單）
-      zone.on('pointerdown', (pointer) => {
-        if (pointer.event && pointer.event.target !== this.game.canvas) return;
-        bus.emit(EVT.OPEN_SLOT, { slot: i });
-      });
-      zone.on('pointerover', () => zone.setStrokeStyle(3, 0xffd54f, 1));
-      zone.on('pointerout', () => zone.setStrokeStyle());
       const icon = this.add.text(0, 0, '+', { fontSize: '18px', color: '#fff' }).setOrigin(0.5, 0.75).setDepth(10);
       const img = this.add.image(0, 0, '__DEFAULT').setOrigin(0.5, 0.82).setDepth(10).setVisible(false);
       const lv = this.add.text(0, 0, '', {
@@ -91,6 +78,20 @@ export class ShelterScene extends Phaser.Scene {
         zone, icon, img, lv,
       });
     }
+
+    // 點擊判定：整個格子（菱形）範圍都可以點，點到建築圖片也算
+    this.hoverG = this.add.graphics().setDepth(12);
+    this.hitCells = [];
+    this.input.on('pointerdown', (pointer) => {
+      // 只接受直接點在畫布上的點擊（避免點到上層的面板、彈窗時誤開選單）
+      if (pointer.event && pointer.event.target !== this.game.canvas) return;
+      const hit = this.hitTest(pointer.x, pointer.y);
+      if (!hit) return;
+      if (hit.kind === 'slot') bus.emit(EVT.OPEN_SLOT, { slot: hit.slot });
+      else bus.emit('ui:shelterTab', { tab: 'facilities' });
+    });
+    this.input.on('pointermove', (pointer) => this.drawHover(this.hitTest(pointer.x, pointer.y)));
+    this.input.on('gameout', () => this.drawHover(null));
 
     this.scale.on('resize', () => this.layout());
     this.registry.events.on('changedata-viewInset', () => this.layout());
@@ -142,6 +143,8 @@ export class ShelterScene extends Phaser.Scene {
     if (!has) {
       this.facObjs.forEach((o) => { o.icon.setVisible(false); o.lv.setVisible(false); });
       this.slotObjs.forEach((o) => { o.zone.setVisible(false); o.icon.setVisible(false); o.img.setVisible(false); o.lv.setVisible(false); });
+      this.hitCells = [];
+      this.drawHover(null);
       return;
     }
 
@@ -165,6 +168,11 @@ export class ShelterScene extends Phaser.Scene {
     };
     FACILITY_CELLS.forEach((c) => poly(c, 0x66bb6a, 0.28, 0xfff59d));
     defenseCells(sh.defenses.length).forEach((c) => poly(c, 0x42a5f5, 0.32, 0x90caf9));
+    this.hitCells = [
+      ...defenseCells(sh.defenses.length).map((c, i) => ({ kind: 'slot', slot: i, pts: c.corners.map((q) => this.toScreen(q)) })),
+      ...FACILITY_CELLS.map((c, i) => ({ kind: 'facility', index: i, pts: c.corners.map((q) => this.toScreen(q)) })),
+    ];
+    this.drawHover(null);
     const top = this.toScreen([BASE_IMAGE_SIZE.w / 2, 0]);
     this.nameText.setPosition(this.cx, top.y + 14).setText(`${core.shelter.isPrimary(sh) ? '⭐ ' : '🏴 '}${sh.name}（${BASE_SIZES[size].name}）`);
 
@@ -223,6 +231,39 @@ export class ShelterScene extends Phaser.Scene {
         o.lv.setText('');
       }
     });
+  }
+
+  /** 點擊位置對應的格子：先看格子本身（菱形），再看站在格子上的建築圖片 */
+  hitTest(x, y) {
+    const inside = (pts) => {
+      let c = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i, i += 1) {
+        const a = pts[i];
+        const b = pts[j];
+        if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c;
+      }
+      return c;
+    };
+    const cell = this.hitCells.find((h) => inside(h.pts));
+    if (cell) return cell;
+    // 建築圖片高出格子的部分（前排的建築擋在後排前面，所以由前往後找）
+    const sprites = [
+      ...this.slotObjs.map((o, i) => ({ obj: o.img, hit: this.hitCells.find((h) => h.kind === 'slot' && h.slot === i) })),
+      ...this.facObjs.map((o, i) => ({ obj: o.icon, hit: this.hitCells.find((h) => h.kind === 'facility' && h.index === i) })),
+    ].filter((s) => s.hit && s.obj.visible).sort((a, b) => b.obj.y - a.obj.y);
+    return sprites.find((s) => s.obj.getBounds().contains(x, y))?.hit || null;
+  }
+
+  /** 滑鼠移到格子上時加亮外框 */
+  drawHover(hit) {
+    if (!this.hoverG) return;
+    this.hoverG.clear();
+    this.game.canvas.style.cursor = hit ? 'pointer' : 'default';
+    if (!hit) return;
+    this.hoverG.lineStyle(3, 0xffd54f, 1).beginPath();
+    this.hoverG.moveTo(hit.pts[0].x, hit.pts[0].y);
+    hit.pts.slice(1).forEach((q) => this.hoverG.lineTo(q.x, q.y));
+    this.hoverG.closePath().strokePath();
   }
 
   /** 圍牆耐久條（畫在名稱下方） */
