@@ -1,6 +1,6 @@
 import { DEFENSES } from '../config/defenses.js';
 import { ENEMIES, BOSSES } from '../config/enemies.js';
-import { RESOURCE_KEYS, DAY_REAL_MS } from '../config/constants.js';
+import { RESOURCE_KEYS } from '../config/constants.js';
 import {
   SIEGE_SCALING, BREACH_LOSS, BREACH_BUILDING_DAMAGE_CHANCE, BASE_SIZES,
 } from '../config/civilization.js';
@@ -56,7 +56,7 @@ export class BaseSiege {
 
   /** 今晚的編號（夜晚跨過午夜，以入夜那天計） */
   nightKey(now = Date.now()) {
-    return this.game.time.day(now - (6 / 24) * DAY_REAL_MS);
+    return this.game.time.nightKey(now);
   }
 
   /** 今晚已來過幾波（存在據點上，重新整理或離線再回來也不會重新計算） */

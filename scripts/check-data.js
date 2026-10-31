@@ -1506,6 +1506,31 @@ assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[
   assert(seen <= max, `重新整理後同一晚的屍潮波數不重算（${seen}/${max} 波）`);
 }
 
+// ---- 34. v8.17.4：地圖殭屍群每晚只在入夜時生成一次 ----
+{
+  const gz = Game.newGame({ playerName: 'Z1', classId: 'warrior', lat: 25, lon: 121 });
+  gz.state.map.pois = fillPois([], 25, 121);
+  gz.shelter.establish(gz.state.map.pois[0]);
+  setHour(gz, 20.5);
+  gz.zombies.refresh();
+  const n0 = gz.state.map.zombieGroups.length;
+  gz.state.map.zombieGroups.pop();
+  const ids = gz.state.map.zombieGroups.map((z) => z.id).join();
+  setHour(gz, 0.5);
+  gz.zombies.refresh();
+  gz.state.map.lastZombieRefresh = 0;
+  gz.zombies.update(Date.now());
+  assert(gz.state.map.zombieGroups.map((z) => z.id).join() === ids, '進入午夜（00:00）不會重新派出殭屍群，擊殺的也不會補回');
+  setHour(gz, 2.5);
+  gz.zombies.refresh();
+  assert(gz.state.map.zombieGroups.map((z) => z.id).join() === ids, '02:00 轉回夜晚也不會重新派出殭屍群');
+  setHour(gz, 10);
+  gz.zombies.refresh();
+  setHour(gz, 20.5);
+  gz.zombies.refresh();
+  assert(n0 > 0 && gz.state.map.zombieGroups.length === n0, '隔天入夜才重新生成殭屍群');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
