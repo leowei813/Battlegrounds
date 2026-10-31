@@ -1,7 +1,11 @@
 import {
-  MAIN_QUESTS, DAILY_POOL, DAILY_COUNT, ACHIEVEMENTS,
+  MAIN_QUESTS, DAILY_POOL, DAILY_COUNT, ACHIEVEMENTS, DAILY_CHEST,
 } from '../config/quests.js';
-import { RARITIES } from '../config/equipment.js';
+import { RARITIES, ITEM_TYPES } from '../config/equipment.js';
+import { SUPPLIES, SUPPLY_KEYS, medWeight } from '../config/supplies.js';
+import {
+  withSeed, weightedPick, randInt, pick, randFloat,
+} from '../utils/math.js';
 
 const todayKey = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 
@@ -77,6 +81,7 @@ export class QuestSystem {
     const main = this.currentMain();
     if (main && this.isDone(main.cond)) n += 1;
     this.dailyDefs().forEach((d) => { if (!d.claimed && this.isDone(d.def.cond, d.baseline)) n += 1; });
+    if (this.chestReady()) n += 1;
     ACHIEVEMENTS.forEach((a) => { if (!this.state.achievements[a.id] && this.isDone(a.cond)) n += 1; });
     return n;
   }
@@ -100,6 +105,68 @@ export class QuestSystem {
     return { ok: true, msg: `完成主線「${q.name}」` };
   }
 
+  // ---------- 每日物資箱 ----------
+
+  /** 今天的每日任務是否都已領取 */
+  allDailiesClaimed() {
+    const list = this.dailyDefs();
+    return list.length > 0 && list.every((d) => d.claimed);
+  }
+
+  chestReady() {
+    return this.allDailiesClaimed() && this.state.chestDate !== this.state.dailyDate;
+  }
+
+  /** 物資箱裡各材料的權重：越高階越稀有 */
+  static supplyWeights() {
+    return Object.fromEntries(SUPPLY_KEYS.map((k) => {
+      const sp = SUPPLIES[k];
+      const w = sp.cat === 'med' ? medWeight(k) / 2 : 6 * 0.45 ** (sp.tier - 1);
+      return [k, w];
+    }));
+  }
+
+  /** 開啟每日物資箱（使用存檔種子：重新讀檔結果不變） */
+  openChest() {
+    if (!this.chestReady()) return { ok: false, reason: this.allDailiesClaimed() ? '今天已經開過了' : '請先完成並領取今天全部的每日任務' };
+    return withSeed(this.game.state.rng, 'craft', () => this.openChestNow());
+  }
+
+  openChestNow() {
+    const g = this.game;
+    this.state.chestDate = this.state.dailyDate;
+    const level = (g.survivors.leader()?.level || 1) + 2;
+    const supplies = {};
+    const items = [];
+    const blueprints = [];
+    const n = randInt(DAILY_CHEST.rolls[0], DAILY_CHEST.rolls[1]);
+    const weights = QuestSystem.supplyWeights();
+    for (let i = 0; i < n; i += 1) {
+      const kind = weightedPick(DAILY_CHEST.kinds);
+      if (kind === 'supply') {
+        const k = weightedPick(weights);
+        const sp = SUPPLIES[k];
+        const amount = Math.max(1, Math.round((sp.cat === 'ammo' ? 12 : sp.cat === 'med' ? 1.5 : 5) * (6 - sp.tier) / 3 * randFloat(0.6, 1.4)));
+        supplies[k] = (supplies[k] || 0) + amount;
+      } else if (kind === 'gear') {
+        items.push(g.equipment.generate({ level, type: pick(Object.keys(ITEM_TYPES)), rarity: weightedPick(DAILY_CHEST.gearRarity) }));
+      } else {
+        blueprints.push(g.equipment.makeBlueprint(level));
+      }
+    }
+    const got = g.grant(supplies);
+    const kept = items.filter((it) => g.equipment.addItem(it, '每日物資箱'));
+    g.state.inventory.blueprints.push(...blueprints);
+    g.state.stats.chestsOpened = (g.state.stats.chestsOpened || 0) + 1;
+    const lines = [
+      ...Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k].icon} ${SUPPLIES[k].name} ×${v}`),
+      ...kept.map((it) => `🎁 ${RARITIES[it.rarity].name}「${it.name}」`),
+      ...blueprints.map(() => '📜 設計圖'),
+    ];
+    g.log(`🎁 開啟每日物資箱：${lines.join('、') || '（倉庫已滿，什麼都放不下）'}`, 'loot');
+    return { ok: true, lines, items: kept, msg: '🎁 每日物資箱已開啟' };
+  }
+
   claimDaily(id) {
     const d = this.dailyDefs().find((x) => x.id === id);
     if (!d || d.claimed || !this.isDone(d.def.cond, d.baseline)) return { ok: false, reason: '尚未完成' };
@@ -118,9 +185,9 @@ export class QuestSystem {
   }
 
   rewardText(reward) {
-    const names = { coins: '💰', parts: '⚙️', food: '🥫', wood: '🪵', metal: '🔩', cloth: '🧵', fuel: '⛽', medicine: '💊' };
+    const names = { coins: '💰', parts: '⚙️', food: '🥫', wood: '🪵', fuel: '⛽' };
     return Object.entries(reward)
-      .map(([k, v]) => (k === 'item' ? `🎁${RARITIES[v]?.name || v}裝備` : `${names[k] || k}${v}`))
+      .map(([k, v]) => (k === 'item' ? `🎁${RARITIES[v]?.name || v}裝備` : `${names[k] || (SUPPLIES[k] ? `${SUPPLIES[k].icon}${SUPPLIES[k].name}` : k)}${v}`))
       .join(' ');
   }
 

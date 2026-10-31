@@ -1,4 +1,5 @@
 import { ITEM_MODELS } from '../config/equipment.js';
+import { AMMO_FOR } from '../config/supplies.js';
 import { ALL_ENEMIES, ELITE_MUL } from '../config/enemies.js';
 import { chance, randFloat, pick, uid } from '../utils/math.js';
 
@@ -59,12 +60,45 @@ export class CombatSystem {
     return 1;
   }
 
+  /**
+   * 槍械需要彈藥、弓弩需要箭矢：每場戰鬥消耗固定數量，先用隊員背包裡的，在避難所時也可用倉庫的。
+   * 彈藥不足時無法使用該武器，只能徒手作戰（失去武器攻擊力）。
+   * @returns {number} 扣除的攻擊力
+   */
+  weaponAmmoPenalty(sv, s) {
+    const weapon = this.game.equipment.getItem(sv.equipment?.weapon);
+    const need = weapon && AMMO_FOR[weapon.type];
+    if (!need) return 0;
+    const bag = sv.bag || {};
+    const store = this.game.state.supplies || {};
+    const home = sv.status === 'idle';
+    const have = (bag[need.ammo] || 0) + (home ? store[need.ammo] || 0 : 0);
+    if (have < need.perFight) {
+      sv.noAmmo = need.ammo;
+      return Math.min(s.atk - 1, this.game.equipment.itemStats(weapon).atk || 0);
+    }
+    let n = need.perFight;
+    const fromBag = Math.min(n, bag[need.ammo] || 0);
+    if (fromBag) {
+      bag[need.ammo] -= fromBag;
+      if (bag[need.ammo] <= 0) delete bag[need.ammo];
+      n -= fromBag;
+    }
+    if (n > 0) {
+      store[need.ammo] -= n;
+      if (store[need.ammo] <= 0) delete store[need.ammo];
+    }
+    delete sv.noAmmo;
+    return 0;
+  }
+
   unitFromSurvivor(sv) {
     const s = this.game.survivors.stats(sv);
+    const ammoPenalty = this.weaponAmmoPenalty(sv, s);
     return {
       id: sv.id, name: sv.name, side: 'team', classId: sv.classId,
       // 以目前生命出戰（受過傷的隊員不會回滿血）
-      maxHp: s.hp, hp: this.game.survivors.hpOf(sv), atk: s.atk * this.weaponFuelMul(sv), def: s.def, crit: s.crit, critDmg: s.critDmg,
+      maxHp: s.hp, hp: this.game.survivors.hpOf(sv), atk: (s.atk - ammoPenalty) * this.weaponFuelMul(sv), def: s.def, crit: s.crit, critDmg: s.critDmg,
       dodge: s.dodge, atkSpeed: s.atkSpeed, skills: s.skills, lifeSteal: Math.min(0.5, s.lifeSteal || 0),
       cd: randFloat(0, 0.3), healCd: s.skills.healEvery || 0, firstHit: true,
     };

@@ -1,5 +1,6 @@
 import { NPC_CONFIG, NPC_NAMES, npcAggression } from '../config/npcs.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
+import { unitWeight } from '../config/supplies.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import { zoneAt } from '../config/zones.js';
 import { stockOf, dayKey } from './LootStock.js';
@@ -116,7 +117,9 @@ export class NpcSystem {
       lat: poi.lat,
       lon: poi.lon,
       level,
-      resources: { food: randInt(60, 160), wood: randInt(60, 200), metal: randInt(40, 150), fuel: randInt(10, 60) },
+      resources: {
+        food: randInt(60, 160), wood: randInt(60, 200), fuel: randInt(10, 60), scrap: randInt(10, 40), nail: randInt(10, 40), bandage: randInt(0, 4),
+      },
       coins: randInt(40, 120) * level,
       nextLevelAt: now + rand(NPC_CONFIG.levelUpMs),
       nextExploreAt: now + rand(NPC_CONFIG.exploreEveryMs) * randFloat(0.3, 1),
@@ -236,7 +239,7 @@ export class NpcSystem {
     n.nextExploreAt = now + rand(NPC_CONFIG.exploreEveryMs);
     const targets = this.game.state.map.pois.filter((p) => !this.game.shelter.baseAtPoi(p.id)
       && !this.list.some((m) => m.poiId === p.id)
-      && p.lootedDay !== dayKey(now)
+      && (p.lootedDay !== dayKey(now) || this.game.state.map.remain?.[p.id])
       && haversine(n.lat, n.lon, p.lat, p.lon) <= NPC_CONFIG.exploreRadiusM);
     const poi = pick(targets);
     if (!poi) return;
@@ -269,16 +272,21 @@ export class NpcSystem {
     return trip.startAt + trip.travelMs;
   }
 
-  finishTrip(n) {
+  finishTrip(n, now = Date.now()) {
     const trip = n.trip;
     n.trip = null;
+    // 回到據點後先休息一段時間，不會一直外出
+    n.nextExploreAt = Math.max(n.nextExploreAt || 0, now + rand(NPC_CONFIG.exploreEveryMs));
     if (trip.kind === 'explore') {
       const poi = this.game.state.map.pois.find((p) => p.id === trip.poiId);
       const at = this.arriveAt(trip);
-      if (!poi || poi.lootedDay === dayKey(at)) return;
-      const stock = stockOf(poi, at);
+      const remain = this.game.state.map.remain || {};
+      if (!poi || (poi.lootedDay === dayKey(at) && !remain[poi.id])) return;
+      const stock = stockOf(poi, at, remain);
       Object.entries(stock.resources).forEach(([k, v]) => { n.resources[k] = (n.resources[k] || 0) + Math.round(v * 0.6); });
+      // NPC 探索過的建築資源一併消失（包含殘留的物資）
       poi.lootedDay = dayKey(at);
+      delete remain[poi.id];
       this.game.bus.emit('map:changed');
     }
   }
@@ -380,11 +388,11 @@ export class NpcSystem {
     g.state.stats.battlesWon += 1;
     report.success = true;
     const carry = exp.cargo || members.length * 40;
-    const total = RESOURCE_KEYS.reduce((s, k) => s + (n.resources[k] || 0), 0);
+    const total = Object.entries(n.resources).reduce((s, [k, v]) => s + (v || 0) * unitWeight(k), 0);
     const ratio = total > carry ? carry / total : 1;
-    const loot = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, Math.floor((n.resources[k] || 0) * ratio)]));
+    const loot = Object.fromEntries(Object.entries(n.resources).map(([k, v]) => [k, Math.floor((v || 0) * ratio)]));
     report.resources = g.grant({ ...loot, coins: n.coins });
-    if (ratio < 1) report.events.push(`🎒 帶不走全部物資（運載量 ${carry}），留下約 ${Math.round(total - carry)} 單位`);
+    if (ratio < 1) report.events.push(`🎒 帶不走全部物資（運載量 ${carry}），留下約 ${Math.round(total - carry)} 重量的物資`);
     if (chance(0.6)) {
       const item = g.equipment.generate({ level: n.level, boost: 0.3 + zoneAt(n.lat, n.lon).rarityBoost });
       report.items.push(item);
@@ -405,6 +413,7 @@ export class NpcSystem {
 
   /** 地圖顯示：所有 NPC 行程（含掠奪隊） */
   trips(now = Date.now()) {
-    return this.list.filter((n) => n.trip && n.trip.endAt > now).map((n) => ({ npc: n, trip: n.trip, p: tripProgress(n.trip, now) }));
+    // 被擊敗後撤回的隊伍不顯示
+    return this.list.filter((n) => n.trip && !n.trip.hidden && n.trip.endAt > now).map((n) => ({ npc: n, trip: n.trip, p: tripProgress(n.trip, now) }));
   }
 }

@@ -19,7 +19,7 @@ export function fillPois(pois, lat, lon) {
       out.push({
         id: `gen_${type}_${i}_${Math.random().toString(36).slice(2, 7)}`,
         type,
-        name: `${pick(RUIN_PREFIX)}${POI_TYPES[type].name} ${i + 1}號`,
+        name: POI_TYPES[type].generated ? `${POI_TYPES[type].name} ${i + 1}號` : `${pick(RUIN_PREFIX)}${POI_TYPES[type].name} ${i + 1}號`,
         lat: pos.lat,
         lon: pos.lon,
         osm: false,

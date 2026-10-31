@@ -50,6 +50,11 @@ export class MapService {
     this.layers.npcs = L.layerGroup().addTo(this.map);
     this.layers.gps = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
+    this.poiLayer.teamHit = (pt) => {
+      const team = this.siegeLayer.teamAt(pt);
+      if (team) bus.emit('ui:openTeam', team);
+      return !!team;
+    };
   }
 
   /** 地圖可見時才逐幀繪製屍潮 */
@@ -86,10 +91,12 @@ export class MapService {
     let looted = 0;
     for (const p of pois) if (p.lootedDay === today) looted += 1;
     const detected = state.map.detected || {};
-    const poiKey = `${state.map.fetchedAt}|${pois.length}|${[...basePoiIds].join(',')}|${today}|${looted}|${Object.keys(detected).length}`;
+    const marked = new Set((state.map.markers || []).map((m) => m.id));
+    const remain = state.map.remain || {};
+    const poiKey = `${state.map.fetchedAt}|${pois.length}|${[...basePoiIds].join(',')}|${today}|${looted}|${Object.keys(detected).length}|${[...marked].join(',')}|${Object.keys(remain).join(',')}`;
     if (poiKey !== this.poiKey) {
       this.poiKey = poiKey;
-      this.poiLayer.setData(pois.filter((p) => !basePoiIds.has(p.id)), detected);
+      this.poiLayer.setData(pois.filter((p) => !basePoiIds.has(p.id)), detected, { marked, remain });
     }
 
     const zombieKey = zombieGroups.map((g) => `${g.id}:${g.count}`).join(',');

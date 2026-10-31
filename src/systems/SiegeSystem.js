@@ -89,17 +89,26 @@ export class BaseSiege {
 
   /** 每波殭屍數：讓整晚的平均強度等同「每 spawnInterval 秒一隻」 */
   waveSize() {
-    // 新手保護：文明度未達門檻時每波較小
-    const newbie = this.game.civilization.effective() > 0 ? 1 : 0.6;
-    const n = (WAVE_LULL / this.spawnInterval()) * (1 + Math.min(0.6, this.wave * 0.08)) * newbie;
-    return Math.max(3, Math.round(n * randFloat(0.85, 1.15)));
+    // 文明度越低每波越少（新手只有一小波）
+    const n = (WAVE_LULL / this.spawnInterval()) * (1 + Math.min(0.6, this.wave * 0.08)) * this.game.civilization.waveSizeMul();
+    return Math.max(2, Math.round(n * randFloat(0.85, 1.15)));
+  }
+
+  /** 今晚最多幾波（依文明度） */
+  maxWaves() {
+    return this.game.civilization.maxWaves();
+  }
+
+  /** 今晚的屍潮是否已全部結束（所有波次都來過、殭屍也清光了） */
+  nightOver() {
+    return this.wave >= this.maxWaves() && this.waveLeft <= 0 && this.zombies.length === 0;
   }
 
   /** 屍潮波次資訊（UI 顯示） */
   waveInfo() {
     if (!this.active()) return { active: false };
     return {
-      active: true, wave: this.wave, attacking: this.waveLeft > 0 || this.zombies.length > 0, nextIn: Math.max(0, Math.ceil(this.lull)), left: this.waveLeft + this.zombies.length,
+      active: true, wave: this.wave, maxWaves: this.maxWaves(), over: this.nightOver(), attacking: this.waveLeft > 0 || this.zombies.length > 0, nextIn: Math.max(0, Math.ceil(this.lull)), left: this.waveLeft + this.zombies.length,
     };
   }
 
@@ -171,7 +180,7 @@ export class BaseSiege {
     this.waveLeft = this.waveSize();
     this.lull = WAVE_LULL * randFloat(0.8, 1.2);
     this.spawnTimer = 0;
-    if (this.game.shelter.isPrimary(this.base)) this.game.log(`🧟 第 ${this.wave} 波屍潮來襲「${this.base.name}」（${this.waveLeft} 隻）`, 'danger');
+    if (this.game.shelter.isPrimary(this.base)) this.game.log(`🧟 第 ${this.wave}/${this.maxWaves()} 波屍潮來襲「${this.base.name}」（${this.waveLeft} 隻）`, 'danger');
     this.game.bus.emit('siege:wave', { baseId: this.baseId, wave: this.wave, count: this.waveLeft });
   }
 
@@ -206,7 +215,8 @@ export class BaseSiege {
         this.spawn(this.pickEnemy());
         this.waveLeft -= 1;
       }
-    } else {
+    } else if (this.wave < this.maxWaves()) {
+      // 波數依文明度：最後一波結束後，今晚不再來襲
       this.lull -= dt;
       if (this.lull <= 0) this.startWave();
     }
@@ -222,8 +232,9 @@ export class BaseSiege {
       .filter((d) => d.type === 'barricade' || d.type === 'trap')
       .map((d) => ({ ...this.slotPos(d.slot), ...DEFENSES[d.type].stats(d.level) }));
 
-    // 移動與攻擊圍牆
+    // 移動與攻擊圍牆（圍牆耐久歸零時被殭屍攻擊 → 防線突破）
     const reduction = sh.wallReduction(base);
+    let breached = false;
     for (const z of this.zombies) {
       z.t += dt;
       const dist = Math.hypot(z.x, z.y);
@@ -248,6 +259,7 @@ export class BaseSiege {
           z.atkCd = 1 / z.atkSpeed;
           const dmg = z.atk * WALL_DMG_MUL * (1 - reduction);
           base.wallHp = sh.wallHp(base) - dmg;
+          if (sh.wallHp(base) <= 0) breached = true;
           this.pushFx({ type: 'wallHit', x: z.x, y: z.y, dmg: Math.round(dmg) });
         }
       }
@@ -297,7 +309,7 @@ export class BaseSiege {
     this.collectDead();
     if (!active) this.zombies = this.zombies.filter((z) => !z.retreated);
 
-    if (sh.wallHp(base) <= 0) this.breach();
+    if (breached) this.breach();
   }
 
   /** 防禦駐守的倖存者住在主要據點，只防衛主要據點 */
@@ -416,7 +428,8 @@ export class BaseSiege {
     });
     this.zombies.forEach((z) => this.pushFx({ type: 'death', x: z.x, y: z.y, color: z.color }));
     this.zombies = [];
-    base.wallHp = sh.wallMax(base) * 0.3;
+    // 圍牆被打壞：耐久歸零，需指派修繕人員修理才會恢復
+    base.wallHp = 0;
     this.waveLeft = 0;
     this.lull = BREACH_GRACE;
     // 防線被突破後，殭屍散去，當晚不再來襲
@@ -424,7 +437,7 @@ export class BaseSiege {
     this.game.state.stats.breaches += 1;
     const damaged = this.damageBuildings(base);
     const dmgText = damaged.length ? `，${damaged.length} 棟建築損毀` : '';
-    this.game.log(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源${dmgText}，今晚屍潮不再來襲`, 'danger');
+    this.game.log(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源${dmgText}，圍牆耐久歸零（需修理），今晚屍潮不再來襲`, 'danger');
     damaged.forEach((d) => this.game.log(`🏚️ ${base.name}：${d}`, 'danger'));
     this.game.toast(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源${dmgText}，請強化圍牆與防禦塔`, 'danger');
     this.game.bus.emit('siege:breach', { baseId: base.id, lost, damaged });

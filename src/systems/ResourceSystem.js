@@ -3,6 +3,7 @@ import {
   storageCap, FARM_FOOD, RAIN_MEDICINE, WORKBENCH,
 } from '../config/facilities.js';
 import { JOBS, FOOD_PER_SURVIVOR_HOUR } from '../config/survivors.js';
+import { isSupply } from '../config/supplies.js';
 
 /**
  * 資源系統：計算每小時產出/消耗並套用到狀態上。
@@ -30,8 +31,12 @@ export class ResourceSystem {
   rates() {
     const st = this.game.state;
     const rb = this.game.research.bonuses();
-    const gross = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, 0]));
-    const upkeep = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, 0]));
+    // 可能含材料物品（例如紗布、釘子），不在表中的鍵視為 0
+    const zero = () => new Proxy(Object.fromEntries(RESOURCE_KEYS.map((k) => [k, 0])), {
+      get: (t, k) => (k in t ? t[k] : 0),
+    });
+    const gross = zero();
+    const upkeep = zero();
 
     // 只有避難所會生產（前哨站只有防禦功能）；發電機消耗燃料加成產出
     const genOn = this.generatorActive();
@@ -42,13 +47,11 @@ export class ResourceSystem {
       const rain = 1 + (rb.rainPct || 0);
       const wb = 1 + (rb.workbenchPct || 0);
       gross.food += f.farm.level * (FARM_FOOD + (rb.farmFlat || 0)) * (1 + f.rainCollector.level * 0.1 * rain) * mul;
-      gross.medicine += f.rainCollector.level * RAIN_MEDICINE * rain * mul;
-      gross.wood += f.workbench.level * WORKBENCH.wood * wb * mul;
-      gross.metal += f.workbench.level * WORKBENCH.metal * wb * mul;
-      gross.cloth += f.workbench.level * WORKBENCH.cloth * wb * mul;
+      gross.gauze += f.rainCollector.level * RAIN_MEDICINE * rain * mul;
+      Object.entries(WORKBENCH).forEach(([k, v]) => { gross[k] += f.workbench.level * v * wb * mul; });
       if (genOn) upkeep.fuel += f.generator.level * 2 * Math.max(0.3, 1 - (rb.generatorFuelReduce || 0));
     });
-    gross.medicine += rb.medicinePerHour || 0;
+    gross.gauze += rb.medicinePerHour || 0;
     gross.fuel += rb.fuelPerHour || 0;
 
     // 倖存者工作
@@ -59,15 +62,17 @@ export class ResourceSystem {
       const mul = (job.classBonus?.[sv.classId] || 1) * (1 + sv.level * 0.03);
       Object.entries(job.produce).forEach(([k, v]) => { gross[k] += v * mul; });
       const fx = this.game.survivors.skillEffects(sv);
-      if (sv.job !== 'idle') gross.medicine += fx.medicinePerHour || 0;
+      if (sv.job !== 'idle') gross.gauze += fx.medicinePerHour || 0;
       if (sv.job === 'farm') foodPct += fx.foodPct || 0;
     });
     gross.food *= 1 + foodPct;
 
     upkeep.food += st.survivors.length * FOOD_PER_SURVIVOR_HOUR * Math.max(0.5, 1 - (rb.foodUpkeepReduce || 0));
 
-    const net = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, gross[k] - upkeep[k]]));
-    return { net, gross, upkeep };
+    const keys = [...new Set([...RESOURCE_KEYS, ...Object.keys(gross), ...Object.keys(upkeep)])].filter((k) => gross[k] || upkeep[k] || RESOURCE_KEYS.includes(k));
+    const plain = (o) => Object.fromEntries(keys.map((k) => [k, o[k]]));
+    const net = Object.fromEntries(keys.map((k) => [k, gross[k] - upkeep[k]]));
+    return { net, gross: plain(gross), upkeep: plain(upkeep) };
   }
 
   /**
@@ -89,6 +94,18 @@ export class ResourceSystem {
       after = Math.max(0, net[k] > 0 ? Math.min(Math.max(cap, before), after) : after);
       res[k] = after;
       delta[k] = after - before;
+    });
+    // 材料物品（紗布、釘子…）：累積小數，滿 1 個才放進物品倉庫
+    const st = this.game.state;
+    st.prodAcc = st.prodAcc || {};
+    Object.entries(net).forEach(([k, v]) => {
+      if (!isSupply(k) || v <= 0) return;
+      st.prodAcc[k] = (st.prodAcc[k] || 0) + v * hours;
+      const whole = Math.floor(st.prodAcc[k]);
+      if (whole < 1) return;
+      st.prodAcc[k] -= whole;
+      const got = this.game.equipment.addSupplies({ [k]: whole });
+      delta[k] = got[k] || 0;
     });
     if (delta.food > 0) this.game.state.stats.foodCollected += delta.food;
     if (net.food < 0) {

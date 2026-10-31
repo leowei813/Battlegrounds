@@ -4,7 +4,7 @@ import { $, delegateActions, escapeHtml } from '../utils/dom.js';
 import { formatNumber } from '../utils/math.js';
 import { Toast } from './Toast.js';
 import { Modal } from './Modal.js';
-import { progressBar } from './components.js';
+import { progressBar, metaOf } from './components.js';
 import { MapPanel } from './panels/MapPanel.js';
 import { ShelterPanel } from './panels/ShelterPanel.js';
 import { ExplorePanel } from './panels/ExplorePanel.js';
@@ -102,6 +102,7 @@ export class UIManager {
     bus.on('ui:openZombie', ({ groupId }) => this.panels.map.openZombie(groupId));
     bus.on('ui:openPlayer', ({ playerId }) => this.panels.map.openPlayer(playerId));
     bus.on('ui:openNpc', ({ npcId }) => this.panels.map.openNpc(npcId));
+    bus.on('ui:openTeam', (team) => this.panels.map.openTeam(team));
     bus.on('npcs:changed', () => this.panels.map.renderMap(true));
     bus.on('relations:changed', () => this.panels.map.onWorld(this.game.world?.others || []));
     bus.on('gps:update', (gps) => {
@@ -277,7 +278,7 @@ export class UIManager {
 
   showRates() {
     const { gross, upkeep, net } = this.game.resources.rates();
-    const rows = RESOURCE_KEYS.map((k) => `<tr><td>${RESOURCES[k].icon} ${RESOURCES[k].name}</td><td>+${gross[k].toFixed(1)}</td><td>-${upkeep[k].toFixed(1)}</td><td class="${net[k] < 0 ? 'neg' : 'pos'}">${net[k].toFixed(1)}</td></tr>`).join('');
+    const rows = Object.keys(net).map((k) => `<tr><td>${metaOf(k).icon} ${metaOf(k).name}</td><td>+${gross[k].toFixed(1)}</td><td>-${upkeep[k].toFixed(1)}</td><td class="${net[k] < 0 ? 'neg' : 'pos'}">${net[k].toFixed(1)}</td></tr>`).join('');
     this.modal.open({
       title: '📊 每小時產出',
       body: `<table class="table"><thead><tr><th>資源</th><th>產出</th><th>消耗</th><th>淨值</th></tr></thead><tbody>${rows}</tbody></table>

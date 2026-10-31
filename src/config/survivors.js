@@ -22,7 +22,7 @@ export const CLASSES = {
     skills: [
       { id: 'heal', name: '急救', unlock: 1, desc: '每 4 秒治療生命最低的隊友', effect: { healEvery: 4, healPct: 0.12 } },
       { id: 'triage', name: '傷患分流', unlock: 5, desc: '隊伍受傷恢復時間 -40%', effect: { injuryReduce: 0.4 } },
-      { id: 'pharma', name: '製藥', unlock: 8, desc: '駐守避難所時藥品 +2/時', effect: { medicinePerHour: 2 } },
+      { id: 'pharma', name: '製藥', unlock: 8, desc: '駐守避難所時紗布 +2/時', effect: { medicinePerHour: 2 } },
     ],
   },
   engineer: {
@@ -42,7 +42,7 @@ export const CLASSES = {
     skills: [
       { id: 'harvest', name: '豐收', unlock: 1, desc: '駐守時食物產量 +20%', effect: { foodPct: 0.2 } },
       { id: 'forage', name: '野外覓食', unlock: 4, desc: '探索時食物收穫 +30%', effect: { forage: 0.3 } },
-      { id: 'herbal', name: '草藥種植', unlock: 8, desc: '駐守時藥品 +1/時', effect: { medicinePerHour: 1 } },
+      { id: 'herbal', name: '草藥種植', unlock: 8, desc: '駐守時紗布 +1/時', effect: { medicinePerHour: 1 } },
     ],
   },
   scout: {
@@ -65,10 +65,10 @@ export const CLASS_KEYS = Object.keys(CLASSES);
  */
 export const JOBS = {
   idle: { name: '閒置', icon: '💤', produce: {} },
-  scavenge: { name: '附近拾荒', icon: '🔍', produce: { wood: 2, metal: 1, cloth: 1, fuel: 0.5 }, classBonus: { scout: 1.6 } },
+  scavenge: { name: '附近拾荒', icon: '🔍', produce: { wood: 2, scrap: 0.6, coarse: 0.4, fuel: 0.5 }, classBonus: { scout: 1.6 } },
   farm: { name: '農場工作', icon: '🌾', produce: { food: 4 }, classBonus: { farmer: 1.8 } },
-  workshop: { name: '工作台', icon: '🛠️', produce: { wood: 2, metal: 1.5, cloth: 1 }, classBonus: { engineer: 1.8 } },
-  clinic: { name: '醫療站', icon: '🏥', produce: { medicine: 0.6 }, classBonus: { medic: 2 } },
+  workshop: { name: '工作台', icon: '🛠️', produce: { wood: 2, nail: 0.6, screw: 0.6 }, classBonus: { engineer: 1.8 } },
+  clinic: { name: '醫療站', icon: '🏥', produce: { gauze: 0.4, bandage: 0.2 }, classBonus: { medic: 2 } },
   guard: { name: '防禦駐守', icon: '🛡️', produce: {}, classBonus: { warrior: 1.5 } },
   repair: { name: '修繕圍牆', icon: '🔨', produce: {}, classBonus: { engineer: 1.8 } },
 };
@@ -135,8 +135,6 @@ export const VITALS = {
   severeRegenPctPerMin: 0.008, // 重傷時回復較慢
   severeRecoverRatio: 0.3, // 生命回到 30% 才解除重傷
   starveDrainPctPerMin: 0.04, // 飢餓時每分鐘流失最大生命 4%（約 25 分鐘歸零）
-  healPct: 0.5, // 藥品治療回復最大生命 50%
-  healCost: { medicine: 5 },
   xpPenaltyPct: 0.1, // 重傷懲罰：扣除升級所需經驗的 10%，不足時降一級
   deathGameDays: 3, // 飢餓且生命為 0 持續遊戲內 3 天 → 永久死亡（領袖除外）
   medicRegenBonus: 0.25, // 每位在醫療站工作的醫生，全員回復速度 +25%（上限 +100%）
