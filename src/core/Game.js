@@ -21,7 +21,8 @@ import { TerritorySystem } from '../systems/TerritorySystem.js';
 import { GpsSystem } from '../systems/GpsSystem.js';
 import { grant } from '../systems/costUtils.js';
 import { isSupply } from '../config/supplies.js';
-import { fetchPois } from '../map/OverpassService.js';
+import { fetchPois, thinPois } from '../map/OverpassService.js';
+import { POI_THIN_VERSION } from '../config/constants.js';
 import { fillPois } from '../map/PoiGenerator.js';
 import { MarkerSystem } from '../systems/MarkerSystem.js';
 import { InterceptSystem } from '../systems/InterceptSystem.js';
@@ -64,6 +65,27 @@ export class Game {
     this.timers = [];
   }
 
+  /** 不能被移除的地點：據點、探索目的地、標記、NPC 據點 */
+  protectedPoiIds() {
+    return new Set([
+      ...this.state.bases.map((b) => b.poiId), ...this.state.expeditions.map((e) => e.poiId),
+      ...(this.state.map.markers || []).map((m) => m.id), ...(this.state.npcs?.list || []).map((n) => n.poiId),
+    ]);
+  }
+
+  /** 舊地圖：依目前的密度規則整理一次（太密集的區域減少地點，並補足樹林、藥局） */
+  thinMap() {
+    const map = this.state.map;
+    if (!map.pois?.length || map.thinV === POI_THIN_VERSION) return;
+    const c = this.shelter.primary() || map.center;
+    if (!c) return;
+    const before = map.pois.length;
+    map.pois = fillPois(thinPois(map.pois, c.lat, this.protectedPoiIds()), c.lat, c.lon);
+    map.thinV = POI_THIN_VERSION;
+    map.fetchedAt = Date.now(); // 觸發地圖重新上傳
+    console.info(`[Game] 地圖密度整理：${before} → ${map.pois.length}`);
+  }
+
   static newGame(opts) {
     return new Game(createInitialState(opts));
   }
@@ -73,6 +95,7 @@ export class Game {
    * @returns {object|null} 離線報告
    */
   start() {
+    this.thinMap();
     this.markers.ensure();
     const report = this.processOffline();
     this.quests.ensureDaily();
@@ -226,8 +249,9 @@ export class Game {
       console.warn('[Game] Overpass failed, using generated POIs', err);
       source = 'generated';
     }
-    pois = fillPois(pois, lat, lon);
+    pois = fillPois(thinPois(pois, lat, this.protectedPoiIds()), lat, lon);
     const map = this.state.map;
+    map.thinV = POI_THIN_VERSION;
     const old = new Map(map.pois.map((p) => [p.id, p]));
     // 同一棟建築保留今日搜刮紀錄
     pois.forEach((p) => { if (old.get(p.id)?.lootedDay) p.lootedDay = old.get(p.id).lootedDay; });
