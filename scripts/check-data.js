@@ -1216,6 +1216,19 @@ assert(migrated.version === 12 && migrated.bases.length === 1 && migrated.bases[
   ['wall', 'warehouse', 'itemStore', 'farm'].forEach((id) => assert(gs0.shelter.canUpgradeFacility(null, id).ok, `開局的零件與布料足夠升級${FACILITIES[id].name}`));
 }
 
+// ---- 21. v8.3.2：返程中的隊伍不能召回 ----
+{
+  const gr2 = Game.newGame({ playerName: 'R', classId: 'warrior', lat: 25, lon: 121 });
+  gr2.state.map.pois = fillPois([], 25, 121);
+  gr2.shelter.establish(gr2.state.map.pois[0]);
+  const tgt = gr2.state.map.pois.find((p) => p.type === 'residential' && !gr2.shelter.baseAtPoi(p.id));
+  const r = gr2.exploration.start(tgt.id, ['leader'], 5);
+  assert(gr2.exploration.canRecall(r.exp), '前往中可以召回');
+  assert(!gr2.exploration.canRecall(r.exp, r.exp.endAt - 1000), '返程中不顯示召回');
+  r.exp.startAt -= r.exp.endAt - r.exp.startAt - 1000; r.exp.endAt = Date.now() + 1000;
+  assert(!gr2.exploration.recall(r.exp.id).ok && gr2.state.expeditions.length === 1, '返程中的隊伍無法召回');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
