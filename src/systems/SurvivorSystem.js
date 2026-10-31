@@ -4,10 +4,13 @@ import {
 } from '../config/survivors.js';
 import { DAY_REAL_MS } from '../config/constants.js';
 import { SLOT_KEYS, RARITIES, STACK_MAX } from '../config/equipment.js';
+import {
+  SUPPLIES, isSupply, unitWeight, suppliesOf,
+} from '../config/supplies.js';
 import { createSurvivor } from '../core/GameState.js';
 import {
   withSeed,
-  clamp, pick, randInt, weightedPick,
+  clamp, pick, randInt, weightedPick, chance,
 } from '../utils/math.js';
 import { canAfford, payCost, scaleCost } from './costUtils.js';
 
@@ -254,7 +257,10 @@ export class SurvivorSystem {
     if (!sv) return;
     SLOT_KEYS.forEach((slot) => { sv.equipment[slot] = null; });
     // 攜帶的物資與物品留在倉庫
-    Object.entries(sv.bag || {}).forEach(([k, v]) => { this.game.state.resources[k] += v; });
+    Object.entries(sv.bag || {}).forEach(([k, v]) => {
+      const pool = isSupply(k) ? this.game.state.supplies : this.game.state.resources;
+      pool[k] = (pool[k] || 0) + v;
+    });
     this.game.equipment.items.forEach((it) => { if (it.loc === id) it.loc = 'store'; });
     this.game.state.bases.forEach((b) => b.defenses.forEach((d) => {
       if (d.garrisonId === id) d.garrisonId = null;
@@ -285,23 +291,46 @@ export class SurvivorSystem {
     else this.setHp(sv, hp);
   }
 
-  healCost() {
-    return scaleCost(VITALS.healCost, Math.max(0.3, 1 - this.game.research.bonus('healCostReduce')));
+  /** 可用的藥品（倉庫 + 該隊員背包），依回復量由低到高 */
+  medicines(sv = null) {
+    const st = this.game.state;
+    return suppliesOf('med').map((k) => ({
+      key: k, ...SUPPLIES[k], store: st.supplies?.[k] || 0, bag: sv?.bag?.[k] || 0,
+    })).filter((m) => m.store + m.bag > 0);
   }
 
-  /** 使用藥品治療：回復 50% 最大生命；飢餓中無法治療 */
-  heal(id) {
+  /** 藥品回復量（研究「醫療」加成） */
+  healAmount(sv, key) {
+    return this.maxHp(sv) * Math.min(1, (SUPPLIES[key]?.heal || 0) * (1 + this.game.research.bonus('healPct')));
+  }
+
+  /**
+   * 使用藥品治療：依藥品回復不同比例的生命（大型醫藥箱 100%）；飢餓中無法治療。
+   * 先用隊員自己背包裡的，再用倉庫的（倉庫需在避難所）。研究「藥品節約」有機率不消耗。
+   * @param {string} [key] 藥品；未指定時用最小但足以補滿（或回復量最高）的藥品
+   */
+  heal(id, key = null) {
     const sv = this.get(id);
     if (!sv) return { ok: false, reason: '找不到倖存者' };
     if (this.isStarving()) return { ok: false, reason: '飢餓中無法治療，請先補充食物' };
     const max = this.maxHp(sv);
-    if (this.hpOf(sv) >= max) return { ok: false, reason: '生命已滿' };
-    if (!payCost(this.game.state, this.healCost())) return { ok: false, reason: '藥品不足' };
-    const hp = Math.min(max, this.hpOf(sv) + max * (VITALS.healPct + this.game.research.bonus('healPct')));
+    const lost = max - this.hpOf(sv);
+    if (lost <= 0) return { ok: false, reason: '生命已滿' };
+    const meds = this.medicines(sv).filter((m) => m.bag > 0 || this.atShelter(sv));
+    if (!meds.length) return { ok: false, reason: '沒有藥品（探索可找到紗布、繃帶、醫藥箱等）' };
+    const med = key ? meds.find((m) => m.key === key) : (meds.find((m) => this.healAmount(sv, m.key) >= lost) || meds[meds.length - 1]);
+    if (!med) return { ok: false, reason: '沒有這種藥品' };
+    const saved = chance(Math.min(0.5, this.game.research.bonus('healCostReduce')));
+    if (!saved) {
+      const pool = med.bag > 0 ? sv.bag : this.game.state.supplies;
+      pool[med.key] -= 1;
+      if (pool[med.key] <= 0) delete pool[med.key];
+    }
+    const hp = Math.min(max, this.hpOf(sv) + this.healAmount(sv, med.key));
     this.setHp(sv, hp);
     if (sv.severe && hp >= max * VITALS.severeRecoverRatio) sv.severe = false;
     sv.zeroSince = 0;
-    return { ok: true, msg: `${sv.name} 恢復了生命${sv.severe ? '' : '，已可行動'}` };
+    return { ok: true, msg: `${sv.name} 使用${med.name}恢復了生命${saved ? '（藥品節約：沒有消耗）' : ''}${sv.severe ? '' : '，已可行動'}` };
   }
 
   setJob(id, job) {
@@ -451,7 +480,23 @@ export class SurvivorSystem {
 
   /** 目前負重（攜帶資源總量） */
   bagLoad(sv) {
-    return Object.values(this.bagOf(sv)).reduce((s, v) => s + v, 0) + this.game.equipment.bagItemWeight(sv);
+    return Object.entries(this.bagOf(sv)).reduce((s, [k, v]) => s + v * unitWeight(k), 0) + this.game.equipment.bagItemWeight(sv);
+  }
+
+  /** 倉庫：基本資源在消耗品倉庫，材料物品在物品倉庫 */
+  storePool(key) {
+    const st = this.game.state;
+    if (isSupply(key)) {
+      st.supplies = st.supplies || {};
+      return st.supplies;
+    }
+    return st.resources;
+  }
+
+  /** 倉庫還能放多少 */
+  storeRoom(key) {
+    if (isSupply(key)) return this.game.equipment.supplyRoom(key);
+    return Math.max(0, this.game.resources.storageCap() - this.game.state.resources[key]);
   }
 
   /** 負重上限：徒步運載量 + 背包容量 */
@@ -474,13 +519,13 @@ export class SurvivorSystem {
     const sv = this.get(id);
     if (!this.atShelter(sv)) return { ok: false, reason: '不在避難所，無法存取倉庫' };
     const bag = this.bagOf(sv);
-    const res = this.game.state.resources;
-    const room = Math.max(0, this.game.resources.storageCap() - res[key]);
+    const res = this.storePool(key);
+    const room = this.storeRoom(key);
     const n = Math.floor(Math.min(amount, bag[key] || 0, room));
     if (n <= 0) return { ok: false, reason: room <= 0 ? '倉庫已滿' : '背包裡沒有這項物資' };
     bag[key] -= n;
     if (bag[key] <= 0) delete bag[key];
-    res[key] += n;
+    res[key] = (res[key] || 0) + n;
     return { ok: true, n };
   }
 
@@ -497,14 +542,15 @@ export class SurvivorSystem {
     const sv = this.get(id);
     if (!this.atShelter(sv)) return { ok: false, reason: '不在避難所，無法存取倉庫' };
     const bag = this.bagOf(sv);
-    const res = this.game.state.resources;
+    const res = this.storePool(key);
     // 同種類消耗品堆疊（每格最多 999），需要新格子時要有空格
     const slotRoom = this.stackRoom(sv, key);
     if (slotRoom <= 0) return { ok: false, reason: '背包格子已滿' };
-    const room = Math.max(0, this.bagCap(sv) - this.bagLoad(sv));
-    const n = Math.floor(Math.min(amount, res[key], room, slotRoom));
+    const room = Math.floor(Math.max(0, this.bagCap(sv) - this.bagLoad(sv)) / unitWeight(key));
+    const n = Math.floor(Math.min(amount, res[key] || 0, room, slotRoom));
     if (n <= 0) return { ok: false, reason: room <= 0 ? '負重已滿' : '倉庫沒有這項物資' };
     res[key] -= n;
+    if (isSupply(key) && res[key] <= 0) delete res[key];
     bag[key] = (bag[key] || 0) + n;
     return { ok: true, n };
   }
@@ -528,7 +574,7 @@ export class SurvivorSystem {
       let rest = Math.floor(v);
       members.forEach((sv) => {
         if (rest <= 0) return;
-        const n = Math.min(rest, Math.max(0, this.bagCap(sv) - this.bagLoad(sv)), this.stackRoom(sv, k));
+        const n = Math.min(rest, Math.floor(Math.max(0, this.bagCap(sv) - this.bagLoad(sv)) / unitWeight(k)), this.stackRoom(sv, k));
         if (n <= 0) return;
         this.bagOf(sv)[k] = (this.bagOf(sv)[k] || 0) + n;
         rest -= n;

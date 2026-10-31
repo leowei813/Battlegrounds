@@ -2,6 +2,7 @@ import {
   MAIN_QUESTS, DAILY_POOL, DAILY_COUNT, ACHIEVEMENTS,
 } from '../config/quests.js';
 import { RARITIES } from '../config/equipment.js';
+import { SUPPLIES } from '../config/supplies.js';
 
 const todayKey = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 
@@ -118,9 +119,9 @@ export class QuestSystem {
   }
 
   rewardText(reward) {
-    const names = { coins: '💰', parts: '⚙️', food: '🥫', wood: '🪵', metal: '🔩', cloth: '🧵', fuel: '⛽', medicine: '💊' };
+    const names = { coins: '💰', parts: '⚙️', food: '🥫', wood: '🪵', fuel: '⛽' };
     return Object.entries(reward)
-      .map(([k, v]) => (k === 'item' ? `🎁${RARITIES[v]?.name || v}裝備` : `${names[k] || k}${v}`))
+      .map(([k, v]) => (k === 'item' ? `🎁${RARITIES[v]?.name || v}裝備` : `${names[k] || (SUPPLIES[k] ? `${SUPPLIES[k].icon}${SUPPLIES[k].name}` : k)}${v}`))
       .join(' ');
   }
 

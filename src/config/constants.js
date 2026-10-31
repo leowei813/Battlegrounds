@@ -2,7 +2,7 @@
 
 export const GAME_TITLE = '絕地求生';
 export const SAVE_KEY = 'jdqs_save_v1';
-export const SAVE_VERSION = 11;
+export const SAVE_VERSION = 12;
 
 export const TICK_MS = 1000;
 export const AUTOSAVE_MS = 30 * 1000;
@@ -22,7 +22,7 @@ export const OUTPOST_SCAN_RADIUS = 500;
 /** 每類建築在地圖上的數量上限（優先保留有名字的建築，並平均分散） */
 export const POI_MAX_PER_TYPE = {
   residential: 6000, shop: 1500, school: 300, factory: 600, warehouse: 400,
-  gasStation: 200, hospital: 300, police: 200, military: 100,
+  gasStation: 200, hospital: 300, police: 200, military: 100, garage: 200, supermarket: 80, forest: 80,
 };
 /** 分散取樣的格子大小（公尺）：同一格優先只取一棟，避免擠在一起 */
 export const POI_SPREAD_CELL_M = 40;
@@ -42,10 +42,7 @@ export const MAX_LOG = 80;
 export const RESOURCES = {
   food: { name: '食物', icon: '🥫' },
   wood: { name: '木材', icon: '🪵' },
-  metal: { name: '金屬', icon: '🔩' },
-  cloth: { name: '布料', icon: '🧵' },
   fuel: { name: '燃料', icon: '⛽' },
-  medicine: { name: '藥品', icon: '💊' },
 };
 export const RESOURCE_KEYS = Object.keys(RESOURCES);
 
@@ -56,6 +53,10 @@ export const CURRENCIES = {
 
 /** 新遊戲初始資源 */
 export const STARTING_RESOURCES = {
-  food: 200, wood: 150, metal: 80, cloth: 60, fuel: 40, medicine: 15,
+  food: 200, wood: 150, fuel: 40,
+};
+/** 新遊戲初始材料物品（零件、布料、藥品、彈藥；見 config/supplies.js） */
+export const STARTING_SUPPLIES = {
+  nail: 40, screw: 40, scrap: 30, bolt: 15, wire: 10, tape: 10, coarse: 25, cotton: 20, linen: 10, bandage: 5, gauze: 5, arrow: 20,
 };
 export const STARTING_COINS = 150;

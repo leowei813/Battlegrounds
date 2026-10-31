@@ -87,10 +87,10 @@ export class VehicleSystem {
     if (!v) return { ok: false, reason: '找不到載具' };
     if (v.status !== 'idle') return { ok: false, reason: '載具出勤中' };
     this.game.state.vehicles = this.list.filter((x) => x.id !== id);
-    const metal = Math.round(this.def(v).durability * 0.3);
-    this.game.grant({ metal });
+    const n = Math.round(this.def(v).durability * 0.06);
+    const gain = this.game.grant({ scrap: n * 2, bolt: n, rubber: Math.ceil(n / 2) });
     this.game.bus.emit('vehicles:changed');
-    return { ok: true, msg: `已拆解 ${this.def(v).name}，回收金屬 ${metal}` };
+    return { ok: true, msg: `已拆解 ${this.def(v).name}，回收廢鐵 ${gain.scrap || 0}、螺栓 ${gain.bolt || 0}、橡膠 ${gain.rubber || 0}` };
   }
 
   // ---------- 維修 / 製作 ----------

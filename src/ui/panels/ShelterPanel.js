@@ -4,7 +4,9 @@ import { CLASSES } from '../../config/survivors.js';
 import { PRIMARY_DANGER_COEF, MAX_OUTPOSTS, BASE_SIZES } from '../../config/civilization.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { escapeHtml } from '../../utils/dom.js';
-import { btn, costHtml, timerBar, progressBar } from '../components.js';
+import {
+  btn, costHtml, timerBar, progressBar, metaOf,
+} from '../components.js';
 
 /**
  * 避難所分頁（側邊/底部抽屜）：設施升級、施工佇列、防禦建築、事件紀錄。
@@ -108,7 +110,7 @@ export class ShelterPanel {
         ${this.renderCivilization(sh)}
         <div class="stat-grid">
           <div><small>圍牆（不會自行修復）</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}
-            <small class="muted block">🔨 修繕人員 ${g.shelter.repairers().length}・每秒 +${g.shelter.repairRate().toFixed(1)}・每 100 點耗 🪵${Math.round(g.shelter.repairCostPerHp().wood * 100)} 🔩${Math.round(g.shelter.repairCostPerHp().metal * 100)}${g.shelter.repairers().length ? '' : '（到倖存者頁指派「修繕圍牆」工作）'}</small></div>
+            <small class="muted block">🔨 修繕人員 ${g.shelter.repairers().length}・每秒 +${g.shelter.repairRate().toFixed(1)}・每 100 點耗 ${Object.entries(g.shelter.repairCostPerHp()).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name}${Math.round(v * 100)}`).join(' ')}${g.shelter.repairers().length ? '' : '（到倖存者頁指派「修繕圍牆」工作）'}</small></div>
           <div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div>
           <div><small>來襲殭屍</small><b>${siege.zombies.length}</b></div>
           <div><small>屍潮波次</small><b>${this.waveText(siege)}</b></div>

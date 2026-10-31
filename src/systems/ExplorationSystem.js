@@ -1,4 +1,8 @@
 import { MAX_TEAM_SIZE, OFFLINE_CAP_MS, RESOURCES } from '../config/constants.js';
+
+/** 探索帶回的物資（基本資源與材料物品，受運載量限制） */
+const isLootKey = (k) => !!RESOURCES[k] || !!SUPPLIES[k];
+const nameOf = (k) => RESOURCES[k]?.name || SUPPLIES[k]?.name || k;
 import { POI_TYPES } from '../config/poiTypes.js';
 import { RARITIES } from '../config/equipment.js';
 import {
@@ -10,6 +14,9 @@ import { stockOf, dayKey } from './LootStock.js';
 import { zoneAt } from '../config/zones.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 import { pathLength, pointAlong } from '../map/routing.js';
+import {
+  SUPPLIES, AMMO_FOR, AMMO_PACK_FIGHTS, unitWeight,
+} from '../config/supplies.js';
 
 /** 每公里單程移動時間（分鐘，未套用速度加成） */
 const MIN_PER_KM_ONE_WAY = 2;
@@ -69,7 +76,7 @@ export const EXP_PHASES = {
 const SPECIAL_EVENTS = [
   { id: 'cache', text: '發現一個隱藏的物資箱！', reward: () => ({ coins: randInt(20, 60), parts: chance(0.5) ? 1 : 0 }) },
   { id: 'trader', text: '遇到一名流浪商人，用雜物換到了金錢。', reward: () => ({ coins: randInt(30, 90) }) },
-  { id: 'radio', text: '從無線電聽到補給投放的位置，順利取回。', reward: () => ({ food: randInt(30, 80), medicine: randInt(3, 10) }) },
+  { id: 'radio', text: '從無線電聽到補給投放的位置，順利取回。', reward: () => ({ food: randInt(30, 80), bandage: randInt(1, 3), painkiller: chance(0.3) ? 1 : 0 }) },
   { id: 'car', text: '找到一輛廢棄汽車，抽出了油箱裡的燃料。', reward: () => ({ fuel: randInt(20, 50) }) },
   { id: 'trap', text: '踩中前人留下的陷阱，一名隊員受了輕傷。', injure: true, reward: () => ({}) },
   { id: 'diary', text: '在屍體旁撿到一本日記，記錄著研究資料。', reward: () => ({ parts: randInt(1, 2) }) },
@@ -182,6 +189,7 @@ export class ExplorationSystem {
       ...this.game.territory.threats(plan.path, ignore).map((th) => ({ ...th, leg: 'out', done: false })),
       ...this.game.territory.threats(back, ignore).map((th) => ({ ...th, leg: 'back', done: false })),
     ];
+    const packed = this.packAmmo(v.members);
     v.members.forEach((m) => { m.status = 'exploring'; });
     this.game.vehicles.depart(car.vehicles, plan.trip.fuel);
     const exp = {
@@ -195,7 +203,21 @@ export class ExplorationSystem {
     };
     this.list.push(exp);
     const ride = car.vehicles.length ? `（${car.vehicles.map((x) => this.game.vehicles.def(x).icon).join('')}${plan.trip.fuel ? `・耗油 ${plan.trip.fuel}` : ''}）` : '';
-    return { ok: true, exp, msg: `隊伍出發前往「${v.poi.name}」${ride}` };
+    return { ok: true, exp, msg: `隊伍出發前往「${v.poi.name}」${ride}${packed}` };
+  }
+
+  /** 出發前：使用槍械／弓弩的隊員自動從倉庫補充彈藥（約 4 場戰鬥的量） */
+  packAmmo(members) {
+    const notes = [];
+    members.forEach((m) => {
+      const weapon = this.game.equipment.getItem(m.equipment?.weapon);
+      const need = weapon && AMMO_FOR[weapon.type];
+      if (!need) return;
+      const want = need.perFight * AMMO_PACK_FIGHTS - (m.bag?.[need.ammo] || 0);
+      if (want > 0 && (this.game.state.supplies?.[need.ammo] || 0) > 0) this.game.survivors.withdraw(m.id, need.ammo, want);
+      if ((m.bag?.[need.ammo] || 0) < need.perFight) notes.push(`${m.name}沒有${SUPPLIES[need.ammo].name}`);
+    });
+    return notes.length ? `（⚠️ ${notes.join('、')}，無法使用武器）` : '';
   }
 
   /**
@@ -407,6 +429,18 @@ export class ExplorationSystem {
     return reports;
   }
 
+  /** 記錄建築內殘留的物資（地圖會顯示剩餘數量）；沒有殘留則清除 */
+  setRemain(poi, res, at = Date.now()) {
+    const map = this.game.state.map;
+    map.remain = map.remain || {};
+    const left = Object.fromEntries(Object.entries(res || {}).filter(([, v]) => v > 0));
+    if (Object.keys(left).length) map.remain[poi.id] = { day: dayKey(at), res: left };
+    else delete map.remain[poi.id];
+    // 過期的殘留紀錄一併清掉
+    const today = dayKey(at);
+    Object.keys(map.remain).forEach((id) => { if (map.remain[id].day !== today) delete map.remain[id]; });
+  }
+
   /** 結算一次探索 */
   resolve(exp) {
     const poi = this.poi(exp.poiId);
@@ -434,7 +468,7 @@ export class ExplorationSystem {
     const forage = Math.max(0, ...fx.map((f) => f.forage || 0)) + this.game.research.bonus('forageAdd');
     // 今日物資（抵達時判定）：已被搜刮過則為空，每天 00:00 重置
     const arriveAt = exp.startAt + (exp.travelMs || 0);
-    const stock = stockOf(poi, arriveAt);
+    const stock = stockOf(poi, arriveAt, this.game.state.map.remain);
     const remaining = { ...stock.resources };
     const itemMul = (1 + Math.max(0, ...fx.map((f) => f.itemPct || 0)) + this.game.research.bonus('itemFindPct')) * stock.itemMul;
 
@@ -449,28 +483,29 @@ export class ExplorationSystem {
         // 從今日物資中搜刮一部分（數量受技能、研究、裝備加成）
         const found = [];
         Object.keys(remaining).forEach((k) => {
-          const take = Math.min(remaining[k], (stock.resources[k] / expectedLoot) * randFloat(0.8, 1.25));
+          // 殘留物資已經整理好，一次就能全部找到
+          const take = stock.partial ? remaining[k] : Math.min(remaining[k], (stock.resources[k] / expectedLoot) * randFloat(0.8, 1.25));
           if (take < 1) return;
           remaining[k] -= take;
           let v = take * lootMul;
           if (k === 'food') v *= 1 + forage;
           gained[k] = (gained[k] || 0) + v;
-          found.push(RESOURCES[k].name);
+          found.push(nameOf(k));
         });
         report.events.push(found.length ? `🔍 搜刮到 ${found.join('、')}` : '🕸️ 這裡已經被搜刮一空（每天 00:00 重置）');
-        if (!stock.empty && chance(pt.itemChance * itemMul)) {
+        if (stock.gear && chance(pt.itemChance * itemMul)) {
           const item = this.game.equipment.generate({ level, bias: pt.itemBias, boost: danger * 0.05 + zone.rarityBoost });
           report.items.push(item);
           report.events.push(`🎁 找到 ${RARITIES[item.rarity].name}「${item.name}」`);
         }
-        if (!stock.empty) {
+        if (stock.vehicle) {
           const find = this.game.vehicles.rollFind(poi.type);
           if (chance(find.chance) && !this.game.vehicles.isFull()) {
             report.vehicles = [...(report.vehicles || []), find.vehicle];
             report.events.push(`🚗 找到一台還能用的 ${this.game.vehicles.def(find.vehicle).name}（耐久 ${find.vehicle.durability}）`);
           }
         }
-        if (!stock.empty && chance(pt.blueprintChance * (1 + this.game.research.bonus('blueprintPct')))) {
+        if (!stock.empty && !stock.partial && chance(pt.blueprintChance * (1 + this.game.research.bonus('blueprintPct')))) {
           const bp = this.game.equipment.makeBlueprint(level);
           report.blueprints.push(bp);
           report.events.push('📜 找到一張設計圖！');
@@ -521,24 +556,31 @@ export class ExplorationSystem {
       }
     }
 
-    // 運載量：徒步每人有限，載具可以帶回更多物資
+    // 運載量（重量）：徒步每人有限，載具可以帶回更多；帶不走的物資留在建築裡（當天可再來拿）
     const carry = exp.cargo || this.game.vehicles.personCarry() * members.length;
-    const total = Object.entries(gained).filter(([k]) => RESOURCES[k]).reduce((s, [, v]) => s + v, 0);
-    if (total > carry) {
-      const ratio = carry / total;
-      Object.keys(gained).forEach((k) => { if (RESOURCES[k]) gained[k] *= ratio; });
-      report.events.push(`🎒 帶不動了！運載量 ${carry}，留下約 ${Math.round(total - carry)} 單位物資（載具可以載更多）`);
+    Object.keys(gained).forEach((k) => { gained[k] = Math.round(gained[k]); if (gained[k] <= 0) delete gained[k]; });
+    const loot = Object.fromEntries(Object.entries(gained).filter(([k]) => isLootKey(k)));
+    const weight = Object.entries(loot).reduce((sum, [k, v]) => sum + v * unitWeight(k), 0);
+    const leftBehind = {};
+    if (weight > carry) {
+      const ratio = carry / weight;
+      Object.keys(loot).forEach((k) => {
+        const keep = Math.floor(loot[k] * ratio);
+        leftBehind[k] = loot[k] - keep;
+        gained[k] = keep;
+        if (!keep) delete gained[k];
+      });
+      report.events.push(`🎒 帶不動了！運載量 ${carry}，留下約 ${Math.round(weight - carry)} 重量的物資在建築裡（今天內可以再來拿，載具可以載更多）`);
     }
     // 入帳：先放進倉庫，放不下的由隊員裝進自己的背包
-    const rounded = Object.fromEntries(Object.entries(gained).map(([k, v]) => [k, Math.round(v)]));
-    report.resources = this.game.grant(rounded);
-    const leftovers = Object.fromEntries(Object.entries(rounded)
-      .filter(([k]) => RESOURCES[k]).map(([k, v]) => [k, v - (report.resources[k] || 0)]).filter(([, v]) => v > 0));
+    report.resources = this.game.grant(gained);
+    const leftovers = Object.fromEntries(Object.entries(gained)
+      .filter(([k]) => isLootKey(k)).map(([k, v]) => [k, v - (report.resources[k] || 0)]).filter(([, v]) => v > 0));
     if (Object.keys(leftovers).length) {
       const lost = this.game.survivors.stash(members, leftovers);
-      const kept = Object.values(leftovers).reduce((s, v) => s + v, 0) - lost;
+      const kept = Object.values(leftovers).reduce((sum, v) => sum + v, 0) - lost;
       Object.entries(leftovers).forEach(([k, v]) => { report.resources[k] = (report.resources[k] || 0) + v; });
-      report.events.push(`📦 倉庫已滿：${kept} 單位物資由隊員放進背包${lost ? `，${lost} 單位帶不走被留下` : ''}`);
+      report.events.push(`📦 倉庫已滿：${kept} 個物資由隊員放進背包${lost ? `，${lost} 個帶不走被留下` : ''}`);
     }
     // 裝備：先放倉庫，倉庫滿了由隊員裝進背包，都放不下就留在原地
     report.items = report.items.filter((it) => {
@@ -549,8 +591,9 @@ export class ExplorationSystem {
     (report.vehicles || []).forEach((v) => this.game.vehicles.add(v, '探索'));
     this.game.state.inventory.blueprints.push(...report.blueprints);
     members.forEach((m) => this.game.survivors.gainXp(m, 4 + exp.durationMin));
-    // 探索過的建築物資清空，直到當地時間 00:00 重置
+    // 探索過的建築物資清空，直到當地時間 00:00 重置；帶不走的部分殘留在建築裡
     poi.lootedDay = dayKey(arriveAt);
+    this.setRemain(poi, leftBehind, arriveAt);
     delete poi.depletion;
     poi.lastVisit = exp.endAt;
     this.game.state.stats.explorations += 1;

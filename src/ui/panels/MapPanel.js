@@ -1,13 +1,13 @@
 import { MapService } from '../../map/MapService.js';
-import { POI_TYPES } from '../../config/poiTypes.js';
+import { POI_TYPES, LOOT_CATS } from '../../config/poiTypes.js';
 import { ALL_ENEMIES } from '../../config/enemies.js';
-import { RESOURCES } from '../../config/constants.js';
 import { BASE_SIZES, FACILITY_COUNT } from '../../config/civilization.js';
 import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
 import { isLooted, msToReset, stockOf } from '../../systems/LootStock.js';
 import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
-import { btn, costHtml } from '../components.js';
+import { btn, costHtml, metaOf } from '../components.js';
+import { remainOf } from '../../systems/LootStock.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { zoneAt, ZONES } from '../../config/zones.js';
@@ -66,7 +66,7 @@ export class MapPanel {
     const now = Date.now();
     const zone = zoneAt(n.lat, n.lon);
     const enemies = g.npcs.garrison(n);
-    const loot = Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => `${RESOURCES[k].icon}${Math.floor(v)}`).join(' ');
+    const loot = Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => `${metaOf(k).icon}${Math.floor(v)}`).join(' ');
     const sh = g.shelter.primary();
     const dist = sh ? Math.round(haversine(sh.lat, sh.lon, n.lat, n.lon)) : null;
     const trip = n.trip && n.trip.endAt > now ? n.trip : null;
@@ -239,13 +239,16 @@ export class MapPanel {
   /** 可能出現的物資（實際種類與數量要探索時才知道；探索後清空，每天 00:00 重置） */
   stockHtml(poi) {
     const reset = `每天 00:00 重置（${formatDuration(msToReset())}後）`;
+    const fmt = (res) => Object.entries(res).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} ${v}`).join('、');
+    // 上次探索帶不走而殘留的物資：直接顯示剩餘數量
+    const left = remainOf(poi, this.game.state.map.remain);
+    if (left) return `<div class="pos">📦 殘留物資（上次帶不走留下的）：${fmt(left)}・${reset}</div>`;
     if (isLooted(poi)) return `<div class="muted">🕸️ 今日已被搜刮一空・${reset}</div>`;
     if (this.game.gps.isDetected(poi)) {
       const st = stockOf(poi);
-      const list = Object.entries(st.resources).map(([k, v]) => `${RESOURCES[k].icon}${RESOURCES[k].name} ${v}`).join('、');
-      return `<div class="pos">📡 GPS 偵測到今日物資：${list}・${reset}</div>`;
+      return `<div class="pos">📡 GPS 偵測到今日物資：${fmt(st.resources)}・${reset}</div>`;
     }
-    const list = Object.keys(POI_TYPES[poi.type].loot).map((k) => `${RESOURCES[k].icon}${RESOURCES[k].name}`).join('、');
+    const list = Object.keys(POI_TYPES[poi.type].loot).map((k) => `${LOOT_CATS[k].icon}${LOOT_CATS[k].name}`).join('、');
     return `<div class="muted">📦 可能出現：${list}（實際所得於探索時隨機）・${reset}</div>`;
   }
 
@@ -299,7 +302,7 @@ export class MapPanel {
   }
 
   showLegend() {
-    const rows = Object.values(POI_TYPES).map((p) => `<div class="legend-row"><span class="poi-pin" style="--c:${p.color}">${p.icon}</span> ${p.name} <span class="danger">${stars(p.danger)}</span><small>${Object.keys(p.loot).map((k) => RESOURCES[k].icon).join('')}</small></div>`).join('');
+    const rows = Object.values(POI_TYPES).map((p) => `<div class="legend-row"><span class="poi-pin" style="--c:${p.color}">${p.icon}</span> ${p.name} <span class="danger">${stars(p.danger)}</span><small>${Object.keys(p.loot).map((k) => LOOT_CATS[k].icon).join('')}</small></div>`).join('');
     const sizes = Object.entries(BASE_SIZES).map(([k, z]) => `<div class="legend-row"><span class="shelter-pin size-${k}" style="--d:${z.pin}px">${z.icon}<i class="size-tag">${z.name[0]}</i></span> ${z.name}據點 <small>可建 ${FACILITY_COUNT + z.slots} 棟</small></div>`).join('');
     this.ui.modal.open({ title: '🧾 圖例', body: `${rows}<h4>據點規模</h4>${sizes}<h4>區域危險度</h4>${ZONES.map((z) => `<div class="legend-row"><span class="zone-tag" style="--zc:${z.color}">${z.name}</span><small>物資 ×${z.lootMul}・屍潮 ×${z.siegeMul}・殭屍 +${z.siegeLevel} 級</small></div>`).join('')}<div class="legend-row"><span class="npc-pin" style="width:28px;height:28px;font-size:14px">🏴‍☠️</span> NPC 據點：會升級、探索與掠奪，可攻打搶奪資源</div><p class="muted">金框是你的據點（⭐ 為主要據點），青框是其他玩家的據點。</p><p class="muted">☠ 越多越危險；距離避難所越遠危險度越高。紅框為探索範圍。</p>` });
   }

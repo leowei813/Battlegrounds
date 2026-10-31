@@ -1,3 +1,5 @@
+import { materialize } from './supplies.js';
+
 /**
  * 文明度與據點設定。
  *
@@ -50,9 +52,9 @@ export const MAX_BASES = 1 + MAX_OUTPOSTS;
 export const ABANDON_REFUND = 0.25;
 
 /** 建立第 n 座前哨站的費用 */
-export const baseEstablishCost = (n) => ({
+export const baseEstablishCost = (n) => materialize({
   coins: 250 * n, wood: 200 * n, metal: 120 * n, cloth: 60 * n,
-});
+}, { tier: n, tags: ['struct'], key: 'outpost' });
 
 /** 據點遭突破時損失的資源比例 */
 export const BREACH_LOSS = { primary: 0.5, outpost: 0.5 };
@@ -86,6 +88,9 @@ const SIZE_BY_TYPE = {
   factory: ['large', 'huge'],
   warehouse: ['large', 'huge'],
   military: ['huge'],
+  garage: ['small', 'medium'],
+  supermarket: ['medium', 'large'],
+  forest: ['small', 'medium'],
 };
 
 function hashString(s) {

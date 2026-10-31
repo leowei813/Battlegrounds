@@ -24,9 +24,11 @@ export function classify(tags = {}) {
   if (tags.landuse === 'military' || tags.military) return 'military';
   if (tags.amenity === 'fuel' || tags.amenity === 'charging_station') return 'gasStation';
   if (SCHOOL_AMENITY.test(tags.amenity || '') || /^(school|university|college|kindergarten)$/.test(tags.building || '')) return 'school';
+  if (/^(car_repair|tyres|car_parts|car|motorcycle_repair|motorcycle)$/.test(tags.shop || '') || tags.craft === 'car_repair' || tags.amenity === 'car_wash') return 'garage';
+  if (/^(supermarket|department_store|mall|wholesale_club)$/.test(tags.shop || '') || tags.building === 'supermarket') return 'supermarket';
   if (tags.building === 'warehouse' || tags.shop === 'wholesale' || tags.building === 'storage_tank') return 'warehouse';
   if (/^(industrial|factory|manufacture)$/.test(tags.building || '') || tags.landuse === 'industrial' || tags.man_made === 'works' || tags.craft) return 'factory';
-  if (tags.shop || SHOP_AMENITY.test(tags.amenity || '') || /^(retail|commercial|supermarket)$/.test(tags.building || '')) return 'shop';
+  if (tags.shop || SHOP_AMENITY.test(tags.amenity || '') || /^(retail|commercial)$/.test(tags.building || '')) return 'shop';
   if (RESIDENTIAL.test(tags.building || '') || tags.landuse === 'residential') return 'residential';
   // 沒有標註用途的一般建築（OSM 中最常見）視為住宅
   if (tags.building === 'yes') return 'residential';
@@ -72,7 +74,7 @@ function amenityQuery(bbox, bigBbox) {
   return `[out:json][timeout:40];
 (
   nwr["shop"]${a};
-  nwr["amenity"~"^(hospital|clinic|doctors|school|university|college|kindergarten|library|fuel|charging_station|police|fire_station|restaurant|cafe|fast_food|food_court|marketplace|pharmacy|bank|bar|pub)$"]${a};
+  nwr["amenity"~"^(hospital|clinic|doctors|school|university|college|kindergarten|library|fuel|charging_station|police|fire_station|car_wash|restaurant|cafe|fast_food|food_court|marketplace|pharmacy|bank|bar|pub)$"]${a};
   nwr["healthcare"~"^(hospital|clinic)$"]${a};
   nwr["landuse"="military"]${big};
   nwr["military"]${big};

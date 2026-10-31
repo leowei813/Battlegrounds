@@ -20,6 +20,7 @@ import { NpcSystem } from '../systems/NpcSystem.js';
 import { TerritorySystem } from '../systems/TerritorySystem.js';
 import { GpsSystem } from '../systems/GpsSystem.js';
 import { grant } from '../systems/costUtils.js';
+import { isSupply } from '../config/supplies.js';
 import { fetchPois } from '../map/OverpassService.js';
 import { fillPois } from '../map/PoiGenerator.js';
 
@@ -233,7 +234,11 @@ export class Game {
 
   /** 給予資源/貨幣（自動套用倉庫上限） */
   grant(gains, ignoreCap = false) {
-    return grant(this.state, gains, ignoreCap ? Infinity : this.resources.storageCap());
+    const sup = {};
+    const rest = {};
+    Object.entries(gains || {}).forEach(([k, v]) => { (isSupply(k) ? sup : rest)[k] = v; });
+    const out = grant(this.state, rest, ignoreCap ? Infinity : this.resources.storageCap());
+    return { ...out, ...this.equipment.addSupplies(sup) };
   }
 
   log(msg, type = 'info') {

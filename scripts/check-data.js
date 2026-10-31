@@ -27,6 +27,15 @@ import { hashAccessCode, ACCESS_ITERATIONS } from '../src/security/accessHash.js
 import { haversine } from '../src/utils/math.js';
 import { fetchPois, classify } from '../src/map/OverpassService.js';
 import crypto from 'node:crypto';
+import { SUPPLY_KEYS } from '../src/config/supplies.js';
+
+/** 測試用：所有材料物品各 n 個，並擴大物品倉庫 */
+const fillSupplies = (game, n = 900) => {
+  SUPPLY_KEYS.forEach((k) => { game.state.supplies[k] = n; });
+  game.state.bases.forEach((b) => { if (b.facilities.itemStore) b.facilities.itemStore.level = 10; });
+  game.state.research.levels.i_shelves = 10;
+  game.research.invalidate?.();
+};
 
 let failures = 0;
 const assert = (cond, msg) => {
@@ -70,6 +79,7 @@ const reports = g.exploration.update(Date.now() + 3600e3, { silent: true });
 assert(reports.length === 1, 'exploration resolved');
 g.state.player.coins = 1e5;
 Object.keys(g.state.resources).forEach((k) => { g.state.resources[k] = 1e5; });
+fillSupplies(g);
 const roll = g.survivors.recruitRoll();
 assert(roll.ok && roll.offer.length === 3, '招募一次出現三位候選人');
 assert(g.survivors.pickRecruit(roll.offer[1].id).ok && !g.state.recruitOffer, '選擇其中一位加入');
@@ -85,7 +95,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 11, 'state is serializable');
+assert(save.version === 12, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -121,7 +131,8 @@ const outpostPoi = g.state.map.pois.find((p) => !g.shelter.baseAtPoi(p.id));
 assert(!g.shelter.canEstablish(outpostPoi).ok, '避難所只能一座，未研究前哨站科技不能建第二個據點');
 g.state.research.levels.e_outpost = 1;
 g.research.invalidate();
-Object.assign(g.state.resources, { wood: 5000, metal: 5000, cloth: 5000 });
+Object.assign(g.state.resources, { wood: 5000 });
+fillSupplies(g);
 g.state.player.coins = 5000;
 const est = g.shelter.establish(outpostPoi);
 assert(est.ok && g.state.bases.length === 2 && est.base.kind === 'outpost', '研究「前哨站」後可建立前哨站');
@@ -138,7 +149,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 11 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 12 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -262,7 +273,8 @@ assert(migrated.version === 11 && migrated.bases.length === 1 && migrated.bases[
   ge.state.player.coins = 1e7;
   Object.keys(ge.state.resources).forEach((k) => { ge.state.resources[k] = 1e7; });
   ge.state.bases[0].facilities.warehouse.level = 10;
-  const crafted = Array.from({ length: 300 }, () => { const it = eq.craft('knife').item; ge.state.inventory.items = []; return it; }); // 清空倉庫避免格子用完
+  fillSupplies(ge, 900);
+  const crafted = Array.from({ length: 300 }, () => { fillSupplies(ge, 900); const it = eq.craft('knife').item; ge.state.inventory.items = []; return it; }); // 清空倉庫避免格子用完
   const tiers = new Set(crafted.map((it) => it.rarity));
   assert(crafted.every(Boolean) && tiers.size >= 4, `製作的品級隨機（出現 ${[...tiers].map((r) => RARITIES[r].name).join('、')}）`);
   // 吸血與探索速度詞綴生效
@@ -307,7 +319,7 @@ assert(migrated.version === 11 && migrated.bases.length === 1 && migrated.bases[
   gv.state.survivors.push(npc);
   sv.updateVitals(Date.now(), 30 * 60000, 30 * 60000);
   assert(npc.severe && sv.hpOf(npc) === 0, '飢餓持續扣血直到重傷');
-  gv.state.resources.medicine = 100;
+  gv.state.supplies.largeKit = 5;
   assert(!sv.heal(npc.id).ok, '飢餓中無法治療');
   // 重傷 + 飢餓滿遊戲內 3 天 → 永久死亡（領袖不會死亡）
   sv.becomeSevere(leader, '測試');
@@ -449,7 +461,7 @@ assert(migrated.version === 11 && migrated.bases.length === 1 && migrated.bases[
   const dur0 = bike.durability;
   gw.exploration.update(Date.now() + 3 * 3600e3, { silent: true });
   assert(bike.status === 'idle' && bike.durability < dur0, `返回後載具磨損（${dur0} → ${bike.durability}）`);
-  gw.state.resources.metal = 1e4;
+  fillSupplies(gw);
   gw.state.player.parts = 100;
   assert(vs.repair(truck.id).ok && truck.durability === vs.maxDurability(truck), '維修載具');
 
@@ -561,6 +573,7 @@ assert(migrated.version === 11 && migrated.bases.length === 1 && migrated.bases[
   Object.keys(gr.state.resources).forEach((k) => { gr.state.resources[k] = 1e7; });
   gr.state.player.coins = 1e7;
   gr.state.player.parts = 1e4;
+  fillSupplies(gr);
   assert(!gr.research.canStart('w_crit').ok, '沒有研究中心不能研究');
   gr.shelter.primary().facilities.researchCenter.level = 1;
   assert(gr.research.start('w_crit').ok, '開始研究 Lv1');
@@ -618,7 +631,7 @@ assert(migrated.version === 11 && migrated.bases.length === 1 && migrated.bases[
   gr.state.research.levels.c_gun = 1;
   gr.research.invalidate();
   assert(eq.canCraftModel('revolver').ok && !eq.canCraftModel('uzi').ok, '槍械製造等級決定可製作的槍種');
-  const made = Array.from({ length: 2000 }, () => { const it = eq.craft('knife').item; gr.state.inventory.items = []; return it.rarity; });
+  const made = Array.from({ length: 2000 }, () => { fillSupplies(gr); const it = eq.craft('knife').item; gr.state.inventory.items = []; return it.rarity; });
   assert(!made.includes('legendary'), '製作技術 0 級時不會做出稀有裝備');
   // 背包增加運載量、電鋸耗油
   const lead = gr.survivors.leader();
@@ -722,6 +735,8 @@ assert(migrated.version === 11 && migrated.bases.length === 1 && migrated.bases[
   // 重新掃描包含前哨站附近（較小範圍）
   gs.state.research.levels.e_outpost = 1;
   gs.research.invalidate();
+  fillSupplies(gs);
+  gs.state.player.coins = 1e5;
   gs.shelter.establish(gs.state.map.pois.find((p) => !gs.shelter.baseAtPoi(p.id)));
   const areas = gs.scanAreas(25.03, 121.56);
   assert(areas.length === 2 && areas[1].radius < areas[0].radius, '重新掃描包含前哨站附近，範圍較小');
@@ -859,8 +874,9 @@ assert(migrated.version === 11 && migrated.bases.length === 1 && migrated.bases[
   gi.survivors.deposit(lead.id, 'wood', Infinity);
   // 填滿倉庫
   let added = 0;
+  const supplySlots = eq.supplySlots();
   while (eq.addItem(eq.generate({ level: 1, model: 'shovel', rarity: 'common' }), '測試')) added += 1;
-  assert(eq.storeUsed() <= eq.storeCap() && added === eq.storeCap(), `倉庫滿了就放不下（放入 ${added} 件）`);
+  assert(eq.storeUsed() <= eq.storeCap() && added === eq.storeCap() - supplySlots, `倉庫滿了就放不下（放入 ${added} 件，材料物品佔 ${supplySlots} 格）`);
   Object.keys(gi.state.resources).forEach((k) => { gi.state.resources[k] = 1e5; });
   assert(!eq.craft('knife').ok, '倉庫空間不足時無法製作');
   // 放不下時由隊員背包攜帶
@@ -874,6 +890,7 @@ assert(migrated.version === 11 && migrated.bases.length === 1 && migrated.bases[
   assert(eq.bagSlotCap(lead) > BAG_BASE_SLOTS + 8, `背包裝備增加物品格數（${eq.bagSlotCap(lead)} 格）`);
   // 移動與穿戴
   gi.state.inventory.items = [];
+  gi.state.supplies = {};
   const gun = eq.generate({ level: 1, model: 'm1911', rarity: 'common' });
   eq.addItem(gun, '測試');
   assert(eq.moveToBag(gun.id, lead.id).ok && gun.loc === lead.id && eq.storeUsed() === 0, '倉庫物品交給隊員攜帶');

@@ -137,7 +137,8 @@ export class ZombieSpawnSystem {
         this.game.equipment.addItem(item, '戰鬥');
         loot.items.push(item);
       }
-      const mats = { metal: randInt(2, 6) * g.count, cloth: randInt(1, 4) * g.count };
+      // 殭屍身上的零碎物品：少量零件與布料
+      const mats = { scrap: randInt(0, 2) * g.count, coarse: randInt(0, 1) * g.count, ...(chance(0.15) ? { bandage: 1 } : {}) };
       loot.resources = this.game.grant(mats);
     } else {
       this.game.state.stats.battlesLost += 1;

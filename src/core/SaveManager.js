@@ -4,6 +4,7 @@ import { POI_KEYS } from '../config/poiTypes.js';
 import { SLOT_KEYS, ITEM_MODELS } from '../config/equipment.js';
 import { RESEARCH, LEGACY_RESEARCH } from '../config/research.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
+import { legacyToSupplies } from '../config/supplies.js';
 
 /**
  * 地圖建築改以「欄位陣列」儲存（市區可達數千棟，物件格式體積約大一倍）：
@@ -218,6 +219,28 @@ export class SaveManager {
     data.reports = data.reports || [];
     data.log = data.log || [];
     data.settings = { autoSave: true, showDamage: true, ...(data.settings || {}) };
+    // v12：金屬、布料、藥品不再是基本資源，換算成零件、布料、藥品物品
+    if (v < 12 && data.resources) {
+      const res = data.resources;
+      const toSupplies = (src) => {
+        const conv = legacyToSupplies(src);
+        delete src.metal;
+        delete src.cloth;
+        delete src.medicine;
+        return conv;
+      };
+      data.supplies = data.supplies || {};
+      Object.entries(toSupplies(res)).forEach(([k, n]) => { data.supplies[k] = (data.supplies[k] || 0) + n; });
+      (data.survivors || []).forEach((sv) => {
+        Object.entries(toSupplies(sv.bag || {})).forEach(([k, n]) => { sv.bag[k] = (sv.bag[k] || 0) + n; });
+      });
+      (data.npcs?.list || []).forEach((n) => { if (n.resources) toSupplies(n.resources); });
+    }
+    data.supplies = data.supplies || {};
+    if (data.map) {
+      data.map.markers = data.map.markers || [];
+      data.map.remain = data.map.remain || {};
+    }
     data.version = SAVE_VERSION;
     return data;
   }
