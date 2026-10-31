@@ -1762,6 +1762,64 @@ assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[
   assert(!pres(A, 'A').trips.some((t) => t.kind === 'trade'), '召回後不再公開擺攤');
 }
 
+// ---- 40. v8.24：探索檢核點 ----
+{
+  const { baseSizeOf: bso } = await import('../src/config/civilization.js');
+  const ge = Game.newGame({ playerName: 'E1', classId: 'warrior', lat: 25, lon: 121 });
+  ge.state.map.pois = fillPois([], 25, 121);
+  ge.shelter.establish(ge.state.map.pois[0]);
+  setHour(ge, 10);
+  const lead = ge.survivors.leader();
+  lead.level = 40;
+  const free = ge.state.map.pois.filter((p) => !ge.shelter.baseAtPoi(p.id) && !ge.npcs.list.some((n) => n.poiId === p.id) && POI_TYPES[p.type].loot.food);
+  const huge = free.find((p) => bso(p) === 'huge') || free.find((p) => bso(p) === 'large');
+  const small = free.find((p) => bso(p) === 'small');
+  assert(ge.exploration.checkpointCount(small) === 1 && ge.exploration.checkpointCount(huge) >= 3, '檢核點數量：小型 1、大型 3、巨型 4');
+  // 大型／巨型：每到一個檢核點更新進度
+  const reset = () => Object.assign(lead, { status: 'idle', severe: false, hp: null });
+  const e1 = ge.exploration.start(huge.id, [lead.id], 5).exp;
+  e1.cargo = 1e6;
+  const n = ge.exploration.checkpointCount(huge);
+  const seen = [];
+  for (let k = 1; k < n; k += 1) {
+    ge.exploration.runCheckpoints(e1, ge.exploration.checkpointAt({ ...e1, cp: { total: n, searchMs: e1.searchMs } }, k) + 1);
+    seen.push(Math.round(ge.exploration.searchProgress(e1) * 100));
+  }
+  assert(seen.join() === (n === 4 ? '25,50,75' : '33,67'), `搜索進度依檢核點更新（${seen.join('% ')}%）`);
+  ge.exploration.runCheckpoints(e1, e1.endAt);
+  assert(e1.cp.done === n && ge.exploration.searchProgress(e1) == null, '完成時不顯示進度');
+  ge.exploration.update(e1.endAt + 1, { silent: true });
+  reset();
+  // 小型：只有完成時才觸發
+  const e2 = ge.exploration.start(small.id, [lead.id], 5).exp;
+  ge.exploration.runCheckpoints(e2, e2.startAt + e2.travelMs + e2.searchMs - 1000);
+  assert(!e2.cp || e2.cp.done === 0, '小型建築只有搜索完成才觸發檢核點');
+  ge.exploration.update(e2.endAt + 1, { silent: true });
+  reset();
+  // 中途撤回：帶回已取得的物資，建築剩餘物資數量不顯示
+  const big2 = free.filter((p) => ge.exploration.checkpointCount(p) >= 2 && p.id !== huge.id && p.id !== small.id)[0];
+  const e3 = ge.exploration.start(big2.id, [lead.id], 5).exp;
+  e3.cargo = 1e6;
+  const t1 = ge.exploration.checkpointAt({ ...e3, cp: { total: ge.exploration.checkpointCount(big2), searchMs: e3.searchMs } }, 1) + 1;
+  assert(ge.exploration.recall(e3.id, t1).ok && e3.cp?.done === 1, '撤回前先結算已經到的檢核點');
+  const r3 = ge.exploration.update(e3.endAt + 1, { silent: true })[0];
+  const r3got = Object.values(r3.resources).reduce((a2, b2) => a2 + b2, 0);
+  assert(r3.events.some((x) => x.includes('中途撤回')) && (r3got > 0 || e3.cp.stock.empty), `中途撤回可帶回已取得的物資（${r3got}）`);
+  const rem3 = ge.state.map.remain[big2.id];
+  assert(!rem3 || rem3.hidden, '未完成探索不會顯示建築剩餘物資');
+  reset();
+  // 提早負重：停止探索直接回家
+  const big3 = free.filter((p) => ge.exploration.checkpointCount(p) >= 2 && ![huge.id, small.id, big2.id].includes(p.id))[0];
+  const e4 = ge.exploration.start(big3.id, [lead.id], 5).exp;
+  e4.cargo = 0.5;
+  const end0 = e4.endAt;
+  ge.exploration.runCheckpoints(e4, end0);
+  const early = e4.cp.overweight && e4.cp.done < e4.cp.total;
+  assert(!early || (e4.cp.stopped && e4.endAt < end0), `背包提早裝滿就停止探索、直接回家（${e4.cp.done}/${e4.cp.total}）`);
+  ge.exploration.update(e4.endAt + 1, { silent: true });
+  assert(!early || ge.state.map.remain[big3.id]?.hidden, '提早負重回家時不顯示剩餘物資');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
