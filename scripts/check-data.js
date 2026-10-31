@@ -1467,6 +1467,26 @@ assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[
   assert(!FACILITIES.rainCollector && !RESEARCH.a_rain, '雨水收集器與淨水科技已移除');
 }
 
+// ---- 32. v8.17.2：缺零件時改用純木材修繕圍牆 ----
+{
+  const gw = Game.newGame({ playerName: 'W1', classId: 'warrior', lat: 25, lon: 121 });
+  gw.state.map.pois = fillPois([], 25, 121);
+  gw.shelter.establish(gw.state.map.pois[0]);
+  const bw = gw.shelter.primary();
+  bw.wallHp = 0;
+  gw.survivors.setJob(gw.survivors.leader().id, 'repair');
+  delete gw.state.supplies.nail;
+  delete gw.state.supplies.scrap;
+  gw.state.resources.wood = 100;
+  assert(gw.shelter.repairStatus().mode === 'woodOnly', '缺零件時顯示改用純木材修繕');
+  gw.shelter.update(Date.now(), 10000);
+  assert(gw.shelter.wallHp(bw) > 0 && gw.state.resources.wood < 100, `缺零件仍可用木材修繕圍牆（+${gw.shelter.wallHp(bw).toFixed(1)}）`);
+  gw.state.resources.wood = 0;
+  const h = gw.shelter.wallHp(bw);
+  gw.shelter.update(Date.now(), 10000);
+  assert(gw.shelter.repairStatus().mode === 'noWood' && gw.shelter.wallHp(bw) === h, '沒有木材時無法修繕');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

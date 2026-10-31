@@ -484,38 +484,70 @@ export class ShelterSystem {
     return Object.fromEntries(Object.entries(REPAIR.cost).map(([k, v]) => [k, v * mul]));
   }
 
+  /** 純木材修繕（缺少釘子等零件時）：每點耐久的木材倍率與速度倍率 */
+  static WOOD_ONLY = { woodMul: 2, speedMul: 0.5 };
+
+  /** 目前的修繕狀態：normal 正常、woodOnly 缺零件改用純木材、noWood 木材不足、none 無人修繕 */
+  repairStatus() {
+    if (!this.repairers().length) return { mode: 'none' };
+    const st = this.game.state;
+    const per = this.repairCostPerHp();
+    const have = (k) => (st.resources[k] !== undefined ? st.resources[k] : st.supplies?.[k] || 0) || 0;
+    if (have('wood') < per.wood) return { mode: 'noWood' };
+    const missing = Object.keys(per).filter((k) => k !== 'wood' && have(k) < 1);
+    return missing.length ? { mode: 'woodOnly', missing } : { mode: 'normal' };
+  }
+
   /**
-   * 圍牆不會自行修復：由修繕人員修理並消耗木材與金屬。
-   * 先修受損比例最高的據點；材料不足時只修得了一部分。
+   * 圍牆不會自行修復：由修繕人員修理並消耗木材與零件（釘子、廢鐵）。
+   * 先修受損比例最高的據點；零件用完時改用純木材修繕（耗更多木材、速度減半），木材也不足時才停止。
    */
   repairWalls(dtMs) {
     let budget = this.repairRate() * (dtMs / 1000);
     if (budget <= 0) return;
     const st = this.game.state;
-    const pool = (k) => (st.resources[k] !== undefined ? st.resources : (st.supplies = st.supplies || {}));
-    const per = this.repairCostPerHp();
+    st.supplies = st.supplies || {};
+    const have = (k) => (st.resources[k] !== undefined ? st.resources[k] : st.supplies[k] || 0) || 0;
+    const full = this.repairCostPerHp();
+    const woodOnly = { wood: full.wood * ShelterSystem.WOOD_ONLY.woodMul };
+    const spend = (per, hp) => Object.entries(per).forEach(([k, v]) => {
+      if (st.resources[k] !== undefined) st.resources[k] = Math.max(0, st.resources[k] - hp * v);
+      else {
+        // 材料物品以整數計：累積小數，用滿 1 個才扣除
+        st.repairAcc = st.repairAcc || {};
+        st.repairAcc[k] = (st.repairAcc[k] || 0) + hp * v;
+        const whole = Math.min(Math.floor(st.repairAcc[k]), st.supplies[k] || 0);
+        st.repairAcc[k] -= whole;
+        st.supplies[k] = (st.supplies[k] || 0) - whole;
+        if (st.supplies[k] <= 0) delete st.supplies[k];
+      }
+    });
     const damaged = this.bases.map((b) => ({ b, ratio: this.wallHp(b) / this.wallMax(b) }))
       .filter((x) => x.ratio < 1).sort((a, c) => a.ratio - c.ratio);
     for (const { b } of damaged) {
       if (budget <= 0) break;
-      const need = this.wallMax(b) - this.wallHp(b);
-      const affordable = Math.min(...Object.entries(per).map(([k, v]) => (v ? (pool(k)[k] || 0) / v : Infinity)));
-      const hp = Math.min(need, budget, affordable);
-      if (hp <= 0) break;
-      b.wallHp = this.wallHp(b) + hp;
-      // 材料物品以整數計：累積小數，用滿 1 個才扣除
-      Object.entries(per).forEach(([k, v]) => {
-        if (st.resources[k] !== undefined) st.resources[k] -= hp * v;
-        else {
-          st.repairAcc = st.repairAcc || {};
-          st.repairAcc[k] = (st.repairAcc[k] || 0) + hp * v;
-          const whole = Math.min(Math.floor(st.repairAcc[k]), st.supplies[k] || 0);
-          st.repairAcc[k] -= whole;
-          st.supplies[k] -= whole;
-          if (st.supplies[k] <= 0) delete st.supplies[k];
+      let need = this.wallMax(b) - this.wallHp(b);
+      // 先用完整材料修繕（零件以「還有幾個」計，小數累積到 1 才扣）
+      const partsOk = Object.keys(full).every((k) => k === 'wood' || have(k) >= 1);
+      if (partsOk) {
+        const afford = Math.min(...Object.entries(full).map(([k, v]) => (v ? (have(k) - (k === 'wood' ? 0 : st.repairAcc?.[k] || 0)) / v : Infinity)));
+        const hp = Math.max(0, Math.min(need, budget, afford));
+        if (hp > 0) {
+          b.wallHp = this.wallHp(b) + hp;
+          spend(full, hp);
+          budget -= hp;
+          need -= hp;
         }
-      });
-      budget -= hp;
+      }
+      // 零件不足：剩下的修繕時間改用純木材（速度減半）
+      if (budget > 0 && need > 0 && !Object.keys(full).every((k) => k === 'wood' || have(k) >= 1)) {
+        const hp = Math.max(0, Math.min(need, budget * ShelterSystem.WOOD_ONLY.speedMul, have('wood') / woodOnly.wood));
+        if (hp <= 0) break;
+        b.wallHp = this.wallHp(b) + hp;
+        spend(woodOnly, hp);
+        budget -= hp / ShelterSystem.WOOD_ONLY.speedMul;
+      }
+      if (have('wood') <= 0) break;
     }
   }
 
