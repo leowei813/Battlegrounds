@@ -1,4 +1,5 @@
 import { POI_TYPES } from '../../config/poiTypes.js';
+import { MAX_EXPEDITIONS } from '../../config/constants.js';
 import { VEHICLES } from '../../config/vehicles.js';
 import { RARITIES } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
@@ -48,7 +49,7 @@ export class ExplorePanel {
     return `<div class="panel-inner">
       <h2>🧭 探索</h2>
       <div class="phase-banner phase-${g.time.phaseId()}">${phase.icon} 目前時段：<b>${phase.name}</b>・${phase.desc}・探索速度 ×${g.time.exploreSpeedMul().toFixed(2)}・物資 ×${phase.lootMul}</div>
-      <h3>進行中（${st.expeditions.length}）</h3>
+      <h3>進行中（${st.expeditions.length}/${MAX_EXPEDITIONS}）</h3>
       ${active || '<p class="muted">目前沒有隊伍在外。</p>'}
       <p class="muted">要派遣探索，請到「地圖」點選建築。</p>
       <h3>探索報告</h3>
