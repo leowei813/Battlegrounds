@@ -5,7 +5,9 @@ import { RARITIES } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { formatDuration } from '../../utils/math.js';
 import { EXP_PHASES } from '../../systems/ExplorationSystem.js';
-import { btn, timerBar, gainsHtml } from '../components.js';
+import {
+  btn, timerBar, gainsHtml, metaOf,
+} from '../components.js';
 
 /**
  * 探索分頁：進行中的隊伍與探索報告（派遣探索請在地圖上點選建築）。
@@ -30,6 +32,7 @@ export class ExplorePanel {
         <div class="muted">隊員：${names}・搜索 ${ex.durationMin} 分鐘</div>
         ${this.progressHtml(ex, now)}
         ${timerBar(ex.startAt, ex.endAt, now)}
+        ${this.checkpointHtml(ex)}
         ${(ex.travelEvents || []).length ? `<ul class="event-list">${ex.travelEvents.slice(-3).map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul>` : ''}
         <div class="btn-row">${btn('🗺️ 在地圖上追蹤', 'track', { id: ex.id }, { cls: 'btn-sm btn-primary' })}${btn(ex.auto ? '停止自動' : '🔁 自動探索', 'auto', { id: ex.id }, { cls: 'btn-sm btn-ghost', disabled: !g.research.hasUnlock('autoExplore') })}${g.exploration.canRecall(ex, now) ? btn('召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' }) : ''}</div>
       </div>`;
@@ -74,7 +77,7 @@ export class ExplorePanel {
   onAction(action, data) {
     const g = this.game;
     if (action === 'auto') this.ui.result(g.exploration.toggleAuto(data.id));
-    if (action === 'recall' && confirm('召回後隊伍會從目前位置走回避難所（需要移動時間），這趟不會有任何收穫，確定？')) this.ui.result(g.exploration.recall(data.id));
+    if (action === 'recall' && confirm('召回後隊伍會從目前位置走回避難所（需要移動時間），只會帶回已經到過的檢核點找到的物資，確定？')) this.ui.result(g.exploration.recall(data.id));
     if (action === 'track') {
       const ex = g.state.expeditions.find((e) => e.id === data.id);
       const p = ex && g.exploration.progress(ex);
@@ -87,5 +90,18 @@ export class ExplorePanel {
       this.openReport = this.openReport === data.id ? null : data.id;
       this.ui.refresh(true);
     }
+  }
+
+  /** 搜索檢核點：進度（完成時不顯示）與目前找到的東西 */
+  checkpointHtml(ex) {
+    const cp = ex.cp;
+    if (!cp || ex.kind !== 'explore') return '';
+    const prog = this.game.exploration.searchProgress(ex);
+    const found = Object.entries(cp.gained || {}).map(([k, v]) => [k, Math.round(v)]).filter(([, v]) => v > 0)
+      .map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} ${v}`);
+    (cp.items || []).forEach((it) => found.push(`🎁「${escapeHtml(it.name)}」`));
+    if (cp.blueprints?.length) found.push(`📜×${cp.blueprints.length}`);
+    return `${prog != null ? `<div class="pos">🔍 搜索進度 ${Math.round(prog * 100)}%</div>` : ''}
+      ${found.length ? `<small class="muted block">🎒 已取得：${found.join('、')}</small>` : ''}`;
   }
 }

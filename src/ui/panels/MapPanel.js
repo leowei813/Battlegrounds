@@ -327,6 +327,8 @@ export class MapPanel {
     const fmt = (res) => Object.entries(res).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} ${v}`).join('、');
     // 上次探索帶不走而殘留的物資：直接顯示剩餘數量
     const left = remainOf(poi, this.game.state.map.remain);
+    // 沒有完成探索：還有物資但不知道是什麼、有多少
+    if (left && this.game.state.map.remain[poi.id]?.hidden) return `<div class="muted">🔍 上次沒有搜索完，裡面可能還有物資（數量不明）・${reset}</div>`;
     if (left) return `<div class="pos">📦 殘留物資（上次帶不走留下的）：${fmt(left)}・${reset}</div>`;
     if (isLooted(poi)) return `<div class="muted">🕸️ 今日已被搜刮一空・${reset}</div>`;
     if (this.game.gps.isDetected(poi)) {
@@ -408,7 +410,7 @@ export class MapPanel {
       <p class="muted">👥 ${names || `${ex.memberIds.length} 人`}</p>
       <p class="muted">⏱ 剩 ${formatDuration(p ? p.remainingMs : Math.max(0, ex.endAt - now))}</p>
       ${ex.kind === 'trade' && ex.trade ? `<p>🤝 擺攤商品：${ex.trade.goods.map((x) => `${escapeHtml(g.trade.goodName(x))} ${x.sold}/${x.qty}`).join('、')}・已收入 💰${ex.trade.earned || 0}</p>` : ''}
-      ${canRecall ? `<p class="muted">${ex.kind === 'trade' ? '召回後倖存者會結束交易、走回避難所，沒賣完的商品會帶回家。' : '召回後隊伍會從目前位置走回避難所（需要移動時間），這趟不會有任何收穫。'}</p>` : ''}
+      ${canRecall ? `<p class="muted">${ex.kind === 'trade' ? '召回後倖存者會結束交易、走回避難所，沒賣完的商品會帶回家。' : '召回後隊伍會從目前位置走回避難所（需要移動時間），只會帶回已經到過的檢核點找到的物資。'}</p>` : ''}
       <div class="btn-row">${canRecall ? btn('↩️ 召回', 'recall', {}, { cls: 'btn-danger' }) : ''}${btn('📋 探索頁', 'explore', {}, { cls: 'btn-ghost' })}</div>`;
     this.ui.modal.open({
       title: '🚶 我的探索隊',

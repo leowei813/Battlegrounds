@@ -243,6 +243,7 @@ export class ExplorationSystem {
     [...this.list].forEach((exp) => this.checkThreats(exp, now));
     this.game.intercept?.checkArrivals(now);
     this.checkHunts(now);
+    this.list.forEach((exp) => this.runCheckpoints(exp, now));
     const out = [];
     const groups = this.game.state.map.zombieGroups;
     if (!groups.length) return out;
@@ -393,13 +394,16 @@ export class ExplorationSystem {
     const exp = this.list.find((e) => e.id === expId);
     if (!exp) return { ok: false, reason: '找不到隊伍' };
     if (!this.canRecall(exp, now)) return { ok: false, reason: '隊伍已經在返程中' };
+    // 已經到達的檢核點先結算，撤回時帶回已取得的物資
+    this.runCheckpoints(exp, now);
     if (!this.turnBack(exp, now)) return { ok: false, reason: '找不到隊伍的位置' };
     exp.recalled = true;
     // 還沒抵達的攔截、獵殺不再交戰
     exp.icptDone = true;
     exp.huntDone = true;
     exp.travelEvents = [...(exp.travelEvents || []), '↩️ 收到召回命令，隊伍折返避難所'];
-    return { ok: true, msg: `隊伍折返中，約 ${Math.max(1, Math.round(exp.travelMs / 60000))} 分鐘後回到避難所（無收穫）` };
+    const keep = exp.kind === 'explore' && exp.cp?.done > 0;
+    return { ok: true, msg: `隊伍折返中，約 ${Math.max(1, Math.round(exp.travelMs / 60000))} 分鐘後回到避難所${keep ? '（帶回已找到的物資）' : '（無收穫）'}` };
   }
 
   /** 召回的隊伍回到避難所時的報告 */
@@ -454,7 +458,7 @@ export class ExplorationSystem {
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
         const report = exp.kind === 'trade' && !exp.defeated ? this.game.trade.report(exp)
-          : exp.recalled ? this.recalledReport(exp)
+          : exp.recalled ? (exp.kind === 'explore' ? this.finishExplore(exp, { recalled: true }) : this.recalledReport(exp))
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)
@@ -558,149 +562,233 @@ export class ExplorationSystem {
   }
 
   /** 記錄建築內殘留的物資（地圖會顯示剩餘數量）；沒有殘留則清除 */
-  setRemain(poi, res, at = Date.now()) {
+  setRemain(poi, res, at = Date.now(), { hidden = false } = {}) {
     const map = this.game.state.map;
     map.remain = map.remain || {};
     const left = Object.fromEntries(Object.entries(res || {}).filter(([, v]) => v > 0));
-    if (Object.keys(left).length) map.remain[poi.id] = { day: dayKey(at), res: left };
+    if (Object.keys(left).length) map.remain[poi.id] = { day: dayKey(at), res: left, ...(hidden ? { hidden: true } : {}) };
     else delete map.remain[poi.id];
     // 過期的殘留紀錄一併清掉
     const today = dayKey(at);
     Object.keys(map.remain).forEach((id) => { if (map.remain[id].day !== today) delete map.remain[id]; });
   }
 
-  /** 結算一次探索 */
-  resolve(exp) {
+  // ---------- 探索檢核點：小型 1 次、中型 2 次、大型 3 次、巨型 4 次 ----------
+
+  /** 這個地點的檢核點數量（依建築大小） */
+  checkpointCount(poi) {
+    const order = ['small', 'medium', 'large', 'huge'];
+    return Math.max(1, order.indexOf(baseSizeOf(poi)) + 1);
+  }
+
+  /** 第 k 個檢核點的時間：搜索時間平均分配，最後一個在搜索完成時 */
+  checkpointAt(exp, k) {
+    const total = exp.cp?.total || 1;
+    return exp.startAt + (exp.travelMs || 0) + ((exp.cp?.searchMs ?? exp.searchMs) || 0) * (k / total);
+  }
+
+  /** 搜索進度（0～1）；沒有在搜索或已完成時為 null */
+  searchProgress(exp) {
+    const cp = exp.cp;
+    if (!cp || cp.done <= 0 || cp.done >= cp.total || cp.stopped) return null;
+    return cp.done / cp.total;
+  }
+
+  /** 探索的共用資料（物資、加成），抵達時判定一次 */
+  exploreContext(exp) {
     const poi = this.poi(exp.poiId);
     const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+    if (!poi || !members.length || !POI_TYPES[poi.type]) return null;
+    const phase = this.game.time.phase(exp.startAt);
+    const memberStats = members.map((m) => this.game.survivors.stats(m));
+    const fx = members.map((m) => this.game.survivors.skillEffects(m));
+    return {
+      poi,
+      members,
+      pt: POI_TYPES[poi.type],
+      zone: zoneAt(poi.lat, poi.lon),
+      danger: this.game.zombies.areaDanger(poi),
+      level: this.game.zombies.areaLevel(poi),
+      phase,
+      lootMul: phase.lootMul * (1 + this.game.research.bonus('lootPct'))
+        * (1 + Math.max(0, ...fx.map((f) => f.lootPct || 0)))
+        * (1 + memberStats.reduce((sum, x) => sum + (x.lootBonus || 0), 0)),
+      forage: Math.max(0, ...fx.map((f) => f.forage || 0)) + this.game.research.bonus('forageAdd'),
+      itemBoost: 1 + Math.max(0, ...fx.map((f) => f.itemPct || 0)) + this.game.research.bonus('itemFindPct'),
+      arriveAt: exp.startAt + (exp.travelMs || 0),
+      carry: exp.cargo || this.game.vehicles.personCarry() * members.length,
+    };
+  }
+
+  /** 處理到 now 為止的檢核點（線上每秒、離線結算與召回前都會補算） */
+  runCheckpoints(exp, now = Date.now()) {
+    if (exp.kind !== 'explore' || exp.defeated || exp.recalled) return;
+    return withSeed(this.game.state.rng, 'explore', () => {
+      const ctx = this.exploreContext(exp);
+      if (!ctx) return;
+      if (!exp.cp) {
+        const stock = stockOf(ctx.poi, ctx.arriveAt, this.game.state.map.remain);
+        exp.cp = {
+          total: this.checkpointCount(ctx.poi), done: 0, searchMs: exp.searchMs || 0,
+          stock: { resources: { ...stock.resources }, itemMul: stock.itemMul, gear: stock.gear, vehicle: stock.vehicle, empty: stock.empty, partial: !!stock.partial },
+          remaining: { ...stock.resources }, gained: {}, items: [], blueprints: [], vehicles: [], events: [], kills: 0, xp: 0, failed: false, stopped: false, overflow: {},
+        };
+      }
+      const cp = exp.cp;
+      while (!cp.stopped && cp.done < cp.total && now >= this.checkpointAt(exp, cp.done + 1)) {
+        this.checkpoint(exp, ctx, cp.done + 1);
+      }
+    });
+  }
+
+  /** 一個檢核點：搜刮一部分物資、可能遭遇事件，並檢查負重 */
+  checkpoint(exp, ctx, k) {
+    const cp = exp.cp;
+    const {
+      poi, members, pt, zone, danger, level, phase,
+    } = ctx;
+    const at = this.checkpointAt(exp, k);
+    cp.done = k;
+    const tag = cp.total > 1 ? `［搜索 ${k}/${cp.total}］` : '';
+    const last = k === cp.total;
+    // 1. 搜刮：今日物資平均分到每個檢核點（殘留物資一次全部找到）
+    const found = [];
+    Object.keys(cp.remaining).forEach((key) => {
+      const left = cp.remaining[key];
+      const share = cp.stock.partial || last ? left : Math.min(left, (cp.stock.resources[key] / cp.total) * randFloat(0.8, 1.25));
+      if (share < 1) return;
+      cp.remaining[key] = left - share;
+      let v = share * ctx.lootMul;
+      if (key === 'food') v *= 1 + ctx.forage;
+      cp.gained[key] = (cp.gained[key] || 0) + v;
+      found.push(nameOf(key));
+    });
+    const share = (1 + 0.25 * (cp.total - 1)) / cp.total; // 大建築總機率略高
+    const extra = [];
+    if (cp.stock.gear && chance(pt.itemChance * ctx.itemBoost * cp.stock.itemMul * share)) {
+      const item = this.game.equipment.generate({ level, bias: pt.itemBias, boost: danger * 0.05 + zone.rarityBoost });
+      cp.items.push(item);
+      extra.push(`🎁 ${RARITIES[item.rarity].name}「${item.name}」`);
+    }
+    if (cp.stock.vehicle) {
+      const find = this.game.vehicles.rollFind(poi.type);
+      if (chance(find.chance * share) && !this.game.vehicles.isFull() && !cp.vehicles.length) {
+        cp.vehicles.push(find.vehicle);
+        extra.push(`🚗 ${this.game.vehicles.def(find.vehicle).name}（耐久 ${find.vehicle.durability}）`);
+      }
+    }
+    if (!cp.stock.empty && !cp.stock.partial && chance(pt.blueprintChance * (1 + this.game.research.bonus('blueprintPct')) * share)) {
+      cp.blueprints.push(this.game.equipment.makeBlueprint(level));
+      extra.push('📜 設計圖');
+    }
+    // 有找到東西才顯示
+    if (found.length || extra.length) cp.events.push(`🔍 ${tag}找到 ${[...found, ...extra].join('、')}`);
+    if (k === 1 && cp.stock.empty) cp.events.push('🕸️ 這裡已經被搜刮一空（每天 00:00 重置）');
+
+    // 2. 隨機事件
+    const ev = weightedPick({
+      none: 46, zombies: 28 * phase.zombieMul, survivor: 5 * (1 + this.game.research.bonus('survivorFindPct')), special: 10, elite: 3 + danger * phase.danger,
+    });
+    if (ev === 'survivor') {
+      const cand = this.game.survivors.makeCandidate(randInt(1, Math.max(1, level - 1)));
+      const pool = this.game.state.recruitPool;
+      cand.leaveAt = Math.max(Date.now(), at) + RECRUIT_STAY_MS;
+      if (pool.length < 5) pool.push(cand);
+      cp.events.push(`🙋 ${tag}遇到倖存者 ${cand.name}，對方願意加入（會在避難所附近等 1 小時，請到倖存者頁面確認）`);
+    } else if (ev === 'special') {
+      const sp = pick(SPECIAL_EVENTS);
+      cp.events.push(`✨ ${tag}${sp.text}`);
+      Object.entries(sp.reward()).forEach(([key, v]) => { if (v) cp.gained[key] = (cp.gained[key] || 0) + v; });
+      if (sp.injure) {
+        const victim = pick(members);
+        this.game.survivors.damage(victim, this.game.survivors.maxHp(victim) * 0.3, '踩中陷阱', at);
+      }
+    } else if (ev === 'zombies' || ev === 'elite') {
+      const isElite = ev === 'elite';
+      let enemies;
+      if (isElite) {
+        enemies = [this.game.combat.createEnemy(weightedPick(pt.enemies), level + 2, true)];
+        cp.events.push(`⚠️ ${tag}遭遇精英怪 ${enemies[0].name}！`);
+      } else {
+        const n = randInt(2, 2 + danger);
+        enemies = Array.from({ length: n }, () => this.game.combat.createEnemy(weightedPick(pt.enemies), level));
+        cp.events.push(`🧟 ${tag}遭遇 ${n} 隻殭屍`);
+      }
+      const fs = this.game.shelter.primary().facilities.watchtower.level * 0.04;
+      const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs });
+      this.game.combat.applyOutcome(members, result, at);
+      cp.kills += result.kills.length;
+      cp.xp += result.xp;
+      if (result.victory) {
+        cp.events.push(`  ↳ 勝利！擊殺 ${result.kills.length}，獲得 ${result.coins} 金錢`);
+        if (isElite) {
+          const item = this.game.equipment.generate({ level: level + 2, bias: pt.itemBias, boost: 0.5 + zone.rarityBoost, minRarity: 'uncommon' });
+          cp.items.push(item);
+          cp.events.push(`  ↳ 精英掉落 ${RARITIES[item.rarity].name}「${item.name}」`);
+        }
+      } else {
+        cp.failed = true;
+        cp.events.push('  ↳ 戰鬥失敗，隊伍帶著部分物資撤退！');
+        Object.keys(cp.gained).forEach((key) => { cp.gained[key] *= 0.5; });
+        this.stopSearch(exp, at);
+        return;
+      }
+    }
+
+    // 3. 負重：超過運載量就停止探索、直接回家（帶不走的留在建築裡）
+    const weight = Object.entries(cp.gained).filter(([key]) => isLootKey(key)).reduce((sum, [key, v]) => sum + v * unitWeight(key), 0);
+    if (weight > ctx.carry) {
+      const ratio = ctx.carry / weight;
+      Object.keys(cp.gained).filter(isLootKey).forEach((key) => {
+        const keep = cp.gained[key] * ratio;
+        cp.overflow[key] = (cp.overflow[key] || 0) + (cp.gained[key] - keep);
+        cp.gained[key] = keep;
+      });
+      cp.overweight = true;
+      if (!last) {
+        cp.events.push(`🎒 ${tag}背包裝滿了（運載量 ${ctx.carry}），停止探索直接回家`);
+        this.stopSearch(exp, at);
+        return;
+      }
+      cp.events.push(`🎒 帶不動了！運載量 ${ctx.carry}，留下約 ${Math.round(weight - ctx.carry)} 重量的物資在建築裡（今天內可以再來拿，載具可以載更多）`);
+    }
+  }
+
+  /** 提早結束搜索：從檢核點直接回家 */
+  stopSearch(exp, at) {
+    const cp = exp.cp;
+    cp.stopped = true;
+    const searched = Math.max(0, at - exp.startAt - (exp.travelMs || 0));
+    exp.searchMs = searched;
+    exp.endAt = exp.startAt + (exp.travelMs || 0) * 2 + searched;
+    exp.auto = false;
+  }
+
+  /** 探索結束（完成、提早回家或中途召回）：把檢核點取得的物資帶回家 */
+  finishExplore(exp, { recalled = false } = {}) {
+    const poi = this.poi(exp.poiId);
+    const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+    const cp = exp.cp;
     const report = {
       id: uid('rp'), poiName: poi?.name || '未知地點', poiType: poi?.type, at: exp.endAt,
-      events: [...(exp.travelEvents || [])], resources: {}, items: [], blueprints: [],
-      kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: true, members: members.map((m) => m.name),
+      events: [...(exp.travelEvents || []), ...(cp?.events || [])], resources: {}, items: [], blueprints: [],
+      kills: (exp.travelKills || 0) + (cp?.kills || 0), xp: (exp.travelXp || 0) + (cp?.xp || 0),
+      success: !!cp && !cp.failed && !recalled, members: members.map((m) => m.name),
     };
     if (!poi || !members.length) {
       report.success = false;
       report.events.push('目標地點已消失。');
       return report;
     }
-    const pt = POI_TYPES[poi.type];
-    const zone = zoneAt(poi.lat, poi.lon);
-    const danger = this.game.zombies.areaDanger(poi);
-    const level = this.game.zombies.areaLevel(poi);
-    const phase = this.game.time.phase(exp.startAt);
-    const memberStats = members.map((m) => this.game.survivors.stats(m));
-    const fx = members.map((m) => this.game.survivors.skillEffects(m));
-    const lootMul = phase.lootMul * (1 + this.game.research.bonus('lootPct'))
-      * (1 + Math.max(0, ...fx.map((f) => f.lootPct || 0)))
-      * (1 + memberStats.reduce((s, x) => s + (x.lootBonus || 0), 0));
-    const forage = Math.max(0, ...fx.map((f) => f.forage || 0)) + this.game.research.bonus('forageAdd');
-    // 今日物資（抵達時判定）：已被搜刮過則為空，每天 00:00 重置
-    const arriveAt = exp.startAt + (exp.travelMs || 0);
-    const stock = stockOf(poi, arriveAt, this.game.state.map.remain);
-    const remaining = { ...stock.resources };
-    const itemMul = (1 + Math.max(0, ...fx.map((f) => f.itemPct || 0)) + this.game.research.bonus('itemFindPct')) * stock.itemMul;
-
-    const eventCount = Math.max(1, Math.round(exp.durationMin / 8));
-    const expectedLoot = Math.max(1, Math.round(eventCount * 0.46));
+    if (!cp || cp.done === 0) {
+      report.success = false;
+      report.events.push(recalled ? '🏠 隊伍回到避難所，還沒開始搜索，這趟沒有收穫。' : '🏠 隊伍回到避難所，這趟沒有收穫。');
+      return report;
+    }
+    const complete = cp.done >= cp.total && !cp.stopped && !recalled;
+    if (recalled) report.events.push(`↩️ 中途撤回（搜索 ${cp.done}/${cp.total}），帶回已經找到的物資`);
     const gained = {};
-    for (let i = 0; i < eventCount; i += 1) {
-      const ev = weightedPick({
-        loot: 46, zombies: 28 * phase.zombieMul, survivor: 5 * (1 + this.game.research.bonus('survivorFindPct')), special: 10, elite: 3 + danger * phase.danger,
-      });
-      if (ev === 'loot') {
-        // 從今日物資中搜刮一部分（數量受技能、研究、裝備加成）
-        const found = [];
-        Object.keys(remaining).forEach((k) => {
-          // 殘留物資已經整理好，一次就能全部找到
-          const take = stock.partial ? remaining[k] : Math.min(remaining[k], (stock.resources[k] / expectedLoot) * randFloat(0.8, 1.25));
-          if (take < 1) return;
-          remaining[k] -= take;
-          let v = take * lootMul;
-          if (k === 'food') v *= 1 + forage;
-          gained[k] = (gained[k] || 0) + v;
-          found.push(nameOf(k));
-        });
-        report.events.push(found.length ? `🔍 搜刮到 ${found.join('、')}` : '🕸️ 這裡已經被搜刮一空（每天 00:00 重置）');
-        if (stock.gear && chance(pt.itemChance * itemMul)) {
-          const item = this.game.equipment.generate({ level, bias: pt.itemBias, boost: danger * 0.05 + zone.rarityBoost });
-          report.items.push(item);
-          report.events.push(`🎁 找到 ${RARITIES[item.rarity].name}「${item.name}」`);
-        }
-        if (stock.vehicle) {
-          const find = this.game.vehicles.rollFind(poi.type);
-          if (chance(find.chance) && !this.game.vehicles.isFull()) {
-            report.vehicles = [...(report.vehicles || []), find.vehicle];
-            report.events.push(`🚗 找到一台還能用的 ${this.game.vehicles.def(find.vehicle).name}（耐久 ${find.vehicle.durability}）`);
-          }
-        }
-        if (!stock.empty && !stock.partial && chance(pt.blueprintChance * (1 + this.game.research.bonus('blueprintPct')))) {
-          const bp = this.game.equipment.makeBlueprint(level);
-          report.blueprints.push(bp);
-          report.events.push('📜 找到一張設計圖！');
-        }
-      } else if (ev === 'survivor') {
-        const cand = this.game.survivors.makeCandidate(randInt(1, Math.max(1, level - 1)));
-        const pool = this.game.state.recruitPool;
-        cand.leaveAt = Math.max(Date.now(), exp.endAt) + RECRUIT_STAY_MS;
-        if (pool.length < 5) pool.push(cand);
-        report.events.push(`🙋 遇到倖存者 ${cand.name}，對方願意加入（會在避難所附近等 1 小時，請到倖存者頁面確認）`);
-      } else if (ev === 'special') {
-        const sp = pick(SPECIAL_EVENTS);
-        report.events.push(`✨ ${sp.text}`);
-        Object.entries(sp.reward()).forEach(([k, v]) => { if (v) gained[k] = (gained[k] || 0) + v; });
-        if (sp.injure) {
-          const victim = pick(members);
-          this.game.survivors.damage(victim, this.game.survivors.maxHp(victim) * 0.3, '踩中陷阱', exp.endAt);
-        }
-      } else {
-        const isElite = ev === 'elite';
-        let enemies;
-        if (isElite) {
-          const enemyId = weightedPick(pt.enemies);
-          enemies = [this.game.combat.createEnemy(enemyId, level + 2, true)];
-          report.events.push(`⚠️ 遭遇精英怪 ${enemies[0].name}！`);
-        } else {
-          const n = randInt(2, 2 + danger);
-          enemies = Array.from({ length: n }, () => this.game.combat.createEnemy(weightedPick(pt.enemies), level));
-          report.events.push(`🧟 遭遇 ${n} 隻殭屍`);
-        }
-        const fs = this.game.shelter.primary().facilities.watchtower.level * 0.04;
-        const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs });
-        this.game.combat.applyOutcome(members, result, exp.endAt);
-        report.kills += result.kills.length;
-        report.xp += result.xp;
-        if (result.victory) {
-          report.events.push(`  ↳ 勝利！擊殺 ${result.kills.length}，獲得 ${result.coins} 金錢`);
-          if (isElite) {
-            const item = this.game.equipment.generate({ level: level + 2, bias: pt.itemBias, boost: 0.5 + zone.rarityBoost, minRarity: 'uncommon' });
-            report.items.push(item);
-            report.events.push(`  ↳ 精英掉落 ${RARITIES[item.rarity].name}「${item.name}」`);
-          }
-        } else {
-          report.success = false;
-          report.events.push('  ↳ 戰鬥失敗，隊伍帶著部分物資撤退！');
-          Object.keys(gained).forEach((k) => { gained[k] *= 0.5; });
-          break;
-        }
-      }
-    }
-
-    // 運載量（重量）：徒步每人有限，載具可以帶回更多；帶不走的物資留在建築裡（當天可再來拿）
-    const carry = exp.cargo || this.game.vehicles.personCarry() * members.length;
-    Object.keys(gained).forEach((k) => { gained[k] = Math.round(gained[k]); if (gained[k] <= 0) delete gained[k]; });
-    const loot = Object.fromEntries(Object.entries(gained).filter(([k]) => isLootKey(k)));
-    const weight = Object.entries(loot).reduce((sum, [k, v]) => sum + v * unitWeight(k), 0);
-    const leftBehind = {};
-    if (weight > carry) {
-      const ratio = carry / weight;
-      Object.keys(loot).forEach((k) => {
-        const keep = Math.floor(loot[k] * ratio);
-        leftBehind[k] = loot[k] - keep;
-        gained[k] = keep;
-        if (!keep) delete gained[k];
-      });
-      report.events.push(`🎒 帶不動了！運載量 ${carry}，留下約 ${Math.round(weight - carry)} 重量的物資在建築裡（今天內可以再來拿，載具可以載更多）`);
-    }
+    Object.entries(cp.gained).forEach(([k, v]) => { const n = Math.round(v); if (n > 0) gained[k] = n; });
     // 入帳：先放進倉庫，放不下的由隊員裝進自己的背包
     report.resources = this.game.grant(gained);
     const leftovers = Object.fromEntries(Object.entries(gained)
@@ -711,22 +799,37 @@ export class ExplorationSystem {
       Object.entries(leftovers).forEach(([k, v]) => { report.resources[k] = (report.resources[k] || 0) + v; });
       report.events.push(`📦 倉庫已滿：${kept} 個物資由隊員放進背包${lost ? `，${lost} 個帶不走被留下` : ''}`);
     }
-    // 裝備：先放倉庫，倉庫滿了由隊員裝進背包，都放不下就留在原地
-    report.items = report.items.filter((it) => {
+    report.items = cp.items.filter((it) => {
       const ok = this.game.equipment.addItem(it, '探索', members);
       if (!ok) report.events.push(`📦 空間不足，「${it.name}」帶不回來`);
       return ok;
     });
-    (report.vehicles || []).forEach((v) => this.game.vehicles.add(v, '探索'));
-    this.game.state.inventory.blueprints.push(...report.blueprints);
-    members.forEach((m) => this.game.survivors.gainXp(m, 4 + exp.durationMin));
-    // 探索過的建築物資清空，直到當地時間 00:00 重置；帶不走的部分殘留在建築裡
+    cp.vehicles.forEach((v) => this.game.vehicles.add(v, '探索'));
+    report.vehicles = cp.vehicles;
+    report.blueprints = cp.blueprints;
+    this.game.state.inventory.blueprints.push(...cp.blueprints);
+    members.forEach((m) => this.game.survivors.gainXp(m, Math.round((4 + exp.durationMin) * (cp.done / cp.total))));
+    // 建築的剩餘物資：完整探索完只剩帶不走的（會顯示數量）；沒探索完的剩餘物資留在建築裡，但不知道有多少
+    const arriveAt = exp.startAt + (exp.travelMs || 0);
     poi.lootedDay = dayKey(arriveAt);
-    this.setRemain(poi, leftBehind, arriveAt);
+    const overflow = Object.fromEntries(Object.entries(cp.overflow).map(([k, v]) => [k, Math.floor(v)]).filter(([, v]) => v > 0));
+    if (complete) this.setRemain(poi, overflow, arriveAt);
+    else {
+      const rest = { ...overflow };
+      Object.entries(cp.remaining).forEach(([k, v]) => { const n = Math.floor(v); if (n > 0) rest[k] = (rest[k] || 0) + n; });
+      this.setRemain(poi, rest, arriveAt, { hidden: true });
+    }
     delete poi.depletion;
     poi.lastVisit = exp.endAt;
     this.game.state.stats.explorations += 1;
     if (poi.type === 'forest') this.game.state.stats.forestVisits = (this.game.state.stats.forestVisits || 0) + 1;
     return report;
   }
+
+  /** 結算一次探索（補算檢核點後帶回物資） */
+  resolve(exp) {
+    this.runCheckpoints(exp, this.checkpointAt(exp, exp.cp?.total || this.checkpointCount(this.poi(exp.poiId) || {})));
+    return this.finishExplore(exp);
+  }
+
 }
