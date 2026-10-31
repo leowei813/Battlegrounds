@@ -103,23 +103,26 @@ export class ZombieSpawnSystem {
    * @returns {{ok:boolean, reason?:string, result?:object, loot?:object}}
    */
   /** 攻擊殭屍群（使用存檔種子） */
-  attack(groupId, memberIds) {
-    return withSeed(this.game.state.rng, 'battle', () => this.attackNow(groupId, memberIds));
+  attack(groupId, memberIds, opts = {}) {
+    return withSeed(this.game.state.rng, 'battle', () => this.attackNow(groupId, memberIds, opts));
   }
 
-  attackNow(groupId, memberIds) {
+  /**
+   * @param {{arrived?:boolean, at?:number}} [opts] arrived：派出的隊伍已抵達（隊員在外，不檢查是否在家）
+   */
+  attackNow(groupId, memberIds, { arrived = false, at = Date.now() } = {}) {
     const g = this.groups.find((x) => x.id === groupId);
     if (!g) return { ok: false, reason: '殭屍群已離開' };
-    if (!this.game.time.phase().zombies) return { ok: false, reason: '天亮了，殭屍已躲回建築內' };
+    if (!this.game.time.phase(at).zombies) return { ok: false, reason: '天亮了，殭屍已躲回建築內' };
     const members = memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
     if (!members.length) return { ok: false, reason: '請選擇隊員' };
     if (members.length > MAX_TEAM_SIZE) return { ok: false, reason: `隊伍最多 ${MAX_TEAM_SIZE} 人` };
-    if (members.some((m) => !this.game.survivors.isAvailable(m))) return { ok: false, reason: '有隊員無法出戰' };
+    if (!arrived && members.some((m) => !this.game.survivors.isAvailable(m))) return { ok: false, reason: '有隊員無法出戰' };
 
     const enemies = Array.from({ length: g.count }, () => this.game.combat.createEnemy(g.enemyId, g.level, g.elite));
     const firstStrike = this.game.shelter.primary().facilities.watchtower.level * 0.04;
     const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: firstStrike });
-    this.game.combat.applyOutcome(members, result);
+    this.game.combat.applyOutcome(members, result, at);
 
     const loot = { items: [] };
     if (result.victory) {

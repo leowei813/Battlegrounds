@@ -1402,6 +1402,27 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
   assert(afterOff > gf.state.resources.food, '離線一小時消耗的食物比在線少');
 }
 
+// ---- 29. v8.11：攻擊殭屍群需要移動時間 ----
+{
+  const gh = Game.newGame({ playerName: 'H', classId: 'warrior', lat: 25, lon: 121 });
+  gh.state.map.pois = fillPois([], 25, 121);
+  gh.shelter.establish(gh.state.map.pois[0]);
+  setHour(gh, 21);
+  gh.zombies.refresh();
+  const grp = gh.state.map.zombieGroups[0];
+  grp.count = 1;
+  grp.level = 1;
+  Object.assign(gh.survivors.leader(), { level: 30, hp: null, severe: false });
+  const r = gh.exploration.startHunt(grp.id, ['leader']);
+  assert(r.ok && r.exp.kind === 'hunt' && r.exp.travelMs > 0 && gh.survivors.leader().status === 'exploring', '派隊攻擊殭屍群會先移動');
+  assert(gh.state.map.zombieGroups.some((x) => x.id === grp.id), '出發時還沒有交戰');
+  gh.exploration.checkHunts(r.exp.startAt + r.exp.travelMs + 1);
+  assert(r.exp.huntDone && r.exp.huntResult.win && !gh.state.map.zombieGroups.some((x) => x.id === grp.id), `抵達後交戰並擊退殭屍群（${r.exp.huntResult.events}）`);
+  assert(gh.survivors.leader().status === 'exploring', '交戰後還要走回避難所');
+  const rep = gh.exploration.update(r.exp.endAt + 1, { silent: true })[0];
+  assert(rep && rep.success && gh.survivors.leader().status === 'idle', '返回避難所後結算報告');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

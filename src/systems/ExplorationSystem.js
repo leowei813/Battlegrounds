@@ -100,7 +100,7 @@ export class ExplorationSystem {
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   poi(id) {
     return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id)
-      || this.game.intercept?.asPoi(id) || null;
+      || this.game.intercept?.asPoi(id) || this.huntPoi(id) || null;
   }
 
   /**
@@ -181,7 +181,7 @@ export class ExplorationSystem {
     if (!v.ok) return v;
     if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'intercept' ? 0 : kind === 'raid' || kind === 'pvp' ? 5 : this.searchMinutes(v.poi);
+    durationMin = kind === 'intercept' || kind === 'hunt' ? 0 : kind === 'raid' || kind === 'pvp' ? 5 : this.searchMinutes(v.poi);
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
@@ -203,8 +203,10 @@ export class ExplorationSystem {
       path: plan.path, avoidHostile, threats,
       ...(v.poi.pvp ? { pvpTarget: v.poi } : {}),
       ...(v.poi.intercept ? { icptTarget: v.poi.target } : {}),
+      ...(v.poi.hunt ? { huntTarget: v.poi.target } : {}),
       vehicleIds: [...vehicleIds], cargo: plan.trip.cargo, ambushes: 0,
-      encountered: [], travelEvents: [], travelKills: 0, travelXp: 0,
+      // 攻擊目標的殭屍群不算途中遭遇
+      encountered: v.poi.hunt ? [v.poi.target.groupId] : [], travelEvents: [], travelKills: 0, travelXp: 0,
     };
     this.list.push(exp);
     const ride = car.vehicles.length ? `（${car.vehicles.map((x) => this.game.vehicles.def(x).icon).join('')}${plan.trip.fuel ? `・耗油 ${plan.trip.fuel}` : ''}）` : '';
@@ -238,6 +240,7 @@ export class ExplorationSystem {
   checkAmbushNow(now = Date.now()) {
     [...this.list].forEach((exp) => this.checkThreats(exp, now));
     this.game.intercept?.checkArrivals(now);
+    this.checkHunts(now);
     const out = [];
     const groups = this.game.state.map.zombieGroups;
     if (!groups.length) return out;
@@ -414,6 +417,7 @@ export class ExplorationSystem {
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
         const report = exp.defeated ? this.game.intercept.defeatedReport(exp)
+          : exp.kind === 'hunt' ? this.huntReport(exp)
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)
             : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp);
@@ -442,6 +446,76 @@ export class ExplorationSystem {
       this.game.bus.emit('expedition:done', reports);
     }
     return reports;
+  }
+
+  // ---------- 攻擊地圖上的殭屍群：移動 → 抵達交戰 → 返回 ----------
+
+  /** 殭屍群當成目的地：id = hunt:殭屍群ID */
+  huntPoi(id) {
+    if (!String(id).startsWith('hunt:')) return null;
+    this.huntCache = this.huntCache || new Map();
+    const t = this.huntCache.get(id) || this.list.find((e) => e.poiId === id)?.huntTarget;
+    return t && {
+      id, name: t.label, lat: t.lat, lon: t.lon, type: 'military', icon: '🧟', hunt: true, target: t,
+    };
+  }
+
+  /** 派隊攻擊殭屍群 */
+  startHunt(groupId, memberIds, opts = {}) {
+    const g = this.game.state.map.zombieGroups.find((x) => x.id === groupId);
+    if (!g) return { ok: false, reason: '殭屍群已離開' };
+    if (!this.game.time.phase().zombies) return { ok: false, reason: '天亮了，殭屍已躲回建築內' };
+    const id = `hunt:${groupId}`;
+    if (this.list.some((e) => e.poiId === id)) return { ok: false, reason: '已經有隊伍前往攻擊這群殭屍' };
+    this.huntCache = this.huntCache || new Map();
+    this.huntCache.set(id, { groupId, lat: g.lat, lon: g.lon, label: `🧟 ${this.game.zombies.groupLabel(g)}` });
+    return this.start(id, memberIds, 0, false, Date.now(), { ...opts, kind: 'hunt' });
+  }
+
+  /** 攻擊隊抵達殭屍群時交戰（線上每秒、離線結算時檢查） */
+  checkHunts(now = Date.now()) {
+    this.list.forEach((exp) => {
+      if (exp.kind !== 'hunt' || exp.huntDone) return;
+      const at = exp.startAt + (exp.travelMs || 0);
+      if (now >= at) this.huntArrive(exp, at);
+    });
+  }
+
+  huntArrive(exp, at) {
+    exp.huntDone = true;
+    const t = exp.huntTarget || {};
+    const r = this.game.zombies.attack(t.groupId, exp.memberIds, { arrived: true, at });
+    if (!r.ok) {
+      exp.huntResult = { win: false, missed: true, events: [`🏳️ 抵達時${r.reason}，撲空了。`] };
+      return;
+    }
+    const { result, loot } = r;
+    exp.travelKills = (exp.travelKills || 0) + result.kills.length;
+    exp.travelXp = (exp.travelXp || 0) + result.xp;
+    exp.huntResult = {
+      win: result.victory,
+      resources: loot.resources || {},
+      items: (loot.items || []).map((it) => ({ name: it.name, rarity: it.rarity })),
+      events: [result.victory
+        ? `⚔️ 擊退${t.label}！（擊殺 ${result.kills.length}，💰${result.coins}）`
+        : `💀 攻擊${t.label}失敗，隊伍撤退`],
+    };
+    const msg = result.victory ? `⚔️ 攻擊隊擊退了${t.label}` : `💀 攻擊隊被${t.label}擊退`;
+    this.game.log(msg, result.victory ? 'success' : 'danger');
+    this.game.toast(msg, result.victory ? 'success' : 'danger');
+    this.game.bus.emit('map:changed');
+  }
+
+  /** 攻擊殭屍群的隊伍返回時的報告 */
+  huntReport(exp) {
+    if (!exp.huntDone) this.huntArrive(exp, exp.startAt + (exp.travelMs || 0));
+    const r = exp.huntResult;
+    const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+    return {
+      id: uid('rp'), poiName: exp.huntTarget?.label || '殭屍群', poiType: 'military', at: exp.endAt,
+      events: [...(exp.travelEvents || []), ...r.events], resources: r.resources || {}, items: r.items || [], blueprints: [],
+      kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: !!r.win, members: members.map((m) => m.name),
+    };
   }
 
   /** 記錄建築內殘留的物資（地圖會顯示剩餘數量）；沒有殘留則清除 */
