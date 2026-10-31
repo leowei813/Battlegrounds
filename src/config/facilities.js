@@ -30,7 +30,7 @@ export const LUMBER_WOOD = 3;
 export const WORKBENCH = { wood: 3, nail: 0.5, screw: 0.5 };
 
 /** 修繕圍牆：每名修繕人員每秒修復的耐久，與每點耐久消耗的材料 */
-export const REPAIR = { hpPerSec: 1.5, cost: { wood: 0.12, nail: 0.02, scrap: 0.01 } };
+export const REPAIR = { hpPerSec: 1.5, cost: { wood: 0.09, nail: 0.006, scrap: 0.003 } };
 
 /** 前哨站只有防禦功能，只能建造這些設施 */
 export const OUTPOST_FACILITIES = ['wall', 'watchtower'];
