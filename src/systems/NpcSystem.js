@@ -174,11 +174,11 @@ export class NpcSystem {
     });
   }
 
-  /** 玩家據點的防禦強度（防禦塔與駐守人員） */
+  /** 玩家據點看起來的防禦強度（防禦塔與駐守人員的武器）；NPC 不知道據點還有沒有彈藥 */
   baseDefense(base) {
     const g = this.game;
     const guards = g.territory.garrison(base).list.reduce((s, sv) => s + g.survivors.stats(sv).power, 0);
-    return g.siege.of(base.id).defenseDps() * 8 + guards;
+    return g.siege.of(base.id).defenseDps({ apparent: true }) * 8 + guards;
   }
 
   /**

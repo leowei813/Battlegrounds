@@ -1190,6 +1190,16 @@ assert(migrated.version === 12 && migrated.bases.length === 1 && migrated.bases[
   z.y = WORLDC.WALL_R + 2;
   for (let i = 0; i < 30; i += 1) sd.step(0.1);
   assert(z.hp < 1e6, '近戰可以攻擊貼在圍牆上的殭屍');
+  // NPC 只看得到武器，不知道據點還有沒有彈藥
+  gd.state.supplies.ammo556 = 0;
+  const seenEmpty = gd.npcs.baseDefense(gd.shelter.primary());
+  gd.state.supplies.ammo556 = 999;
+  const seenFull = gd.npcs.baseDefense(gd.shelter.primary());
+  assert(seenEmpty === seenFull, `NPC 判斷是否繞路時不會知道彈藥存量（${seenEmpty} = ${seenFull}）`);
+  gd.state.supplies.ammo556 = 0;
+  const realEmpty = sd.defenseDps();
+  gd.state.supplies.ammo556 = 999;
+  assert(sd.defenseDps() > realEmpty, '實際防禦強度仍會因為沒有彈藥而下降');
 }
 
 // ---- 20. v8.2：開局材料足夠升級第一批設施 ----
