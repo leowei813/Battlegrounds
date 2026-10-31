@@ -1487,6 +1487,25 @@ assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[
   assert(gw.shelter.repairStatus().mode === 'noWood' && gw.shelter.wallHp(bw) === h, '沒有木材時無法修繕');
 }
 
+// ---- 33. v8.17.3：重新整理後屍潮波數不重算 ----
+{
+  const gn = Game.newGame({ playerName: 'N1', classId: 'warrior', lat: 25, lon: 121 });
+  gn.state.map.pois = fillPois([], 25, 121);
+  gn.shelter.establish(gn.state.map.pois[0]);
+  setHour(gn, 22);
+  const max = gn.civilization.maxWaves();
+  let seen = 0;
+  gn.bus.on('siege:wave', () => { seen += 1; });
+  for (let r = 0; r < 4; r += 1) {
+    for (let i = 0; i < 1200; i += 1) gn.siege.update(0.5);
+    // 模擬重新整理：屍潮狀態重建
+    gn.siege.sieges.clear();
+    const re = SaveManager.migrate(JSON.parse(JSON.stringify(gn.state)));
+    gn.state.bases = re.bases;
+  }
+  assert(seen <= max, `重新整理後同一晚的屍潮波數不重算（${seen}/${max} 波）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
