@@ -114,7 +114,7 @@ export class ShelterPanel {
         <div class="chips">${tabs}</div>
         <div class="stat-grid">
           <div class="wide"><small>圍牆（不會自行修復）</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}
-            <small class="muted block">🔨 修繕人員 ${g.shelter.repairers().length}・每秒 +${g.shelter.repairRate().toFixed(1)}・每 100 點耗 ${Object.entries(g.shelter.repairCostPerHp()).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name}${Math.round(v * 100)}`).join(' ')}${g.shelter.repairers().length ? '' : '（到倖存者頁指派「修繕圍牆」工作）'}</small></div>
+            <small class="muted block">🔨 修繕人員 ${g.shelter.repairers().length}・每秒 +${g.shelter.repairRate().toFixed(1)}・每 100 點耗 ${Object.entries(g.shelter.repairCostPerHp()).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name}${Math.round(v * 100)}`).join(' ')}${g.shelter.repairers().length ? '' : '（到倖存者頁指派「修繕圍牆」工作）'}</small>${this.repairWarn()}</div>
           <div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div>
           <div><small>來襲殭屍</small><b>${siege.zombies.length}</b></div>
           <div class="wide"><small>屍潮波次</small><b>${this.waveText(siege)}</b></div>
@@ -229,6 +229,15 @@ export class ShelterPanel {
         m.update(this.slotBody(base, slot));
       },
     });
+  }
+
+  /** 修繕狀態提示：缺零件改用純木材、木材不足無法修繕 */
+  repairWarn() {
+    const g = this.game;
+    const rs = g.shelter.repairStatus();
+    if (rs.mode === 'woodOnly') return `<small class="block" style="color:#ffb74d">⚠️ 缺少${rs.missing.map((k) => `${metaOf(k).icon}${metaOf(k).name}`).join('、')}，改用純木材修繕（每點耗木材 ×2、速度減半）</small>`;
+    if (rs.mode === 'noWood') return '<small class="neg block">⚠️ 木材不足，無法修繕圍牆</small>';
+    return '';
   }
 }
 
