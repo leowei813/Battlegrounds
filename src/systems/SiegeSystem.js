@@ -395,12 +395,15 @@ export class BaseSiege {
     }
   }
 
-  /** 估算用的攻擊力（不消耗彈藥）：沒有彈藥時只算近戰，且打得到的機會較少 */
-  meleeOrRangedAtk(sv) {
+  /**
+   * 估算用的攻擊力（不消耗彈藥）：沒有彈藥時只算近戰，且打得到的機會較少。
+   * @param {boolean} apparent 外人看到的強度：只看得到拿著什麼武器，不知道還有沒有彈藥
+   */
+  meleeOrRangedAtk(sv, apparent = false) {
     const s = this.game.survivors.stats(sv);
     const weapon = this.game.equipment.getItem(sv.equipment?.weapon);
     if (!weapon || !AMMO_FOR[weapon.type]) return s.atk * 0.5;
-    if (this.canShoot(sv)) return s.atk;
+    if (apparent || this.canShoot(sv)) return s.atk;
     return Math.max(1, s.atk - (this.game.equipment.itemStats(weapon).atk || 0)) * 0.5;
   }
 
@@ -534,8 +537,11 @@ export class BaseSiege {
     return out;
   }
 
-  /** 防禦總 DPS（離線估算與 UI 顯示） */
-  defenseDps() {
+  /**
+   * 防禦總 DPS（離線估算與 UI 顯示）
+   * @param {{apparent?:boolean}} [opts] apparent：從外面觀察到的強度（NPC 判斷是否繞路用，不知道彈藥存量）
+   */
+  defenseDps({ apparent = false } = {}) {
     const sh = this.game.shelter;
     const base = this.base;
     if (!base) return 0;
@@ -546,12 +552,12 @@ export class BaseSiege {
       const st = DEFENSES[d.type].stats(d.level);
       if (d.type === 'watchPost') {
         const sv = this.game.survivors.get(d.garrisonId);
-        if (sv) dps += this.meleeOrRangedAtk(sv) * st.garrisonMul * st.fireRate * mul * this.guardMul();
+        if (sv) dps += this.meleeOrRangedAtk(sv, apparent) * st.garrisonMul * st.fireRate * mul * this.guardMul();
       } else {
         dps += st.damage * st.fireRate * mul * this.typeMul(d.type) * (st.aoe ? 1.8 : 1) * (st.chain ? 2 : 1);
       }
     });
-    this.guards().forEach(({ sv }) => { dps += this.meleeOrRangedAtk(sv) * 0.6 * this.guardMul(); });
+    this.guards().forEach(({ sv }) => { dps += this.meleeOrRangedAtk(sv, apparent) * 0.6 * this.guardMul(); });
     return Math.round(dps);
   }
 
