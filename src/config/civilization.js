@@ -100,6 +100,9 @@ const SIZE_BY_TYPE = {
   garage: ['small', 'medium'],
   supermarket: ['medium', 'large'],
   forest: ['small', 'medium'],
+  pharmacy: ['small'],
+  recycling: ['medium', 'large'],
+  bakery: ['small'],
 };
 
 function hashString(s) {

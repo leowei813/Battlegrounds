@@ -2,7 +2,8 @@
  * 地圖建築類型（來源：OpenStreetMap 標籤；樹林為隨機生成的資源點）。
  * loot：每日物資的「類別」權重——
  *   food 食物、wood 木材、fuel 燃料、part 零件、fabric 布料、
- *   medLow 低階藥品（紗布、繃帶…）、med 各級藥品（含醫藥箱）、ammo 彈藥與箭矢
+ *   medLow 低階藥品（紗布、繃帶…）、medMid 中低階藥品（到抗生素、小型醫藥箱為止）、
+ *   med 各級藥品（含中大型醫藥箱）、ammo 彈藥與箭矢
  * itemChance：找到裝備的機率（0 = 不會出現裝備）；itemBias：裝備部位權重
  * enemies：遭遇敵人權重
  */
@@ -13,6 +14,7 @@ export const LOOT_CATS = {
   part: { name: '零件', icon: '🔩' },
   fabric: { name: '布料', icon: '🧵' },
   medLow: { name: '低階藥品', icon: '🩹' },
+  medMid: { name: '中低階藥品', icon: '💊' },
   med: { name: '藥品', icon: '💊' },
   ammo: { name: '彈藥／箭矢', icon: '🎯' },
   gear: { name: '裝備', icon: '🎁' },
@@ -97,6 +99,27 @@ export const POI_TYPES = {
     itemBias: { backpack: 3, legs: 2, armor: 1, shotgun: 1, crossbow: 1, melee: 2, boots: 2, gloves: 2 },
     enemies: { walker: 5, infected: 4, berserker: 1 },
   },
+  pharmacy: {
+    name: '藥局', icon: '💊', color: '#26a69a', danger: 1, amountMul: 1.6,
+    loot: { medLow: 7, medMid: 3 },
+    itemChance: 0, blueprintChance: 0.01,
+    itemBias: { accessory: 2, gloves: 1 },
+    enemies: { walker: 7, infected: 3 },
+  },
+  recycling: {
+    name: '回收站', icon: '♻️', color: '#8d6e63', danger: 2, amountMul: 1.3,
+    loot: { part: 6, fabric: 5 },
+    itemChance: 0, blueprintChance: 0.02,
+    itemBias: { melee: 2, gloves: 2, backpack: 1 },
+    enemies: { walker: 6, infected: 3, berserker: 1 },
+  },
+  bakery: {
+    name: '麵包店', icon: '🥖', color: '#ffb74d', danger: 1, amountMul: 1.5,
+    loot: { food: 10 },
+    itemChance: 0, blueprintChance: 0,
+    itemBias: { accessory: 1 },
+    enemies: { walker: 8, infected: 1 },
+  },
   forest: {
     name: '樹林', icon: '🌲', color: '#2e7d32', danger: 1, generated: true, amountMul: 1.6,
     loot: { wood: 10 },
@@ -111,5 +134,5 @@ export const POI_KEYS = Object.keys(POI_TYPES);
 /** 若 OSM 查不到某類型，每類程序化補足的最小數量（樹林全部隨機生成） */
 export const POI_MIN_PER_TYPE = {
   residential: 250, shop: 150, hospital: 30, school: 50, factory: 60,
-  gasStation: 50, police: 30, military: 20, warehouse: 60, garage: 30, supermarket: 15, forest: 70,
+  gasStation: 50, police: 30, military: 20, warehouse: 60, garage: 30, supermarket: 15, forest: 70, pharmacy: 25, recycling: 20, bakery: 30,
 };

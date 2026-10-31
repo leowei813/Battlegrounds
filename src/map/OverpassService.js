@@ -10,7 +10,7 @@ const ENDPOINTS = [
 ];
 
 const RESIDENTIAL = /^(apartments|residential|house|dormitory|terrace|detached|semidetached_house)$/;
-const SHOP_AMENITY = /^(restaurant|cafe|fast_food|food_court|marketplace|pharmacy|bank|convenience|bar|pub)$/;
+const SHOP_AMENITY = /^(restaurant|cafe|fast_food|food_court|marketplace|bank|convenience|bar|pub)$/;
 const SCHOOL_AMENITY = /^(school|university|college|kindergarten|library)$/;
 const MEDICAL = /^(hospital|clinic|doctors)$/;
 
@@ -19,6 +19,9 @@ const MEDICAL = /^(hospital|clinic|doctors)$/;
  * @returns {string|null}
  */
 export function classify(tags = {}) {
+  if (tags.amenity === 'pharmacy' || /^(chemist|pharmacy|medical_supply)$/.test(tags.shop || '') || tags.healthcare === 'pharmacy') return 'pharmacy';
+  if ((tags.amenity === 'recycling' && tags.recycling_type !== 'container') || tags.amenity === 'waste_transfer_station' || /^(scrap_yard|scrapyard)$/.test(tags.industrial || '') || /^(second_hand|scrap)$/.test(tags.shop || '') || tags.landuse === 'landfill') return 'recycling';
+  if (/^(bakery|pastry|confectionery)$/.test(tags.shop || '')) return 'bakery';
   if (MEDICAL.test(tags.amenity || '') || tags.healthcare === 'hospital' || tags.healthcare === 'clinic' || tags.building === 'hospital') return 'hospital';
   if (tags.amenity === 'police' || tags.amenity === 'fire_station') return 'police';
   if (tags.landuse === 'military' || tags.military) return 'military';
@@ -74,7 +77,7 @@ function amenityQuery(bbox, bigBbox) {
   return `[out:json][timeout:40];
 (
   nwr["shop"]${a};
-  nwr["amenity"~"^(hospital|clinic|doctors|school|university|college|kindergarten|library|fuel|charging_station|police|fire_station|car_wash|restaurant|cafe|fast_food|food_court|marketplace|pharmacy|bank|bar|pub)$"]${a};
+  nwr["amenity"~"^(hospital|clinic|doctors|school|university|college|kindergarten|library|fuel|charging_station|police|fire_station|car_wash|recycling|waste_transfer_station|restaurant|cafe|fast_food|food_court|marketplace|pharmacy|bank|bar|pub)$"]${a};
   nwr["healthcare"~"^(hospital|clinic)$"]${a};
   nwr["landuse"="military"]${big};
   nwr["military"]${big};
