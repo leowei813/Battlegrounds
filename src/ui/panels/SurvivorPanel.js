@@ -60,7 +60,7 @@ export class SurvivorPanel {
       <small class="muted block">滿級時：${fmtOdds(survivorRarityTable(10))}</small></div>`;
     const cap = g.survivors.housingBreakdown();
     const list = st.survivors.map((sv) => survivorCard(g, sv, {
-      actions: `${btn('詳情 / 裝備', 'detail', { id: sv.id }, { cls: 'btn-sm' })}${sv.severe && !g.survivors.isStarving() ? btn('💊 治療', 'heal', { id: sv.id }, { cls: 'btn-sm btn-primary', disabled: !g.survivors.medicines(sv).length }) : ''}${sv.isLeader ? '' : btn('🚪 驅逐', 'dismiss', { id: sv.id }, { cls: 'btn-sm btn-ghost', disabled: sv.status === 'exploring' })}`,
+      actions: `${btn('詳情 / 裝備', 'detail', { id: sv.id }, { cls: 'btn-sm' })}${g.survivors.hpOf(sv) < g.survivors.maxHp(sv) ? btn('💊 治療', 'heal', { id: sv.id }, { cls: 'btn-sm btn-primary', disabled: g.survivors.isStarving(), title: g.survivors.isStarving() ? '飢餓中無法治療' : '' }) : ''}${sv.isLeader ? '' : btn('🚪 驅逐', 'dismiss', { id: sv.id }, { cls: 'btn-sm btn-ghost', disabled: sv.status === 'exploring' })}`,
     })).join('');
     const { net } = g.resources.rates();
     return `<div class="panel-inner">
@@ -88,7 +88,7 @@ export class SurvivorPanel {
     if (action === 'pick') this.ui.result(g.survivors.pickRecruit(data.id));
     if (action === 'hire') this.ui.result(g.survivors.hireFromBoard(data.id));
     if (action === 'abandon' && confirm('放棄此次招募？已支付的費用不會退還。')) this.ui.result(g.survivors.abandonRecruit());
-    if (action === 'heal') this.ui.result(g.survivors.heal(data.id));
+    if (action === 'heal') this.openHeal(data.id);
     if (action === 'dismiss') this.confirmDismiss(data.id);
     if (action === 'detail') this.openDetail(data.id);
   }
@@ -129,8 +129,8 @@ export class SurvivorPanel {
         ${hpBar(g, sv)}
         ${progressBar(sv.xp / xpToNext(sv.level), 'xp', `XP ${sv.xp}/${xpToNext(sv.level)}`)}
         <div class="stat-line">${statLine({ hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, critDmg: s.critDmg - 1, dodge: s.dodge })}<span>攻速 ${s.atkSpeed}</span></div>
-        ${hurt ? `<div class="row-between ${sv.severe ? 'warn' : ''}">${sv.severe ? '🩸 重傷：無法行動，生命回到 30% 才能脫離' : '🩹 受傷：生命會自然恢復'}${starving ? '<span class="tag tag-red">🍽️ 飢餓中無法治療</span>' : ''}</div>
-        ${starving ? '' : this.medsHtml(sv)}` : ''}
+        ${hurt ? `<div class="heal-box ${sv.severe ? 'warn' : ''}"><div class="row-between">${sv.severe ? '🩸 重傷：無法行動，生命回到 30% 才能脫離' : '🩹 受傷：生命會自然恢復'}${starving ? '<span class="tag tag-red">🍽️ 飢餓中無法治療</span>' : ''}</div>
+        ${starving ? '' : `<div class="label">💊 治療：選擇要使用的藥品</div>${this.medsHtml(sv)}`}</div>` : ''}
         <h4>技能</h4><ul class="skill-list">${skills}</ul>
         <h4>工作指派 <small class="muted">（閒置在避難所時生效）</small></h4><div class="chips">${jobs}</div>
         <h4>裝備</h4><div class="equip-grid">${slots}</div>
@@ -139,12 +139,43 @@ export class SurvivorPanel {
       </div>`;
   }
 
-  /** 可使用的藥品：每種藥品回復不同比例的生命（大型醫藥箱 100%） */
+  /** 可使用的藥品：每種藥品回復不同比例的生命（大型醫藥箱 100%），由玩家選擇要用哪一種 */
   medsHtml(sv) {
     const g = this.game;
     const meds = g.survivors.medicines(sv).filter((m) => m.bag > 0 || g.survivors.atShelter(sv));
-    if (!meds.length) return '<p class="muted">沒有藥品可用（探索住宅、商店、醫院可找到紗布、繃帶、醫藥箱等）。</p>';
-    return `<div class="chips">${meds.map((m) => btn(`${m.icon} ${m.name} +${Math.round(g.survivors.healAmount(sv, m.key))}（${m.bag ? `身上 ${m.bag}` : ''}${m.bag && m.store ? '・' : ''}${m.store ? `倉庫 ${m.store}` : ''}）`, 'heal', { key: m.key }, { cls: 'btn-xs' })).join('')}</div>`;
+    if (!meds.length) return `<p class="muted">沒有可用的藥品${g.survivors.atShelter(sv) ? '' : '（不在避難所時只能用身上帶的）'}。探索住宅、商店、超市、醫院可找到紗布、繃帶、醫藥箱等。</p>`;
+    const lost = g.survivors.maxHp(sv) - g.survivors.hpOf(sv);
+    return `<div class="med-list">${meds.map((m) => {
+      const amt = Math.round(g.survivors.healAmount(sv, m.key));
+      const where = [m.bag ? `身上 ${m.bag}` : '', m.store && g.survivors.atShelter(sv) ? `倉庫 ${m.store}` : ''].filter(Boolean).join('・');
+      return `<button class="med-btn" data-action="heal" data-key="${m.key}">
+        <span class="med-icon">${m.icon}</span><span class="grow"><b>${m.name}</b><small class="muted block">回復 ${Math.round(m.heal * 100)}%（+${amt}${amt > lost ? `，會溢出 ${amt - Math.round(lost)}` : ''}）・${where}</small></span></button>`;
+    }).join('')}</div>`;
+  }
+
+  /** 治療彈窗：選擇藥品；生命回滿後自動關閉 */
+  openHeal(id) {
+    const g = this.game;
+    const body = () => {
+      const sv = g.survivors.get(id);
+      if (!sv) return '<p class="muted">找不到倖存者</p>';
+      return `${hpBar(g, sv)}
+        ${g.survivors.isStarving() ? '<p class="tag tag-red">🍽️ 飢餓中無法治療，請先補充食物</p>' : this.medsHtml(sv)}`;
+    };
+    this.ui.modal.open({
+      title: `💊 治療：${escapeHtml(g.survivors.get(id)?.name || '')}`,
+      body: body(),
+      onAction: (action, data, m) => {
+        if (action !== 'heal') return;
+        const r = this.ui.result(g.survivors.heal(id, data.key));
+        const sv = g.survivors.get(id);
+        if (r.ok && sv && g.survivors.hpOf(sv) >= g.survivors.maxHp(sv)) {
+          m.close();
+          return;
+        }
+        m.update(body());
+      },
+    });
   }
 
   /**
