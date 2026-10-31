@@ -24,7 +24,8 @@ const mat = (key, tags, base, lv) => {
 
 /** 生產設施每級的每小時產量（生產只是輔助，主要物資需靠探索） */
 export const FARM_FOOD = 7;
-export const RAIN_MEDICINE = 0.5;
+/** 伐木場每級每小時產出木材（產量低，比不上直接探索樹林） */
+export const LUMBER_WOOD = 3;
 /** 工作台每級每小時產出（木材，以及少量基礎零件） */
 export const WORKBENCH = { wood: 3, nail: 0.5, screw: 0.5 };
 
@@ -71,11 +72,11 @@ export const FACILITIES = {
     cost: (lv) => mat('generator', ['elec', 'mech'], { metal: 100, fuel: 30 }, lv),
     effectText: (lv) => `全生產 +${lv * 6}%，耗燃料 ${lv * 2}/時`,
   },
-  rainCollector: {
-    name: '雨水收集器', icon: '💧', startLevel: 0,
-    desc: '淨水灌溉農場並可製作簡易藥品。',
-    cost: (lv) => mat('rainCollector', ['mech'], { wood: 60, cloth: 40, metal: 20 }, lv),
-    effectText: (lv) => `農場 +${lv * 10}%，藥品 +${(lv * RAIN_MEDICINE).toFixed(1)}/時`,
+  lumberMill: {
+    name: '伐木場', icon: '🪓', startLevel: 0,
+    desc: '持續砍伐產出少量木材（產量不高，大量木材仍需到樹林探索）。',
+    cost: (lv) => mat('lumberMill', ['mech', 'struct'], { wood: 40, metal: 40, cloth: 10 }, lv),
+    effectText: (lv) => `木材 +${lv * LUMBER_WOOD}/時`,
   },
   workbench: {
     name: '工作台', icon: '🛠️', startLevel: 0,

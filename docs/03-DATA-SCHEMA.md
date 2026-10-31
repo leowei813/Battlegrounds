@@ -85,7 +85,7 @@
   "createdAt": 0,
   "facilities": {               // key 對應 config/facilities.js
     "wall": { "level": 1 }, "warehouse": { "level": 1 }, "watchtower": { "level": 0 },
-    "farm": { "level": 1 }, "generator": { "level": 0 }, "rainCollector": { "level": 0 },
+    "farm": { "level": 1 }, "generator": { "level": 0 }, "lumberMill": { "level": 0 },
     "workbench": { "level": 1 }, "researchCenter": { "level": 0 }
   },
   "defenses": [                 // 固定 8 個槽位

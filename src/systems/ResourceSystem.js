@@ -1,6 +1,6 @@
 import { RESOURCE_KEYS } from '../config/constants.js';
 import {
-  storageCap, FARM_FOOD, RAIN_MEDICINE, WORKBENCH,
+  storageCap, FARM_FOOD, LUMBER_WOOD, WORKBENCH,
 } from '../config/facilities.js';
 import { JOBS, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE } from '../config/survivors.js';
 import { isSupply } from '../config/supplies.js';
@@ -45,10 +45,9 @@ export class ResourceSystem {
     st.bases.filter((b) => b.kind !== 'outpost').forEach((b) => {
       const f = b.facilities;
       const mul = genOn ? 1 + f.generator.level * 0.06 * (1 + (rb.generatorPct || 0)) : 1;
-      const rain = 1 + (rb.rainPct || 0);
       const wb = 1 + (rb.workbenchPct || 0);
-      gross.food += f.farm.level * (FARM_FOOD + (rb.farmFlat || 0)) * (1 + f.rainCollector.level * 0.1 * rain) * mul;
-      gross.gauze += f.rainCollector.level * RAIN_MEDICINE * rain * mul;
+      gross.food += f.farm.level * (FARM_FOOD + (rb.farmFlat || 0)) * mul;
+      gross.wood += (f.lumberMill?.level || 0) * (LUMBER_WOOD + (rb.lumberFlat || 0)) * (1 + (rb.lumberPct || 0)) * mul;
       Object.entries(WORKBENCH).forEach(([k, v]) => { gross[k] += f.workbench.level * v * wb * mul; });
       if (genOn) upkeep.fuel += f.generator.level * 2 * Math.max(0.3, 1 - (rb.generatorFuelReduce || 0));
     });
