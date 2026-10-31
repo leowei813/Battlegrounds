@@ -213,6 +213,27 @@ export class SurvivorSystem {
     return { xp: loss, levelDown: true };
   }
 
+  /** 醫生的照護速度（每分鐘最大生命比例）：比診療室慢，醫生等級越高越快 */
+  medicRate(medic) {
+    return medic ? VITALS.medicCarePctPerMin * (1 + (medic.level - 1) * 0.03) : 0;
+  }
+
+  /** 身邊能照顧這位倖存者的醫生（不含自己、不能是重傷者）：在據點時找據點內的醫生，外出時找同一支隊伍的醫生 */
+  caringMedic(sv) {
+    const out = sv.status === 'exploring';
+    const team = out ? this.game.state.expeditions.find((e) => e.memberIds.includes(sv.id))?.memberIds || [] : null;
+    return this.list.filter((m) => m.id !== sv.id && m.classId === 'medic' && !m.severe
+      && (out ? team.includes(m.id) : m.status !== 'exploring'))
+      .sort((a, b) => b.level - a.level)[0] || null;
+  }
+
+  /** 這位倖存者目前的回復速度：據點內＝診療室＋醫生照護；外出＝隊伍中醫生的照護 */
+  healRate(sv) {
+    const medic = this.medicRate(this.caringMedic(sv));
+    if (sv.status === 'exploring') return medic;
+    return this.clinicRate() + medic;
+  }
+
   /** 診療室的休息回復速度（每分鐘最大生命比例） */
   clinicRate() {
     return clinicRegen(this.game.shelter.maxLevel('clinic'));
@@ -233,16 +254,13 @@ export class SurvivorSystem {
     const fedMin = Math.max(0, dtMs - starvingMs) / 60000;
     const starveMin = Math.min(dtMs, starvingMs) / 60000;
     const regenMul = this.regenMul();
-    const clinic = this.clinicRate();
     [...this.list].forEach((sv) => {
       const max = this.maxHp(sv);
       let hp = this.hpOf(sv);
-      // 有食物的時段：只有在據點內休息時才會回復（需要診療室；重傷者沒有診療室也會極慢地恢復）
+      // 有食物的時段：在據點有診療室、或身邊有醫生（據點內或同一支隊伍）時才會回復
       if (fedMin > 0) {
-        const resting = sv.status !== 'exploring';
-        const rate = !resting ? 0 : sv.severe
-          ? Math.max(VITALS.severeBaseRegenPctPerMin, clinic * VITALS.severeClinicMul) * (1 + this.game.research.bonus('severeRegenPct'))
-          : clinic;
+        const base = this.healRate(sv);
+        const rate = sv.severe ? base * VITALS.severeClinicMul * (1 + this.game.research.bonus('severeRegenPct')) : base;
         hp = Math.min(max, hp + max * rate * regenMul * fedMin);
         sv.zeroSince = 0;
         if (sv.severe && hp >= max * VITALS.severeRecoverRatio) {

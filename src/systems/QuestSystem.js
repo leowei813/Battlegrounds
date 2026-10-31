@@ -59,7 +59,19 @@ export class QuestSystem {
 
   ensureDaily() {
     const key = todayKey();
-    if (this.state.dailyDate === key) return;
+    if (this.state.dailyDate === key) {
+      // 已移除的每日任務（例如研究、守夜）換成新的
+      const valid = (id) => DAILY_POOL.some((x) => x.id === id);
+      const bad = (this.state.dailies || []).filter((d) => !valid(d.id));
+      if (bad.length) {
+        const pool = DAILY_POOL.filter((x) => !this.state.dailies.some((d) => d.id === x.id));
+        this.state.dailies = this.state.dailies.map((d) => {
+          if (valid(d.id) || !pool.length) return d;
+          return { id: pool.splice(Math.floor(Math.random() * pool.length), 1)[0].id, baseline: { ...this.game.state.stats }, claimed: false };
+        }).filter((d) => valid(d.id));
+      }
+      return;
+    }
     const pool = [...DAILY_POOL];
     const picks = [];
     while (picks.length < DAILY_COUNT && pool.length) {

@@ -329,6 +329,26 @@ assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[
   leader.status = 'exploring';
   sv.updateVitals(Date.now(), 30 * 60000, 0);
   assert(Math.abs(sv.hpOf(leader) - sv.maxHp(leader) * 0.5) < 1, '在外探索時不會回復');
+  // 醫生：在據點或同一支隊伍中會照顧隊友（比診療室慢）
+  const doc = sv.makeCandidate(5);
+  Object.assign(doc, { classId: 'medic', id: 'doc1', status: 'exploring' });
+  gv.state.survivors.push(doc);
+  gv.state.expeditions.push({ id: 'exDoc', memberIds: [leader.id, doc.id], kind: 'explore' });
+  const hOut = sv.hpOf(leader);
+  sv.updateVitals(Date.now(), 30 * 60000, 0);
+  const outGain = sv.hpOf(leader) - hOut;
+  assert(outGain > 0, '隊伍中有醫生時，外出也會慢慢回復');
+  gv.state.expeditions = gv.state.expeditions.filter((e) => e.id !== 'exDoc');
+  leader.status = 'idle';
+  doc.status = 'idle';
+  gv.shelter.primary().facilities.clinic.level = 0;
+  sv.setHp(leader, sv.maxHp(leader) * 0.5);
+  sv.updateVitals(Date.now(), 30 * 60000, 0);
+  const docGain = sv.hpOf(leader) - sv.maxHp(leader) * 0.5;
+  assert(docGain > 0 && sv.medicRate(doc) < (await import('../src/config/facilities.js')).clinicRegen(1), '沒有診療室但據點有醫生時也會回復，速度比診療室慢');
+  gv.state.survivors = gv.state.survivors.filter((x) => x.id !== doc.id);
+  gv.shelter.primary().facilities.clinic.level = 5;
+  leader.status = 'exploring';
   leader.status = 'idle';
   const h1 = sv.hpOf(leader);
   sv.updateVitals(Date.now(), 10 * 60000, 0);
@@ -1189,7 +1209,11 @@ assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[
     if (q.cond.key) assert(STAT_KEYS.includes(q.cond.key), `任務 ${q.id} 的統計 ${q.cond.key} 存在`);
     Object.keys(q.reward).forEach((k) => assert(['coins', 'parts', 'food', 'wood', 'fuel', 'item'].includes(k) || SUPPLY_KEYS.includes(k), `任務 ${q.id} 獎勵 ${k} 有效`));
   });
-  assert(AC.length >= 29 && DP.length >= 11, `任務與成就增加（每日 ${DP.length}、成就 ${AC.length}）`);
+  assert(AC.length >= 29 && DP.length >= 6, `任務與成就增加（每日 ${DP.length}、成就 ${AC.length}）`);
+  assert(!DP.some((d) => ['researchDone', 'upgrades', 'itemsFound', 'healed', 'siegeKills'].includes(d.cond.key)), '每日任務不放受時間、運氣或夜晚限制的目標');
+  gc.state.quests.dailies[0].id = 'd_research';
+  gc.quests.ensureDaily();
+  assert(gc.state.quests.dailies.length === 4 && gc.state.quests.dailies.every((d) => DP.some((x) => x.id === d.id)), '今天已經抽到的舊每日任務會被換掉');
   const old = JSON.parse(JSON.stringify(gc.state));
   old.version = 11;
   old.quests.mainIndex = 5; // 舊版第 6 個主線（m6 清理街道）
