@@ -290,7 +290,7 @@ v12 起金屬、布料、藥品不再是基本資源，改為 `supplies` 內的�
 | `quests.chestDate` | 日期字串 | 今天是否已開啟每日物資箱 |
 | `stats` | `healed`, `ammoCrafted`, `intercepts`, `chestsOpened`, `forestVisits` | 新任務與成就使用的統計 |
 | `prodAcc`, `repairAcc` | `{ 材料ID: 小數 }` | 生產與修繕的材料小數累積（滿 1 個才增減） |
-| 公開資料 `trips[]` | `id`, `level` | 讓其他玩家可以點選並攔截隊伍 |
+| 公開資料 `trips[]` | `id`, `level`, `defeated` | 讓其他玩家可以點選並攔截隊伍；`defeated` 為被擊敗撤回中（不能攔截、不顯示時間） |
 | 事件信箱 | `intercept`, `plunder` | 攔截結果與戰利品（需重新執行 `supabase/schema.sql`） |
 
 **v11 → v12 遷移**：`resources.metal / cloth / medicine`（含隊員背包、NPC 資源）依比例換算成螺絲、釘子、廢鐵、螺栓、電線、鐵板、粗布、棉布、麻布、繃帶、紗布；主線任務進度依任務 ID 換算到新的位置。

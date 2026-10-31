@@ -98,6 +98,7 @@ export class MapPanel {
           intro: `<p class="muted">守軍 Lv${n.level}・建議戰力 ${Math.round(g.npcs.power(n))} 以上。帶載具可以搬走更多物資。</p>`,
           vehicles: true,
           distanceM: sh ? haversine(sh.lat, sh.lon, n.lat, n.lon) : 0,
+          trip: { poi: g.npcs.asPoi(n.id), searchMin: 5, searchLabel: '攻打' },
           routeOption: true,
           confirmLabel: '進攻！',
           onConfirm: (ids, _dur, _auto, vids, opts) => {
@@ -229,6 +230,7 @@ export class MapPanel {
       vehicles: true,
       routeOption: true,
       distanceM: sh ? haversine(sh.lat, sh.lon, b.lat, b.lon) : 0,
+      trip: { poi: g.territory.asPoi(poiId), searchMin: 5, searchLabel: '突襲' },
       confirmLabel: '出發突襲！',
       onConfirm: (ids, _dur, _auto, vids, opts) => {
         const r = this.ui.result(g.exploration.start(poiId, ids, 5, false, Date.now(), { vehicleIds: vids, kind: 'pvp', ...opts }));
@@ -334,6 +336,7 @@ export class MapPanel {
           intro: `<p class="muted">對方 ${t.members} 人、約 Lv${t.level}。帶載具可以更快追上。</p>`,
           vehicles: true,
           distanceM: dist,
+          trip: { poi: { id: t.id, lat: t.lat, lon: t.lon, type: 'military', intercept: true }, searchMin: 0 },
           confirmLabel: '出發攔截！',
           onConfirm: (ids, _dur, _auto, vids) => {
             const r = this.ui.result(g.intercept.start(team, ids, { vehicleIds: vids }));
@@ -475,12 +478,12 @@ export class MapPanel {
     openTeamPicker(this.ui, {
       title: `🧭 探索：${poi.name}`,
       intro: `<p class="muted">${POI_TYPES[poi.type].name}・危險度 ${stars(g.zombies.areaDanger(poi))}・敵人等級約 Lv${g.zombies.areaLevel(poi)}</p>
-        <p class="muted">🔍 搜索時間 ${g.exploration.searchMinutes(poi)} 分鐘（依地點大小與危險度；偵察兵、裝備、研究與隊員人數可縮短）</p>`,
+        <p class="muted">🔍 基本搜索時間 ${g.exploration.searchMinutes(poi)} 分鐘（依地點大小與危險度；偵察兵、裝備、研究與隊員人數可縮短）。移動時間依距離、隊員速度與載具另外計算。</p>`,
       withDuration: true,
       fixedDuration: true,
       vehicles: true,
       distanceM: g.shelter.primary() ? haversine(g.shelter.primary().lat, g.shelter.primary().lon, poi.lat, poi.lon) : 0,
-      estimate: (ids, dur, vids) => g.exploration.actualDurationMs(poi, ids.map((id) => g.survivors.get(id)), g.exploration.searchMinutes(poi), Date.now(), vids.map((id) => g.vehicles.get(id))),
+      trip: { poi, searchMin: g.exploration.searchMinutes(poi) },
       routeOption: true,
       confirmLabel: '出發！',
       onConfirm: (ids, dur, auto, vids, opts) => {

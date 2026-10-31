@@ -46,7 +46,7 @@ export class InterceptSystem {
     }
     const p = (g.world?.others || []).find((x) => x.id === team.playerId);
     const trip = p?.trips.find((t) => t.id === team.tripId);
-    if (!p || !trip || trip.endAt <= now) return null;
+    if (!p || !trip || trip.defeated || trip.endAt <= now) return null;
     const pos = tripProgress(trip, now).pos;
     return {
       kind: 'player', id: `icpt:pl:${p.id}:${trip.id}`, playerId: p.id, tripId: trip.id, endAt: trip.endAt,
