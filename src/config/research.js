@@ -92,7 +92,8 @@ export const RESEARCH = {
   m_starve: r('medical', 3, '耐飢體質', '飢餓時扣血變慢', { starveResist: 0.05 }, { req: [['m_hp', 3]] }),
   // ---- 農業 ----
   a_food: r('agriculture', 1, '輪作', '農場食物產量提升', { foodPct: 0.04 }),
-  a_rain: r('agriculture', 1, '淨水', '雨水收集器效果提升', { rainPct: 0.06 }),
+  a_lumber: r('agriculture', 1, '伐木技術', '伐木場木材產量提升', { lumberPct: 0.05 }),
+  a_forestry: r('agriculture', 2, '林業管理', '每級伐木場額外產出木材', { lumberFlat: 0.2 }, { req: [['a_lumber', 2]] }),
   a_ration: r('agriculture', 2, '配給制度', '每人消耗的食物減少', { foodUpkeepReduce: 0.03 }, { req: [['a_food', 2]] }),
   a_forage: r('agriculture', 2, '野外覓食', '探索時食物收穫提升', { forageAdd: 0.05 }),
   a_fuel: r('agriculture', 3, '生質燃料', '每小時產出燃料', { fuelPerHour: 0.3 }, { req: [['a_food', 3]] }),
@@ -182,7 +183,7 @@ const LABELS = {
   wallReduceAdd: (v) => `圍牆減傷 +${pct(v)}`, guardDmgPct: (v) => `駐守傷害 +${pct(v)}`, raidDefensePct: (v) => `防禦 NPC +${pct(v)}`,
   offlineDefPct: (v) => `離線擊殺 +${pct(v)}`, regenPct: (v) => `回復 +${pct(v)}`, healPct: (v) => `治療量 +${pct(v)}`,
   healCostReduce: (v) => `不消耗藥品機率 ${pct(Math.min(0.5, v))}`, medicinePerHour: (v) => `紗布 +${v.toFixed(1)}/時`, severeRegenPct: (v) => `重傷回復 +${pct(v)}`,
-  starveResist: (v) => `飢餓扣血 −${pct(v)}`, foodPct: (v) => `食物 +${pct(v)}`, rainPct: (v) => `雨水收集器 +${pct(v)}`,
+  starveResist: (v) => `飢餓扣血 −${pct(v)}`, foodPct: (v) => `食物 +${pct(v)}`, lumberPct: (v) => `伐木場產量 +${pct(v)}`, lumberFlat: (v) => `每級伐木場木材 +${v.toFixed(1)}/時`,
   foodUpkeepReduce: (v) => `食物消耗 −${pct(v)}`, forageAdd: (v) => `探索食物 +${pct(v)}`, fuelPerHour: (v) => `燃料 +${v.toFixed(1)}/時`,
   farmFlat: (v) => `每級農場食物 +${v.toFixed(1)}/時`, workbenchPct: (v) => `工作台產量 +${pct(v)}`, storagePct: (v) => `消耗品上限 +${pct(v)}`,
   dismantlePct: (v) => `拆解材料 +${pct(v)}`, sellPct: (v) => `出售金錢 +${pct(v)}`, generatorPct: (v) => `發電加成 +${pct(v)}`,

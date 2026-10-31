@@ -9,7 +9,7 @@ import { bus, EVT } from '../core/EventBus.js';
 const MAX_SLOTS = Math.max(...Object.values(BASE_SIZES).map((s) => s.slots));
 /** 圍牆就是底圖上的城牆，不佔格子 */
 const FACILITY_IDS = Object.keys(FACILITIES).filter((id) => id !== 'wall');
-/** 共用圖片：監視塔（設施）使用瞭望台的圖 */
+/** 共用圖片：探照燈（設施）使用瞭望台的圖 */
 const IMAGE_ALIAS = { watchtower: 'watchPost' };
 const imageKey = (id) => `bld-${IMAGE_ALIAS[id] || id}`;
 
@@ -176,7 +176,7 @@ export class ShelterScene extends Phaser.Scene {
     const top = this.toScreen([BASE_IMAGE_SIZE.w / 2, 0]);
     this.nameText.setPosition(this.cx, top.y + 14).setText(`${core.shelter.isPrimary(sh) ? '⭐ ' : '🏴 '}${sh.name}（${BASE_SIZES[size].name}）`);
 
-    // 一般設施：已建造的正常顯示，尚未建造的半透明；前哨站只有圍牆與監視塔
+    // 一般設施：已建造的正常顯示，尚未建造的半透明；前哨站只有圍牆與探照燈
     const cellSize = Math.max(14, Math.round(52 * this.k));
     FACILITY_IDS.forEach((id, i) => {
       const o = this.facObjs[i];

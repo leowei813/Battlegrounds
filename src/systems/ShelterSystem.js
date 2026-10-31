@@ -16,7 +16,7 @@ import { canAfford, payCost, scaleCost } from './costUtils.js';
 /**
  * 據點系統：
  *  - 避難所（只能一座）：倖存者居住、生產、探索出發、駐守倖存者防衛的地方。
- *  - 前哨站（研究「前哨站」科技解鎖，最多 3 座）：只有圍牆、監視塔與防禦建築，不能生產。
+ *  - 前哨站（研究「前哨站」科技解鎖，最多 3 座）：只有圍牆、探照燈與防禦建築，不能生產。
  * 每個據點有自己的設施、防禦建築、圍牆與施工佇列；據點可以放棄，退還 25% 建造資源。
  *
  * 大多數方法第一個參數為據點（物件或 ID），省略時代表避難所。
@@ -77,7 +77,7 @@ export class ShelterSystem {
 
   // ---------- 跨據點彙總 ----------
 
-  /** 該設施的等級（研究中心、工作台等只在避難所運作；圍牆、監視塔取所有據點最高） */
+  /** 該設施的等級（研究中心、工作台等只在避難所運作；圍牆、探照燈取所有據點最高） */
   maxLevel(fid) {
     const bases = OUTPOST_FACILITIES.includes(fid) ? this.bases : this.bases.filter((b) => b.kind !== 'outpost');
     return bases.reduce((m, b) => Math.max(m, b.facilities[fid].level), 0);

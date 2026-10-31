@@ -115,7 +115,7 @@ export class CombatSystem {
     const log = [];
     const push = (t, msg, type = '') => { if (log.length < 140) log.push({ t: +t.toFixed(1), msg, type }); };
 
-    // 先手：監視塔加成讓隊伍首輪攻擊提前
+    // 先手：探照燈加成讓隊伍首輪攻擊提前
     if (chance(opts.firstStrikeBonus || 0)) {
       team.forEach((u) => { u.cd = 0; });
       push(0, '🗡️ 偵查成功，隊伍取得先手！', 'info');

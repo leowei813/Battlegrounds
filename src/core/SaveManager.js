@@ -248,6 +248,21 @@ export class SaveManager {
       const now = Date.now();
       data.createdAt = now - Math.max(0, now - data.createdAt) * 2;
     }
+    // v14：雨水收集器改為伐木場（保留等級），淨水科技改為伐木技術
+    if (v < 14) {
+      (data.bases || []).forEach((b) => {
+        const f = b.facilities;
+        if (f && !f.lumberMill) f.lumberMill = { level: f.rainCollector?.level || 0 };
+        if (f) delete f.rainCollector;
+        (b.buildQueue || []).forEach((q) => { if (q.id === 'rainCollector') q.id = 'lumberMill'; });
+      });
+      const rs = data.research;
+      if (rs?.levels && 'a_rain' in rs.levels) {
+        rs.levels.a_lumber = Math.max(rs.levels.a_lumber || 0, rs.levels.a_rain);
+        delete rs.levels.a_rain;
+      }
+      if (rs?.active?.id === 'a_rain') rs.active.id = 'a_lumber';
+    }
     data.supplies = data.supplies || {};
     data.defenseLog = data.defenseLog || [];
     if (data.map) {

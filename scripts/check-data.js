@@ -11,7 +11,7 @@ import { DEFENSES } from '../src/config/defenses.js';
 import { POI_TYPES } from '../src/config/poiTypes.js';
 import { ALL_ENEMIES } from '../src/config/enemies.js';
 import { MAIN_QUESTS, DAILY_POOL, ACHIEVEMENTS } from '../src/config/quests.js';
-import { FACILITIES } from '../src/config/facilities.js';
+import { FACILITIES, LUMBER_WOOD } from '../src/config/facilities.js';
 import {
   RARITIES, RARITY_ORDER, SLOT_KEYS, ITEM_TYPES, ITEM_MODELS,
 } from '../src/config/equipment.js';
@@ -97,7 +97,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 13, 'state is serializable');
+assert(save.version === 14, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -151,7 +151,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -1353,7 +1353,7 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
   fillSupplies(gq3);
   Object.keys(gq3.state.resources).forEach((k) => { gq3.state.resources[k] = 1e5; });
   gq3.state.player.coins = 1e6;
-  const ups = ['farm', 'workbench', 'generator', 'rainCollector'].map((id) => gq3.shelter.upgradeFacility(null, id).ok);
+  const ups = ['farm', 'workbench', 'generator', 'lumberMill'].map((id) => gq3.shelter.upgradeFacility(null, id).ok);
   assert(ups[0] && ups[1] && ups[2] && !ups[3], `施工佇列最多 3 條（${ups}）`);
   for (let i = 0; i < 6; i += 1) gq3.state.survivors.push(gq3.survivors.makeCandidate(3));
   const targets = gq3.state.map.pois.filter((p) => !gq3.shelter.baseAtPoi(p.id));
@@ -1441,6 +1441,30 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
   assert(!gr3.exploration.canRecall(r3.exp, half + 1000), '召回中不能再召回');
   const rep3 = gr3.exploration.update(r3.exp.endAt + 1, { silent: true })[0];
   assert(rep3 && !rep3.success && !Object.keys(rep3.resources).length && gr3.survivors.leader().status === 'idle', '回到避難所後結算，沒有收穫');
+}
+
+// ---- 31. v8.14：雨水收集器改為伐木場 ----
+{
+  const gl = Game.newGame({ playerName: 'L1', classId: 'warrior', lat: 25, lon: 121 });
+  gl.state.map.pois = fillPois([], 25, 121);
+  gl.shelter.establish(gl.state.map.pois[0]);
+  const base = gl.shelter.primary();
+  const w0 = gl.resources.rates().gross.wood;
+  base.facilities.lumberMill.level = 2;
+  const w1 = gl.resources.rates().gross.wood;
+  assert(Math.abs(w1 - w0 - 2 * LUMBER_WOOD) < 0.01, `伐木場每級產出木材（+${(w1 - w0).toFixed(1)}/時）`);
+  gl.state.research.levels.a_lumber = 10;
+  gl.research._cache = null;
+  assert(gl.resources.rates().gross.wood > w1, '伐木技術提升伐木場產量');
+  assert(LUMBER_WOOD * 10 < 60, '伐木場滿級產量仍低於探索樹林');
+  const old = JSON.parse(JSON.stringify(gl.state));
+  old.version = 13;
+  old.bases[0].facilities.rainCollector = { level: 3 };
+  delete old.bases[0].facilities.lumberMill;
+  old.research.levels = { a_rain: 4 };
+  const mg = SaveManager.migrate(old);
+  assert(mg.bases[0].facilities.lumberMill.level === 3 && !mg.bases[0].facilities.rainCollector && mg.research.levels.a_lumber === 4 && !('a_rain' in mg.research.levels), '舊存檔的雨水收集器與淨水科技換成伐木場與伐木技術');
+  assert(!FACILITIES.rainCollector && !RESEARCH.a_rain, '雨水收集器與淨水科技已移除');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
