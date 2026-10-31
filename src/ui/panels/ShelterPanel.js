@@ -127,10 +127,37 @@ export class ShelterPanel {
       defense: `<p class="muted">${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築。點空地建造，點已建造的防禦建築升級或派人駐守（也可以直接點上方場景中的槽位）。</p>
         <div class="slot-grid">${defenses}</div>
         <div class="stat-grid"><div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div><div><small>屍潮波次</small><b>${this.waveText(siege)}</b></div></div>`,
-      log: `<ul class="log-list">${logs}</ul>`,
+      log: `${this.defenseLogHtml()}<h4>📜 事件紀錄</h4><ul class="log-list">${logs}</ul>`,
     };
     return `<div class="drawer-top">${head}${ui.drawerCollapsed ? '' : tabs2}</div>
       <div class="drawer-body">${sections[tab]}</div>`;
+  }
+
+  /** 據點遭襲紀錄：防禦成功或失敗、損失資源、毀損建築、受重傷的人 */
+  defenseLogHtml() {
+    const list = this.game.state.defenseLog || [];
+    const rows = list.slice(0, 15).map((e) => {
+      const t = new Date(e.at);
+      const pad = (v) => String(v).padStart(2, '0');
+      const when = `${t.getMonth() + 1}/${t.getDate()} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
+      const lost = Object.entries(e.lost || {}).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} −${v}`);
+      if (e.coins) lost.push(`💰 −${e.coins}`);
+      const lines = [
+        e.waves ? `🌊 擋下 ${e.waves} 波` : '',
+        e.kills ? `☠️ 擊殺 ${e.kills}` : '',
+        e.wallLost ? `🧱 圍牆 −${e.wallLost}` : '',
+      ].filter(Boolean).join('・');
+      return `<div class="card defense-log ${e.success ? 'ok' : 'fail'}">
+        <div class="row-between"><b>${e.success ? '🛡️ 防禦成功' : '💥 防禦失敗'}</b><small class="muted">${when}</small></div>
+        <div>「${escapeHtml(e.baseName)}」遭 ${escapeHtml(e.attacker)} 攻擊</div>
+        ${lines ? `<small class="muted block">${lines}</small>` : ''}
+        ${lost.length ? `<div class="neg">損失資源：${lost.join('、')}</div>` : (e.success ? '<div class="pos">沒有損失資源</div>' : '')}
+        ${e.damaged?.length ? `<div class="neg">毀損建築：${e.damaged.map(escapeHtml).join('、')}</div>` : ''}
+        ${e.injured?.length ? `<div class="neg">🩸 重傷：${e.injured.map(escapeHtml).join('、')}</div>` : ''}
+        ${e.note ? `<small class="muted block">${escapeHtml(e.note)}</small>` : ''}
+      </div>`;
+    }).join('');
+    return `<h4>🛡️ 據點遭襲紀錄</h4>${rows || '<p class="muted">據點還沒有被攻擊過。</p>'}`;
   }
 
   onAction(action, data) {

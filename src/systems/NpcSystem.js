@@ -1,5 +1,6 @@
 import { NPC_CONFIG, NPC_NAMES, npcAggression } from '../config/npcs.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
+import { ShelterSystem } from './ShelterSystem.js';
 import { unitWeight } from '../config/supplies.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import { zoneAt } from '../config/zones.js';
@@ -313,6 +314,7 @@ export class NpcSystem {
       return true;
     });
     const defenders = this.defenders(base);
+    const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));
     let victory = !enemies.length;
     let result = null;
     if (!victory && defenders.length) {
@@ -320,9 +322,14 @@ export class NpcSystem {
       g.combat.applyOutcome(defenders, result, now);
       victory = result.victory;
     }
+    const injured = ShelterSystem.newlySevere(severeBefore, defenders);
+    const kills = (this.garrison(n).length - enemies.length) + (result?.kills.length || 0);
     if (victory) {
       g.state.stats.battlesWon += 1;
-      g.log(`🛡️「${base.name}」擊退了「${n.name}」的掠奪隊！`, 'success');
+      g.shelter.recordDefense({
+        base, attacker: `NPC「${n.name}」（Lv${n.level}）`, success: true, kills, injured,
+        note: defenders.length ? `防守人員：${defenders.map((d) => d.name).join('、')}` : '防禦塔擊退了掠奪隊',
+      });
       g.toast(`🛡️「${base.name}」擊退了「${n.name}」的掠奪隊！`, 'success');
       n.level = Math.max(1, n.level - 1);
       g.bus.emit('npc:raid', { npcId: n.id, baseId: base.id, victory: true });
@@ -339,10 +346,14 @@ export class NpcSystem {
     const coins = Math.floor(g.state.player.coins * 0.1);
     g.state.player.coins -= coins;
     n.coins += coins;
-    base.wallHp = g.shelter.wallHp(base) * (1 - NPC_CONFIG.raidWallDamage);
+    const wallBefore = g.shelter.wallHp(base);
+    base.wallHp = wallBefore * (1 - NPC_CONFIG.raidWallDamage);
     g.state.stats.battlesLost += 1;
+    g.shelter.recordDefense({
+      base, attacker: `NPC「${n.name}」（Lv${n.level}）`, success: false, lost: stolen, coins, kills, injured,
+      wallLost: wallBefore - base.wallHp, note: defenders.length ? `防守人員：${defenders.map((d) => d.name).join('、')}` : '沒有人在據點防守',
+    });
     const total = Object.values(stolen).reduce((s, v) => s + v, 0);
-    g.log(`💀「${n.name}」掠奪了「${base.name}」：搶走 ${total} 單位物資與 💰${coins}`, 'danger');
     g.toast(`💀「${n.name}」掠奪了「${base.name}」！搶走 ${total} 單位物資`, 'danger');
     g.bus.emit('npc:raid', {
       npcId: n.id, baseId: base.id, victory: false, stolen, coins,

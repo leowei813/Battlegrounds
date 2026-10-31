@@ -48,6 +48,27 @@ export class BaseSiege {
     this.guardCd = 1;
     this.bossDay = 0;
     this.nextId = 1;
+    this.wasActive = false;
+    this.nightKills = 0;
+    this.nightWallStart = 0;
+    this.breachedTonight = false;
+  }
+
+  /** 入夜：開始統計今晚的防守 */
+  startNight() {
+    this.nightKills = 0;
+    this.nightWallStart = this.game.shelter.wallHp(this.base);
+    this.breachedTonight = false;
+  }
+
+  /** 天亮：今晚有屍潮來襲且沒有被突破 → 記錄防禦成功 */
+  endNight() {
+    if (this.wave > 0 && !this.breachedTonight && this.base) {
+      this.game.shelter.recordDefense({
+        base: this.base, attacker: '屍潮', success: true, waves: this.wave, kills: this.nightKills,
+        wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)),
+      });
+    }
   }
 
   slotPos(slot, total = this.base?.defenses.length || 8) {
@@ -208,6 +229,10 @@ export class BaseSiege {
 
     // 生成（只在夜間）：一波一波來襲，波與波之間有喘息時間
     const active = this.active();
+    // 入夜與天亮時統計今晚的防守結果
+    if (active && !this.wasActive) this.startNight();
+    if (!active && this.wasActive) this.endNight();
+    this.wasActive = active;
     if (!active) {
       this.wave = 0;
       this.waveLeft = 0;
@@ -461,6 +486,7 @@ export class BaseSiege {
     let coins = 0;
     let parts = 0;
     let xp = 0;
+    this.nightKills += dead.length;
     dead.forEach((z) => {
       st.kills += 1;
       st.siegeKills += 1;
@@ -502,8 +528,12 @@ export class BaseSiege {
     base.quietUntil = this.game.time.nextDawn();
     this.game.state.stats.breaches += 1;
     const damaged = this.damageBuildings(base);
+    this.breachedTonight = true;
+    sh.recordDefense({
+      base, attacker: '屍潮', success: false, lost, damaged, kills: this.nightKills, waves: this.wave,
+      wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note: '防線被突破，圍牆耐久歸零',
+    });
     const dmgText = damaged.length ? `，${damaged.length} 棟建築損毀` : '';
-    this.game.log(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源${dmgText}，圍牆耐久歸零（需修理），今晚屍潮不再來襲`, 'danger');
     damaged.forEach((d) => this.game.log(`🏚️ ${base.name}：${d}`, 'danger'));
     this.game.toast(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源${dmgText}，請強化圍牆與防禦塔`, 'danger');
     this.game.bus.emit('siege:breach', { baseId: base.id, lost, damaged });

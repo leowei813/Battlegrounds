@@ -198,12 +198,20 @@ export class TerritorySystem {
       const name = String(e.fromName || '某位玩家').slice(0, 16);
       if (e.type === 'attack') {
         this.setHostile(e.from, name);
+        const base = g.state.bases.find((b) => b.name === e.data?.base) || g.shelter.primary();
         if (e.data?.win) {
           const pct = Math.min(0.3, Math.max(0, Number(e.data.lossPct) || PVP_LOSS));
-          RESOURCE_KEYS.forEach((k) => { g.state.resources[k] = Math.floor(g.state.resources[k] * (1 - pct)); });
+          const lost = {};
+          RESOURCE_KEYS.forEach((k) => {
+            const after = Math.floor(g.state.resources[k] * (1 - pct));
+            lost[k] = g.state.resources[k] - after;
+            g.state.resources[k] = after;
+          });
+          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: false, lost, note: `被搶走 ${Math.round(pct * 100)}% 資源` });
           g.log(`💀 玩家「${name}」突襲了「${e.data.base || '你的據點'}」，搶走 ${Math.round(pct * 100)}% 資源！雙方進入敵對`, 'danger');
           g.toast(`💀 玩家「${name}」突襲成功，搶走 ${Math.round(pct * 100)}% 資源！`, 'danger');
         } else {
+          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: true, note: '駐守人員擊退了突襲' });
           g.log(`🛡️ 擊退了玩家「${name}」的突襲！雙方進入敵對`, 'success');
           g.toast(`🛡️ 擊退了玩家「${name}」的突襲`, 'success');
         }
