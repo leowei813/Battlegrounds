@@ -535,3 +535,9 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .time-breakdown small { color: var(--muted); }
 .time-breakdown .total { color: var(--accent); }
 .stat-line.range { margin: 4px 0 6px; color: #b3e5fc; }
+.heal-box { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.heal-box.warn { border-color: var(--danger); }
+.med-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.med-btn { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+.med-btn:hover { border-color: var(--accent); }
+.med-icon { font-size: 22px; }
