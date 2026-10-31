@@ -7,7 +7,11 @@ import { bus, EVT } from '../core/EventBus.js';
 
 /** 最大據點的防禦欄位數（場景預先建立的槽位物件數） */
 const MAX_SLOTS = Math.max(...Object.values(BASE_SIZES).map((s) => s.slots));
-const FACILITY_IDS = Object.keys(FACILITIES);
+/** 圍牆就是底圖上的城牆，不佔格子 */
+const FACILITY_IDS = Object.keys(FACILITIES).filter((id) => id !== 'wall');
+/** 共用圖片：監視塔（設施）使用瞭望台的圖 */
+const IMAGE_ALIAS = { watchtower: 'watchPost' };
+const imageKey = (id) => `bld-${IMAGE_ALIAS[id] || id}`;
 
 /**
  * 避難所場景：要塞底圖上畫出格子——一般設施放在圍牆內側的綠色格（12 格），
@@ -49,7 +53,10 @@ export class ShelterScene extends Phaser.Scene {
 
     // 一般設施（綠色格）
     this.facObjs = FACILITY_IDS.map((id) => {
-      const icon = this.add.text(0, 0, FACILITIES[id].icon, { fontSize: '22px' }).setOrigin(0.5, 0.75).setDepth(10);
+      const hasImg = this.textures.exists(imageKey(id));
+      const icon = hasImg
+        ? this.add.image(0, 0, imageKey(id)).setOrigin(0.5, 0.82).setDepth(10)
+        : this.add.text(0, 0, FACILITIES[id].icon, { fontSize: '22px' }).setOrigin(0.5, 0.75).setDepth(10);
       const lv = this.add.text(0, 0, '', {
         fontSize: '11px', color: '#fff', fontFamily: 'sans-serif', stroke: '#000', strokeThickness: 3,
       }).setOrigin(0.5).setDepth(11);
@@ -58,7 +65,9 @@ export class ShelterScene extends Phaser.Scene {
         if (pointer.event && pointer.event.target !== this.game.canvas) return;
         bus.emit('ui:shelterTab', { tab: 'facilities' });
       });
-      return { id, icon, lv };
+      return {
+        id, icon, lv, hasImg,
+      };
     });
 
     // 防禦設施（藍色格）
@@ -74,10 +83,13 @@ export class ShelterScene extends Phaser.Scene {
       zone.on('pointerover', () => zone.setStrokeStyle(3, 0xffd54f, 1));
       zone.on('pointerout', () => zone.setStrokeStyle());
       const icon = this.add.text(0, 0, '+', { fontSize: '18px', color: '#fff' }).setOrigin(0.5, 0.75).setDepth(10);
+      const img = this.add.image(0, 0, '__DEFAULT').setOrigin(0.5, 0.82).setDepth(10).setVisible(false);
       const lv = this.add.text(0, 0, '', {
         fontSize: '11px', color: '#fff', fontFamily: 'sans-serif', stroke: '#000', strokeThickness: 3,
       }).setOrigin(0.5).setDepth(11);
-      this.slotObjs.push({ zone, icon, lv });
+      this.slotObjs.push({
+        zone, icon, img, lv,
+      });
     }
 
     this.scale.on('resize', () => this.layout());
@@ -129,12 +141,18 @@ export class ShelterScene extends Phaser.Scene {
     this.gridG.clear();
     if (!has) {
       this.facObjs.forEach((o) => { o.icon.setVisible(false); o.lv.setVisible(false); });
-      this.slotObjs.forEach((o) => { o.zone.setVisible(false); o.icon.setVisible(false); o.lv.setVisible(false); });
+      this.slotObjs.forEach((o) => { o.zone.setVisible(false); o.icon.setVisible(false); o.img.setVisible(false); o.lv.setVisible(false); });
       return;
     }
 
     const size = BASE_SIZES[sh.size] ? sh.size : 'medium';
     const cells = { facility: FACILITY_CELLS.map((c) => c.center), defense: defenseCells(sh.defenses.length).map((c) => c.center) };
+    // 格子在螢幕上的寬度（建築圖片依此縮放）
+    const cellW = (cell) => {
+      const xs = cell.corners.map((c) => this.toScreen(c).x);
+      return Math.max(...xs) - Math.min(...xs);
+    };
+    const fw = cellW(FACILITY_CELLS[0]);
     this.bg.setPosition(this.cx, this.cy).setScale(this.k);
     // 格子：綠色（一般設施）、藍色（防禦設施）
     const poly = (cell, fill, fillA, line) => {
@@ -162,8 +180,10 @@ export class ShelterScene extends Phaser.Scene {
         return;
       }
       const busy = sh.buildQueue.some((q) => q.kind === 'facility' && q.id === id);
-      o.icon.setVisible(true).setPosition(p.x, p.y).setFontSize(cellSize).setAlpha(f.level > 0 ? 1 : 0.35);
-      o.lv.setVisible(true).setPosition(p.x, p.y + cellSize * 0.35).setText(busy ? '🔨' : f.level > 0 ? `Lv${f.level}` : '未建');
+      o.icon.setVisible(true).setPosition(p.x, p.y).setAlpha(f.level > 0 ? 1 : 0.35).setDepth(10 + p.y / 10000);
+      if (o.hasImg) o.icon.setScale((fw * 0.9) / o.icon.width);
+      else o.icon.setFontSize(cellSize);
+      o.lv.setVisible(true).setPosition(p.x, p.y + Math.max(cellSize * 0.35, fw * 0.22)).setText(busy ? '🔨' : f.level > 0 ? `Lv${f.level}` : '未建').setDepth(11 + p.y / 10000);
     });
 
     // 防禦設施：依據點規模的藍色格
@@ -173,21 +193,30 @@ export class ShelterScene extends Phaser.Scene {
       if (!p) {
         o.zone.setVisible(false);
         o.icon.setVisible(false);
+        o.img.setVisible(false);
         o.lv.setVisible(false);
         return;
       }
       const busy = core.shelter.isSlotBusy(sh, i);
+      const dw = cellW(defenseCells(sh.defenses.length)[i]);
       const rx = Math.max(14, 42 * this.k);
       o.zone.setVisible(true).setPosition(p.x, p.y).setSize(rx * 2, rx * 1.1);
       o.zone.geom.setSize(rx * 2, rx * 1.1);
       o.zone.updateDisplayOrigin();
       o.icon.setVisible(true).setPosition(p.x, p.y);
       o.lv.setVisible(true).setPosition(p.x, p.y + rx * 0.45);
+      const key = d.type && imageKey(d.type);
+      const hasImg = key && this.textures.exists(key);
+      o.img.setVisible(!!hasImg);
       if (d.type) {
         const def = DEFENSES[d.type];
-        o.zone.setFillStyle(def.color, 0.35);
-        o.icon.setText(def.icon).setFontSize(Math.max(14, Math.round(44 * this.k)));
-        o.lv.setText(busy ? '🔨' : `Lv${d.level}`);
+        o.zone.setFillStyle(def.color, hasImg ? 0.01 : 0.35);
+        if (hasImg) {
+          o.img.setTexture(key).setPosition(p.x, p.y).setDepth(10 + p.y / 10000);
+          o.img.setScale((dw * 0.88) / o.img.width).setAlpha(d.level > 0 ? 1 : 0.5);
+          o.icon.setText('');
+        } else o.icon.setText(def.icon).setFontSize(Math.max(14, Math.round(44 * this.k)));
+        o.lv.setText(busy ? '🔨' : `Lv${d.level}`).setPosition(p.x, p.y + Math.max(rx * 0.45, dw * 0.22)).setDepth(11 + p.y / 10000);
       } else {
         o.zone.setFillStyle(0x000000, 0.01);
         o.icon.setText('+').setFontSize(Math.max(14, Math.round(36 * this.k)));

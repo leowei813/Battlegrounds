@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import fortress from '../assets/bases/fortress.webp';
 
+/** 建築圖片（沒有圖片的建築以圖示代替） */
+const BUILDING_IMAGES = import.meta.glob('../assets/buildings/*.webp', { eager: true, import: 'default' });
+
 /**
  * 啟動場景：載入避難所底圖，並以程式繪製其他貼圖，完成後進入避難所場景。
  */
@@ -11,6 +14,10 @@ export class BootScene extends Phaser.Scene {
 
   preload() {
     this.load.image('fortress', fortress);
+    Object.entries(BUILDING_IMAGES).forEach(([path, url]) => {
+      const id = path.split('/').pop().replace('.webp', '');
+      this.load.image(`bld-${id}`, url);
+    });
   }
 
   create() {
