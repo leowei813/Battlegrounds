@@ -82,9 +82,9 @@ assert(reports.length === 1, 'exploration resolved');
 g.state.player.coins = 1e5;
 Object.keys(g.state.resources).forEach((k) => { g.state.resources[k] = 1e5; });
 fillSupplies(g);
-assert(!g.survivors.recruitRoll().ok && g.survivors.fullReason().includes('宿舍'), '沒有宿舍無法招募');
+assert(g.survivors.dormCap() === 3, '沒有宿舍最多 3 人');
 g.shelter.primary().facilities.dormitory.level = 1;
-assert(g.survivors.dormCap() === 3 && g.survivors.housing() <= 3, '宿舍 Lv1 可住 3 人');
+assert(g.survivors.dormCap() === 4, '宿舍 Lv1 可住 4 人');
 g.shelter.primary().facilities.dormitory.level = 8;
 const roll = g.survivors.recruitRoll();
 assert(roll.ok && roll.offer.length === 3, '招募一次出現三位候選人');
@@ -101,7 +101,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 15, 'state is serializable');
+assert(save.version === 16, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -155,7 +155,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 15 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -315,10 +315,28 @@ assert(migrated.version === 15 && migrated.bases.length === 1 && migrated.bases[
   sv.becomeSevere(leader, '測試');
   assert(leader.severe && leader.level === 4 && sv.hpOf(leader) === 0, `重傷扣經驗並降級（Lv5 → Lv${leader.level}）`);
   assert(!sv.isAvailable(leader), '重傷無法行動');
-  // 有食物時自然恢復，回到 30% 解除重傷
+  // 有食物時，在據點休息才會恢復；有診療室回到 30% 解除重傷
   gv.state.starving = false;
+  gv.shelter.primary().facilities.clinic.level = 10;
   sv.updateVitals(Date.now(), 60 * 60000, 0);
   assert(!leader.severe && sv.hpOf(leader) > 0, '有食物時生命恢復並脫離重傷');
+  // 沒有診療室不會自然回復；在外探索也不會回復
+  gv.shelter.primary().facilities.clinic.level = 0;
+  sv.setHp(leader, sv.maxHp(leader) * 0.5);
+  sv.updateVitals(Date.now(), 30 * 60000, 0);
+  assert(Math.abs(sv.hpOf(leader) - sv.maxHp(leader) * 0.5) < 1, '沒有診療室時不會自然回復');
+  gv.shelter.primary().facilities.clinic.level = 5;
+  leader.status = 'exploring';
+  sv.updateVitals(Date.now(), 30 * 60000, 0);
+  assert(Math.abs(sv.hpOf(leader) - sv.maxHp(leader) * 0.5) < 1, '在外探索時不會回復');
+  leader.status = 'idle';
+  const h1 = sv.hpOf(leader);
+  sv.updateVitals(Date.now(), 10 * 60000, 0);
+  const slow = sv.hpOf(leader) - h1;
+  gv.shelter.primary().facilities.clinic.level = 10;
+  sv.setHp(leader, h1);
+  sv.updateVitals(Date.now(), 10 * 60000, 0);
+  assert(slow > 0 && sv.hpOf(leader) - h1 > slow, '診療室等級越高回復越快');
   // 飢餓扣血直到重傷，飢餓時無法治療
   gv.state.starving = true;
   const npc = gv.survivors.makeCandidate(5);
@@ -1632,9 +1650,9 @@ assert(migrated.version === 15 && migrated.bases.length === 1 && migrated.bases[
   const gm = Game.newGame({ playerName: 'M1', classId: 'warrior', lat: 25, lon: 121 });
   gm.state.map.pois = fillPois([], 25, 121);
   gm.shelter.establish(gm.state.map.pois[0]);
-  assert(gm.survivors.housing() === 1 && gm.survivors.isFull(), '沒有宿舍時只住得下領袖');
+  assert(gm.survivors.dormCap() === 3 && gm.survivors.housing() <= 3, '沒有宿舍最多 3 人');
   gm.shelter.primary().facilities.dormitory.level = 3;
-  assert(gm.survivors.dormCap() === 5, '宿舍每升一級多住 1 人');
+  assert(gm.survivors.dormCap() === 6, '宿舍每升一級多住 1 人');
   const old = JSON.parse(JSON.stringify(gm.state));
   old.version = 14;
   delete old.bases[0].facilities.dormitory;

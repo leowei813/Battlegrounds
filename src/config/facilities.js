@@ -80,9 +80,15 @@ export const FACILITIES = {
   },
   dormitory: {
     name: '宿舍', icon: '🛏️', startLevel: 0,
-    desc: '倖存者的住處。沒有宿舍無法招募新成員，每升一級可多住 1 人。',
+    desc: '倖存者的住處。沒有宿舍最多只能有 3 人，每升一級可多住 1 人。',
     cost: (lv) => mat('dormitory', ['struct'], { wood: 90, metal: 25, cloth: 45 }, lv),
     effectText: (lv) => `可住 ${dormCap(lv)} 人（含領袖）`,
+  },
+  clinic: {
+    name: '診療室', icon: '🩺', startLevel: 0,
+    desc: '在據點內休息的倖存者會慢慢回復生命，等級越高回復越快。沒有診療室不會自然回復；主要還是要靠藥品治療。',
+    cost: (lv) => mat('clinic', ['struct', 'elec'], { wood: 70, metal: 40, cloth: 50, medicine: 10 }, lv),
+    effectText: (lv) => (lv > 0 ? `休息回復每分鐘 ${(clinicRegen(lv) * 100).toFixed(2)}% 生命（約 ${Math.round(1 / clinicRegen(lv))} 分鐘回滿）` : '尚未建造：不會自然回復'),
   },
   workbench: {
     name: '工作台', icon: '🛠️', startLevel: 0,
@@ -111,5 +117,7 @@ export const storageCap = (lv) => 600 + lv * 700 + lv * lv * 120;
 /** 物品倉庫格子：Lv1 30 格，每升一級 +10 */
 export const itemStoreSlots = (lv) => 30 + Math.max(0, lv - 1) * 10;
 export const housingCap = (lv) => 3 + lv * 2;
-/** 宿舍可住人數（含領袖）：沒有宿舍只有領袖 1 人，Lv1 3 人，之後每級 +1 */
-export const dormCap = (lv) => (lv > 0 ? 2 + lv : 1);
+/** 宿舍可住人數（含領袖）：沒有宿舍最多 3 人，每升一級 +1 */
+export const dormCap = (lv) => 3 + Math.max(0, lv);
+/** 診療室：在據點休息時每分鐘回復最大生命的比例（沒有診療室不會自然回復） */
+export const clinicRegen = (lv) => (lv > 0 ? 0.002 + 0.0015 * (lv - 1) : 0);

@@ -131,8 +131,10 @@ export const RECRUIT_CHOICES = 3;
  * 生命、重傷、飢餓、死亡（時間以現實分鐘計）。
  */
 export const VITALS = {
-  regenPctPerMin: 0.02, // 未飢餓時，每分鐘回復最大生命 2%
-  severeRegenPctPerMin: 0.008, // 重傷時回復較慢
+  regenPctPerMin: 0.02, // （舊）已改由診療室決定休息回復速度
+  severeRegenPctPerMin: 0.008,
+  severeBaseRegenPctPerMin: 0.0015, // 重傷者沒有診療室時仍會極慢地恢復（避免卡死）
+  severeClinicMul: 0.6, // 重傷者在診療室的回復為一般的 60%
   severeRecoverRatio: 0.3, // 生命回到 30% 才解除重傷
   starveDrainPctPerMin: 0.04, // 飢餓時每分鐘流失最大生命 4%（約 25 分鐘歸零）
   xpPenaltyPct: 0.1, // 重傷懲罰：扣除升級所需經驗的 10%，不足時降一級
