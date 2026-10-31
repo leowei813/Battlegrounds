@@ -356,9 +356,16 @@ export class ExplorationSystem {
     return { exp, group: g, result, aborted: true };
   }
 
+  /** 是否還能召回：已經在返程（或被擊敗撤回中）的隊伍不需要召回 */
+  canRecall(exp, now = Date.now()) {
+    if (!exp || exp.defeated) return false;
+    return this.progress(exp, now)?.phase !== 'returning';
+  }
+
   recall(expId) {
     const exp = this.list.find((e) => e.id === expId);
     if (!exp) return { ok: false, reason: '找不到隊伍' };
+    if (!this.canRecall(exp)) return { ok: false, reason: '隊伍已經在返程中' };
     this.free(exp);
     this.game.state.expeditions = this.list.filter((e) => e.id !== expId);
     return { ok: true, msg: '隊伍已召回（無收穫）' };
