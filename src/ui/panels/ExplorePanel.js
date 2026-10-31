@@ -2,13 +2,12 @@ import { POI_TYPES } from '../../config/poiTypes.js';
 import { VEHICLES } from '../../config/vehicles.js';
 import { RARITIES } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
-import { haversine, formatDuration } from '../../utils/math.js';
+import { formatDuration } from '../../utils/math.js';
 import { EXP_PHASES } from '../../systems/ExplorationSystem.js';
-import { isLooted } from '../../systems/LootStock.js';
 import { btn, timerBar, gainsHtml } from '../components.js';
 
 /**
- * 探索分頁：進行中的隊伍、附近地點快速派遣、探索報告。
+ * 探索分頁：進行中的隊伍與探索報告（派遣探索請在地圖上點選建築）。
  */
 export class ExplorePanel {
   constructor(ui) {
@@ -26,7 +25,7 @@ export class ExplorePanel {
       const poi = g.exploration.poi(ex.poiId);
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
       return `<div class="card">
-        <div class="row-between"><b>${poi ? poi.icon || POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.kind === 'raid' ? '<span class="tag tag-red">⚔️ 攻打</span>' : ''}${(ex.vehicleIds || []).length ? `<span class="tag">${ex.vehicleIds.map((id) => { const v = g.vehicles.get(id); return v ? VEHICLES[v.type].icon : ''; }).join('')}</span>` : ''}${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
+        <div class="row-between"><b>${poi ? poi.icon || POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.kind === 'raid' ? '<span class="tag tag-red">⚔️ 攻打</span>' : ex.kind === 'intercept' ? '<span class="tag tag-red">⚔️ 攔截</span>' : ''}${ex.defeated ? '<span class="tag tag-red">🏳️ 撤回中</span>' : ''}${(ex.vehicleIds || []).length ? `<span class="tag">${ex.vehicleIds.map((id) => { const v = g.vehicles.get(id); return v ? VEHICLES[v.type].icon : ''; }).join('')}</span>` : ''}${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
         <div class="muted">隊員：${names}・搜索 ${ex.durationMin} 分鐘</div>
         ${this.progressHtml(ex, now)}
         ${timerBar(ex.startAt, ex.endAt, now)}
@@ -34,13 +33,6 @@ export class ExplorePanel {
         <div class="btn-row">${btn('🗺️ 在地圖上追蹤', 'track', { id: ex.id }, { cls: 'btn-sm btn-primary' })}${btn(ex.auto ? '停止自動' : '🔁 自動探索', 'auto', { id: ex.id }, { cls: 'btn-sm btn-ghost', disabled: !g.research.hasUnlock('autoExplore') })}${btn('召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' })}</div>
       </div>`;
     }).join('');
-
-    const nearby = this.nearby()
-      .map(({ p, d }) => `<div class="poi-row">
-        <span class="poi-pin sm" style="--c:${POI_TYPES[p.type].color}">${POI_TYPES[p.type].icon}</span>
-        <div class="grow"><b>${escapeHtml(p.name)}</b><small class="muted block">${POI_TYPES[p.type].name}・${Math.round(d)}m・☠${g.zombies.areaDanger(p)}・${isLooted(p) ? '<span class="neg">已搜刮</span>' : '有物資'}</small></div>
-        ${btn('探索', 'explore', { id: p.id }, { cls: 'btn-sm btn-primary' })}
-      </div>`).join('');
 
     const reports = (st.reports || []).map((r) => {
       const open = this.openReport === r.id;
@@ -58,28 +50,10 @@ export class ExplorePanel {
       <div class="phase-banner phase-${g.time.phaseId()}">${phase.icon} 目前時段：<b>${phase.name}</b>・${phase.desc}・探索速度 ×${g.time.exploreSpeedMul().toFixed(2)}・物資 ×${phase.lootMul}</div>
       <h3>進行中（${st.expeditions.length}）</h3>
       ${active || '<p class="muted">目前沒有隊伍在外。</p>'}
-      <h3>附近地點</h3>
-      <div class="poi-list">${nearby || '<p class="muted">請先建立避難所。</p>'}</div>
+      <p class="muted">要派遣探索，請到「地圖」點選建築。</p>
       <h3>探索報告</h3>
       ${reports || '<p class="muted">尚無報告。</p>'}
     </div>`;
-  }
-
-  /** 離主要據點最近的 30 個地點（建築可達數千棟，結果快取到據點或建築清單變動為止） */
-  nearby() {
-    const g = this.game;
-    const sh = g.shelter.primary();
-    if (!sh) return [];
-    const key = `${sh.id}|${g.state.map.fetchedAt}|${g.state.map.pois.length}|${g.state.bases.length}`;
-    if (key !== this.nearbyKey) {
-      this.nearbyKey = key;
-      this.nearbyList = g.state.map.pois
-        .filter((p) => !g.shelter.baseAtPoi(p.id))
-        .map((p) => ({ p, d: haversine(sh.lat, sh.lon, p.lat, p.lon) }))
-        .sort((a, b) => a.d - b.d)
-        .slice(0, 30);
-    }
-    return this.nearbyList;
   }
 
   /** 行程三段（去程/搜索/返程）與移動距離 */
@@ -100,10 +74,6 @@ export class ExplorePanel {
     const g = this.game;
     if (action === 'auto') this.ui.result(g.exploration.toggleAuto(data.id));
     if (action === 'recall' && confirm('召回隊伍將不會獲得任何收穫，確定？')) this.ui.result(g.exploration.recall(data.id));
-    if (action === 'explore') {
-      const poi = g.exploration.poi(data.id);
-      if (poi) this.ui.panels.map.openExplore(poi);
-    }
     if (action === 'track') {
       const ex = g.state.expeditions.find((e) => e.id === data.id);
       const p = ex && g.exploration.progress(ex);

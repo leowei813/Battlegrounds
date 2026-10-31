@@ -1,3 +1,5 @@
+import { materialize } from './supplies.js';
+
 /**
  * 載具：影響探索隊的移動速度與運載量，有耐久度（可維修），除了滑板車與腳踏車都會耗油。
  *
@@ -12,11 +14,11 @@
 export const VEHICLES = {
   kickScooter: {
     name: '滑板車', icon: '🛴', seats: 1, speed: 1.3, cargo: 20, fuelPerKm: 0, durability: 60, find: 14,
-    craft: { workbench: 1, cost: { wood: 40, metal: 30 } },
+    craft: { workbench: 1, cost: { wood: 40, bolt: 6, rubber: 4, screw: 6 } },
   },
   bicycle: {
     name: '腳踏車', icon: '🚲', seats: 1, speed: 1.7, cargo: 40, fuelPerKm: 0, durability: 80, find: 14,
-    craft: { workbench: 2, cost: { wood: 60, metal: 80, cloth: 20 } },
+    craft: { workbench: 2, cost: { wood: 20, chain: 2, gear: 2, rubber: 6, ironPlate: 3, bolt: 10, coarse: 4 } },
   },
   moped50: { name: '50cc 機車', icon: '🛵', seats: 2, speed: 2.2, cargo: 60, fuelPerKm: 0.15, durability: 100, find: 11 },
   scooter100: { name: '100cc 機車', icon: '🛵', seats: 2, speed: 2.6, cargo: 80, fuelPerKm: 0.2, durability: 120, find: 9 },
@@ -38,16 +40,24 @@ export const WEAR_PER_KM = 2.5;
 /** 途中遇襲時載具受到的損傷 */
 export const AMBUSH_WEAR = [8, 20];
 
-/** 維修費用：每點耐久的金屬；有引擎的載具另需零件 */
+/** 載具等級（維修需要的零件階級） */
+const VEHICLE_TIER = {
+  kickScooter: 1, bicycle: 1, moped50: 2, scooter100: 2, motorcycle150: 3, car: 3, sportsCar: 4, van: 3, pickup: 3, truck: 4, bus: 4,
+};
+
+/** 維修費用：依缺少的耐久換算成零件（有引擎的載具還需要電子零件與稀有材料） */
 export function repairCost(type, missing) {
   const def = VEHICLES[type];
   if (missing <= 0) return {};
-  const cost = { metal: Math.ceil(missing * (def.fuelPerKm > 0 ? 0.8 : 0.4)) };
-  if (def.fuelPerKm > 0) cost.parts = Math.ceil(missing / 80);
+  const engine = def.fuelPerKm > 0;
+  const cost = materialize({ metal: Math.ceil(missing * (engine ? 0.8 : 0.4)) }, {
+    tier: VEHICLE_TIER[type] || 2, tags: engine ? ['mech', 'elec'] : ['mech'], key: `veh-${type}`,
+  });
+  if (engine) cost.parts = Math.ceil(missing / 80);
   return cost;
 }
 
 /** 依建築類型找到載具的機率加成 */
 export const VEHICLE_FIND_BY_POI = {
-  gasStation: 3, warehouse: 2, factory: 1.5, military: 2, shop: 1, residential: 0.8, police: 1.5, hospital: 0.6, school: 0.6,
+  garage: 8, gasStation: 0.3, warehouse: 0.3, factory: 0.3, military: 0.5, police: 0.3, residential: 0, shop: 0, hospital: 0, school: 0, supermarket: 0, forest: 0,
 };

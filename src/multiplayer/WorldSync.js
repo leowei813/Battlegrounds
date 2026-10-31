@@ -30,7 +30,8 @@ function cleanPlayer(p) {
       from: t.from, to: t.to, startAt: t.startAt, endAt: t.endAt,
       ...(Array.isArray(t.path) && t.path.length >= 2 && t.path.every(validPoint) ? { path: t.path.slice(0, 20) } : {}),
       travelMs: finite(t.travelMs) ? t.travelMs : 0, searchMs: finite(t.searchMs) ? t.searchMs : t.endAt - t.startAt,
-      members: finite(t.members) ? t.members : 1, target: String(t.target || '').slice(0, 40),
+      members: finite(t.members) ? Math.min(10, Math.max(1, t.members)) : 1, target: String(t.target || '').slice(0, 40),
+      id: String(t.id || '').slice(0, 40), level: finite(t.level) ? Math.min(60, Math.max(1, Math.round(t.level))) : 1,
     }));
   return {
     id: String(p.id || ''), name: String(p.name || '倖存者').slice(0, 16), civ: finite(p.civ) ? p.civ : 0, bases, trips,
@@ -123,9 +124,12 @@ export class WorldSync {
           alert: g.territory.alertRadius(b), guards: gar.count, guardLevel: gar.level,
         };
       }),
-      trips: g.state.expeditions.map((ex) => {
+      // 被攔截而撤回的隊伍不公開（其他玩家看不到返程時間）
+      trips: g.state.expeditions.filter((ex) => !ex.defeated).map((ex) => {
         const poi = g.exploration.poi(ex.poiId);
+        const members = ex.memberIds.map((id) => g.survivors.get(id)).filter(Boolean);
         return poi && ex.from && {
+          id: ex.id, level: members.length ? Math.round(members.reduce((s, m) => s + m.level, 0) / members.length) : 1,
           from: ex.from, to: { lat: poi.lat, lon: poi.lon }, startAt: ex.startAt, endAt: ex.endAt,
           travelMs: ex.travelMs, searchMs: ex.searchMs, members: ex.memberIds.length, target: poi.name,
           ...(ex.path?.length > 2 ? { path: ex.path.slice(0, 20) } : {}),

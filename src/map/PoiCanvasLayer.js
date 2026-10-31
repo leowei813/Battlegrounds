@@ -50,7 +50,9 @@ export const PoiCanvasLayer = L.Layer.extend({
   },
 
   /** @param {Record<string, number>} [detected] GPS 今日偵測過的建築（id → 日期） */
-  setData(pois, detected = {}) {
+  setData(pois, detected = {}, { marked = new Set(), remain = {} } = {}) {
+    this.marked = marked;
+    this.remain = remain;
     this.pois = pois;
     this.detected = detected;
     if (this.map) this.redraw();
@@ -96,8 +98,9 @@ export const PoiCanvasLayer = L.Layer.extend({
       const def = POI_TYPES[poi.type];
       const bs = BASE_SIZES[sizeOf(poi)];
       const rr = r * bs.mul;
-      // 今天已被搜刮的建築變淡
-      ctx.globalAlpha = poi.lootedDay === today ? 0.3 : 1;
+      // 今天已被搜刮的建築變淡（還有殘留物資的稍微亮一點）
+      const left = this.remain?.[poi.id]?.day === today;
+      ctx.globalAlpha = poi.lootedDay === today ? (left ? 0.65 : 0.3) : 1;
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, rr, 0, Math.PI * 2);
       ctx.fillStyle = icons ? 'rgba(17,17,17,0.82)' : def.color;
@@ -117,6 +120,12 @@ export const PoiCanvasLayer = L.Layer.extend({
         ctx.lineWidth = 2;
         ctx.strokeStyle = '#26c6da';
         ctx.stroke();
+      }
+      // 標記的地點：右上角插上圖釘
+      if (this.marked?.has(poi.id)) {
+        ctx.font = `${Math.round(Math.max(12, r * 1.1))}px sans-serif`;
+        ctx.fillText('📌', pt.x + rr * 0.7, pt.y - rr * 0.9);
+        ctx.font = `${Math.round(r * 1.15)}px sans-serif`;
       }
       this.drawn.push({ poi, x: pt.x, y: pt.y, r: rr });
     });
@@ -154,6 +163,8 @@ export const PoiCanvasLayer = L.Layer.extend({
   },
 
   handleClick(e) {
+    // 點到野外的隊伍（其他玩家、NPC）時優先開啟隊伍資訊
+    if (this.teamHit?.(e.containerPoint)) return;
     const poi = this.hit(e.containerPoint);
     if (poi) this.onClick(poi.id);
   },

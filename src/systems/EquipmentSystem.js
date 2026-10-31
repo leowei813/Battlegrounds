@@ -8,6 +8,71 @@ import {
   weightedPick, pick, randFloat, uid, clamp, chance,
 } from '../utils/math.js';
 import { canAfford, payCost, grant } from './costUtils.js';
+import { SUPPLIES, AMMO_RECIPES } from '../config/supplies.js';
+
+/** 防護裝備依強度使用的板材與布料（索引為型號強度 1～10） */
+const PLATE = [null, null, null, 'ironWire', 'ironPlate', 'ironPlate', 'steelPlate', 'steelPlate', 'alloyPlate', 'alloyPlate', 'titanium'];
+const FABRIC = [null, 'coarse', 'cotton', 'leather', 'techCotton', 'techCotton', 'ballistic', 'reinforced', 'reinforced', 'kevlar', 'kevlar'];
+const FABRIC2 = [null, 'linen', 'linen', 'canvas', 'nylon', 'nylon', 'techCotton', 'ballistic', 'ballistic', 'reinforced', 'reinforced'];
+const ELEC = [null, 'wire', 'wire', 'battery', 'battery', 'circuit', 'circuit', 'icBoard', 'sensor', 'chip', 'chip'];
+
+/**
+ * 製作配方：依裝備類別與強度消耗不同的零件與布料。
+ * 例：一級甲（強度 4）= 鐵板 + 科技棉；二級甲（強度 7）= 鋼板 + 強化布料。
+ */
+export function craftRecipe(md) {
+  const t = md.tier;
+  const q = (n) => Math.max(1, Math.round(n * (1 + (t - 1) * 0.35)));
+  const out = {};
+  const add = (k, n) => { if (k && n > 0) out[k] = (out[k] || 0) + n; };
+  const type = ITEM_TYPES[md.type];
+  if (type.gun && md.type !== 'crossbow') {
+    add('wood', q(6));
+    add(t >= 4 ? 'barrel' : 'steelPipe', Math.ceil(t / 3));
+    add(t >= 3 ? 'firingPin' : 'spring', Math.ceil(t / 4));
+    add('spring', q(2));
+    add('screw', q(4));
+    if (t >= 6) add('steelPlate', Math.ceil(t / 3));
+    if (t >= 8) add('precision', t - 7);
+    if (md.type === 'lmg' || md.type === 'smg') add('gear', q(1));
+  } else if (md.type === 'crossbow') {
+    add('wood', q(12));
+    add(t <= 2 ? 'linen' : 'nylon', q(1));
+    add('spring', t >= 3 ? q(1) : 0);
+    add(t >= 6 ? 'aluminum' : 'screw', q(2));
+    if (t >= 8) add('precision', t - 7);
+  } else if (md.type === 'melee') {
+    if (md.fuel) { add('motor', 2); add('chain', 4); add('gear', 4); add('steelPlate', 3); }
+    else {
+      add('wood', q(4));
+      add(t <= 2 ? 'scrap' : t <= 5 ? 'steelPipe' : t <= 7 ? 'steelPlate' : 'alloyPlate', Math.ceil(q(2) / (t <= 2 ? 1 : 2)));
+      add('tape', q(1));
+      if (t >= 3) add('leather', Math.ceil(t / 3));
+    }
+  } else if (['helmet', 'armor', 'legs'].includes(md.type)) {
+    const k = md.type === 'armor' ? 1.5 : 1;
+    add(PLATE[t], Math.ceil(q(1.5) * k / 2));
+    add(FABRIC[t], Math.ceil(q(3) * k / 2));
+    add(FABRIC2[t], Math.ceil(q(2) * k / 3));
+    add(t <= 3 ? 'nail' : 'screw', q(2));
+    if (t >= 9) add('precision', 1);
+  } else if (md.type === 'gloves' || md.type === 'boots') {
+    add(FABRIC[t], Math.ceil(q(2) / 2));
+    add(t <= 2 ? 'cotton' : 'leather', q(1));
+    if (md.type === 'boots') add('rubber', q(1));
+    if (t >= 6) add(PLATE[t], Math.ceil(t / 4));
+    if (t >= 10) add('hydraulic', 1);
+  } else if (md.type === 'backpack') {
+    add(t <= 2 ? 'coarse' : t <= 5 ? 'canvas' : 'nylon', q(3));
+    add(FABRIC[t], Math.ceil(q(1) / 2));
+    add('ironWire', q(1));
+  } else {
+    add(ELEC[t], q(1));
+    add(t <= 3 ? 'ironWire' : 'plastic', q(1));
+    add('cotton', q(1));
+  }
+  return out;
+}
 
 /** 整數顯示的屬性（其餘為小數/百分比） */
 const INT_STATS = new Set(['atk', 'def', 'hp']);
@@ -151,8 +216,39 @@ export class EquipmentSystem {
     return this.items.filter((i) => (i.loc || 'store') === 'store' && !this.isWorn(i));
   }
 
+  /** 物品倉庫已用格數：每件裝備 1 格，每種材料物品每 999 個 1 格 */
   storeUsed() {
-    return this.storeItems().reduce((s, i) => s + itemSize(i), 0);
+    return this.storeItems().reduce((s, i) => s + itemSize(i), 0) + this.supplySlots();
+  }
+
+  supplySlots(except = null) {
+    return Object.entries(this.game.state.supplies || {})
+      .reduce((s, [k, v]) => s + (k !== except && v > 0 ? Math.ceil(v / STACK_MAX) : 0), 0);
+  }
+
+  /** 物品倉庫還能放多少個某種材料物品 */
+  supplyRoom(key) {
+    const cur = this.game.state.supplies?.[key] || 0;
+    const other = this.storeUsed() - Math.ceil(cur / STACK_MAX);
+    return Math.max(0, (this.storeCap() - other) * STACK_MAX - cur);
+  }
+
+  /**
+   * 把材料物品放進物品倉庫（受格子限制）。
+   * @returns {Record<string, number>} 實際放入的數量
+   */
+  addSupplies(gains = {}) {
+    const st = this.game.state;
+    st.supplies = st.supplies || {};
+    const out = {};
+    Object.entries(gains).forEach(([k, v]) => {
+      if (!SUPPLIES[k] || !(v > 0)) return;
+      const n = Math.min(Math.floor(v), this.supplyRoom(k));
+      if (n <= 0) return;
+      st.supplies[k] = (st.supplies[k] || 0) + n;
+      out[k] = n;
+    });
+    return out;
   }
 
   /** 隊員背包的物品格子：初始 10，加上背包裝備的格數 */
@@ -301,7 +397,17 @@ export class EquipmentSystem {
   dismantleValue(item) {
     const idx = RARITY_ORDER.indexOf(item.rarity);
     const mul = tierMul(item.tier || 1) * (1 + this.game.research.bonus('dismantlePct'));
-    return { metal: Math.round((10 + item.level * 3) * mul), cloth: Math.round((4 + item.level) * mul), parts: [0, 0, 0, 1, 3, 8][idx] || 0 };
+    // 拆解回收約三成的製作材料（至少 1 個），高品級另外回收稀有材料
+    const recipe = craftRecipe(ITEM_MODELS[item.model] || { type: item.type, tier: item.tier || 1 });
+    const gain = {};
+    Object.entries(recipe).forEach(([k, v]) => {
+      if (k === 'wood') return;
+      const n = Math.max(1, Math.round(v * 0.3 * mul));
+      gain[k] = n;
+    });
+    const parts = [0, 0, 0, 1, 3, 8][idx] || 0;
+    if (parts) gain.parts = parts;
+    return gain;
   }
 
   removeItem(itemId) {
@@ -327,8 +433,9 @@ export class EquipmentSystem {
     const res = this.removeItem(itemId);
     if (!res.ok) return res;
     const gain = this.dismantleValue(item);
-    grant(this.game.state, gain, this.game.resources.storageCap());
-    return { ok: true, msg: `拆解獲得 金屬${gain.metal} 布料${gain.cloth}${gain.parts ? ` 稀有材料${gain.parts}` : ''}` };
+    const got = this.game.grant(gain);
+    const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || '稀有材料'}×${v}`).join('、');
+    return { ok: true, msg: `拆解獲得 ${text || '（倉庫已滿，沒有回收到材料）'}` };
   }
 
   toggleLock(itemId) {
@@ -375,14 +482,8 @@ export class EquipmentSystem {
 
   craftCost(modelId, withBlueprint = false) {
     const md = ITEM_MODELS[modelId];
-    const t = 1 + (md.tier - 1) * 0.8;
-    const mul = t * Math.max(0.4, 1 - this.game.research.bonus('craftCostReduce'));
-    const isWeapon = ITEM_TYPES[md.type].slot === 'weapon';
-    const isGun = !!ITEM_TYPES[md.type].gun && md.type !== 'crossbow';
-    const base = isWeapon
-      ? { metal: isGun ? 50 : 25, wood: 20, ...(isGun ? { fuel: 8 } : {}) }
-      : { cloth: 30, metal: 12, wood: 8 };
-    const cost = Object.fromEntries(Object.entries(base).map(([k, v]) => [k, Math.round(v * mul)]));
+    const mul = Math.max(0.4, 1 - this.game.research.bonus('craftCostReduce'));
+    const cost = Object.fromEntries(Object.entries(craftRecipe(md)).map(([k, v]) => [k, Math.max(1, Math.round(v * mul))]));
     const parts = Math.floor((md.tier - 3) / 2) + (withBlueprint ? 1 : 0);
     if (parts > 0) cost.parts = parts;
     return cost;
@@ -423,6 +524,29 @@ export class EquipmentSystem {
     const type = pick(Object.keys(ITEM_TYPES));
     const rarity = level > 15 && chance(0.3) ? 'epic' : 'rare';
     return { id: uid('bp'), model: this.pickModel(type, level, 1), rarity };
+  }
+
+  // ---- 彈藥製作 ----
+
+  /** @returns {{ok:boolean, reason?:string}} */
+  canCraftAmmo(key) {
+    const rc = AMMO_RECIPES[key];
+    if (!rc) return { ok: false, reason: '無法製作' };
+    if (rc.bench > 0 && this.workbench() < rc.bench) return { ok: false, reason: this.workbench() < 1 ? '需要建造工作台' : `需要工作台 Lv${rc.bench}` };
+    if (rc.gun && this.game.research.level('c_gun') < rc.gun) return { ok: false, reason: `需研究「槍械製造」Lv${rc.gun}` };
+    return { ok: true };
+  }
+
+  /** 製作彈藥或箭矢（一次一批） */
+  craftAmmo(key) {
+    const check = this.canCraftAmmo(key);
+    if (!check.ok) return check;
+    const rc = AMMO_RECIPES[key];
+    if (this.supplyRoom(key) < rc.batch) return { ok: false, reason: `物品倉庫空間不足（${this.storeUsed()}/${this.storeCap()} 格）` };
+    if (!payCost(this.game.state, rc.cost)) return { ok: false, reason: '材料不足' };
+    this.addSupplies({ [key]: rc.batch });
+    this.game.state.stats.ammoCrafted = (this.game.state.stats.ammoCrafted || 0) + 1;
+    return { ok: true, msg: `製作完成：${SUPPLIES[key].name} ×${rc.batch}` };
   }
 
   canAffordCraft(modelId, bp) {

@@ -219,6 +219,10 @@ export class TerritorySystem {
         this.rel.players[e.from] = { status: 'friend', name, since: Date.now() };
         delete this.rel.requestsOut[e.from];
         g.log(`🤝 「${name}」接受了友好請求`, 'success');
+      } else if (e.type === 'intercept') {
+        g.intercept.handleIntercept(e);
+      } else if (e.type === 'plunder') {
+        g.intercept.handlePlunder(e);
       } else if (e.type === 'friendRemove') {
         if (this.relation(e.from) === 'friend') delete this.rel.players[e.from];
         g.log(`「${name}」解除了友好關係`, 'info');

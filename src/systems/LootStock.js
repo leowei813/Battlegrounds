@@ -1,6 +1,7 @@
 import { POI_TYPES } from '../config/poiTypes.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
 import { zoneAt } from '../config/zones.js';
+import { SUPPLIES, suppliesOf, medWeight } from '../config/supplies.js';
 
 /**
  * 建築每日物資：以「建築 ID + 當地日期」為種子隨機產生當天的物資種類與數量，
@@ -45,19 +46,60 @@ export function isLooted(poi, at = Date.now()) {
   return poi.lootedDay === dayKey(at);
 }
 
+/** 建築內殘留的物資（上次探索帶不走而留下的），只在當天有效 */
+export function remainOf(poi, remainMap, at = Date.now()) {
+  const r = remainMap?.[poi.id];
+  return r && r.day === dayKey(at) && Object.keys(r.res || {}).length ? r.res : null;
+}
+
+/** 依類別與危險度挑出具體的材料物品 */
+function pickSupply(cat, rnd, danger) {
+  let keys;
+  let weight;
+  if (cat === 'medLow') {
+    keys = suppliesOf('med', 2);
+    weight = (k) => medWeight(k);
+  } else if (cat === 'med') {
+    keys = suppliesOf('med');
+    weight = (k) => medWeight(k);
+  } else if (cat === 'ammo') {
+    keys = suppliesOf('ammo');
+    weight = (k) => (k === 'arrow' ? 3 : 2) * 0.6 ** Math.max(0, SUPPLIES[k].tier - danger);
+  } else {
+    keys = suppliesOf(cat);
+    // 越危險的地點越容易出現高階零件與布料
+    weight = (k) => 0.45 ** Math.max(0, SUPPLIES[k].tier - Math.ceil(danger / 1.3));
+  }
+  const total = keys.reduce((sum, k) => sum + weight(k), 0);
+  let r = rnd() * total;
+  for (const k of keys) {
+    r -= weight(k);
+    if (r <= 0) return k;
+  }
+  return keys[0];
+}
+
+/** 每單位的數量係數：零件、布料、藥品比食物木材稀少 */
+const CAT_AMOUNT = {
+  food: 1, wood: 1, fuel: 0.7, part: 0.25, fabric: 0.3, medLow: 0.08, med: 0.08, ammo: 0.6,
+};
+
 /**
- * 今日物資。已被搜刮則回傳空物資。
- * @returns {{resources: Record<string, number>, itemMul:number, empty:boolean}}
+ * 今日物資。已被搜刮則回傳空物資；有殘留物資時回傳殘留的部分（並標記 partial）。
+ * resources 的鍵為基本資源或具體的材料物品（例如 nail、bandage）。
+ * @param {object} [remainMap] state.map.remain
+ * @returns {{resources: Record<string, number>, itemMul:number, empty:boolean, partial?:boolean, gear:boolean, vehicle:boolean}}
  */
-export function stockOf(poi, at = Date.now()) {
-  if (isLooted(poi, at)) return { resources: {}, itemMul: 0, empty: true };
+export function stockOf(poi, at = Date.now(), remainMap = null) {
+  const left = remainOf(poi, remainMap, at);
+  if (left) return { resources: { ...left }, itemMul: 0, empty: false, partial: true, gear: false, vehicle: false };
+  if (isLooted(poi, at)) return { resources: {}, itemMul: 0, empty: true, gear: false, vehicle: false };
   const pt = POI_TYPES[poi.type];
   const rnd = seeded(hashString(`${poi.id}|${dayKey(at)}`));
-  // 種類：1～3 種，多半來自該類建築的物資表，偶爾出現意外的物資
-  const pool = Object.entries(pt.loot);
+  // 種類：多半來自該類建築的物資表
+  const pool = Object.entries(pt.loot).filter(([k]) => k !== 'gear' && k !== 'vehicle');
   const total = pool.reduce((s, [, w]) => s + w, 0);
   const pickType = () => {
-    if (rnd() < 0.15) return RESOURCE_KEYS[Math.floor(rnd() * RESOURCE_KEYS.length)];
     let r = rnd() * total;
     for (const [k, w] of pool) {
       r -= w;
@@ -65,14 +107,18 @@ export function stockOf(poi, at = Date.now()) {
     }
     return pool[0][0];
   };
-  const kinds = 1 + Math.floor(rnd() * 3);
+  const kinds = 1 + Math.floor(rnd() * 3) + (pt.amountMul > 1.5 ? 1 : 0);
   const resources = {};
   // 區域越危險物資越豐富
-  const zoneMul = zoneAt(poi.lat, poi.lon).lootMul;
+  const zone = zoneAt(poi.lat, poi.lon);
+  const danger = pt.danger + Math.max(0, zone.danger || 0);
   for (let i = 0; i < kinds; i += 1) {
-    const k = pickType();
-    const amount = Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zoneMul);
-    resources[k] = (resources[k] || 0) + amount;
+    const cat = pickType();
+    const key = RESOURCE_KEYS.includes(cat) ? cat : pickSupply(cat, rnd, danger);
+    const amount = Math.max(1, Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zone.lootMul * (pt.amountMul || 1) * CAT_AMOUNT[cat]));
+    resources[key] = (resources[key] || 0) + amount;
   }
-  return { resources, itemMul: 0.5 + rnd(), empty: false };
+  return {
+    resources, itemMul: 0.5 + rnd(), empty: false, gear: pt.itemChance > 0, vehicle: !!pt.loot.vehicle,
+  };
 }

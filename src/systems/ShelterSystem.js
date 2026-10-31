@@ -223,6 +223,8 @@ export class ShelterSystem {
     if (isShelter) {
       // 搬家：資源只保留帶得走的部分（退還的建材也要搬）
       Object.assign(this.game.state.resources, preview.keep);
+      // 退還的零件與布料放進物品倉庫（物品倉庫跟著搬家）
+      this.game.grant(Object.fromEntries(Object.entries(preview.refund).filter(([k]) => !RESOURCE_KEYS.includes(k))));
       this.game.state.primaryBaseId = null;
     } else {
       this.game.grant(preview.refund);
@@ -436,7 +438,7 @@ export class ShelterSystem {
   /** 每點耐久的修繕材料（研究「快速修補」減少） */
   repairCostPerHp() {
     const mul = Math.max(0.5, 1 - this.game.research.bonus('repairPct') * 0.3);
-    return { wood: REPAIR.wood * mul, metal: REPAIR.metal * mul };
+    return Object.fromEntries(Object.entries(REPAIR.cost).map(([k, v]) => [k, v * mul]));
   }
 
   /**
@@ -446,19 +448,30 @@ export class ShelterSystem {
   repairWalls(dtMs) {
     let budget = this.repairRate() * (dtMs / 1000);
     if (budget <= 0) return;
-    const res = this.game.state.resources;
+    const st = this.game.state;
+    const pool = (k) => (st.resources[k] !== undefined ? st.resources : (st.supplies = st.supplies || {}));
     const per = this.repairCostPerHp();
     const damaged = this.bases.map((b) => ({ b, ratio: this.wallHp(b) / this.wallMax(b) }))
       .filter((x) => x.ratio < 1).sort((a, c) => a.ratio - c.ratio);
     for (const { b } of damaged) {
       if (budget <= 0) break;
       const need = this.wallMax(b) - this.wallHp(b);
-      const affordable = Math.min(per.wood ? res.wood / per.wood : Infinity, per.metal ? res.metal / per.metal : Infinity);
+      const affordable = Math.min(...Object.entries(per).map(([k, v]) => (v ? (pool(k)[k] || 0) / v : Infinity)));
       const hp = Math.min(need, budget, affordable);
       if (hp <= 0) break;
       b.wallHp = this.wallHp(b) + hp;
-      res.wood -= hp * per.wood;
-      res.metal -= hp * per.metal;
+      // 材料物品以整數計：累積小數，用滿 1 個才扣除
+      Object.entries(per).forEach(([k, v]) => {
+        if (st.resources[k] !== undefined) st.resources[k] -= hp * v;
+        else {
+          st.repairAcc = st.repairAcc || {};
+          st.repairAcc[k] = (st.repairAcc[k] || 0) + hp * v;
+          const whole = Math.min(Math.floor(st.repairAcc[k]), st.supplies[k] || 0);
+          st.repairAcc[k] -= whole;
+          st.supplies[k] -= whole;
+          if (st.supplies[k] <= 0) delete st.supplies[k];
+        }
+      });
       budget -= hp;
     }
   }

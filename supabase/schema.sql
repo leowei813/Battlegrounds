@@ -161,7 +161,7 @@ create or replace function public.jdqs_world_send(p_from text, p_token text, p_t
 returns json language plpgsql security definer set search_path = public as $$
 declare s public.jdqs_world;
 begin
-  if p_type not in ('attack', 'friendRequest', 'friendAccept', 'friendRemove') or p_from = p_to then
+  if p_type not in ('attack', 'friendRequest', 'friendAccept', 'friendRemove', 'intercept', 'plunder') or p_from = p_to then
     return json_build_object('status', 'invalid');
   end if;
   if octet_length(coalesce(p_data, '{}'::jsonb)::text) > 2000 then return json_build_object('status', 'invalid'); end if;

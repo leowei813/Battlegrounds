@@ -1,3 +1,5 @@
+import { materialize } from './supplies.js';
+
 /**
  * 研究樹：10 個分支、78 項科技，每項都有等級（大多最高 10 級）。
  *
@@ -35,6 +37,11 @@ const BRANCH_COST = {
   crafting: { metal: 0.8, cloth: 0.6, wood: 0.6 },
   recruitment: { coins: 1, food: 0.8 },
   expansion: { wood: 1.4, metal: 1, cloth: 0.6 },
+};
+/** 各分支研究使用的零件種類 */
+const BRANCH_TAGS = {
+  weapons: ['gun', 'mech'], defense: ['struct', 'mech'], industry: ['mech', 'elec'], vehicles: ['mech', 'elec'],
+  crafting: ['mech', 'struct'], expansion: ['struct'], medical: ['elec'],
 };
 const TIER_AMOUNT = [0, 60, 150, 350, 700];
 const TIER_PARTS = [0, 0, 1, 3, 6];
@@ -77,10 +84,10 @@ export const RESEARCH = {
   m_regen: r('medical', 1, '休養', '生命自然回復加快', { regenPct: 0.08 }),
   m_heal: r('medical', 1, '急救', '藥品治療回復量提升', { healPct: 0.04 }),
   m_hp: r('medical', 1, '體能訓練', '全隊生命提升', { hpPct: 0.02 }),
-  m_cost: r('medical', 2, '藥品節約', '治療消耗的藥品減少', { healCostReduce: 0.05 }, { req: [['m_heal', 2]] }),
+  m_cost: r('medical', 2, '藥品節約', '治療時有機率不消耗藥品', { healCostReduce: 0.05 }, { req: [['m_heal', 2]] }),
   m_def: r('medical', 2, '抗打擊', '全隊防禦提升', { defPct: 0.02 }, { req: [['m_hp', 2]] }),
   m_dodge: r('medical', 2, '反應訓練', '閃避率提升', { dodgeAdd: 0.004 }),
-  m_med: r('medical', 2, '草藥學', '每小時產出藥品', { medicinePerHour: 0.2 }),
+  m_med: r('medical', 2, '草藥學', '每小時產出紗布', { medicinePerHour: 0.2 }),
   m_severe: r('medical', 3, '重傷護理', '重傷者回復加快', { severeRegenPct: 0.1 }, { req: [['m_regen', 3]] }),
   m_starve: r('medical', 3, '耐飢體質', '飢餓時扣血變慢', { starveResist: 0.05 }, { req: [['m_hp', 3]] }),
   // ---- 農業 ----
@@ -145,7 +152,12 @@ export const labLevelFor = (id, level) => Math.max(requiredLabLevel(RESEARCH[id]
 export function researchCost(id, level) {
   const def = RESEARCH[id];
   const amount = TIER_AMOUNT[def.tier] * def.costMul * 1.6 ** (level - 1);
-  const cost = Object.fromEntries(Object.entries(BRANCH_COST[def.branch]).map(([k, m]) => [k, Math.round(amount * m)]));
+  // 金屬／布料／藥品換算成具體零件與布料：研究階級越高、等級越高，需要越高階的材料（數量成長較慢）
+  const matAmount = TIER_AMOUNT[def.tier] * def.costMul * 1.25 ** (level - 1);
+  const abstract = (k) => ['metal', 'cloth', 'medicine'].includes(k);
+  const raw = Object.fromEntries(Object.entries(BRANCH_COST[def.branch]).map(([k, m]) => [k, Math.round((abstract(k) ? matAmount : amount) * m)]));
+  const tier = Math.min(5, Math.max(1, def.tier - 1 + Math.ceil(level / 4)));
+  const cost = materialize(raw, { tier, tags: BRANCH_TAGS[def.branch] || ['mech'], key: id });
   const parts = Math.round(TIER_PARTS[def.tier] * 1.4 ** (level - 1));
   if (parts) cost.parts = parts;
   return cost;
@@ -169,7 +181,7 @@ const LABELS = {
   repairPct: (v) => `修繕效率 +${pct(v)}`, towerDmgPct: (v) => `防禦塔傷害 +${pct(v)}`, towerRangePct: (v) => `射程 +${pct(v)}`,
   wallReduceAdd: (v) => `圍牆減傷 +${pct(v)}`, guardDmgPct: (v) => `駐守傷害 +${pct(v)}`, raidDefensePct: (v) => `防禦 NPC +${pct(v)}`,
   offlineDefPct: (v) => `離線擊殺 +${pct(v)}`, regenPct: (v) => `回復 +${pct(v)}`, healPct: (v) => `治療量 +${pct(v)}`,
-  healCostReduce: (v) => `藥品消耗 −${pct(v)}`, medicinePerHour: (v) => `藥品 +${v.toFixed(1)}/時`, severeRegenPct: (v) => `重傷回復 +${pct(v)}`,
+  healCostReduce: (v) => `不消耗藥品機率 ${pct(Math.min(0.5, v))}`, medicinePerHour: (v) => `紗布 +${v.toFixed(1)}/時`, severeRegenPct: (v) => `重傷回復 +${pct(v)}`,
   starveResist: (v) => `飢餓扣血 −${pct(v)}`, foodPct: (v) => `食物 +${pct(v)}`, rainPct: (v) => `雨水收集器 +${pct(v)}`,
   foodUpkeepReduce: (v) => `食物消耗 −${pct(v)}`, forageAdd: (v) => `探索食物 +${pct(v)}`, fuelPerHour: (v) => `燃料 +${v.toFixed(1)}/時`,
   farmFlat: (v) => `每級農場食物 +${v.toFixed(1)}/時`, workbenchPct: (v) => `工作台產量 +${pct(v)}`, storagePct: (v) => `消耗品上限 +${pct(v)}`,

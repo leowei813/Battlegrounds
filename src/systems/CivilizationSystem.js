@@ -70,14 +70,33 @@ export class CivilizationSystem {
     return Math.min(SIEGE_SCALING.maxSpawnMul, 1 + this.effective() * SIEGE_SCALING.spawnPerCiv);
   }
 
+  /** 文明度低時屍潮殭屍較弱的倍率（0.6～1） */
+  weakMul() {
+    const S = SIEGE_SCALING;
+    return S.weakMin + (1 - S.weakMin) * Math.min(1, this.value() / S.weakCiv);
+  }
+
   /** 屍潮殭屍的生命倍率 */
   siegeHpMul() {
-    return 1 + this.effective() * SIEGE_SCALING.hpPerCiv;
+    return this.weakMul() * (1 + this.effective() * SIEGE_SCALING.hpPerCiv);
   }
 
   /** 屍潮殭屍的攻擊倍率 */
   siegeAtkMul() {
-    return 1 + this.effective() * SIEGE_SCALING.atkPerCiv;
+    return this.weakMul() * (1 + this.effective() * SIEGE_SCALING.atkPerCiv);
+  }
+
+  /** 每晚最多幾波屍潮：新手（文明度未達門檻）只有 1 波，文明度階級越高波數越多 */
+  maxWaves() {
+    if (this.effective() <= 0) return 1;
+    const idx = CIV_TIERS.indexOf(CIV_TIERS.filter((t) => this.value() >= t.min).pop());
+    return SIEGE_SCALING.wavesByTier[Math.max(0, idx)] || 1;
+  }
+
+  /** 每波殭屍數量倍率：文明度越低越少 */
+  waveSizeMul() {
+    const S = SIEGE_SCALING;
+    return S.waveSizeMin + (S.waveSizeMax - S.waveSizeMin) * Math.min(1, this.value() / S.waveSizeCiv);
   }
 
   unlocked(enemyKey) {

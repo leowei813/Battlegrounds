@@ -7,7 +7,7 @@ const STALE_MS = 3 * 24 * 60 * 60 * 1000;
 const MAX_BASES = 5;
 const MAX_TRIPS = 10;
 /** 玩家之間的事件（攻擊、友好請求…） */
-const EVENT_TYPES = new Set(['attack', 'friendRequest', 'friendAccept', 'friendRemove']);
+const EVENT_TYPES = new Set(['attack', 'friendRequest', 'friendAccept', 'friendRemove', 'intercept', 'plunder']);
 const MAX_INBOX = 50;
 
 const num = (v, min, max) => (Number.isFinite(v) && v >= min && v <= max ? v : null);
@@ -46,6 +46,8 @@ export function sanitizePresence(body) {
       searchMs: num(t.searchMs, 0, 1e9) ?? endAt - startAt,
       members: num(t.members, 1, 10) ?? 1,
       target: str(t.target, 40),
+      id: str(t.id, 40),
+      level: num(t.level, 1, 60) ?? 1,
     };
   }).filter(Boolean);
   return {
@@ -119,7 +121,9 @@ export class WorldStore {
     if (!to) return 'notfound';
     const type = str(body?.type, 20);
     if (!EVENT_TYPES.has(type) || fromId === toId) return 'invalid';
-    const data = body?.data && typeof body.data === 'object' ? JSON.parse(JSON.stringify(body.data).slice(0, 2000)) : {};
+    const json = body?.data && typeof body.data === 'object' ? JSON.stringify(body.data) : '{}';
+    if (json.length > 2000) return 'invalid';
+    const data = JSON.parse(json);
     to.inbox = [...(to.inbox || []), { from: fromId, fromName: from.name, type, data, at: Date.now() }].slice(-MAX_INBOX);
     this.persistSoon();
     return 'ok';

@@ -5,18 +5,24 @@ import {
 import { CLASSES, JOBS, xpToNext } from '../config/survivors.js';
 import { escapeHtml } from '../utils/dom.js';
 import { formatNumber, formatDuration } from '../utils/math.js';
-import { canAfford } from '../systems/costUtils.js';
+import { canAfford, amountOf } from '../systems/costUtils.js';
+import { SUPPLIES } from '../config/supplies.js';
 
 /** 共用 UI 片段（回傳 HTML 字串）。 */
 
-const META = { ...RESOURCES, ...CURRENCIES };
+const META = { ...RESOURCES, ...CURRENCIES, ...SUPPLIES };
+/** 資源、貨幣、材料物品的名稱與圖示 */
+export const metaOf = (k) => META[k] || { name: k, icon: '❔' };
 
 export function costHtml(state, cost = {}) {
   return Object.entries(cost)
     .map(([k, v]) => {
-      const have = k in state.resources ? state.resources[k] : state.player[k] ?? 0;
+      const have = amountOf(state, k);
       const ok = have >= v;
-      return `<span class="cost ${ok ? '' : 'lack'}" title="${META[k]?.name || k}">${META[k]?.icon || k}${formatNumber(v)}</span>`;
+      const m = metaOf(k);
+      // 材料物品顯示名稱，避免只看圖示分不出種類
+      const label = SUPPLIES[k] ? `${m.icon}${m.name}×` : m.icon;
+      return `<span class="cost ${ok ? '' : 'lack'}" title="${m.name}（擁有 ${formatNumber(have)}）">${label}${formatNumber(v)}</span>`;
     })
     .join('');
 }
@@ -24,7 +30,7 @@ export function costHtml(state, cost = {}) {
 export function gainsHtml(gains = {}) {
   const parts = Object.entries(gains)
     .filter(([, v]) => Math.round(v) !== 0)
-    .map(([k, v]) => `<span class="gain ${v < 0 ? 'neg' : ''}">${META[k]?.icon || k}${v > 0 ? '+' : ''}${formatNumber(v)}</span>`);
+    .map(([k, v]) => `<span class="gain ${v < 0 ? 'neg' : ''}" title="${metaOf(k).name}">${metaOf(k).icon}${SUPPLIES[k] ? metaOf(k).name : ''}${v > 0 ? '+' : ''}${formatNumber(v)}</span>`);
   return parts.length ? parts.join('') : '<span class="muted">無</span>';
 }
 

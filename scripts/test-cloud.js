@@ -103,6 +103,12 @@ async function run() {
   assert(inbox.length === 1 && inbox[0].type === 'friendRequest' && inbox[0].from === pB.id && inbox[0].fromName === '玩家B', '收到其他玩家的事件');
   assert((await api.worldInbox(pA.id, pA.token)).length === 0, '讀取後清空信箱');
   await expectError(api.worldInbox(pA.id, pB.token), 'forbidden', '無法讀取他人信箱');
+  // v8：攔截與戰利品事件
+  await api.worldSend(pB.id, pB.token, pA.id, 'intercept', { tripId: 'ex_1', win: true });
+  await api.worldSend(pB.id, pB.token, pA.id, 'plunder', { resources: { nail: 5 }, items: [{ model: 'knife', rarity: 'rare', level: 3 }] });
+  await expectError(api.worldSend(pB.id, pB.token, pA.id, 'plunder', { pad: 'x'.repeat(3000) }), 'server', '超過 2KB 的事件被拒');
+  const inbox2 = await api.worldInbox(pA.id, pA.token);
+  assert(inbox2.length === 2 && inbox2[0].type === 'intercept' && inbox2[1].data.resources.nail === 5, '攔截與戰利品事件可以傳遞');
   await api.worldDelete(pA.id, pA.token);
   assert((await api.worldNearby(25.04, 121.56, 5, pB.id)).length === 0, '停止公開後立即從世界移除');
 }

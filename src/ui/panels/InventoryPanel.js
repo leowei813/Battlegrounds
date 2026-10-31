@@ -7,6 +7,10 @@ import {
   btn, itemCard, costHtml, progressBar,
 } from '../components.js';
 import { VEHICLES } from '../../config/vehicles.js';
+import {
+  SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, AMMO_RECIPES, AMMO_FOR,
+} from '../../config/supplies.js';
+import { STACK_MAX } from '../../config/equipment.js';
 
 /**
  * 製作分頁（裝備與載具製作）；倉庫裝備清單與車庫由避難所頁以彈窗開啟。
@@ -24,15 +28,34 @@ export class InventoryPanel {
 
   /** 製作分頁：只有裝備製作與載具製作 */
   render() {
-    const view = this.view === 'vehicles' ? 'vehicles' : 'craft';
-    const tabs = `<div class="seg">${btn('🛠️ 裝備製作', 'view', { v: 'craft' }, { cls: view === 'craft' ? 'active' : '' })}${btn('🚗 載具製作', 'view', { v: 'vehicles' }, { cls: view === 'vehicles' ? 'active' : '' })}</div>`;
-    return `<div class="panel-inner"><h2>🛠️ 製作</h2>${tabs}${view === 'craft' ? this.renderCraft() : this.renderVehicleCraft()}</div>`;
+    const view = ['vehicles', 'ammo'].includes(this.view) ? this.view : 'craft';
+    const tabs = `<div class="seg">${btn('🛠️ 裝備製作', 'view', { v: 'craft' }, { cls: view === 'craft' ? 'active' : '' })}${btn('🎯 彈藥製作', 'view', { v: 'ammo' }, { cls: view === 'ammo' ? 'active' : '' })}${btn('🚗 載具製作', 'view', { v: 'vehicles' }, { cls: view === 'vehicles' ? 'active' : '' })}</div>`;
+    const body = view === 'craft' ? this.renderCraft() : view === 'ammo' ? this.renderAmmoCraft() : this.renderVehicleCraft();
+    return `<div class="panel-inner"><h2>🛠️ 製作</h2>${tabs}${body}</div>`;
+  }
+
+  /** 彈藥與箭矢製作：槍械需要彈藥、弓弩需要箭矢 */
+  renderAmmoCraft() {
+    const g = this.game;
+    const eq = g.equipment;
+    const users = (key) => Object.entries(AMMO_FOR).filter(([, a]) => a.ammo === key).map(([t]) => ITEM_TYPES[t].name).join('、');
+    const cards = Object.entries(AMMO_RECIPES).map(([key, rc]) => {
+      const sp = SUPPLIES[key];
+      const check = eq.canCraftAmmo(key);
+      return `<div class="card row-between"><div><b>${sp.icon} ${sp.name} ×${rc.batch}</b>
+        <small class="muted block">用於：${users(key)}・${rc.bench ? `工作台 Lv${rc.bench}` : '不需工作台'}・倉庫有 ${g.state.supplies?.[key] || 0}</small>
+        <div class="costs">${costHtml(g.state, rc.cost)}</div></div>
+        ${check.ok ? btn('製作', 'craftAmmo', { key }, { cls: 'btn-sm btn-primary' }) : `<span class="tag tag-red">🔒 ${check.reason}</span>`}</div>`;
+    }).join('');
+    const per = Object.entries(AMMO_FOR).map(([t, a]) => `${ITEM_TYPES[t].name} ${a.perFight}`).join('、');
+    return `<p class="muted">槍械需要彈藥、弓弩需要箭矢才能使用；沒有彈藥時只能徒手作戰。每場戰鬥消耗：${per}。出發探索時，使用槍械或弓弩的隊員會自動從倉庫補充約 4 場戰鬥的彈藥。彈藥也能在警察局、軍事基地、商店探索時找到。</p>
+      <div class="grid">${cards}</div>`;
   }
 
   /** 倉庫裝備（從避難所頁開啟） */
   openStorage() {
     this.ui.modal.open({
-      title: `📦 倉庫裝備（${this.game.state.inventory.items.length} 件）`,
+      title: `🗄️ 物品倉庫（裝備 ${this.game.state.inventory.items.length} 件）`,
       wide: true,
       body: this.renderItems(),
       live: () => this.renderItems(),
@@ -75,7 +98,7 @@ export class InventoryPanel {
       </div>`;
     }).join('');
     return `
-      <p class="muted">探索時可帶載具：所有隊員都有座位時全隊以載具速度移動；運載量讓隊伍帶回更多物資（每人徒步 ${g.vehicles.personCarry()}，背包可再增加）。每台至少一人駕駛，除滑板車與腳踏車外都會耗油，行駛與遇襲會磨損耐久。更多載具可在探索加油站、倉庫、工廠等地點時找到，或到「製作」頁製作。</p>
+      <p class="muted">探索時可帶載具：所有隊員都有座位時全隊以載具速度移動；運載量讓隊伍帶回更多物資（每人徒步 ${g.vehicles.personCarry()}，背包可再增加）。每台至少一人駕駛，除滑板車與腳踏車外都會耗油，行駛與遇襲會磨損耐久。更多載具主要在探索修車廠時找到（需要維修），或到「製作」頁製作。</p>
       <div class="grid">${cards || '<p class="muted">車庫是空的。</p>'}</div>`;
   }
 
@@ -122,8 +145,16 @@ export class InventoryPanel {
     g.state.inventory.items.forEach((i) => { counts[i.rarity] = (counts[i.rarity] || 0) + 1; });
     const rarities = [['all', '全部品級', '#fff'], ...RARITY_ORDER.map((r) => [r, `${RARITIES[r].name} ${counts[r] || 0}`, RARITIES[r].color])]
       .map(([k, n, c]) => `<button class="chip rchip ${this.rarityFilter === k ? 'active' : ''}" style="--rc:${c}" data-action="rfilter" data-r="${k}">${n}</button>`).join('');
+    const sup = g.state.supplies || {};
+    const supplies = Object.entries(SUPPLY_CATS).map(([cat, c]) => {
+      const keys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === cat && sup[k] > 0);
+      const list = keys.map((k) => `<span class="supply-chip" title="${SUPPLIES[k].name}・${Math.ceil(sup[k] / STACK_MAX)} 格">${SUPPLIES[k].icon} ${SUPPLIES[k].name} <b>${sup[k]}</b></span>`).join('');
+      return `<div class="supply-row"><b>${c.icon} ${c.name}</b> ${list || '<small class="muted">無</small>'}</div>`;
+    }).join('');
     return `
-      <p>📦 倉庫空間 <b class="${used >= cap ? 'neg' : ''}">${used} / ${cap}</b> 格 <small class="muted">（物品依大小佔格子；倉庫每升一級 +10 格，研究「倉儲擴建」再增加；穿戴中的裝備不佔格子）</small></p>
+      <p>🗄️ 物品倉庫空間 <b class="${used >= cap ? 'neg' : ''}">${used} / ${cap}</b> 格 <small class="muted">（每件裝備佔 1 格；零件、布料、藥品、彈藥同種類每 ${STACK_MAX} 個佔 1 格；物品倉庫每升一級 +10 格；穿戴中的裝備不佔格子）</small></p>
+      <h4>材料物品</h4><div class="supply-list">${supplies}</div>
+      <h4>裝備</h4>
       <div class="chips">${filters}</div>
       <div class="chips">${rarities}</div>
       <div class="row-between"><div class="chips">
@@ -190,12 +221,13 @@ export class InventoryPanel {
         break;
       }
       case 'craft': this.showCraftResult(g.equipment.craft(data.type)); break;
+      case 'craftAmmo': this.ui.result(g.equipment.craftAmmo(data.key)); break;
       case 'craftBp': this.showCraftResult(g.equipment.craft(data.type, data.id)); break;
       case 'equipTo': this.pickSurvivor(data.id); break;
       case 'toStore': this.ui.result(g.equipment.moveToStore(data.id)); break;
       case 'toBag': this.pickSurvivor(data.id, 'carry'); break;
       case 'repair': this.ui.result(g.vehicles.repair(data.id)); break;
-      case 'scrap': if (confirm('確定拆解這台載具？會回收部分金屬。')) this.ui.result(g.vehicles.scrap(data.id)); break;
+      case 'scrap': if (confirm('確定拆解這台載具？會回收部分零件。')) this.ui.result(g.vehicles.scrap(data.id)); break;
       case 'craftVehicle': this.ui.result(g.vehicles.craft(data.type)); break;
       default: break;
     }

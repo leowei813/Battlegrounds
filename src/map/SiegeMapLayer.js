@@ -209,16 +209,36 @@ export const SiegeMapLayer = L.Layer.extend({
   /** 其他玩家的探索隊伍（青色）與 NPC 的探索／掠奪隊（紅色），依行程時間即時推算位置 */
   drawOtherTrips(ctx, size) {
     const now = Date.now();
+    this.teams = [];
     (this.game.world?.others || []).forEach((player) => player.trips.forEach((trip) => {
       if (now > trip.endAt) return;
-      this.drawTrip(ctx, size, tripProgress(trip, now), `👤 ${player.name}`, ['rgba(38,198,218,0.55)', '#00838f', '#e0f7fa', 'rgba(0,77,64,0.85)']);
+      const p = tripProgress(trip, now);
+      this.drawTrip(ctx, size, p, `👤 ${player.name}`, ['rgba(38,198,218,0.55)', '#00838f', '#e0f7fa', 'rgba(0,77,64,0.85)']);
+      if (trip.id) this.teams.push({ kind: 'player', playerId: player.id, tripId: trip.id, pos: p.pos });
     }));
     this.game.npcs.trips(now).forEach(({ npc, trip, p }) => {
       const raid = trip.kind === 'raid';
       this.drawTrip(ctx, size, p, `${raid ? '⚔️' : '🏴‍☠️'} ${npc.name}${raid ? '・掠奪' : ''}`, raid
         ? ['rgba(229,57,53,0.75)', '#b71c1c', '#ffebee', 'rgba(127,0,0,0.9)']
         : ['rgba(141,110,99,0.6)', '#4e342e', '#efebe9', 'rgba(62,39,35,0.85)']);
+      this.teams.push({ kind: 'npc', npcId: npc.id, pos: p.pos });
     });
+  },
+
+  /** 點擊位置附近的野外隊伍（其他玩家、NPC） */
+  teamAt(pt) {
+    if (!this.map || !this.teams) return null;
+    let best = null;
+    let bestD = 18;
+    this.teams.forEach((t) => {
+      const m = this.map.latLngToContainerPoint([t.pos.lat, t.pos.lon]);
+      const d = Math.hypot(m.x - pt.x, m.y - pt.y);
+      if (d < bestD) {
+        best = t;
+        bestD = d;
+      }
+    });
+    return best;
   },
 
   /** @param {[string,string,string,string]} colors 路線、標記底色、外框與文字、標籤底色 */

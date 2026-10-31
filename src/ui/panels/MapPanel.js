@@ -1,13 +1,14 @@
 import { MapService } from '../../map/MapService.js';
-import { POI_TYPES } from '../../config/poiTypes.js';
+import { POI_TYPES, LOOT_CATS } from '../../config/poiTypes.js';
 import { ALL_ENEMIES } from '../../config/enemies.js';
-import { RESOURCES } from '../../config/constants.js';
 import { BASE_SIZES, FACILITY_COUNT } from '../../config/civilization.js';
 import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
 import { isLooted, msToReset, stockOf } from '../../systems/LootStock.js';
 import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
-import { btn, costHtml } from '../components.js';
+import { btn, costHtml, metaOf } from '../components.js';
+import { remainOf } from '../../systems/LootStock.js';
+import { MAX_MARKERS } from '../../systems/MarkerSystem.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { zoneAt, ZONES } from '../../config/zones.js';
@@ -66,7 +67,7 @@ export class MapPanel {
     const now = Date.now();
     const zone = zoneAt(n.lat, n.lon);
     const enemies = g.npcs.garrison(n);
-    const loot = Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => `${RESOURCES[k].icon}${Math.floor(v)}`).join(' ');
+    const loot = Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => `${metaOf(k).icon}${Math.floor(v)}`).join(' ');
     const sh = g.shelter.primary();
     const dist = sh ? Math.round(haversine(sh.lat, sh.lon, n.lat, n.lon)) : null;
     const trip = n.trip && n.trip.endAt > now ? n.trip : null;
@@ -125,6 +126,7 @@ export class MapPanel {
         ${btn(this.scanning ? '⏳' : '🔄', 'rescan', {}, { cls: 'btn-icon', disabled: this.scanning, title: '重新掃描附近建築' })}
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
         ${btn('📍', 'gps', {}, { cls: `btn-icon ${this.game.gps.enabled ? 'on' : ''}`, title: 'GPS 偵測附近 50 公尺的建築' })}
+        ${btn(`📌${this.game.markers.list.length ? `<small>${this.game.markers.list.length}</small>` : ''}`, 'markers', {}, { cls: 'btn-icon', title: `標記的地點（最多 ${MAX_MARKERS} 個）` })}
       </div>
       ${this.siegeBanner()}
       ${this.scanning ? `<div class="scan-progress">📡 掃描建築中 ${this.scanProgress || ''}</div>` : ''}
@@ -239,13 +241,16 @@ export class MapPanel {
   /** 可能出現的物資（實際種類與數量要探索時才知道；探索後清空，每天 00:00 重置） */
   stockHtml(poi) {
     const reset = `每天 00:00 重置（${formatDuration(msToReset())}後）`;
+    const fmt = (res) => Object.entries(res).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} ${v}`).join('、');
+    // 上次探索帶不走而殘留的物資：直接顯示剩餘數量
+    const left = remainOf(poi, this.game.state.map.remain);
+    if (left) return `<div class="pos">📦 殘留物資（上次帶不走留下的）：${fmt(left)}・${reset}</div>`;
     if (isLooted(poi)) return `<div class="muted">🕸️ 今日已被搜刮一空・${reset}</div>`;
     if (this.game.gps.isDetected(poi)) {
       const st = stockOf(poi);
-      const list = Object.entries(st.resources).map(([k, v]) => `${RESOURCES[k].icon}${RESOURCES[k].name} ${v}`).join('、');
-      return `<div class="pos">📡 GPS 偵測到今日物資：${list}・${reset}</div>`;
+      return `<div class="pos">📡 GPS 偵測到今日物資：${fmt(st.resources)}・${reset}</div>`;
     }
-    const list = Object.keys(POI_TYPES[poi.type].loot).map((k) => `${RESOURCES[k].icon}${RESOURCES[k].name}`).join('、');
+    const list = Object.keys(POI_TYPES[poi.type].loot).map((k) => `${LOOT_CATS[k].icon}${LOOT_CATS[k].name}`).join('、');
     return `<div class="muted">📦 可能出現：${list}（實際所得於探索時隨機）・${reset}</div>`;
   }
 
@@ -267,6 +272,7 @@ export class MapPanel {
   async onAction(action, data = {}) {
     const sh = this.game.shelter.primary();
     if (action === 'gotoShelter' && sh) this.service.focus(sh.lat, sh.lon);
+    if (action === 'markers') this.openMarkers();
     if (action === 'legend') this.showLegend();
     if (action === 'gps') {
       const on = !this.game.gps.enabled;
@@ -298,8 +304,88 @@ export class MapPanel {
     }
   }
 
+  /** 野外隊伍（其他玩家或 NPC）：顯示資訊並可派隊攔截 */
+  openTeam(team) {
+    const g = this.game;
+    const t = g.intercept.target(team);
+    if (!t) {
+      this.ui.toastEl.show('這支隊伍已經離開了', 'info');
+      return;
+    }
+    const check = g.intercept.canIntercept(team);
+    const sh = g.shelter.primary();
+    const dist = sh ? Math.round(haversine(sh.lat, sh.lon, t.lat, t.lon)) : 0;
+    const rel = t.kind === 'player' ? g.territory.relation(t.playerId) : 'hostile';
+    const body = `
+      <p>${t.kind === 'npc' ? '🏴‍☠️' : '👤'} <b>${escapeHtml(t.name)}</b>・${t.members} 人・約 Lv${t.level}${dist ? `・距避難所 ${dist} 公尺` : ''}</p>
+      <p class="muted">派隊攔截：前往對方目前的位置，抵達時交戰。被擊敗的一方會空手走回自己的據點（返程不公開），身上背包的物資全部被搶走，每件裝備有 ${Math.round(5)}% 機率被搶走。${t.kind === 'player' ? '攻擊後雙方進入敵對。' : ''}</p>
+      <p class="muted">⏱ 對方行程剩 ${formatDuration(Math.max(0, t.endAt - Date.now()))}，太遠的話可能在你抵達前就回到據點。</p>
+      ${rel === 'friend' ? '<p class="tag tag-green">🤝 友好玩家，無法攻擊</p>' : ''}
+      <div class="btn-row">${btn('⚔️ 派隊攔截', 'intercept', {}, { cls: 'btn-danger', disabled: !check.ok, title: check.reason || '' })}</div>
+      ${check.ok ? '' : `<small class="muted">${escapeHtml(check.reason)}</small>`}`;
+    this.ui.modal.open({
+      title: t.kind === 'npc' ? '🏴‍☠️ NPC 隊伍' : '👤 其他玩家的隊伍',
+      body,
+      onAction: (action, _data, m) => {
+        if (action !== 'intercept') return;
+        m.close();
+        openTeamPicker(this.ui, {
+          title: `⚔️ 攔截：${t.name}`,
+          intro: `<p class="muted">對方 ${t.members} 人、約 Lv${t.level}。帶載具可以更快追上。</p>`,
+          vehicles: true,
+          distanceM: dist,
+          confirmLabel: '出發攔截！',
+          onConfirm: (ids, _dur, _auto, vids) => {
+            const r = this.ui.result(g.intercept.start(team, ids, { vehicleIds: vids }));
+            if (r.ok) this.renderMap(true);
+            return r;
+          },
+        });
+      },
+    });
+  }
+
+  /** 標記地點清單：飛到該地點、查看建築（可在那裡建立避難所）、移除標記 */
+  openMarkers() {
+    const g = this.game;
+    const body = () => {
+      const list = g.markers.list;
+      const sh = g.shelter.primary();
+      const rows = list.map((m) => {
+        const pt = POI_TYPES[m.type];
+        const dist = sh ? `・距避難所 ${Math.round(haversine(sh.lat, sh.lon, m.lat, m.lon))} 公尺` : '';
+        const z = g.shelter.sizeInfo(m);
+        return `<div class="card row-between"><div><b>${pt?.icon || '📍'} ${escapeHtml(m.name)}</b>
+          <small class="muted block">${pt?.name || ''}・${BASE_SIZES[z.id].icon} ${z.name}據點（可建 ${z.total} 棟）${dist}</small></div>
+          <span>${btn('前往', 'go', { id: m.id }, { cls: 'btn-xs btn-primary' })}${btn('移除', 'remove', { id: m.id }, { cls: 'btn-xs btn-ghost' })}</span></div>`;
+      }).join('');
+      return `<p class="muted">GPS 只能偵測身邊 50 公尺的建築。把建築標記起來（最多 ${MAX_MARKERS} 個），走遠或重新掃描後仍會保留在地圖上，方便日後在那裡建立避難所。在建築資訊中按「📌 標記地點」即可加入。</p>
+        ${rows || '<p class="muted">還沒有標記任何地點。</p>'}`;
+    };
+    this.ui.modal.open({
+      title: `📌 標記的地點（${g.markers.list.length}/${MAX_MARKERS}）`,
+      body: body(),
+      onAction: (action, data, m) => {
+        if (action === 'go') {
+          const mk = g.markers.list.find((x) => x.id === data.id);
+          m.close();
+          if (mk) {
+            this.service.focus(mk.lat, mk.lon, 18);
+            this.openPoi(mk.id);
+          }
+          return;
+        }
+        if (action === 'remove') {
+          this.ui.result(g.markers.unmark(data.id));
+          this.renderMap(true);
+        }
+        m.update(body());
+      },
+    });
+  }
+
   showLegend() {
-    const rows = Object.values(POI_TYPES).map((p) => `<div class="legend-row"><span class="poi-pin" style="--c:${p.color}">${p.icon}</span> ${p.name} <span class="danger">${stars(p.danger)}</span><small>${Object.keys(p.loot).map((k) => RESOURCES[k].icon).join('')}</small></div>`).join('');
+    const rows = Object.values(POI_TYPES).map((p) => `<div class="legend-row"><span class="poi-pin" style="--c:${p.color}">${p.icon}</span> ${p.name} <span class="danger">${stars(p.danger)}</span><small>${Object.keys(p.loot).map((k) => LOOT_CATS[k].icon).join('')}</small></div>`).join('');
     const sizes = Object.entries(BASE_SIZES).map(([k, z]) => `<div class="legend-row"><span class="shelter-pin size-${k}" style="--d:${z.pin}px">${z.icon}<i class="size-tag">${z.name[0]}</i></span> ${z.name}據點 <small>可建 ${FACILITY_COUNT + z.slots} 棟</small></div>`).join('');
     this.ui.modal.open({ title: '🧾 圖例', body: `${rows}<h4>據點規模</h4>${sizes}<h4>區域危險度</h4>${ZONES.map((z) => `<div class="legend-row"><span class="zone-tag" style="--zc:${z.color}">${z.name}</span><small>物資 ×${z.lootMul}・屍潮 ×${z.siegeMul}・殭屍 +${z.siegeLevel} 級</small></div>`).join('')}<div class="legend-row"><span class="npc-pin" style="width:28px;height:28px;font-size:14px">🏴‍☠️</span> NPC 據點：會升級、探索與掠奪，可攻打搶奪資源</div><p class="muted">金框是你的據點（⭐ 為主要據點），青框是其他玩家的據點。</p><p class="muted">☠ 越多越危險；距離避難所越遠危險度越高。紅框為探索範圍。</p>` });
   }
@@ -330,11 +416,13 @@ export class MapPanel {
       actions.push(btn(`🏴 建立前哨站（${g.shelter.outposts().length}/${g.shelter.outpostLimit()}）`, 'setShelter', {}, { cls: 'btn-ghost', disabled: !check.ok, title: check.reason || '' }));
       establish = `${sizeLine}<small class="muted block">前哨站只有防禦功能。建立費用：<span class="costs inline">${costHtml(g.state, g.shelter.establishCost())}</span>${check.ok ? '' : `（${check.reason}）`}</small>`;
     }
+    const marked = g.markers.isMarked(poi.id);
+    if (!base) actions.push(btn(marked ? '📌 取消標記' : `📌 標記地點（${g.markers.list.length}/${MAX_MARKERS}）`, marked ? 'unmark' : 'mark', {}, { cls: 'btn-ghost' }));
     return `
       <div class="poi-detail">
         <div class="poi-big" style="--c:${pt.color}">${pt.icon}</div>
         <div>
-          <b>${pt.name}</b>${poi.osm ? ' <small class="tag">OSM</small>' : ' <small class="tag">傳聞</small>'}
+          <b>${pt.name}</b>${poi.osm ? ' <small class="tag">OSM</small>' : pt.generated ? ' <small class="tag">資源點</small>' : ' <small class="tag">傳聞</small>'}${marked ? ' <small class="tag tag-amber">📌 已標記</small>' : ''}
           ${base ? `<div><span class="tag tag-amber">${g.shelter.isPrimary(base) ? '⭐ 避難所' : '🏴 前哨站'}</span> 據點危險度 <b>${g.shelter.dangerLevel(base)}</b></div>` : `<div>危險度 <span class="danger">${stars(danger)}</span> ${pt.special ? '<span class="tag tag-red">高級怪物</span>' : ''}</div>`}
           <div><span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span> <small class="muted">物資 ×${zone.lootMul}・殭屍 +${Math.max(0, zone.danger)} 危險度</small></div>
           ${dist != null ? `<div class="muted">距避難所 ${dist} 公尺</div>` : ''}
@@ -370,6 +458,9 @@ export class MapPanel {
           m.close();
           this.ui.setViewBase(this.game.shelter.baseAtPoi(poi.id)?.id);
           this.ui.switchTab('shelter');
+        } else if (action === 'mark' || action === 'unmark') {
+          this.ui.result(action === 'mark' ? this.game.markers.mark(poi) : this.game.markers.unmark(poi.id));
+          this.renderMap(true);
         } else if (action === 'explore') {
           this.openExplore(poi);
         } else if (action === 'attack') {

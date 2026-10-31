@@ -1,5 +1,5 @@
 import {
-  SAVE_VERSION, STARTING_RESOURCES, STARTING_COINS,
+  SAVE_VERSION, STARTING_RESOURCES, STARTING_SUPPLIES, STARTING_COINS,
 } from '../config/constants.js';
 import { FACILITIES } from '../config/facilities.js';
 import { CLASSES } from '../config/survivors.js';
@@ -15,6 +15,7 @@ export const STAT_KEYS = [
   'kills', 'siegeKills', 'bossKills', 'eliteKills', 'explorations', 'battlesWon', 'battlesLost',
   'itemsFound', 'rareItems', 'legendaryItems', 'crafted', 'upgrades', 'recruits',
   'researchDone', 'breaches', 'daysSurvived', 'foodCollected', 'peakCivilization',
+  'healed', 'ammoCrafted', 'intercepts', 'chestsOpened', 'forestVisits',
 ];
 
 /**
@@ -102,11 +103,14 @@ export function createInitialState({ playerName, classId, lat, lon }) {
       zombieGroups: [],
       lastZombieRefresh: 0,
       detected: {}, // GPS 今日偵測過的建築
+      markers: [], // 標記的建築（最多 5 個，保留建築資料方便日後建立避難所）
+      remain: {}, // 建築內殘留的物資 { poiId: { day, res } }
     },
     bases: [], // 據點列表（見 createBase）
     primaryBaseId: null, // 主要據點
 
     resources: { ...STARTING_RESOURCES },
+    supplies: { ...STARTING_SUPPLIES }, // 材料物品：零件、布料、藥品、彈藥（放在物品倉庫，可堆疊）
     inventory: { items: [], blueprints: [] },
     survivors: [createLeader(playerName, classId)],
     recruitPool: [],
