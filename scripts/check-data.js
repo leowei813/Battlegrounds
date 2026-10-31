@@ -1662,6 +1662,30 @@ assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[
   assert(mg.bases[0].facilities.dormitory.level === 2 && gm2.survivors.dormCap() >= 4, '舊存檔依現有人數給予宿舍等級，不會超過上限');
 }
 
+// ---- 38. v8.22：人數已滿也可招募，候選人停留 1 小時 ----
+{
+  const gc = Game.newGame({ playerName: 'C1', classId: 'warrior', lat: 25, lon: 121 });
+  gc.state.map.pois = fillPois([], 25, 121);
+  gc.shelter.establish(gc.state.map.pois[0]);
+  gc.state.player.coins = 1e5;
+  Object.keys(gc.state.resources).forEach((k) => { gc.state.resources[k] = 1e5; });
+  const lead = gc.survivors.leader();
+  gc.state.survivors.push({ ...lead, id: 'x1', isLeader: false }, { ...lead, id: 'x2', isLeader: false });
+  assert(gc.survivors.isFull(), '人數已滿（沒有宿舍 3 人）');
+  const roll = gc.survivors.recruitRoll();
+  assert(roll.ok && roll.offer.length === 3, '人數已滿也可以廣播招募');
+  assert(!gc.survivors.pickRecruit(roll.offer[0].id).ok && gc.state.recruitOffer?.length === 3, '人數已滿無法雇用，但候選人仍會停留');
+  gc.state.recruitPool.push({ ...gc.survivors.makeCandidate(1), leaveAt: Date.now() + 3600e3 });
+  gc.survivors.updateBoard(Date.now() + 30 * 60000);
+  assert(gc.state.recruitOffer?.length === 3 && gc.state.recruitPool.length === 1, '一小時內候選人不會離開');
+  gc.shelter.primary().facilities.dormitory.level = 2;
+  lead.level = 25;
+  assert(gc.survivors.pickRecruit(roll.offer[0].id).ok, '擴充宿舍後可以雇用停留中的候選人');
+  gc.survivors.recruitRoll();
+  gc.survivors.updateBoard(Date.now() + 3600e3 + 1000);
+  assert(!gc.state.recruitOffer && !gc.state.recruitPool.length, '超過一小時未招募的候選人會離開');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
