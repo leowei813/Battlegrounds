@@ -238,6 +238,49 @@ export class ShelterSystem {
     };
   }
 
+  // ---------- 據點遭襲紀錄 ----------
+
+  /**
+   * 記錄一次據點遭襲（屍潮、NPC 掠奪、其他玩家突襲）：防禦成功或失敗、損失的資源、毀損的建築、受重傷的人。
+   * @param {{base?:object, attacker:string, success:boolean, lost?:Record<string,number>, coins?:number,
+   *   damaged?:string[], injured?:string[], kills?:number, waves?:number, wallLost?:number, note?:string}} e
+   */
+  recordDefense(e) {
+    const st = this.game.state;
+    const entry = {
+      id: `df_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      at: Date.now(),
+      baseName: e.base?.name || '據點',
+      attacker: e.attacker,
+      success: !!e.success,
+      lost: Object.fromEntries(Object.entries(e.lost || {}).filter(([, v]) => v > 0).map(([k, v]) => [k, Math.floor(v)])),
+      coins: Math.floor(e.coins || 0),
+      damaged: e.damaged || [],
+      injured: e.injured || [],
+      kills: e.kills || 0,
+      waves: e.waves || 0,
+      wallLost: Math.round(e.wallLost || 0),
+      note: e.note || '',
+    };
+    st.defenseLog = [entry, ...(st.defenseLog || [])].slice(0, 30);
+    const parts = [entry.success ? '防禦成功' : '防禦失敗'];
+    if (entry.waves) parts.push(`擋下 ${entry.waves} 波`);
+    if (entry.kills) parts.push(`擊殺 ${entry.kills}`);
+    const lostTotal = Object.values(entry.lost).reduce((a, b) => a + b, 0);
+    if (lostTotal || entry.coins) parts.push(`損失 ${lostTotal} 單位物資${entry.coins ? `與 💰${entry.coins}` : ''}`);
+    if (entry.wallLost) parts.push(`圍牆 −${entry.wallLost}`);
+    if (entry.damaged.length) parts.push(`${entry.damaged.length} 棟建築毀損`);
+    if (entry.injured.length) parts.push(`重傷：${entry.injured.join('、')}`);
+    this.game.log(`${entry.success ? '🛡️' : '💥'}「${entry.baseName}」遭${entry.attacker}攻擊：${parts.join('，')}`, entry.success ? 'success' : 'danger');
+    this.game.bus.emit('defense:recorded', entry);
+    return entry;
+  }
+
+  /** 防守前後比對，找出這次受重傷的人 */
+  static newlySevere(before, survivors) {
+    return survivors.filter((sv) => sv.severe && !before.has(sv.id)).map((sv) => sv.name);
+  }
+
   // ---------- 折扣與加成 ----------
 
   /** 主要據點中工程師技能的最大效果 */

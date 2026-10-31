@@ -249,6 +249,7 @@ export class SaveManager {
       data.createdAt = now - Math.max(0, now - data.createdAt) * 2;
     }
     data.supplies = data.supplies || {};
+    data.defenseLog = data.defenseLog || [];
     if (data.map) {
       data.map.markers = data.map.markers || [];
       data.map.remain = data.map.remain || {};

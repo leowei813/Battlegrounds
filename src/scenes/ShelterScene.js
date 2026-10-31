@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { DEFENSES } from '../config/defenses.js';
 import { FACILITIES } from '../config/facilities.js';
 import { BASE_SIZES } from '../config/civilization.js';
-import { BASE_CELLS, BASE_IMAGE_SIZE } from '../config/baseLayouts.js';
+import { BASE_IMAGE_SIZE, FACILITY_CELLS, defenseCells } from '../config/baseLayouts.js';
 import { bus, EVT } from '../core/EventBus.js';
 
 /** 最大據點的防禦欄位數（場景預先建立的槽位物件數） */
@@ -10,8 +10,8 @@ const MAX_SLOTS = Math.max(...Object.values(BASE_SIZES).map((s) => s.slots));
 const FACILITY_IDS = Object.keys(FACILITIES);
 
 /**
- * 避難所場景：依據點規模顯示對應的底圖（小／中／大／巨型），
- * 一般設施放在圍牆內的綠色格，防禦設施放在靠近大門的藍色格。
+ * 避難所場景：要塞底圖上畫出格子——一般設施放在圍牆內側的綠色格（12 格），
+ * 防禦設施放在靠近大門的藍色格（依據點規模 3／5／8／11 格）。
  * 屍潮的邏輯仍在 SiegeSystem 運作，這個畫面暫時不繪製來襲的殭屍。
  */
 export class ShelterScene extends Phaser.Scene {
@@ -32,7 +32,8 @@ export class ShelterScene extends Phaser.Scene {
 
   create() {
     this.ground = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, 'ground').setOrigin(0);
-    this.bg = this.add.image(0, 0, 'base-medium').setOrigin(0.5).setVisible(false);
+    this.bg = this.add.image(0, 0, 'fortress').setOrigin(0.5).setVisible(false);
+    this.gridG = this.add.graphics().setDepth(5);
     this.night = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x050818, 0).setOrigin(0).setDepth(50);
 
     this.nameText = this.add.text(0, 0, '', {
@@ -63,7 +64,7 @@ export class ShelterScene extends Phaser.Scene {
     // 防禦設施（藍色格）
     this.slotObjs = [];
     for (let i = 0; i < MAX_SLOTS; i += 1) {
-      const zone = this.add.ellipse(0, 0, 36, 20, 0x000000, 0.35).setStrokeStyle(2, 0x90caf9, 0.7).setDepth(9);
+      const zone = this.add.ellipse(0, 0, 36, 20, 0x000000, 0.01).setDepth(9);
       zone.setInteractive({ useHandCursor: true });
       // 只接受直接點在畫布上的點擊（避免點到上層的面板、彈窗時誤開槽位選單）
       zone.on('pointerdown', (pointer) => {
@@ -71,7 +72,7 @@ export class ShelterScene extends Phaser.Scene {
         bus.emit(EVT.OPEN_SLOT, { slot: i });
       });
       zone.on('pointerover', () => zone.setStrokeStyle(3, 0xffd54f, 1));
-      zone.on('pointerout', () => zone.setStrokeStyle(2, 0x90caf9, 0.7));
+      zone.on('pointerout', () => zone.setStrokeStyle());
       const icon = this.add.text(0, 0, '+', { fontSize: '18px', color: '#fff' }).setOrigin(0.5, 0.75).setDepth(10);
       const lv = this.add.text(0, 0, '', {
         fontSize: '11px', color: '#fff', fontFamily: 'sans-serif', stroke: '#000', strokeThickness: 3,
@@ -125,20 +126,32 @@ export class ShelterScene extends Phaser.Scene {
     this.nameText.setVisible(has);
     this.wallText.setVisible(has);
     this.wallBar.setVisible(has);
+    this.gridG.clear();
     if (!has) {
       this.facObjs.forEach((o) => { o.icon.setVisible(false); o.lv.setVisible(false); });
       this.slotObjs.forEach((o) => { o.zone.setVisible(false); o.icon.setVisible(false); o.lv.setVisible(false); });
       return;
     }
 
-    const size = BASE_CELLS[sh.size] ? sh.size : 'medium';
-    const cells = BASE_CELLS[size];
-    this.bg.setTexture(`base-${size}`).setPosition(this.cx, this.cy).setScale(this.k);
+    const size = BASE_SIZES[sh.size] ? sh.size : 'medium';
+    const cells = { facility: FACILITY_CELLS.map((c) => c.center), defense: defenseCells(sh.defenses.length).map((c) => c.center) };
+    this.bg.setPosition(this.cx, this.cy).setScale(this.k);
+    // 格子：綠色（一般設施）、藍色（防禦設施）
+    const poly = (cell, fill, fillA, line) => {
+      const pts = cell.corners.map((c) => this.toScreen(c));
+      this.gridG.fillStyle(fill, fillA).beginPath();
+      this.gridG.moveTo(pts[0].x, pts[0].y);
+      pts.slice(1).forEach((q) => this.gridG.lineTo(q.x, q.y));
+      this.gridG.closePath().fillPath();
+      this.gridG.lineStyle(Math.max(1.5, 3 * this.k), line, 0.9).strokePath();
+    };
+    FACILITY_CELLS.forEach((c) => poly(c, 0x66bb6a, 0.28, 0xfff59d));
+    defenseCells(sh.defenses.length).forEach((c) => poly(c, 0x42a5f5, 0.32, 0x90caf9));
     const top = this.toScreen([BASE_IMAGE_SIZE.w / 2, 0]);
     this.nameText.setPosition(this.cx, top.y + 14).setText(`${core.shelter.isPrimary(sh) ? '⭐ ' : '🏴 '}${sh.name}（${BASE_SIZES[size].name}）`);
 
     // 一般設施：已建造的正常顯示，尚未建造的半透明；前哨站只有圍牆與監視塔
-    const cellSize = Math.max(14, Math.round(30 * this.k));
+    const cellSize = Math.max(14, Math.round(52 * this.k));
     FACILITY_IDS.forEach((id, i) => {
       const o = this.facObjs[i];
       const f = sh.facilities[id];
@@ -164,7 +177,7 @@ export class ShelterScene extends Phaser.Scene {
         return;
       }
       const busy = core.shelter.isSlotBusy(sh, i);
-      const rx = Math.max(16, 26 * this.k);
+      const rx = Math.max(14, 42 * this.k);
       o.zone.setVisible(true).setPosition(p.x, p.y).setSize(rx * 2, rx * 1.1);
       o.zone.geom.setSize(rx * 2, rx * 1.1);
       o.zone.updateDisplayOrigin();
@@ -172,12 +185,12 @@ export class ShelterScene extends Phaser.Scene {
       o.lv.setVisible(true).setPosition(p.x, p.y + rx * 0.45);
       if (d.type) {
         const def = DEFENSES[d.type];
-        o.zone.setFillStyle(def.color, 0.45);
-        o.icon.setText(def.icon).setFontSize(Math.max(14, Math.round(24 * this.k)));
+        o.zone.setFillStyle(def.color, 0.35);
+        o.icon.setText(def.icon).setFontSize(Math.max(14, Math.round(44 * this.k)));
         o.lv.setText(busy ? '🔨' : `Lv${d.level}`);
       } else {
-        o.zone.setFillStyle(0x000000, 0.3);
-        o.icon.setText('+').setFontSize(Math.max(14, Math.round(20 * this.k)));
+        o.zone.setFillStyle(0x000000, 0.01);
+        o.icon.setText('+').setFontSize(Math.max(14, Math.round(36 * this.k)));
         o.lv.setText('');
       }
     });

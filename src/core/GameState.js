@@ -118,6 +118,7 @@ export function createInitialState({ playerName, classId, lat, lon }) {
     recruitBoard: { list: [], refreshAt: 0 }, // 每小時固定出現的可招募倖存者
     expeditions: [],
     reports: [],
+    defenseLog: [], // 據點遭襲紀錄（屍潮、NPC、其他玩家）
     vehicles: [], // 車庫（見 VehicleSystem）
     rng: newSeeds(), // 製作、招募、探索、戰鬥的隨機種子（重新讀檔結果不變）
     npcs: { list: [], nextSpawnAt: 0 }, // NPC 據點（見 NpcSystem）

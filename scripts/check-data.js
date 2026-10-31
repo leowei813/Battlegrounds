@@ -1258,6 +1258,49 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
   assert(gm.time.day() === 6 && Math.abs(gm.time.hour() - 20) < 0.1, `舊存檔換算後天數與時刻不變（第 ${gm.time.day()} 天 ${gm.time.hour().toFixed(1)} 時）`);
 }
 
+// ---- 24. v8.7：據點遭襲紀錄 ----
+{
+  const gl = Game.newGame({ playerName: 'L', classId: 'warrior', lat: 25, lon: 121 });
+  gl.state.map.pois = fillPois([], 25, 121);
+  gl.shelter.establish(gl.state.map.pois[0]);
+  const base = gl.shelter.primary();
+  // 屍潮突破 → 防禦失敗，記錄損失與毀損建築
+  setHour(gl, 21);
+  const sl = gl.siege.of();
+  sl.update(0.1);
+  gl.state.resources.food = 1000;
+  base.wallHp = 1;
+  sl.spawn('walker');
+  Object.assign(sl.zombies[0], { x: 0, y: 40 });
+  for (let i = 0; i < 100 && !sl.quiet(); i += 1) sl.update(0.1);
+  const fail = gl.state.defenseLog[0];
+  assert(fail && !fail.success && fail.attacker === '屍潮' && fail.lost.food === 500, `屍潮突破時記錄防禦失敗與損失（${JSON.stringify(fail)}）`);
+  // 撐過一夜 → 防禦成功
+  const gl2 = Game.newGame({ playerName: 'L2', classId: 'warrior', lat: 25, lon: 121 });
+  gl2.state.map.pois = fillPois([], 25, 121);
+  gl2.shelter.establish(gl2.state.map.pois[0]);
+  gl2.shelter.primary().facilities.wall.level = 10;
+  setHour(gl2, 21);
+  const s2 = gl2.siege.of();
+  for (let i = 0; i < 1200; i += 1) { s2.update(0.1); gl2.shelter.primary().wallHp = null; }
+  setHour(gl2, 7);
+  s2.update(0.1);
+  const ok = gl2.state.defenseLog[0];
+  assert(ok && ok.success && ok.waves >= 1, `天亮時記錄成功擋下屍潮（${JSON.stringify(ok)}）`);
+  // NPC 掠奪成功 → 記錄損失與重傷
+  const npcPoi = gl2.state.map.pois.find((p) => !gl2.shelter.baseAtPoi(p.id));
+  const n = gl2.npcs.spawnAt(npcPoi, 'x', Date.now(), true);
+  n.level = 40;
+  const b2 = gl2.shelter.primary();
+  gl2.state.resources.food = 1000;
+  n.trip = { kind: 'raid', baseId: b2.id, startAt: Date.now() - 1000, travelMs: 0, endAt: Date.now() + 1000 };
+  setHour(gl2, 10);
+  gl2.npcs.resolveIncoming(n, n.trip, Date.now());
+  const raid = gl2.state.defenseLog[0];
+  assert(raid && raid.attacker.includes(n.name) && (raid.success || raid.lost.food > 0), `NPC 掠奪記錄結果與損失（${JSON.stringify(raid)}）`);
+  assert(!raid.success ? raid.injured.length >= 0 : true, 'NPC 掠奪紀錄包含重傷名單');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

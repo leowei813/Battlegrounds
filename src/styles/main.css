@@ -541,3 +541,6 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .med-btn { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
 .med-btn:hover { border-color: var(--accent); }
 .med-icon { font-size: 22px; }
+.defense-log.ok { border-left: 3px solid var(--ok, #66bb6a); }
+.defense-log.fail { border-left: 3px solid var(--danger); }
+.defense-log > div { margin-top: 3px; }
