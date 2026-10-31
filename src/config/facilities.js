@@ -87,7 +87,12 @@ export const FACILITIES = {
   researchCenter: {
     name: '研究中心', icon: '🔬', startLevel: 0,
     desc: '解鎖研究，等級越高可研究的科技越多、速度越快。',
-    cost: (lv) => mat('researchCenter', ['elec'], { wood: 130, metal: 100, cloth: 50, medicine: 15 }, lv),
+    cost: (lv) => {
+      const c = mat('researchCenter', ['elec'], { wood: 130, metal: 100, cloth: 50, medicine: 15 }, lv);
+      // 第 1 級降低電線與燈泡需求，讓研究較早開放
+      if (lv === 1) ['wire', 'bulb'].forEach((k) => { if (c[k]) c[k] = Math.max(1, Math.round(c[k] * 0.6)); });
+      return c;
+    },
     effectText: (lv) => `研究速度 +${lv * 10}%，可研究第 ${Math.min(4, Math.ceil(lv / 2))} 階`,
   },
 };
