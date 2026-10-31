@@ -27,10 +27,30 @@ function vehicleHtml(game, cars, members, distanceM) {
 }
 
 /**
+ * 時間明細：去程、搜索（或交戰）、返程分開顯示（依隊員速度、載具、路線與日夜修正）。
+ * @param {{poi:object, searchMin:number, searchLabel?:string}} [trip]
+ */
+function timeHtml(game, trip, ids, vids, avoidHostile) {
+  if (!trip?.poi) return '';
+  if (!ids.length) return '<p class="muted">⏱ 選擇隊員後顯示移動與搜索時間</p>';
+  const members = ids.map((id) => game.survivors.get(id)).filter(Boolean);
+  const vehicles = vids.map((id) => game.vehicles.get(id)).filter(Boolean);
+  const p = game.exploration.plan(trip.poi, members, trip.searchMin, Date.now(), vehicles, { avoidHostile });
+  const km = p.distanceM >= 1000 ? `${(p.distanceM / 1000).toFixed(2)} 公里` : `${p.distanceM} 公尺`;
+  const search = trip.searchMin > 0 ? `<span>🔍 ${trip.searchLabel || '搜索'} <b>${formatDuration(p.searchMs)}</b></span>` : '';
+  return `<div class="time-breakdown">
+    <span>🚶 去程 <b>${formatDuration(p.travelMs)}</b><small>（單程 ${km}）</small></span>
+    ${search}
+    <span>🏃 返程 <b>${formatDuration(p.travelMs)}</b></span>
+    <span class="total">⏱ 總計 <b>${formatDuration(p.totalMs)}</b></span>
+  </div>`;
+}
+
+/**
  * 隊伍選擇彈窗：探索與地圖戰鬥共用。
  * @param {import('./UIManager.js').UIManager} ui
  * @param {{title:string, intro:string, withDuration?:boolean, vehicles?:boolean, distanceM?:number,
- *   estimate?:(ids:string[], dur:number, vehicleIds:string[])=>number,
+ *   trip?:{poi:object, searchMin:number, searchLabel?:string},
  *   confirmLabel:string, onConfirm:(ids:string[], dur:number, auto:boolean, vehicleIds:string[])=>object}} opts
  */
 export function openTeamPicker(ui, opts) {
@@ -61,7 +81,6 @@ export function openTeamPicker(ui, opts) {
     const vehicles = opts.vehicles ? vehicleHtml(game, cars, ids.map((id) => game.survivors.get(id)), opts.distanceM || 0) : '';
     const durs = opts.withDuration
       ? `${opts.fixedDuration ? '' : `<div class="label">探索時長</div><div class="chips">${EXPLORE_DURATIONS.map((d) => `<button class="chip ${d === duration ? 'active' : ''}" data-action="dur" data-d="${d}">${d} 分鐘</button>`).join('')}</div>`}
-         ${opts.estimate && ids.length ? `<p class="muted">預估實際時間（含往返路程與日夜修正）：<b>${formatDuration(opts.estimate(ids, duration, vids))}</b></p>` : ''}
          <label class="toggle ${autoUnlocked ? '' : 'disabled'}"><input type="checkbox" data-role="auto" ${auto ? 'checked' : ''} ${autoUnlocked ? '' : 'disabled'}> 🔁 自動探索（完成後自動再出發）${autoUnlocked ? '' : '<small>（需研究「斥候訓練」）</small>'}</label>`
       : '';
     return `${opts.intro}
@@ -70,6 +89,7 @@ export function openTeamPicker(ui, opts) {
       ${vehicles}
       ${opts.routeOption ? `<label class="toggle"><input type="checkbox" data-role="avoid" ${avoidHostile ? 'checked' : ''}> 🛡️ 也繞開敵對據點的警戒範圍（路程較長，但不會遭到駐守人員攻擊）</label>
         <small class="muted block">預設會繞開中立與友好據點的警戒範圍；NPC 一律敵對。</small>` : ''}
+      ${timeHtml(game, opts.trip, ids, vids, avoidHostile)}
       ${durs}
       <div class="btn-row end"><button class="btn btn-primary" data-action="confirm" ${ids.length ? '' : 'disabled'}>${opts.confirmLabel}</button></div>`;
   };

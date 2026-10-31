@@ -413,7 +413,7 @@ export class NpcSystem {
 
   /** 地圖顯示：所有 NPC 行程（含掠奪隊） */
   trips(now = Date.now()) {
-    // 被擊敗後撤回的隊伍不顯示
-    return this.list.filter((n) => n.trip && !n.trip.hidden && n.trip.endAt > now).map((n) => ({ npc: n, trip: n.trip, p: tripProgress(n.trip, now) }));
+    // 被擊敗後撤回的隊伍（hidden）仍顯示移動，但不能再被攔截
+    return this.list.filter((n) => n.trip && n.trip.endAt > now).map((n) => ({ npc: n, trip: n.trip, p: tripProgress(n.trip, now) }));
   }
 }

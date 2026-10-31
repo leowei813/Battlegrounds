@@ -48,6 +48,7 @@ export function sanitizePresence(body) {
       target: str(t.target, 40),
       id: str(t.id, 40),
       level: num(t.level, 1, 60) ?? 1,
+      ...(t.defeated ? { defeated: true } : {}),
     };
   }).filter(Boolean);
   return {

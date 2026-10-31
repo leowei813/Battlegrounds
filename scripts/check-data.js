@@ -1108,7 +1108,8 @@ assert(migrated.version === 12 && migrated.bases.length === 1 && migrated.bases[
   const ic = gk.intercept.start({ kind: 'npc', npcId: npc.id }, [lead.id]);
   assert(ic.ok && ic.exp.kind === 'intercept', '可以派隊攔截 NPC 隊伍');
   gk.intercept.checkArrivals(ic.exp.startAt + ic.exp.travelMs + 1);
-  assert(ic.exp.icptDone && ic.exp.icptResult.win && npc.trip?.hidden && !gk.npcs.trips().some((t) => t.npc === npc), `擊敗 NPC 隊伍，對方撤回據點且不顯示（${ic.exp.icptResult.events.join(' / ')}）`);
+  assert(ic.exp.icptDone && ic.exp.icptResult.win && npc.trip?.hidden && npc.trip.endAt > Date.now(), `擊敗 NPC 隊伍，對方花時間撤回據點（${ic.exp.icptResult.events.join(' / ')}）`);
+  assert(gk.npcs.trips().some((t) => t.npc === npc) && !gk.intercept.target({ kind: 'npc', npcId: npc.id }), '撤回中的 NPC 隊伍仍顯示在地圖上，但不能再攔截');
   const icRep = gk.exploration.update(ic.exp.endAt + 1, { silent: true })[0];
   assert(icRep?.success && Object.keys(icRep.resources).length > 0, '攔截成功搶走對方身上的物資');
 
@@ -1123,7 +1124,11 @@ assert(migrated.version === 12 && migrated.bases.length === 1 && migrated.bases[
   gk.world = { others: [] };
   const { WorldSync } = await import('../src/multiplayer/WorldSync.js');
   const pres = WorldSync.prototype.presence.call({ game: gk });
-  assert(!pres.trips.some((t) => t.id === e3.exp.id), '被擊敗後的返程不公開給其他玩家');
+  const back = pres.trips.find((t) => t.id === e3.exp.id);
+  assert(back?.defeated, '被擊敗後的返程仍會顯示移動（標記為撤回中）');
+  gk.world = { others: [{ id: 'p9', name: '他人', bases: [], trips: [{ ...back, id: 'x1' }] }] };
+  assert(!gk.intercept.target({ kind: 'player', playerId: 'p9', tripId: 'x1' }), '撤回中的玩家隊伍不能再攔截');
+  gk.world = { others: [] };
   const dr = gk.exploration.update(e3.exp.endAt + 1, { silent: true })[0];
   assert(dr && !dr.success && lead.status === 'idle', '撤回據點後結算');
   // 收到的戰利品需驗證
