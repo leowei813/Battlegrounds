@@ -14,6 +14,7 @@ import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { remainOf } from '../../systems/LootStock.js';
 import { MAX_MARKERS } from '../../systems/MarkerSystem.js';
 import { openTeamPicker } from '../TeamPicker.js';
+import { openTradeSetup, openTradeStall } from '../TradeDialog.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { zoneAt, ZONES } from '../../config/zones.js';
 
@@ -248,8 +249,12 @@ export class MapPanel {
       : incoming
         ? `${btn('🤝 接受友好', 'acceptFriend', {}, { cls: 'btn-sm btn-primary' })}${btn('拒絕', 'declineFriend', {}, { cls: 'btn-sm btn-ghost' })}`
         : btn(outgoing ? '已提出友好（等待回覆）' : '🤝 提出友好', 'requestFriend', {}, { cls: 'btn-sm', disabled: outgoing });
+    const tradeCheck = g.trade.canStart(p.id);
+    const myTrade = g.trade.activeTo(p.id);
+    const toMe = g.trade.incoming(now).filter((x) => x.player.id === p.id);
     return `<p>${relTag} 🏛️ 文明度 <b>${p.civ}</b>・據點 ${p.bases.length} 個・外出隊伍 ${trips.length} 支</p>
-      <div class="btn-row">${diplo}</div>
+      <div class="btn-row">${diplo}${btn(myTrade ? '🤝 交易隊已出發' : '🤝 派人交易', 'trade', {}, { cls: 'btn-sm btn-primary', disabled: !tradeCheck.ok, title: tradeCheck.reason || '' })}</div>
+      ${toMe.map((x) => `<div class="card row-between"><span>🤝 對方的交易隊${x.arrived ? '正在你的據點擺攤' : '正在前來你的據點'}</span>${btn('查看商品', 'openStall', { trip: x.trip.id }, { cls: 'btn-xs btn-primary', disabled: !x.arrived })}</div>`).join('')}
       <div class="pick-list">${p.bases.map((b, i) => `<div class="pick-row"><span>${b.primary ? '⭐' : '🏴'} ${escapeHtml(b.name)}</span><small class="muted">警戒 ${b.alert}m・駐守 ${b.guards} 人</small>
         <span>${btn('📍', 'fly', { i }, { cls: 'btn-xs btn-ghost' })}${rel === 'friend' ? '' : btn('⚔️ 攻擊', 'attackBase', { i }, { cls: 'btn-xs btn-danger' })}</span></div>`).join('')}</div>
       ${trips.length ? `<div class="label">探索中</div><ul class="event-list">${trips.map((x) => `<li>${EXP_PHASES[tripProgress(x, now).phase].icon} 前往「${escapeHtml(x.target || '某處')}」・${x.members} 人・剩 ${formatDuration(x.endAt - now)}</li>`).join('')}</ul>` : ''}
@@ -275,6 +280,14 @@ export class MapPanel {
         if (action === 'acceptFriend') this.ui.result(await t.acceptFriend(p.id, p.name));
         if (action === 'declineFriend') this.ui.result(t.declineFriend(p.id));
         if (action === 'unfriend' && confirm(`確定解除與「${p.name}」的友好關係？`)) this.ui.result(await t.removeFriend(p.id));
+        if (action === 'trade') {
+          openTradeSetup(this.ui, p);
+          return;
+        }
+        if (action === 'openStall') {
+          openTradeStall(this.ui, p.id, data.trip);
+          return;
+        }
         if (action === 'attackBase') {
           const b = p.bases[+data.i];
           if (t.relation(p.id) !== 'hostile' && !confirm(`攻擊「${p.name}」後雙方會變成敵對。確定？`)) return;
@@ -394,7 +407,8 @@ export class MapPanel {
       <p>📍 <b>${escapeHtml(poi?.name || '未知地點')}</b>・${status}</p>
       <p class="muted">👥 ${names || `${ex.memberIds.length} 人`}</p>
       <p class="muted">⏱ 剩 ${formatDuration(p ? p.remainingMs : Math.max(0, ex.endAt - now))}</p>
-      ${canRecall ? '<p class="muted">召回後隊伍會從目前位置走回避難所（需要移動時間），這趟不會有任何收穫。</p>' : ''}
+      ${ex.kind === 'trade' && ex.trade ? `<p>🤝 擺攤商品：${ex.trade.goods.map((x) => `${escapeHtml(g.trade.goodName(x))} ${x.sold}/${x.qty}`).join('、')}・已收入 💰${ex.trade.earned || 0}</p>` : ''}
+      ${canRecall ? `<p class="muted">${ex.kind === 'trade' ? '召回後倖存者會結束交易、走回避難所，沒賣完的商品會帶回家。' : '召回後隊伍會從目前位置走回避難所（需要移動時間），這趟不會有任何收穫。'}</p>` : ''}
       <div class="btn-row">${canRecall ? btn('↩️ 召回', 'recall', {}, { cls: 'btn-danger' }) : ''}${btn('📋 探索頁', 'explore', {}, { cls: 'btn-ghost' })}</div>`;
     this.ui.modal.open({
       title: '🚶 我的探索隊',
@@ -414,6 +428,15 @@ export class MapPanel {
     if (team.kind === 'own') {
       this.openOwnTeam(team.expId);
       return;
+    }
+    // 其他玩家的交易隊：來找我的可以進入交易頁，其他的不能攔截
+    if (team.kind === 'player') {
+      const trip = g.world?.others.find((x) => x.id === team.playerId)?.trips.find((x) => x.id === team.tripId);
+      if (trip?.kind === 'trade') {
+        if (trip.targetId === g.trade.myId()) openTradeStall(this.ui, team.playerId, team.tripId);
+        else this.ui.toastEl.show('🤝 這是前往其他玩家據點的交易隊，不能攔截', 'info');
+        return;
+      }
     }
     const t = g.intercept.target(team);
     if (!t) {

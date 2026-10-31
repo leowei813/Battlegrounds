@@ -1686,6 +1686,82 @@ assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[
   assert(!gc.state.recruitOffer && !gc.state.recruitPool.length, '超過一小時未招募的候選人會離開');
 }
 
+// ---- 39. v8.23：玩家交易（派倖存者到對方據點擺攤）----
+{
+  const { WorldSync: WS } = await import('../src/multiplayer/WorldSync.js');
+  const mk = (name, lat) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat, lon: 121 });
+    gx.state.map.pois = fillPois([], lat, 121);
+    gx.shelter.establish(gx.state.map.pois[0]);
+    return gx;
+  };
+  const A = mk('賣家', 25);
+  const B = mk('買家', 25.004);
+  const box = { A: [], B: [] };
+  const wire = (gx, id, other) => {
+    gx.world = {
+      others: [],
+      identity: () => ({ id, token: 't' }),
+      provider: { worldSend: async (_f, _t, to, type, data) => { box[to].push({ from: id, fromName: gx.state.player.name, type, data: JSON.parse(JSON.stringify(data)) }); } },
+    };
+    void other;
+  };
+  wire(A, 'A');
+  wire(B, 'B');
+  const pres = (gx, id) => ({ id, ...JSON.parse(JSON.stringify(WS.prototype.presence.call({ game: gx }))) });
+  const deliver = (gx, id) => { gx.territory.handleEvents(box[id].splice(0)); };
+  A.world.others = [pres(B, 'B')];
+  A.state.supplies.nail = 50;
+  const gear = A.equipment.generate({ level: 5, model: 'knife', rarity: 'rare' });
+  A.equipment.addItem(gear, 't');
+  const seller = A.survivors.leader();
+  assert(!A.trade.start('B', seller.id, [{ key: 'nail', qty: 99999, price: 1 }]).ok && A.state.supplies.nail === 50, '超過負重的商品無法帶出門（不會扣掉）');
+  const st = A.trade.start('B', seller.id, [{ key: 'nail', qty: 20, price: 3 }, { itemId: gear.id, price: 0 }]);
+  assert(st.ok && A.state.supplies.nail === 30 && seller.bag.nail === 20 && A.equipment.getItem(gear.id).loc === seller.id, '交易隊帶著商品出發（放進倖存者背包）');
+  const ex = st.exp;
+  // 抵達對方據點
+  const shift = ex.travelMs + 1000;
+  ex.startAt -= shift; ex.endAt -= shift;
+  const pa = pres(A, 'A');
+  const trip = pa.trips.find((t) => t.kind === 'trade');
+  assert(trip && trip.targetId === 'B' && trip.stall.length === 2, '公開資料包含擺攤商品與交易對象');
+  B.world.others = [pa];
+  assert(B.trade.incoming().length === 1 && !B.intercept.target({ kind: 'player', playerId: 'A', tripId: trip.id }), '買方看得到來訪的交易隊，交易隊不能被攔截');
+  B.state.player.coins = 100;
+  const nailGood = trip.stall.find((x) => x.key === 'nail');
+  const gearGood = trip.stall.find((x) => x.item);
+  const n0 = B.state.supplies.nail || 0;
+  assert(B.trade.buy('A', trip.id, nailGood.id, 10).ok && B.state.player.coins === 70 && B.state.supplies.nail === n0 + 10, '買方用金錢購買物資');
+  assert(B.trade.remaining(trip.id, nailGood) === 10, '買方看到的剩餘數量會扣掉已購買的');
+  assert(B.trade.buy('A', trip.id, gearGood.id, 1).ok && B.state.player.coins === 70, '價格 0 的商品等於免費贈送');
+  const got = B.state.inventory.items.find((i) => i.model === 'knife' && i.rarity === 'rare');
+  assert(got && JSON.stringify(got.stats) === JSON.stringify(gear.stats), '買到的裝備與對方擺出的完全相同');
+  const coinA = A.state.player.coins;
+  deliver(A, 'A');
+  assert(A.state.player.coins === coinA + 30 && seller.bag.nail === 10 && !A.equipment.getItem(gear.id), '賣方收到金錢、交出商品');
+  // 被竄改的裝備數值不會被接受
+  const fake = B.equipment.importItem({ ...A.equipment.exportItem(gear), stats: { ...gear.stats, atk: 99999 } });
+  assert(fake && fake.stats.atk < 1000, '不合理的裝備數值會被修正');
+  // 超量購買（對方已賣光）→ 退款
+  B.state.trade.bought[trip.id][nailGood.id] = 0;
+  A.trade.onBuy('B', '買家', { tripId: trip.id, goodId: nailGood.id, qty: 15, coins: 45 });
+  assert(seller.bag.nail === undefined || seller.bag.nail === 0, '賣方只交出還有的數量');
+  deliver(B, 'B');
+  assert(B.state.player.coins === 70 + 15, `賣不出的部分退款給買方（${B.state.player.coins}）`);
+  // 買方結束交易 → 賣方倖存者回家
+  assert(B.trade.end('A', trip.id).ok && !B.trade.canTrade('A', trip.id).ok, '買方可以結束交易');
+  deliver(A, 'A');
+  assert(ex.tradeEnded && A.exploration.progress(ex).phase === 'returning', '結束交易後賣方的倖存者回家');
+  const rep = A.exploration.update(ex.endAt + 1, { silent: true })[0];
+  assert(rep && rep.events.some((e) => e.includes('💰')) && seller.status === 'idle', `交易隊回家後有交易報告（${rep?.events.slice(-2).join(' / ')}）`);
+  // 賣方召回
+  A.world.others = [pres(B, 'B')];
+  A.state.supplies.nail = 10;
+  const st2 = A.trade.start('B', seller.id, [{ key: 'nail', qty: 5, price: 0 }]);
+  assert(st2.ok && A.exploration.recall(st2.exp.id).ok, '賣方可以自行召回交易隊');
+  assert(!pres(A, 'A').trips.some((t) => t.kind === 'trade'), '召回後不再公開擺攤');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

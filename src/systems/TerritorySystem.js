@@ -231,6 +231,12 @@ export class TerritorySystem {
         g.intercept.handleIntercept(e);
       } else if (e.type === 'plunder') {
         g.intercept.handlePlunder(e);
+      } else if (e.type === 'tradeBuy') {
+        g.trade.onBuy(e.from, name, e.data);
+      } else if (e.type === 'tradeEnd') {
+        g.trade.onEnd(e.from, name, e.data);
+      } else if (e.type === 'tradeRefund') {
+        g.trade.onRefund(name, e.data);
       } else if (e.type === 'friendRemove') {
         if (this.relation(e.from) === 'friend') delete this.rel.players[e.from];
         g.log(`「${name}」解除了友好關係`, 'info');

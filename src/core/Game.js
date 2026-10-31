@@ -26,6 +26,7 @@ import { fillPois } from '../map/PoiGenerator.js';
 import { MarkerSystem } from '../systems/MarkerSystem.js';
 import { InterceptSystem } from '../systems/InterceptSystem.js';
 import { TraderSystem } from '../systems/TraderSystem.js';
+import { TradeSystem } from '../systems/TradeSystem.js';
 
 /**
  * 遊戲核心（Facade）：持有狀態與所有系統，負責主迴圈、離線結算與存檔。
@@ -57,6 +58,7 @@ export class Game {
     this.markers = new MarkerSystem(this);
     this.intercept = new InterceptSystem(this);
     this.trader = new TraderSystem(this);
+    this.trade = new TradeSystem(this);
 
     this.lastPhase = null;
     this.timers = [];
@@ -143,6 +145,8 @@ export class Game {
     this.exploration.update(now, { silent });
     this.npcs.update(now);
     this.trader.update(now);
+    this.trade.notifyArrivals(now);
+    this.trade.prune(now);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();
