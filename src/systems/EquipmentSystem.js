@@ -189,6 +189,58 @@ export class EquipmentSystem {
     return out;
   }
 
+  /** 公開給其他玩家看的裝備資料（交易擺攤用） */
+  exportItem(it) {
+    return {
+      model: it.model, rarity: it.rarity, level: it.level, name: it.name, quality: it.quality,
+      stats: it.stats, affixes: (it.affixes || []).map((a) => ({ id: a.id, value: a.value })),
+    };
+  }
+
+  /**
+   * 收下其他玩家的裝備：以型號、品級、等級為基準，數值只接受在該品級合理範圍內的值，
+   * 不合理的數值改用重新生成的結果（避免被竄改的資料）。
+   */
+  importItem(raw) {
+    const md = ITEM_MODELS[raw?.model];
+    if (!md || !RARITIES[raw.rarity]) return null;
+    const lv = clamp(Math.round(Number(raw.level) || 1), 1, 60);
+    const it = this.generate({ level: lv, model: raw.model, rarity: raw.rarity });
+    const rdef = RARITIES[raw.rarity];
+    const def = ITEM_TYPES[md.type];
+    const tm = tierMul(md.tier);
+    const within = (v, base, isInt) => {
+      const lo = Math.min(base * rdef.min, base * rdef.max);
+      const hi = Math.max(base * rdef.min, base * rdef.max);
+      const tol = isInt ? 1 : Math.max(0.001, Math.abs(hi) * 0.01);
+      return Number.isFinite(v) && v >= lo - tol && v <= hi + tol;
+    };
+    Object.keys(it.stats).forEach((k) => {
+      const v = Number(raw.stats?.[k]);
+      const grown = (def.base[k] ?? 0) + (def.perLevel[k] || 0) * (lv - 1);
+      const base = k in def.base ? (grown > 0 ? grown * tm : null) : (md.extra?.[k] ?? null);
+      if (base == null) return; // 負面屬性固定
+      if (within(v, base, INT_STATS.has(k) || k in (md.extra || {}))) it.stats[k] = INT_STATS.has(k) || k in (md.extra || {}) ? Math.round(v) : +v.toFixed(3);
+    });
+    const rawAff = Array.isArray(raw.affixes) ? raw.affixes : [];
+    const ids = new Set();
+    const aff = rawAff.slice(0, rdef.affixes).map((a) => {
+      const def2 = AFFIXES[a?.id];
+      if (!def2 || ids.has(a.id)) return null;
+      ids.add(a.id);
+      const base = def2.value + (def2.perLevel || 0) * (lv - 1);
+      const v = Number(a.value);
+      return within(v, base, INT_STATS.has(def2.stat)) ? { id: a.id, value: INT_STATS.has(def2.stat) ? Math.round(v) : +v.toFixed(3) } : null;
+    });
+    if (aff.length === rdef.affixes && aff.every(Boolean)) it.affixes = aff;
+    const q = Math.round(Number(raw.quality));
+    if (Number.isFinite(q)) it.quality = clamp(q, Math.round(rdef.min * 100), Math.round(rdef.max * 100));
+    const name = String(raw.name || '');
+    if (name.endsWith(md.name) && name.length <= md.name.length + 6) it.name = name;
+    it.power = this.itemPower(it);
+    return it;
+  }
+
   itemPower(item) {
     const s = this.itemStats(item);
     return Math.round(

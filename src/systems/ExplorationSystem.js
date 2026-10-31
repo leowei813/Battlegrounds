@@ -101,7 +101,7 @@ export class ExplorationSystem {
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   poi(id) {
     return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id)
-      || this.game.intercept?.asPoi(id) || this.huntPoi(id) || null;
+      || this.game.intercept?.asPoi(id) || this.game.trade?.asPoi(id) || this.huntPoi(id) || null;
   }
 
   /**
@@ -205,6 +205,7 @@ export class ExplorationSystem {
       ...(v.poi.pvp ? { pvpTarget: v.poi } : {}),
       ...(v.poi.intercept ? { icptTarget: v.poi.target } : {}),
       ...(v.poi.hunt ? { huntTarget: v.poi.target } : {}),
+      ...(v.poi.trade ? { tradeTarget: v.poi.target } : {}),
       vehicleIds: [...vehicleIds], cargo: plan.trip.cargo, ambushes: 0,
       // 攻擊目標的殭屍群不算途中遭遇
       encountered: v.poi.hunt ? [v.poi.target.groupId] : [], travelEvents: [], travelKills: 0, travelXp: 0,
@@ -452,7 +453,8 @@ export class ExplorationSystem {
           return;
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
-        const report = exp.recalled ? this.recalledReport(exp)
+        const report = exp.kind === 'trade' && !exp.defeated ? this.game.trade.report(exp)
+          : exp.recalled ? this.recalledReport(exp)
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)

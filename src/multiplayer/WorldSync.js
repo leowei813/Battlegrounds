@@ -13,6 +13,20 @@ const finite = (v) => Number.isFinite(v);
 const validPoint = (p) => p && finite(p.lat) && finite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180;
 
 /** 下載資料也要驗證（Supabase 後端不會替我們清理玩家上傳的內容） */
+/** 交易擺攤清單（數值在收下時另外驗證） */
+function cleanStall(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 12).map((x) => {
+    if (!x || typeof x !== 'object') return null;
+    const qty = finite(x.qty) ? Math.min(999999, Math.max(0, Math.floor(x.qty))) : 0;
+    const sold = finite(x.sold) ? Math.min(qty, Math.max(0, Math.floor(x.sold))) : 0;
+    const price = finite(x.price) ? Math.min(100000, Math.max(0, Math.floor(x.price))) : 0;
+    const id = String(x.id || '').slice(0, 40);
+    if (!id || !qty) return null;
+    if (x.item && typeof x.item === 'object') return { id, qty: 1, sold: Math.min(1, sold), price, item: x.item };
+    return x.key ? { id, key: String(x.key).slice(0, 20), qty, sold, price } : null;
+  }).filter(Boolean);
+}
+
 function cleanPlayer(p) {
   if (!p || typeof p !== 'object') return null;
   const bases = (Array.isArray(p.bases) ? p.bases : []).filter(validPoint).slice(0, 5)
@@ -33,6 +47,7 @@ function cleanPlayer(p) {
       members: finite(t.members) ? Math.min(10, Math.max(1, t.members)) : 1, target: String(t.target || '').slice(0, 40),
       id: String(t.id || '').slice(0, 40), level: finite(t.level) ? Math.min(60, Math.max(1, Math.round(t.level))) : 1,
       defeated: !!t.defeated,
+      ...(t.kind === 'trade' ? { kind: 'trade', targetId: String(t.targetId || '').slice(0, 40), stall: cleanStall(t.stall) } : {}),
     }));
   return {
     id: String(p.id || ''), name: String(p.name || '倖存者').slice(0, 16), civ: finite(p.civ) ? p.civ : 0, bases, trips,
@@ -134,6 +149,9 @@ export class WorldSync {
           from: ex.from, to: { lat: poi.lat, lon: poi.lon }, startAt: ex.startAt, endAt: ex.endAt,
           travelMs: ex.travelMs, searchMs: ex.searchMs, members: ex.memberIds.length, target: poi.name,
           ...(ex.path?.length > 2 ? { path: ex.path.slice(0, 20) } : {}),
+          // 交易隊：對方玩家與擺攤商品
+          ...(ex.kind === 'trade' && ex.trade && !ex.recalled && !ex.tradeEnded && !ex.defeated
+            ? { kind: 'trade', targetId: ex.trade.playerId, stall: g.trade.stallOf(ex) } : {}),
         };
       }).filter(Boolean),
     };

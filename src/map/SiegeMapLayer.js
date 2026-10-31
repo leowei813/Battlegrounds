@@ -216,7 +216,9 @@ export const SiegeMapLayer = L.Layer.extend({
       if (now > trip.endAt) return;
       const p = tripProgress(trip, now);
       // 其他玩家的隊伍只看得到移動，看不到剩餘時間；被攔截撤回中的隊伍不能再攔截
-      this.drawTrip(ctx, size, p, `👤 ${player.name}${trip.defeated ? '・🏳️撤回' : ''}`, ['rgba(38,198,218,0.55)', '#00838f', '#e0f7fa', 'rgba(0,77,64,0.85)'], !!trip.defeated);
+      if (trip.kind === 'trade') {
+        this.drawTrip(ctx, size, p, `🤝 ${player.name}・交易`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false);
+      } else this.drawTrip(ctx, size, p, `👤 ${player.name}${trip.defeated ? '・🏳️撤回' : ''}`, ['rgba(38,198,218,0.55)', '#00838f', '#e0f7fa', 'rgba(0,77,64,0.85)'], !!trip.defeated);
       if (trip.id && !trip.defeated) this.teams.push({ kind: 'player', playerId: player.id, tripId: trip.id, pos: p.pos });
     }));
     this.game.npcs.trips(now).forEach(({ npc, trip, p }) => {

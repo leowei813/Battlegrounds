@@ -7,7 +7,7 @@ const STALE_MS = 3 * 24 * 60 * 60 * 1000;
 const MAX_BASES = 5;
 const MAX_TRIPS = 10;
 /** 玩家之間的事件（攻擊、友好請求…） */
-const EVENT_TYPES = new Set(['attack', 'friendRequest', 'friendAccept', 'friendRemove', 'intercept', 'plunder']);
+const EVENT_TYPES = new Set(['attack', 'friendRequest', 'friendAccept', 'friendRemove', 'intercept', 'plunder', 'tradeBuy', 'tradeEnd', 'tradeRefund']);
 const MAX_INBOX = 50;
 
 const num = (v, min, max) => (Number.isFinite(v) && v >= min && v <= max ? v : null);
@@ -17,6 +17,20 @@ const point = (p) => {
   const lon = num(p?.lon, -180, 180);
   return lat == null || lon == null ? null : { lat: +lat.toFixed(6), lon: +lon.toFixed(6) };
 };
+
+/** 交易擺攤清單：最多 12 項，裝備資料限制大小 */
+function sanitizeStall(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 12).map((x) => {
+    const qty = num(x?.qty, 1, 999999);
+    if (!x || qty == null) return null;
+    const base = { id: str(x.id, 40), qty, sold: num(x.sold, 0, qty) ?? 0, price: num(x.price, 0, 100000) ?? 0 };
+    if (x.item && typeof x.item === 'object') {
+      const json = JSON.stringify(x.item);
+      return json.length <= 1500 ? { ...base, qty: 1, item: JSON.parse(json) } : null;
+    }
+    return x.key ? { ...base, key: str(x.key, 20) } : null;
+  }).filter(Boolean);
+}
 
 /** 驗證並清理玩家上傳的公開資料（只保留地圖顯示需要的欄位） */
 export function sanitizePresence(body) {
@@ -49,6 +63,7 @@ export function sanitizePresence(body) {
       id: str(t.id, 40),
       level: num(t.level, 1, 60) ?? 1,
       ...(t.defeated ? { defeated: true } : {}),
+      ...(t.kind === 'trade' ? { kind: 'trade', targetId: str(t.targetId, 40), stall: sanitizeStall(t.stall) } : {}),
     };
   }).filter(Boolean);
   return {
