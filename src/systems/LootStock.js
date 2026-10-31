@@ -59,6 +59,9 @@ function pickSupply(cat, rnd, danger) {
   if (cat === 'medLow') {
     keys = suppliesOf('med', 2);
     weight = (k) => medWeight(k);
+  } else if (cat === 'medMid') {
+    keys = suppliesOf('med', 3);
+    weight = (k) => medWeight(k);
   } else if (cat === 'med') {
     keys = suppliesOf('med');
     weight = (k) => medWeight(k);
@@ -81,7 +84,7 @@ function pickSupply(cat, rnd, danger) {
 
 /** 每單位的數量係數：零件、布料、藥品比食物木材稀少 */
 const CAT_AMOUNT = {
-  food: 1, wood: 1, fuel: 0.7, part: 0.25, fabric: 0.3, medLow: 0.08, med: 0.08, ammo: 0.6,
+  food: 1, wood: 1, fuel: 0.7, part: 0.25, fabric: 0.3, medLow: 0.08, medMid: 0.08, med: 0.08, ammo: 0.6,
 };
 
 /**

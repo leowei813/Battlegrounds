@@ -22,7 +22,7 @@ export const OUTPOST_SCAN_RADIUS = 500;
 /** 每類建築在地圖上的數量上限（優先保留有名字的建築，並平均分散） */
 export const POI_MAX_PER_TYPE = {
   residential: 6000, shop: 1500, school: 300, factory: 600, warehouse: 400,
-  gasStation: 200, hospital: 300, police: 200, military: 100, garage: 200, supermarket: 80, forest: 120,
+  gasStation: 200, hospital: 300, police: 200, military: 100, garage: 200, supermarket: 80, forest: 120, pharmacy: 150, recycling: 80, bakery: 150,
 };
 /** 分散取樣的格子大小（公尺）：同一格優先只取一棟，避免擠在一起 */
 export const POI_SPREAD_CELL_M = 40;

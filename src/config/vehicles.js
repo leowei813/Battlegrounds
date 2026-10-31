@@ -59,5 +59,5 @@ export function repairCost(type, missing) {
 
 /** 依建築類型找到載具的機率加成 */
 export const VEHICLE_FIND_BY_POI = {
-  garage: 8, gasStation: 0.3, warehouse: 0.3, factory: 0.3, military: 0.5, police: 0.3, residential: 0, shop: 0, hospital: 0, school: 0, supermarket: 0, forest: 0,
+  garage: 8, gasStation: 0.3, warehouse: 0.3, factory: 0.3, military: 0.5, police: 0.3, residential: 0, shop: 0, hospital: 0, school: 0, supermarket: 0, forest: 0, pharmacy: 0, recycling: 0.2, bakery: 0,
 };

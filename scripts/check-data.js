@@ -1359,6 +1359,33 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
   assert(res.filter(Boolean).length === 5 && !res[5], `同時最多派出 5 支隊伍（${res}）`);
 }
 
+// ---- 27. v8.9：藥局、回收站、麵包店 ----
+{
+  const sup = await import('../src/config/supplies.js');
+  const { stockOf: stock } = await import('../src/systems/LootStock.js');
+  assert(classify({ amenity: 'pharmacy' }) === 'pharmacy' && classify({ shop: 'chemist' }) === 'pharmacy', 'OSM 藥局分類');
+  assert(classify({ amenity: 'recycling', recycling_type: 'centre' }) === 'recycling' && classify({ amenity: 'recycling', recycling_type: 'container' }) !== 'recycling', 'OSM 回收站分類（回收桶不算）');
+  assert(classify({ shop: 'bakery' }) === 'bakery', 'OSM 麵包店分類');
+  const days = Array.from({ length: 120 }, (_, i) => Date.UTC(2026, 0, 1 + i));
+  const tally = (type) => {
+    const out = { cats: new Set(), medTier: 0, med: 0, food: 0 };
+    days.forEach((d, i) => Object.entries(stock({ id: `x_${type}_${i % 7}`, type, lat: 25, lon: 121 }, d).resources).forEach(([k, v]) => {
+      const sp = sup.SUPPLIES[k];
+      out.cats.add(sp ? sp.cat : k);
+      if (sp?.cat === 'med') { out.medTier = Math.max(out.medTier, sp.tier); out.med += v; }
+      if (k === 'food') out.food += v;
+    }));
+    return out;
+  };
+  const ph = tally('pharmacy'); const shop = tally('shop'); const hosp = tally('hospital');
+  assert([...ph.cats].every((c) => c === 'med') && ph.medTier <= 3 && hosp.medTier > ph.medTier, `藥局只有藥品，種類比醫院少（最高 ${ph.medTier} 階，醫院 ${hosp.medTier} 階）`);
+  assert(ph.med > shop.med * 3, `藥局的低階藥品比商店多很多（${ph.med} vs ${shop.med}）`);
+  const rc = tally('recycling');
+  assert([...rc.cats].every((c) => c === 'part' || c === 'fabric') && rc.cats.size === 2, `回收站可搜到布料與零件（${[...rc.cats]}）`);
+  const bk = tally('bakery'); const res = tally('residential');
+  assert([...bk.cats].every((c) => c === 'food') && bk.food > res.food * 1.5, `麵包店只有食物，比住宅多（${bk.food} vs ${res.food}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
