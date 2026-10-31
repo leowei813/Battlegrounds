@@ -20,6 +20,11 @@ export class TimeSystem {
     return Math.floor(this.totalHours(at) / 24) + 1;
   }
 
+  /** 夜晚編號：夜晚跨過午夜，以入夜那天計（20:00～隔天 06:00 為同一晚） */
+  nightKey(at = Date.now()) {
+    return this.day(at - (6 / 24) * DAY_REAL_MS);
+  }
+
   hour(at = Date.now()) {
     return this.totalHours(at) % 24;
   }

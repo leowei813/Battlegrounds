@@ -235,7 +235,7 @@ export class Game {
     });
     this.markers.ensure(pois);
     Object.assign(map, {
-      center: { lat, lon }, pois, source, fetchedAt: Date.now(), zombieGroups: [], lastZombieRefresh: 0,
+      center: { lat, lon }, pois, source, fetchedAt: Date.now(), zombieGroups: [], lastZombieRefresh: 0, zombieNight: null,
     });
     this.zombies.update(Date.now());
     bus.emit(EVT.MAP_CHANGED);

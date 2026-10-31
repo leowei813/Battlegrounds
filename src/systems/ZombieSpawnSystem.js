@@ -47,14 +47,19 @@ export class ZombieSpawnSystem {
     const phase = this.game.time.phase(now);
     // 白天殭屍躲在建築內：地圖上不出現殭屍群（只會在探索時遭遇）
     if (!phase.zombies) {
+      map.zombieNight = null;
       if (map.zombieGroups.length) {
         map.zombieGroups = [];
         this.game.bus.emit('map:changed');
       }
       return;
     }
-    // 過期的群體散去
-    map.zombieGroups = this.groups.filter((g) => now - g.spawnedAt < ZOMBIE_REFRESH_MS * 3);
+    // 每晚只在入夜時生成一次：午夜（00:00）、轉回夜晚（02:00）或定時檢查都不會補充，擊殺的殭屍群當晚不再出現
+    const night = this.game.time.nightKey(now);
+    if (map.zombieNight === night) return;
+    if (!map.pois.length) return;
+    map.zombieNight = night;
+    map.zombieGroups = [];
     const target = Math.round(ZOMBIE_MAX_GROUPS * Math.min(1, 0.45 * phase.zombieMul));
     const candidates = map.pois.filter((p) => !this.game.shelter.baseAtPoi(p.id));
     let guard = 0;
@@ -72,7 +77,7 @@ export class ZombieSpawnSystem {
     const danger = this.areaDanger(poi);
     let enemyId = weightedPick(pt.enemies);
     let boss = false;
-    if (phase.special && chance(0.35)) enemyId = 'nightStalker';
+    if (phase.zombies && chance(phase.special ? 0.35 : 0.15)) enemyId = 'nightStalker';
     if (pt.special && chance(0.06 + danger * 0.01)) {
       enemyId = pick(Object.keys(BOSSES));
       boss = true;
