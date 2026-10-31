@@ -55,7 +55,7 @@ export const FACILITIES = {
     effectText: (lv) => `物品格子 ${itemStoreSlots(lv)} 格`,
   },
   watchtower: {
-    name: '監視塔', icon: '🗼', startLevel: 0,
+    name: '探照燈', icon: '🔦', startLevel: 0,
     desc: '擴大偵查範圍，提前發現屍潮並提升防禦塔射程。',
     cost: (lv) => mat('watchtower', ['struct', 'mech'], { wood: 90, metal: 55 }, lv),
     effectText: (lv) => `防禦射程 +${lv * 6}%，探索遭遇戰先手率 +${lv * 4}%`,
