@@ -272,6 +272,12 @@ export class SaveManager {
         b.facilities.dormitory = { level: b.kind === 'outpost' ? 0 : need };
       });
     }
+    // v16：新增診療室（休息回復需要診療室）。舊存檔的避難所贈送 Lv1，避免原本的回復突然消失
+    if (v < 16) {
+      (data.bases || []).forEach((b) => {
+        if (b.facilities && !b.facilities.clinic) b.facilities.clinic = { level: b.kind === 'outpost' ? 0 : 1 };
+      });
+    }
     data.supplies = data.supplies || {};
     data.defenseLog = data.defenseLog || [];
     if (data.map) {

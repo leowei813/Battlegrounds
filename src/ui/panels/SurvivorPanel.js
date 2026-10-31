@@ -65,7 +65,7 @@ export class SurvivorPanel {
     const { net } = g.resources.rates();
     return `<div class="panel-inner">
       <h2>👥 倖存者 <small>${st.survivors.length}/${g.survivors.housing()} 人（上限 ${cap.max}）</small></h2>
-      <p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 5（${cap.leader}）+ 各據點等級（${cap.bases}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : '<b class="neg">尚未建造宿舍，無法招募</b>'}）。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），目前食物淨收入 <b class="${net.food < 0 ? 'neg' : 'pos'}">${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時</b>。</p>
+      <p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 5（${cap.leader}）+ 各據點等級（${cap.bases}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級（${g.shelter.maxLevel('clinic') ? `Lv${g.shelter.maxLevel('clinic')}` : '<b class="neg">尚未建造，不會自然回復</b>'}），主要仍需藥品治療。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），目前食物淨收入 <b class="${net.food < 0 ? 'neg' : 'pos'}">${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時</b>。</p>
       ${oddsCard}
       ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷，飢餓時無法治療。重傷且持續飢餓滿遊戲內 3 天的隊員會永久死亡（領袖除外）。</div>' : ''}
       ${offer ? `<h3>📻 招募候選人（三選一）</h3><div class="grid">${offer}</div><div class="btn-row">${btn('放棄此次招募（不退費）', 'abandon', {}, { cls: 'btn-ghost btn-sm' })}</div>` : `
@@ -112,7 +112,7 @@ export class SurvivorPanel {
       const item = g.equipment.getItem(sv.equipment[slot]);
       return `<div class="equip-slot">
         <div class="row-between"><small>${SLOTS[slot].icon} ${SLOTS[slot].name}</small>
-        <span>${btn('更換', 'pickItem', { slot }, { cls: 'btn-xs' })}${item ? btn('卸下', 'unequip', { slot }, { cls: 'btn-xs btn-ghost' }) : ''}</span></div>
+        <span>${btn('更換', 'pickItem', { slot }, { cls: 'btn-xs', disabled: !this.candidates(sv.id, slot).length, title: this.candidates(sv.id, slot).length ? '' : '沒有可以裝備的物品' })}${item ? btn('卸下', 'unequip', { slot }, { cls: 'btn-xs btn-ghost' }) : ''}</span></div>
         ${item ? itemCard(item, { compact: true }) : '<div class="muted">— 空 —</div>'}
       </div>`;
     }).join('');
@@ -302,23 +302,48 @@ export class SurvivorPanel {
     });
   }
 
-  /** 選擇裝備的子彈窗 */
+  /** 可換上的裝備：同部位、不是這位倖存者身上已穿的（其他人身上的也可以換過來） */
+  candidates(svId, slot) {
+    const g = this.game;
+    return g.state.inventory.items.filter((i) => i.slot === slot && g.equipment.equippedBy(i.id)?.id !== svId);
+  }
+
+  /** 裝備選擇頁：有返回按鈕，返回時回到倖存者的裝備頁 */
   pickItem(svId, slot) {
     const g = this.game;
-    const items = g.state.inventory.items.filter((i) => i.slot === slot).sort((a, b) => b.power - a.power);
-    const body = items.length
-      ? items.map((it) => {
-        const owner = g.equipment.equippedBy(it.id);
-        return itemCard(it, { equippedBy: owner, actions: btn('裝備', 'equip', { id: it.id }, { cls: 'btn-sm btn-primary', disabled: owner?.id === svId }) });
-      }).join('')
-      : '<p class="muted">背包中沒有此部位的裝備。</p>';
+    const sv = g.survivors.get(svId);
+    const cur = g.equipment.getItem(sv?.equipment[slot]);
+    const body = () => {
+      const items = this.candidates(svId, slot).sort((a, b) => b.power - a.power);
+      const list = items.length
+        ? items.map((it) => {
+          const owner = g.equipment.equippedBy(it.id);
+          const carrier = !owner && it.loc && it.loc !== 'store' ? g.survivors.get(it.loc) : null;
+          const diff = it.power - (cur?.power || 0);
+          return itemCard(it, {
+            equippedBy: owner,
+            carrier,
+            actions: `${btn('裝備', 'equip', { id: it.id }, { cls: 'btn-sm btn-primary' })}<span class="${diff >= 0 ? 'pos' : 'neg'}">戰力 ${diff >= 0 ? '▲' : '▼'}${Math.abs(diff)}</span>`,
+          });
+        }).join('')
+        : '<p class="muted">沒有可以裝備的物品。</p>';
+      return `<div class="btn-row">${btn('← 返回', 'back', {}, { cls: 'btn-sm' })}</div>
+        <p class="muted">${escapeHtml(sv?.name || '')} 目前的${SLOTS[slot].name}：${cur ? `<b>${escapeHtml(cur.name)}</b>（戰力 ${cur.power}）` : '無'}</p>
+        <div class="grid">${list}</div>`;
+    };
     this.ui.modal.open({
-      title: `選擇${SLOTS[slot].name}`,
-      body: `<div class="grid">${body}</div>`,
-      onAction: (action, data) => {
+      title: `${SLOTS[slot].icon} 選擇${SLOTS[slot].name}`,
+      wide: true,
+      body: body(),
+      onAction: (action, data, m) => {
+        if (action === 'back') {
+          this.openDetail(svId);
+          return;
+        }
         if (action === 'equip') {
           const r = this.ui.result(g.equipment.equip(svId, data.id));
           if (r.ok) this.openDetail(svId);
+          else m.update(body());
         }
       },
     });

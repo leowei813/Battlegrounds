@@ -1,4 +1,4 @@
-import { dormCap } from '../config/facilities.js';
+import { dormCap, clinicRegen } from '../config/facilities.js';
 import {
   CLASSES, CLASS_KEYS, JOBS, SURVIVOR_NAMES, MAX_SURVIVOR_LEVEL, xpToNext, recruitCost,
   SURVIVOR_RARITY, survivorRarityTable, hireFee, RECRUIT_BOARD_SIZE, RECRUIT_BOARD_MS, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
@@ -57,7 +57,7 @@ export class SurvivorSystem {
   fullReason() {
     const dorm = this.game.shelter.maxLevel('dormitory');
     if (this.dormCap() <= this.rankCap()) {
-      return dorm ? `宿舍只能住 ${this.dormCap()} 人，請升級宿舍` : '需要先在避難所建造宿舍才能招募';
+      return dorm ? `宿舍只能住 ${this.dormCap()} 人，請升級宿舍` : `沒有宿舍最多只能有 ${this.dormCap()} 人，請在避難所建造宿舍`;
     }
     return `人數已達上限（${this.housing()} 人），提升領袖等級或據點等級可增加上限`;
   }
@@ -213,6 +213,11 @@ export class SurvivorSystem {
     return { xp: loss, levelDown: true };
   }
 
+  /** 診療室的休息回復速度（每分鐘最大生命比例） */
+  clinicRate() {
+    return clinicRegen(this.game.shelter.maxLevel('clinic'));
+  }
+
   /** 醫療站工作的醫生提高全員回復速度 */
   regenMul() {
     const medics = this.list.filter((s) => s.classId === 'medic' && s.job === 'clinic' && s.status === 'idle' && !s.severe).length;
@@ -228,12 +233,16 @@ export class SurvivorSystem {
     const fedMin = Math.max(0, dtMs - starvingMs) / 60000;
     const starveMin = Math.min(dtMs, starvingMs) / 60000;
     const regenMul = this.regenMul();
+    const clinic = this.clinicRate();
     [...this.list].forEach((sv) => {
       const max = this.maxHp(sv);
       let hp = this.hpOf(sv);
-      // 有食物的時段：回復生命
+      // 有食物的時段：只有在據點內休息時才會回復（需要診療室；重傷者沒有診療室也會極慢地恢復）
       if (fedMin > 0) {
-        const rate = sv.severe ? VITALS.severeRegenPctPerMin * (1 + this.game.research.bonus('severeRegenPct')) : VITALS.regenPctPerMin;
+        const resting = sv.status !== 'exploring';
+        const rate = !resting ? 0 : sv.severe
+          ? Math.max(VITALS.severeBaseRegenPctPerMin, clinic * VITALS.severeClinicMul) * (1 + this.game.research.bonus('severeRegenPct'))
+          : clinic;
         hp = Math.min(max, hp + max * rate * regenMul * fedMin);
         sv.zeroSince = 0;
         if (sv.severe && hp >= max * VITALS.severeRecoverRatio) {
