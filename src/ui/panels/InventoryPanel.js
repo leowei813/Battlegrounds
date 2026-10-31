@@ -4,7 +4,7 @@ import {
 import { CLASSES } from '../../config/survivors.js';
 import { escapeHtml } from '../../utils/dom.js';
 import {
-  btn, itemCard, costHtml, progressBar,
+  btn, itemCard, costHtml, progressBar, statRangeLine,
 } from '../components.js';
 import { VEHICLES } from '../../config/vehicles.js';
 import {
@@ -178,6 +178,7 @@ export class InventoryPanel {
       return `<div class="fac-card ${check.ok ? '' : 'locked'}">
         <div class="fac-head"><span class="fac-icon">${md.icon || ITEM_TYPES[md.type].icon}</span><div><b>${md.name}</b> <span class="tier">${'★'.repeat(Math.ceil(md.tier / 2))}</span>
           <small class="muted block">強度 T${md.tier}・${bench ? `工作台 Lv${bench}` : '簡易製作（不需工作台）'}・裝備等級 Lv${eq.craftLevel(id)}${extra}</small></div></div>
+        <div class="stat-line range">${statRangeLine(eq.craftStatRange(id))}</div>
         <div class="row-between"><div class="costs">${costHtml(st, eq.craftCost(id))}</div>
         ${check.ok ? btn('製作', 'craft', { type: id }, { cls: 'btn-sm btn-primary' }) : `<span class="tag tag-red">🔒 ${check.reason}</span>`}</div>
       </div>`;
@@ -187,6 +188,7 @@ export class InventoryPanel {
       const check = eq.canCraftModel(bp.model, true);
       return `<div class="card row-between">
         <div>📜 <b>${md.name}設計圖</b> <span class="rarity" style="--rc:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</span>
+        <div class="stat-line range">${statRangeLine(eq.craftStatRange(bp.model, bp.rarity))}</div>
         <div class="costs">${costHtml(st, eq.craftCost(bp.model, true))}</div></div>
         ${btn('製作', 'craftBp', { id: bp.id, type: bp.model }, { cls: 'btn-sm btn-primary', disabled: !check.ok, title: check.reason || '' })}
       </div>`;
@@ -197,6 +199,7 @@ export class InventoryPanel {
       <p>📦 倉庫空間 <b>${eq.storeUsed()} / ${eq.storeCap()}</b> 格（空間不足時無法製作）</p>
       <p class="muted">工作台 Lv${wb}：簡易製作不需要工作台；其餘裝備需要對應等級的工作台，工作台等級越高<b>可製作的型號越多</b>。槍械另需研究「槍械製造」。製作品級只受研究「製作技術」影響（Lv${eq.craftTech()}/10）。</p>
       <div class="odds"><small class="muted">製作品級機率：</small>${odds}</div>
+      <p class="muted">每件裝備下方為製作出來的能力範圍（最低～最高，已含品級差異；另有依品級隨機出現的詞綴）。</p>
       ${bps ? `<h3>設計圖</h3>${bps}` : ''}
       <div class="chips">${cats}</div>
       <div class="grid">${cards}</div>`;

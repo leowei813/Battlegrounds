@@ -489,6 +489,33 @@ export class EquipmentSystem {
     return cost;
   }
 
+  /**
+   * 製作出來的能力範圍（不分品級）：以可能做出的最低與最高品級素質計算每項基礎屬性的最小值與最大值。
+   * 隨機詞綴不列入。
+   * @returns {Record<string, [number, number]>}
+   */
+  craftStatRange(modelId, withBlueprint = null) {
+    const md = ITEM_MODELS[modelId];
+    const def = ITEM_TYPES[md.type];
+    const lv = clamp(Math.round(this.craftLevel(modelId)), 1, 60);
+    const table = craftRarityTable(this.craftTech());
+    const possible = RARITY_ORDER.filter((r) => table[r] > 0 && (!withBlueprint || rarityIndex(r) >= rarityIndex(withBlueprint)));
+    const lo = RARITIES[possible[0]];
+    const hi = RARITIES[possible[possible.length - 1]];
+    const q0 = clamp(this.game.research.bonus('craftQualityAdd'), 0, 0.9);
+    const qMin = lo.min + (lo.max - lo.min) * q0;
+    const qMax = hi.max;
+    const tm = tierMul(md.tier);
+    const round = (k, v) => (INT_STATS.has(k) ? Math.round(v) : +v.toFixed(3));
+    const out = {};
+    Object.entries(def.base).forEach(([k, v]) => {
+      const grown = v + (def.perLevel[k] || 0) * (lv - 1);
+      out[k] = grown > 0 ? [round(k, grown * tm * qMin), round(k, grown * tm * qMax)] : [round(k, grown), round(k, grown)];
+    });
+    Object.entries(md.extra || {}).forEach(([k, v]) => { out[k] = [Math.round(v * qMin), Math.round(v * qMax)]; });
+    return out;
+  }
+
   /** 製作（使用存檔種子：重新讀檔不會改變結果） */
   craft(modelId, blueprintId = null) {
     return withSeed(this.game.state.rng, 'craft', () => this.craftNow(modelId, blueprintId));

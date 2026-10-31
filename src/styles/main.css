@@ -534,3 +534,4 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .time-breakdown { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 10px; margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; background: #0004; font-size: 13px; }
 .time-breakdown small { color: var(--muted); }
 .time-breakdown .total { color: var(--accent); }
+.stat-line.range { margin: 4px 0 6px; color: #b3e5fc; }

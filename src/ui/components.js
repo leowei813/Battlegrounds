@@ -59,19 +59,32 @@ export function qualityTag(item) {
   return `<span class="quality" title="${r.name}素質範圍 ${Math.round(r.min * 100)}–${Math.round(r.max * 100)}%">素質 ${item.quality}%<i style="--p:${Math.round(pos * 100)}%"></i></span>`;
 }
 
+const STAT_FMT = {
+  atk: ['攻擊', (v) => Math.round(v)], def: ['防禦', (v) => Math.round(v)], hp: ['生命', (v) => Math.round(v)],
+  crit: ['暴擊', (v) => `${(v * 100).toFixed(1)}%`], critDmg: ['暴傷', (v) => `+${(v * 100).toFixed(0)}%`],
+  dodge: ['閃避', (v) => `${(v * 100).toFixed(1)}%`], atkSpeed: ['攻速', (v) => (v > 0 ? `+${v.toFixed(2)}` : v.toFixed(2))],
+  lootBonus: ['搜刮', (v) => `+${(v * 100).toFixed(0)}%`],
+  lifeSteal: ['吸血', (v) => `${(v * 100).toFixed(1)}%`],
+  exploreSpeed: ['探索速度', (v) => `+${(v * 100).toFixed(1)}%`],
+  carry: ['運載', (v) => `+${v}`],
+  slots: ['背包格', (v) => `+${v}`],
+};
+
 export function statLine(stats) {
-  const fmt = {
-    atk: ['攻擊', (v) => Math.round(v)], def: ['防禦', (v) => Math.round(v)], hp: ['生命', (v) => Math.round(v)],
-    crit: ['暴擊', (v) => `${(v * 100).toFixed(1)}%`], critDmg: ['暴傷', (v) => `+${(v * 100).toFixed(0)}%`],
-    dodge: ['閃避', (v) => `${(v * 100).toFixed(1)}%`], atkSpeed: ['攻速', (v) => (v > 0 ? `+${v.toFixed(2)}` : v.toFixed(2))],
-    lootBonus: ['搜刮', (v) => `+${(v * 100).toFixed(0)}%`],
-    lifeSteal: ['吸血', (v) => `${(v * 100).toFixed(1)}%`],
-    exploreSpeed: ['探索速度', (v) => `+${(v * 100).toFixed(1)}%`],
-    carry: ['運載', (v) => `+${v}`],
-  };
   return Object.entries(stats)
-    .filter(([k]) => fmt[k])
-    .map(([k, v]) => `<span>${fmt[k][0]} ${fmt[k][1](v)}</span>`)
+    .filter(([k]) => STAT_FMT[k])
+    .map(([k, v]) => `<span>${STAT_FMT[k][0]} ${STAT_FMT[k][1](v)}</span>`)
+    .join('');
+}
+
+/** 能力範圍（最小值～最大值） */
+export function statRangeLine(range) {
+  return Object.entries(range)
+    .filter(([k]) => STAT_FMT[k])
+    .map(([k, [a, b]]) => {
+      const [name, f] = STAT_FMT[k];
+      return `<span>${name} ${a === b ? f(a) : `${f(a)}～${f(b)}`}</span>`;
+    })
     .join('');
 }
 
