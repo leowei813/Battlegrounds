@@ -50,8 +50,9 @@ export class ShelterPanel {
     const w = siege.waveInfo();
     if (siege.quiet()) return '💥 防線已破，今晚不再來襲';
     if (!w.active) return '☀️ 白天無屍潮';
-    if (w.attacking) return `第 ${w.wave} 波進攻中（剩 ${w.left} 隻）`;
-    return `下一波 ${w.nextIn} 秒後`;
+    if (w.attacking) return `第 ${w.wave}/${w.maxWaves} 波進攻中（剩 ${w.left} 隻）`;
+    if (w.wave >= w.maxWaves) return `✅ 今晚 ${w.maxWaves} 波屍潮已全部擊退`;
+    return `下一波 ${w.nextIn} 秒後（今晚共 ${w.maxWaves} 波）`;
   }
 
   render() {

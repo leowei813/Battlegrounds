@@ -102,6 +102,7 @@ export class UIManager {
     bus.on('ui:openZombie', ({ groupId }) => this.panels.map.openZombie(groupId));
     bus.on('ui:openPlayer', ({ playerId }) => this.panels.map.openPlayer(playerId));
     bus.on('ui:openNpc', ({ npcId }) => this.panels.map.openNpc(npcId));
+    bus.on('ui:openTeam', (team) => this.panels.map.openTeam(team));
     bus.on('npcs:changed', () => this.panels.map.renderMap(true));
     bus.on('relations:changed', () => this.panels.map.onWorld(this.game.world?.others || []));
     bus.on('gps:update', (gps) => {

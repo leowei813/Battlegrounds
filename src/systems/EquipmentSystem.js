@@ -545,6 +545,7 @@ export class EquipmentSystem {
     if (this.supplyRoom(key) < rc.batch) return { ok: false, reason: `物品倉庫空間不足（${this.storeUsed()}/${this.storeCap()} 格）` };
     if (!payCost(this.game.state, rc.cost)) return { ok: false, reason: '材料不足' };
     this.addSupplies({ [key]: rc.batch });
+    this.game.state.stats.ammoCrafted = (this.game.state.stats.ammoCrafted || 0) + 1;
     return { ok: true, msg: `製作完成：${SUPPLIES[key].name} ×${rc.batch}` };
   }
 

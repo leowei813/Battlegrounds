@@ -15,6 +15,7 @@ export const STAT_KEYS = [
   'kills', 'siegeKills', 'bossKills', 'eliteKills', 'explorations', 'battlesWon', 'battlesLost',
   'itemsFound', 'rareItems', 'legendaryItems', 'crafted', 'upgrades', 'recruits',
   'researchDone', 'breaches', 'daysSurvived', 'foodCollected', 'peakCivilization',
+  'healed', 'ammoCrafted', 'intercepts', 'chestsOpened', 'forestVisits',
 ];
 
 /**

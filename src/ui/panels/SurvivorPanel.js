@@ -1,5 +1,7 @@
 import { formatDuration } from '../../utils/math.js';
-import { CLASSES, JOBS, xpToNext } from '../../config/survivors.js';
+import {
+  CLASSES, JOBS, xpToNext, survivorRarityTable,
+} from '../../config/survivors.js';
 import { RESOURCE_KEYS } from '../../config/constants.js';
 import { SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS } from '../../config/supplies.js';
 import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
@@ -46,8 +48,16 @@ export class SurvivorPanel {
     const cost = g.survivors.currentRecruitCost();
     const board = (st.recruitBoard?.list || []).map((c) => this.candidateCard(c,
       btn(`✅ 雇用 💰${g.survivors.hireCost(c).coins}`, 'hire', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full }))).join('');
-    const odds = Object.entries(g.survivors.rarityOdds())
+    const fmtOdds = (table) => Object.entries(table)
       .map(([r, p]) => `<span class="odd" style="--rc:${RARITIES[r].color}">${RARITIES[r].name} ${p < 1 ? p.toFixed(2) : p.toFixed(1)}%</span>`).join('');
+    const tech = g.research.level('r_tech');
+    const odds = fmtOdds(g.survivors.rarityOdds());
+    const nextOdds = tech < 10 ? fmtOdds(survivorRarityTable(tech + 1)) : '';
+    const oddsCard = `<div class="card odds-card"><b>🎲 招募品級機率</b> <small class="muted">（廣播招募、附近的倖存者、探索遇到的都適用）</small>
+      <div class="odds">${odds}</div>
+      <small class="muted block">研究「招募技術」可提高高品級機率：目前 Lv${tech}/10${tech < 10 ? '，升到下一級後：' : '（已滿級）'}</small>
+      ${nextOdds ? `<div class="odds dim">${nextOdds}</div>` : ''}
+      <small class="muted block">滿級時：${fmtOdds(survivorRarityTable(10))}</small></div>`;
     const cap = g.survivors.housingBreakdown();
     const list = st.survivors.map((sv) => survivorCard(g, sv, {
       actions: `${btn('詳情 / 裝備', 'detail', { id: sv.id }, { cls: 'btn-sm' })}${sv.severe && !g.survivors.isStarving() ? btn('💊 治療', 'heal', { id: sv.id }, { cls: 'btn-sm btn-primary', disabled: !g.survivors.medicines(sv).length }) : ''}${sv.isLeader ? '' : btn('🚪 驅逐', 'dismiss', { id: sv.id }, { cls: 'btn-sm btn-ghost', disabled: sv.status === 'exploring' })}`,
@@ -56,6 +66,7 @@ export class SurvivorPanel {
     return `<div class="panel-inner">
       <h2>👥 倖存者 <small>${st.survivors.length}/${g.survivors.housing()} 人（上限 ${cap.max}）</small></h2>
       <p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 5（${cap.leader}）+ 各據點等級（${cap.bases}），最多 ${cap.max} 人。每人每小時吃 3 食物，目前食物淨收入 <b class="${net.food < 0 ? 'neg' : 'pos'}">${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時</b>。</p>
+      ${oddsCard}
       ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷，飢餓時無法治療。重傷且持續飢餓滿遊戲內 3 天的隊員會永久死亡（領袖除外）。</div>' : ''}
       ${offer ? `<h3>📻 招募候選人（三選一）</h3><div class="grid">${offer}</div><div class="btn-row">${btn('放棄此次招募（不退費）', 'abandon', {}, { cls: 'btn-ghost btn-sm' })}</div>` : `
       <div class="card row-between">
@@ -65,7 +76,6 @@ export class SurvivorPanel {
       ${pool ? `<h3>🙋 等待加入（探索中遇到）</h3><div class="grid">${pool}</div>` : ''}
       <h3>🏕️ 附近的倖存者 <small class="muted">每小時更新（${formatDuration(Math.max(0, st.recruitBoard.refreshAt - Date.now()))}後）・雇用需支付金錢</small></h3>
       <div class="grid">${board || '<p class="muted">目前沒有人。</p>'}</div>
-      <div class="odds"><small class="muted">倖存者品級機率（招募技術 Lv${g.research.level('r_tech')}/10）：</small>${odds}</div>
       <div class="grid">${list}</div>
     </div>`;
   }
@@ -221,7 +231,7 @@ export class SurvivorPanel {
     const body = () => {
       const sv = g.survivors.get(svId);
       const res = g.state.resources;
-      const head = `<p class="muted">${escapeHtml(sv?.name || '')} 的背包 ${eq.bagSlotsUsed(sv)} / ${eq.bagSlotCap(sv)} 格・負重 ${Math.floor(g.survivors.bagLoad(sv))} / ${g.survivors.bagCap(sv)}</p>`;
+      const head = `<div class="btn-row">${btn('← 返回背包', 'back', {}, { cls: 'btn-sm' })}</div><p class="muted">${escapeHtml(sv?.name || '')} 的背包 ${eq.bagSlotsUsed(sv)} / ${eq.bagSlotCap(sv)} 格・負重 ${Math.floor(g.survivors.bagLoad(sv))} / ${g.survivors.bagCap(sv)}</p>`;
       const stack = (k, have) => `
         <div class="slot-cell stack">
           <div class="slot-main"><span class="slot-icon">${metaOf(k).icon}</span><b>${metaOf(k).name}</b><span class="slot-qty">倉庫 ${Math.floor(have)}</span></div>
@@ -244,6 +254,10 @@ export class SurvivorPanel {
       wide: true,
       body: body(),
       onAction: (action, data, m, el) => {
+        if (action === 'back') {
+          this.openDetail(svId);
+          return;
+        }
         let r = null;
         if (action === 'take' || action === 'takeAll') {
           const n = action === 'takeAll' ? Infinity : Math.max(1, Math.floor(+el.closest('.slot-cell').querySelector('input').value || 1));

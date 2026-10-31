@@ -330,6 +330,7 @@ export class SurvivorSystem {
     this.setHp(sv, hp);
     if (sv.severe && hp >= max * VITALS.severeRecoverRatio) sv.severe = false;
     sv.zeroSince = 0;
+    this.game.state.stats.healed = (this.game.state.stats.healed || 0) + 1;
     return { ok: true, msg: `${sv.name} 使用${med.name}恢復了生命${saved ? '（藥品節約：沒有消耗）' : ''}${sv.severe ? '' : '，已可行動'}` };
   }
 

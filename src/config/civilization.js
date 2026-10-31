@@ -34,6 +34,15 @@ export const SIEGE_SCALING = {
   atkPerCiv: 0.004, // 每點文明度，屍潮殭屍攻擊 +0.4%
   dangerLevelMul: 0.5, // 每點據點危險度（超過 1 的部分），殭屍 +0.5 級
   dangerSpawn: 0.08, // 每點據點危險度，屍潮頻率 +8%
+  /** 每晚最多幾波屍潮（依文明度階級：廢墟／新手 1 波 → 新文明 6 波） */
+  wavesByTier: [1, 2, 3, 4, 5, 6],
+  /** 文明度越低，每波殭屍越少（倍率從 0.45 到 1.2） */
+  waveSizeMin: 0.45,
+  waveSizeMax: 1.2,
+  waveSizeCiv: 350, // 文明度達此值時每波數量達到上限
+  /** 文明度越低，屍潮殭屍越弱（生命、攻擊從 0.6 倍起，文明度 100 時恢復正常） */
+  weakMin: 0.6,
+  weakCiv: 100,
   /** 文明度達到門檻後，該種敵人才會加入屍潮 */
   unlock: { infected: 20, berserker: 60, mutant: 140, nightStalker: 90, boss: 200 },
 };

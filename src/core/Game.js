@@ -23,6 +23,8 @@ import { grant } from '../systems/costUtils.js';
 import { isSupply } from '../config/supplies.js';
 import { fetchPois } from '../map/OverpassService.js';
 import { fillPois } from '../map/PoiGenerator.js';
+import { MarkerSystem } from '../systems/MarkerSystem.js';
+import { InterceptSystem } from '../systems/InterceptSystem.js';
 
 /**
  * 遊戲核心（Facade）：持有狀態與所有系統，負責主迴圈、離線結算與存檔。
@@ -51,6 +53,8 @@ export class Game {
     this.npcs = new NpcSystem(this);
     this.territory = new TerritorySystem(this);
     this.gps = new GpsSystem(this);
+    this.markers = new MarkerSystem(this);
+    this.intercept = new InterceptSystem(this);
 
     this.lastPhase = null;
     this.timers = [];
@@ -65,6 +69,7 @@ export class Game {
    * @returns {object|null} 離線報告
    */
   start() {
+    this.markers.ensure();
     const report = this.processOffline();
     this.quests.ensureDaily();
     this.lastPhase = this.time.phaseId();
@@ -219,11 +224,12 @@ export class Game {
     // 同一棟建築保留今日搜刮紀錄
     pois.forEach((p) => { if (old.get(p.id)?.lootedDay) p.lootedDay = old.get(p.id).lootedDay; });
     // 保留據點與探索中目的地的 POI，避免重新掃描後消失
-    const keep = new Set([...this.state.bases.map((b) => b.poiId), ...this.state.expeditions.map((e) => e.poiId)]);
+    const keep = new Set([...this.state.bases.map((b) => b.poiId), ...this.state.expeditions.map((e) => e.poiId), ...this.markers.list.map((m) => m.id)]);
     keep.forEach((id) => {
       const p = old.get(id);
       if (p && !pois.some((q) => q.id === id)) pois.push(p);
     });
+    this.markers.ensure(pois);
     Object.assign(map, {
       center: { lat, lon }, pois, source, fetchedAt: Date.now(), zombieGroups: [], lastZombieRefresh: 0,
     });

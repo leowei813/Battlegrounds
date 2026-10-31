@@ -5,6 +5,7 @@ import { SLOT_KEYS, ITEM_MODELS } from '../config/equipment.js';
 import { RESEARCH, LEGACY_RESEARCH } from '../config/research.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 import { legacyToSupplies } from '../config/supplies.js';
+import { MAIN_QUESTS } from '../config/quests.js';
 
 /**
  * 地圖建築改以「欄位陣列」儲存（市區可達數千棟，物件格式體積約大一倍）：
@@ -235,6 +236,12 @@ export class SaveManager {
         Object.entries(toSupplies(sv.bag || {})).forEach(([k, n]) => { sv.bag[k] = (sv.bag[k] || 0) + n; });
       });
       (data.npcs?.list || []).forEach((n) => { if (n.resources) toSupplies(n.resources); });
+    }
+    // v12：主線任務新增項目，舊的進度依任務 ID 換算到新的位置
+    if (v < 12 && data.quests && Number.isInteger(data.quests.mainIndex)) {
+      const OLD_MAIN = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9', 'm10', 'm11', 'm12', 'm12b', 'm12c', 'm13'];
+      const id = OLD_MAIN[data.quests.mainIndex];
+      data.quests.mainIndex = id ? Math.max(0, MAIN_QUESTS.findIndex((q) => q.id === id)) : MAIN_QUESTS.length;
     }
     data.supplies = data.supplies || {};
     if (data.map) {

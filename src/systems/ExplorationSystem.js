@@ -97,7 +97,8 @@ export class ExplorationSystem {
 
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   poi(id) {
-    return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id) || null;
+    return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id)
+      || this.game.intercept?.asPoi(id) || null;
   }
 
   /**
@@ -177,7 +178,7 @@ export class ExplorationSystem {
     if (!v.ok) return v;
     if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'raid' || kind === 'pvp' ? 5 : this.searchMinutes(v.poi);
+    durationMin = kind === 'intercept' ? 0 : kind === 'raid' || kind === 'pvp' ? 5 : this.searchMinutes(v.poi);
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
@@ -198,6 +199,7 @@ export class ExplorationSystem {
       from: plan.from, distanceM: plan.distanceM, travelMs: plan.travelMs, searchMs: plan.searchMs,
       path: plan.path, avoidHostile, threats,
       ...(v.poi.pvp ? { pvpTarget: v.poi } : {}),
+      ...(v.poi.intercept ? { icptTarget: v.poi.target } : {}),
       vehicleIds: [...vehicleIds], cargo: plan.trip.cargo, ambushes: 0,
       encountered: [], travelEvents: [], travelKills: 0, travelXp: 0,
     };
@@ -232,6 +234,7 @@ export class ExplorationSystem {
 
   checkAmbushNow(now = Date.now()) {
     [...this.list].forEach((exp) => this.checkThreats(exp, now));
+    this.game.intercept?.checkArrivals(now);
     const out = [];
     const groups = this.game.state.map.zombieGroups;
     if (!groups.length) return out;
@@ -400,8 +403,10 @@ export class ExplorationSystem {
           return;
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
-        const report = exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
-          : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp);
+        const report = exp.defeated ? this.game.intercept.defeatedReport(exp)
+          : exp.kind === 'intercept' ? this.game.intercept.report(exp)
+            : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
+              : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp);
         report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
         reports.push(report);
         this.free(exp);
@@ -410,7 +415,7 @@ export class ExplorationSystem {
           const m = this.game.survivors.get(id);
           return m && !m.severe;
         });
-        if (exp.kind === 'explore' && exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
+        if (exp.kind === 'explore' && !exp.defeated && exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
           const r = this.start(exp.poiId, exp.memberIds, exp.durationMin, true, exp.endAt, { vehicleIds: exp.vehicleIds || [], avoidHostile: exp.avoidHostile });
           if (!r.ok) report.events.push(`⏹️ 自動探索停止：${r.reason}`);
         }
@@ -597,6 +602,7 @@ export class ExplorationSystem {
     delete poi.depletion;
     poi.lastVisit = exp.endAt;
     this.game.state.stats.explorations += 1;
+    if (poi.type === 'forest') this.game.state.stats.forestVisits = (this.game.state.stats.forestVisits || 0) + 1;
     return report;
   }
 }
