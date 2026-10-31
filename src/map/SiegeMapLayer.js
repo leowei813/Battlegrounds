@@ -229,12 +229,12 @@ export const SiegeMapLayer = L.Layer.extend({
     });
   },
 
-  /** 點擊位置附近的野外隊伍（其他玩家、NPC） */
+  /** 點擊位置附近的隊伍（優先自己的探索隊，其次其他玩家、NPC） */
   teamAt(pt) {
-    if (!this.map || !this.teams) return null;
+    if (!this.map) return null;
     let best = null;
     let bestD = 18;
-    this.teams.forEach((t) => {
+    const near = (list) => (list || []).forEach((t) => {
       const m = this.map.latLngToContainerPoint([t.pos.lat, t.pos.lon]);
       const d = Math.hypot(m.x - pt.x, m.y - pt.y);
       if (d < bestD) {
@@ -242,6 +242,9 @@ export const SiegeMapLayer = L.Layer.extend({
         bestD = d;
       }
     });
+    near(this.ownTeams);
+    if (best) return best;
+    near(this.teams);
     return best;
   },
 
@@ -287,9 +290,11 @@ export const SiegeMapLayer = L.Layer.extend({
   drawExpeditions(ctx, size) {
     const now = Date.now();
     const { exploration } = this.game;
+    this.ownTeams = [];
     this.game.state.expeditions.forEach((exp) => {
       const p = exploration.progress(exp, now);
       if (!p) return;
+      this.ownTeams.push({ kind: 'own', expId: exp.id, pos: p.pos });
       const m = this.map.latLngToContainerPoint([p.pos.lat, p.pos.lon]);
       // 路線（繞開警戒範圍時為折線）
       this.tracePath(ctx, p);
