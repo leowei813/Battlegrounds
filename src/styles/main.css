@@ -545,3 +545,23 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .defense-log.fail { border-left: 3px solid var(--danger); }
 .defense-log > div { margin-top: 3px; }
 .trader-pin { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 22px; border-radius: 50%; background: #3e2723; border: 3px solid #ffca28; box-shadow: 0 0 10px #ffca28aa; }
+
+/* ---- 物品倉庫：一格一格的格子 ---- */
+.inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; margin: 8px 0 10px; }
+.inv-cell { position: relative; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; font: inherit; min-width: 0; }
+.inv-cell.empty { cursor: default; background: transparent; border-style: dashed; opacity: 0.45; }
+.inv-cell .inv-ic { font-size: 22px; line-height: 1; }
+.inv-cell .inv-nm { font-size: 10px; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: 0.85; }
+.inv-cell .inv-qty { position: absolute; right: 4px; bottom: 2px; font-size: 11px; text-shadow: 0 1px 2px #000; }
+.inv-cell .inv-lock { position: absolute; left: 3px; top: 2px; font-size: 10px; font-style: normal; }
+.inv-cell.cat-part { border-color: #78909c; }
+.inv-cell.cat-fabric { border-color: #8d6e63; }
+.inv-cell.cat-med { border-color: #ef5350; }
+.inv-cell.cat-ammo { border-color: #fbc02d; }
+.inv-cell.gear { border: 2px solid var(--rc); background: linear-gradient(135deg, color-mix(in srgb, var(--rc) 18%, var(--card)), var(--card) 70%); }
+.inv-cell .inv-qty { color: #fff; }
+.inv-cell.sel { outline: 2px solid var(--accent, #ffd54f); outline-offset: 1px; }
+.inv-detail { margin-top: 4px; }
+.inv-drop { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.inv-drop input { width: 90px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg, #111); color: var(--text); font: inherit; }
+.inv-hint { margin-top: 4px; }

@@ -1598,6 +1598,23 @@ assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[
   assert(v.resources && v.power > 0 && v.nextRaid != null, '偵查越高情報越詳細');
 }
 
+// ---- 36. v8.19：倉庫丟棄物品 ----
+{
+  const gd = Game.newGame({ playerName: 'D1', classId: 'warrior', lat: 25, lon: 121 });
+  gd.state.map.pois = fillPois([], 25, 121);
+  gd.shelter.establish(gd.state.map.pois[0]);
+  gd.state.supplies.nail = 100;
+  assert(gd.equipment.discardSupply('nail', 30).ok && gd.state.supplies.nail === 70, '可指定數量丟棄材料');
+  assert(gd.equipment.discardSupply('nail', Infinity).ok && !gd.state.supplies.nail, '可全部丟棄材料');
+  assert(!gd.equipment.discardSupply('nail', 1).ok, '沒有的材料不能丟棄');
+  const it = gd.equipment.generate({ level: 3, rarity: 'common' });
+  gd.equipment.addItem(it, 't');
+  it.locked = true;
+  assert(!gd.equipment.discardItem(it.id).ok, '上鎖的裝備不能丟棄');
+  it.locked = false;
+  assert(gd.equipment.discardItem(it.id).ok && !gd.equipment.getItem(it.id), '可以丟棄裝備');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

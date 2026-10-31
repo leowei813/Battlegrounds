@@ -419,6 +419,26 @@ export class EquipmentSystem {
     return { ok: true, item };
   }
 
+  /** 丟棄倉庫裡的材料物品（指定數量，Infinity 為全部） */
+  discardSupply(key, qty) {
+    const sup = this.game.state.supplies || {};
+    const have = sup[key] || 0;
+    const n = Math.min(have, Math.max(0, Math.floor(qty === Infinity ? have : Number(qty) || 0)));
+    if (n <= 0) return { ok: false, reason: have ? '請輸入要丟棄的數量' : '倉庫裡沒有這項物資' };
+    sup[key] = have - n;
+    if (sup[key] <= 0) delete sup[key];
+    this.game.log(`🗑️ 丟棄 ${SUPPLIES[key]?.name || key} ×${n}`, 'info');
+    return { ok: true, msg: `丟棄 ${SUPPLIES[key]?.name || key} ×${n}` };
+  }
+
+  /** 丟棄一件裝備（上鎖或穿戴中的不能丟） */
+  discardItem(itemId) {
+    const res = this.removeItem(itemId);
+    if (!res.ok) return res;
+    this.game.log(`🗑️ 丟棄「${res.item.name}」`, 'info');
+    return { ok: true, msg: `丟棄「${res.item.name}」` };
+  }
+
   sell(itemId) {
     const item = this.getItem(itemId);
     const res = this.removeItem(itemId);
