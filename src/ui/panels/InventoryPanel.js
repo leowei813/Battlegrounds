@@ -54,16 +54,24 @@ export class InventoryPanel {
 
   /** 倉庫裝備（從避難所頁開啟） */
   openStorage() {
-    this.ui.modal.open({
-      title: `🗄️ 物品倉庫（裝備 ${this.storedItems().length} 件）`,
+    this.sel = null;
+    this.dropQty = 1;
+    this.filter = 'all';
+    const m = this.ui.modal.open({
+      title: `🗄️ 物品倉庫（裝備 ${this.game.equipment.storeItems().length} 件）`,
       wide: true,
       body: this.renderItems(),
       live: () => this.renderItems(),
-      onAction: (action, data, m) => {
+      onAction: (action, data, modal) => {
+        const input = modal.el?.querySelector('#inv-drop-qty');
+        if (input) this.dropQty = Number(input.value) || 1;
         this.onAction(action, data);
-        if (this.ui.modal.current === m) m.update(this.renderItems());
+        if (this.ui.modal.current === modal) modal.update(this.renderItems());
+        // 手機上詳細資訊在格子下方：選取後捲動到可見位置
+        if (action === 'selSupply' || action === 'selItem') modal.el?.querySelector('.inv-detail')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       },
     });
+    m.el?.addEventListener('input', (e) => { if (e.target.id === 'inv-drop-qty') this.dropQty = Number(e.target.value) || 1; });
   }
 
   /** 車庫（從避難所頁開啟） */
@@ -121,53 +129,93 @@ export class InventoryPanel {
     return this.game.state.inventory.items.filter((i) => !eq.equippedBy(i.id));
   }
 
+  /** 倉庫格子：材料依種類（零件→布料→藥品→彈藥）、階級排列，每 999 個一格；裝備依部位、品級、戰力排列 */
+  storeCells() {
+    const g = this.game;
+    const sup = g.state.supplies || {};
+    const catOrder = Object.keys(SUPPLY_CATS);
+    const cells = [];
+    SUPPLY_KEYS.filter((k) => sup[k] > 0)
+      .sort((a, b) => catOrder.indexOf(SUPPLIES[a].cat) - catOrder.indexOf(SUPPLIES[b].cat) || SUPPLIES[a].tier - SUPPLIES[b].tier || SUPPLY_KEYS.indexOf(a) - SUPPLY_KEYS.indexOf(b))
+      .forEach((k) => {
+        let left = sup[k];
+        let i = 0;
+        while (left > 0) {
+          const n = Math.min(STACK_MAX, left);
+          cells.push({ kind: 'supply', key: k, qty: n, cat: SUPPLIES[k].cat, idx: i });
+          left -= n;
+          i += 1;
+        }
+      });
+    const slotOrder = Object.keys(SLOTS);
+    g.equipment.storeItems()
+      .sort((a, b) => slotOrder.indexOf(a.slot) - slotOrder.indexOf(b.slot) || RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) || b.power - a.power)
+      .forEach((it) => cells.push({ kind: 'gear', item: it, cat: 'gear' }));
+    return cells;
+  }
+
+  /** 選取的格子詳細資訊與操作（點選格子才顯示） */
+  renderSelected() {
+    const g = this.game;
+    const sel = this.sel;
+    if (!sel) return '<p class="muted inv-hint">👆 點選格子查看物品資訊，可以丟棄、出售或交給隊員。</p>';
+    if (sel.kind === 'supply') {
+      const sp = SUPPLIES[sel.key];
+      const have = g.state.supplies?.[sel.key] || 0;
+      if (!sp || have <= 0) { this.sel = null; return this.renderSelected(); }
+      const qty = Math.min(have, Math.max(1, Math.floor(this.dropQty || 1)));
+      return `<div class="card inv-detail">
+        <div class="row-between"><b>${sp.icon} ${sp.name}</b><span class="muted">共 ${have} 個・佔 ${Math.ceil(have / STACK_MAX)} 格</span></div>
+        <small class="muted block">${SUPPLY_CATS[sp.cat].icon} ${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier || 1)}${sp.heal ? `・回復 ${Math.round(sp.heal * 100)}% 生命` : ''}</small>
+        <div class="inv-drop">🗑️ 丟棄數量
+          <input id="inv-drop-qty" type="number" min="1" max="${have}" value="${qty}" inputmode="numeric">
+          ${btn('丟棄', 'dropSupply', { key: sel.key }, { cls: 'btn-sm btn-danger' })}
+          ${btn(`全部丟棄（${have}）`, 'dropSupplyAll', { key: sel.key }, { cls: 'btn-sm btn-ghost' })}</div>
+      </div>`;
+    }
+    const it = g.equipment.getItem(sel.id);
+    if (!it || !g.equipment.storeItems().includes(it)) { this.sel = null; return this.renderSelected(); }
+    const actions = [
+      btn('裝備', 'equipTo', { id: it.id }, { cls: 'btn-xs btn-primary' }),
+      btn('交給隊員', 'toBag', { id: it.id }, { cls: 'btn-xs' }),
+      btn(it.locked ? '🔓 解鎖' : '🔒 上鎖', 'lock', { id: it.id }, { cls: 'btn-xs btn-ghost' }),
+      btn(`出售 💰${g.equipment.sellValue(it)}`, 'sell', { id: it.id }, { cls: 'btn-xs', disabled: it.locked }),
+      btn('拆解', 'dismantle', { id: it.id }, { cls: 'btn-xs btn-ghost', disabled: it.locked }),
+      btn('🗑️ 丟棄', 'dropItem', { id: it.id }, { cls: 'btn-xs btn-danger', disabled: it.locked }),
+    ].join('');
+    return `<div class="inv-detail">${itemCard(it, { actions })}</div>`;
+  }
+
   renderItems() {
     const g = this.game;
-    let items = this.storedItems();
-    if (this.filter !== 'all') items = items.filter((i) => i.slot === this.filter);
-    if (this.rarityFilter !== 'all') items = items.filter((i) => i.rarity === this.rarityFilter);
-    items.sort(this.sort === 'power'
-      ? (a, b) => b.power - a.power
-      : (a, b) => RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) || b.power - a.power);
-    const filters = [['all', '全部'], ...Object.entries(SLOTS).map(([k, v]) => [k, `${v.icon}${v.name}`])]
-      .map(([k, n]) => `<button class="chip ${this.filter === k ? 'active' : ''}" data-action="filter" data-f="${k}">${n}</button>`).join('');
     const eq = g.equipment;
-    const cards = items.map((it) => {
-      const owner = eq.equippedBy(it.id);
-      const carrier = it.loc && it.loc !== 'store' ? g.survivors.get(it.loc) : null;
-      const actions = [
-        btn('裝備', 'equipTo', { id: it.id }, { cls: 'btn-xs btn-primary' }),
-        carrier && !owner ? btn('放回倉庫', 'toStore', { id: it.id }, { cls: 'btn-xs' }) : '',
-        !carrier && !owner ? btn('交給隊員', 'toBag', { id: it.id }, { cls: 'btn-xs' }) : '',
-        btn(it.locked ? '🔓' : '🔒', 'lock', { id: it.id }, { cls: 'btn-xs btn-ghost', title: '上鎖' }),
-        btn(`出售 💰${g.equipment.sellValue(it)}`, 'sell', { id: it.id }, { cls: 'btn-xs', disabled: !!owner || it.locked }),
-        btn('拆解', 'dismantle', { id: it.id }, { cls: 'btn-xs btn-ghost', disabled: !!owner || it.locked }),
-      ].join('');
-      return itemCard(it, { equippedBy: owner, carrier: owner ? null : carrier, actions });
-    }).join('');
     const used = eq.storeUsed();
     const cap = eq.storeCap();
-    const counts = {};
-    this.storedItems().forEach((i) => { counts[i.rarity] = (counts[i.rarity] || 0) + 1; });
-    const rarities = [['all', '全部品級', '#fff'], ...RARITY_ORDER.map((r) => [r, `${RARITIES[r].name} ${counts[r] || 0}`, RARITIES[r].color])]
-      .map(([k, n, c]) => `<button class="chip rchip ${this.rarityFilter === k ? 'active' : ''}" style="--rc:${c}" data-action="rfilter" data-r="${k}">${n}</button>`).join('');
-    const sup = g.state.supplies || {};
-    const supplies = Object.entries(SUPPLY_CATS).map(([cat, c]) => {
-      const keys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === cat && sup[k] > 0);
-      const list = keys.map((k) => `<span class="supply-chip" title="${SUPPLIES[k].name}・${Math.ceil(sup[k] / STACK_MAX)} 格">${SUPPLIES[k].icon} ${SUPPLIES[k].name} <b>${sup[k]}</b></span>`).join('');
-      return `<div class="supply-row"><b>${c.icon} ${c.name}</b> ${list || '<small class="muted">無</small>'}</div>`;
+    const all = this.storeCells();
+    const cats = [['all', '全部'], ...Object.entries(SUPPLY_CATS).map(([k, c]) => [k, `${c.icon}${c.name}`]), ['gear', '⚔️裝備']];
+    const filters = cats.map(([k, n]) => `<button class="chip ${this.filter === k ? 'active' : ''}" data-action="filter" data-f="${k}">${n}</button>`).join('');
+    if (!cats.some(([k]) => k === this.filter)) this.filter = 'all';
+    const shown = this.filter === 'all' ? all : all.filter((c) => c.cat === this.filter);
+    const isSel = (c) => this.sel && (c.kind === 'supply' ? this.sel.kind === 'supply' && this.sel.key === c.key : this.sel.kind === 'gear' && this.sel.id === c.item.id);
+    const cellHtml = shown.map((c) => {
+      if (c.kind === 'supply') {
+        const sp = SUPPLIES[c.key];
+        return `<button class="inv-cell cat-${c.cat} ${isSel(c) ? 'sel' : ''}" data-action="selSupply" data-key="${c.key}" title="${sp.name} ×${c.qty}">
+          <span class="inv-ic">${sp.icon}</span><span class="inv-nm">${sp.name}</span><b class="inv-qty">${c.qty}</b></button>`;
+      }
+      const it = c.item;
+      const r = RARITIES[it.rarity];
+      return `<button class="inv-cell gear r-${it.rarity} ${isSel(c) ? 'sel' : ''}" style="--rc:${r.color}" data-action="selItem" data-id="${it.id}" title="${escapeHtml(it.name)}">
+        <span class="inv-ic">${ITEM_MODELS[it.model]?.icon || ITEM_TYPES[it.type]?.icon || '❔'}</span><span class="inv-nm">${escapeHtml(it.name)}</span>${it.locked ? '<i class="inv-lock">🔒</i>' : ''}<b class="inv-qty">Lv${it.level}</b></button>`;
     }).join('');
+    const empty = this.filter === 'all' ? Math.max(0, cap - all.length) : 0;
+    const carried = g.state.inventory.items.filter((i) => i.loc && i.loc !== 'store' && !eq.equippedBy(i.id)).length;
     return `
-      <p>🗄️ 物品倉庫空間 <b class="${used >= cap ? 'neg' : ''}">${used} / ${cap}</b> 格 <small class="muted">（每件裝備佔 1 格；零件、布料、藥品、彈藥同種類每 ${STACK_MAX} 個佔 1 格；物品倉庫每升一級 +10 格；穿戴中的裝備不佔格子，也不顯示在這裡，請到倖存者頁查看）</small></p>
-      <h4>材料物品</h4><div class="supply-list">${supplies}</div>
-      <h4>裝備</h4>
-      <div class="chips">${filters}</div>
-      <div class="chips">${rarities}</div>
-      <div class="row-between"><div class="chips">
-        <button class="chip ${this.sort === 'power' ? 'active' : ''}" data-action="sort" data-s="power">依戰力</button>
-        <button class="chip ${this.sort === 'rarity' ? 'active' : ''}" data-action="sort" data-s="rarity">依品質</button></div>
-        ${btn('一鍵出售劣質/一般', 'sellCommon', {}, { cls: 'btn-sm btn-ghost' })}</div>
-      <div class="grid">${cards || '<p class="muted">沒有裝備。去探索或擊殺殭屍吧！</p>'}</div>`;
+      <p>🗄️ 物品倉庫空間 <b class="${used >= cap ? 'neg' : ''}">${used} / ${cap}</b> 格 <small class="muted">（裝備每件 1 格；零件、布料、藥品、彈藥同種類每 ${STACK_MAX} 個 1 格；物品倉庫每升一級 +10 格。穿戴中與隊員背包裡的裝備不在這裡，請到倖存者頁查看${carried ? `，目前有 ${carried} 件在隊員背包` : ''}）</small></p>
+      <div class="row-between"><div class="chips">${filters}</div>${btn('一鍵出售劣質/一般', 'sellCommon', {}, { cls: 'btn-sm btn-ghost' })}</div>
+      <div class="inv-grid">${cellHtml}${'<div class="inv-cell empty"></div>'.repeat(empty)}</div>
+      ${shown.length ? '' : '<p class="muted">這個分類沒有物品。</p>'}
+      ${this.renderSelected()}`;
   }
 
   renderCraft() {
@@ -217,6 +265,20 @@ export class InventoryPanel {
       case 'view': this.view = data.v; break;
       case 'craftCat': this.craftCat = data.c; break;
       case 'filter': this.filter = data.f; break;
+      case 'selSupply':
+        this.sel = this.sel?.kind === 'supply' && this.sel.key === data.key ? null : { kind: 'supply', key: data.key };
+        this.dropQty = 1;
+        break;
+      case 'selItem': this.sel = this.sel?.kind === 'gear' && this.sel.id === data.id ? null : { kind: 'gear', id: data.id }; break;
+      case 'dropSupply': this.ui.result(g.equipment.discardSupply(data.key, this.dropQty)); break;
+      case 'dropSupplyAll':
+        if (confirm(`確定丟棄全部 ${SUPPLIES[data.key]?.name || ''}？丟棄後無法復原。`)) this.ui.result(g.equipment.discardSupply(data.key, Infinity));
+        break;
+      case 'dropItem': {
+        const it = g.equipment.getItem(data.id);
+        if (it && confirm(`確定丟棄「${it.name}」？丟棄後無法復原。`)) this.ui.result(g.equipment.discardItem(data.id));
+        break;
+      }
       case 'sort': this.sort = data.s; break;
       case 'rfilter': this.rarityFilter = data.r; break;
       case 'lock': g.equipment.toggleLock(data.id); break;
