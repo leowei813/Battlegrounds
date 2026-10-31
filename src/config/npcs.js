@@ -16,6 +16,10 @@ export const NPC_CONFIG = {
   searchMs: 10 * 60000,
   raidStealPct: 0.15, // 掠奪成功時搶走的資源比例
   raidWallDamage: 0.3, // 掠奪成功時圍牆損失
+  woundHealMs: 20 * 60000, // NPC 傷亡人員每隔多久補回 1 人
+  /** 玩家防守成功時，與掠奪隊交火造成的損傷：每位防守人員損失最大生命的比例範圍、圍牆損失比例（依掠奪者人數） */
+  skirmishHp: [0.05, 0.18],
+  skirmishWall: 0.012,
 };
 
 export const NPC_NAMES = ['鐵狼幫', '紅蠍團', '黑鴉會', '血月營', '禿鷹隊', '野犬幫', '灰燼兄弟', '毒牙團', '荒原騎士', '碎骨幫', '夜梟會', '鏽刃團'];

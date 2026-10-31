@@ -1107,6 +1107,12 @@ assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[
   lead.level = 40;
   Object.assign(lead, { severe: false, hp: null, status: 'idle' });
   gk.state.expeditions = [];
+  // 移動中的隊伍不能攔截，停下搜索時才可以
+  npc.trip.startAt = Date.now();
+  npc.trip.travelMs = Math.max(60e3, npc.trip.travelMs || 0);
+  assert(!gk.intercept.canIntercept({ kind: 'npc', npcId: npc.id }).ok, '移動中的 NPC 隊伍不能攔截');
+  npc.trip.startAt = Date.now() - npc.trip.travelMs - 1000;
+  npc.trip.searchMs = 5 * 3600e3;
   const ic = gk.intercept.start({ kind: 'npc', npcId: npc.id }, [lead.id]);
   assert(ic.ok && ic.exp.kind === 'intercept', '可以派隊攔截 NPC 隊伍');
   gk.intercept.checkArrivals(ic.exp.startAt + ic.exp.travelMs + 1);
@@ -1339,6 +1345,15 @@ assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[
   const stock = JSON.stringify(gt.state.trader.stock);
   gt.trader.update(Date.now());
   assert(JSON.stringify(gt.state.trader.stock) === stock, '同一天商品不會重新產生');
+  // 回收：約售價 1/8，越稀有比例越好
+  gt.state.supplies.nail = 100;
+  gt.state.supplies.titanium = 10;
+  const c1 = gt.state.player.coins;
+  assert(gt.trader.sell('nail', 100).ok && !gt.state.supplies.nail && gt.state.player.coins === c1 + gt.trader.buybackPrice('nail', 100), '可以把物資賣給商人');
+  const rN = gt.trader.buybackRate('nail');
+  const rT = gt.trader.buybackRate('titanium');
+  assert(rN >= 0.09 && rN <= 0.14 && rT > rN && rT <= 0.16, `回收價約為售價 1/8，稀有物資比例較好（${rN.toFixed(3)} / ${rT.toFixed(3)}）`);
+  assert(!gt.trader.sell('nail', 5).ok, '沒有的物資不能賣');
   assert(!gt.trader.isHere(until + 1000), '下午 3 點後商人離開');
   void gear;
 }
@@ -1529,6 +1544,58 @@ assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[
   setHour(gz, 20.5);
   gz.zombies.refresh();
   assert(n0 > 0 && gz.state.map.zombieGroups.length === n0, '隔天入夜才重新生成殭屍群');
+}
+
+// ---- 35. v8.18：NPC 傷亡、NPC 抵禦屍群、偵查情報 ----
+{
+  const gq = Game.newGame({ playerName: 'Q8', classId: 'warrior', lat: 25, lon: 121 });
+  gq.state.map.pois = fillPois([], 25, 121);
+  gq.shelter.establish(gq.state.map.pois[0]);
+  const bq = gq.shelter.primary();
+  const npcPoi = gq.state.map.pois.find((p) => !gq.shelter.baseAtPoi(p.id));
+  const n = gq.npcs.spawnAt(npcPoi, 'x', Date.now(), true);
+  n.level = 3;
+  // 玩家防守成功：NPC 有傷亡、防守人員與圍牆也有損傷
+  const lead = gq.survivors.leader();
+  lead.level = 30;
+  bq.facilities.wall.level = 5;
+  bq.wallHp = null;
+  setHour(gq, 10);
+  const hp0 = gq.survivors.hpOf(lead);
+  const wall0 = gq.shelter.wallHp(bq);
+  n.trip = { kind: 'raid', baseId: bq.id, startAt: Date.now() - 1000, travelMs: 0, endAt: Date.now() + 1000 };
+  gq.npcs.resolveIncoming(n, n.trip, Date.now());
+  const rec = gq.state.defenseLog[0];
+  assert(rec.success && n.wounded > 0, `NPC 掠奪失敗會有人員傷亡（${n.wounded} 人）`);
+  assert(gq.survivors.hpOf(lead) < hp0 && gq.shelter.wallHp(bq) < wall0, `防守成功也會受傷與圍牆受損（生命 ${hp0}→${gq.survivors.hpOf(lead)}，圍牆 −${rec.wallLost}）`);
+  const g0 = gq.npcs.garrison(n).length;
+  n.trip = null;
+  n.nextRaidAt = Date.now() + 3600e3;
+  n.healAt = Date.now() - 10 * 20 * 60000;
+  gq.npcs.update(Date.now());
+  assert(!n.wounded && gq.npcs.garrison(n).length > g0, 'NPC 傷亡人員會隨時間補回');
+  // 夜晚：NPC 也要抵禦屍群（每晚一次）
+  setHour(gq, 22);
+  n.wounded = 0;
+  gq.npcs.update(Date.now());
+  const night = gq.time.nightKey();
+  assert(n.siegeNight === night || !gq.npcs.get(n.id), 'NPC 據點在夜晚抵禦屍群');
+  const last = JSON.stringify(n.lastSiege);
+  gq.npcs.update(Date.now());
+  assert(JSON.stringify(n.lastSiege) === last, '每晚只結算一次');
+  // 偵查情報
+  gq.state.research.levels = {};
+  gq.research._cache = null;
+  let v = gq.npcs.intelView(n);
+  assert(v.level === 'Lv?' && !v.garrison && !v.resources, '沒有偵查時只知道名稱');
+  gq.state.research.levels = { s_recon: 3 };
+  gq.research._cache = null;
+  v = gq.npcs.intelView(n);
+  assert(v.level === `Lv${n.level}` && v.garrison && !v.resources, '偵查 3 級可得知確切等級與守軍');
+  gq.state.research.levels = { s_recon: 9 };
+  gq.research._cache = null;
+  v = gq.npcs.intelView(n);
+  assert(v.resources && v.power > 0 && v.nextRaid != null, '偵查越高情報越詳細');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

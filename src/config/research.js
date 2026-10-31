@@ -116,6 +116,7 @@ export const RESEARCH = {
   s_stealth: r('survival', 2, '潛行', '移動途中遇襲機率降低', { ambushReduce: 0.05 }, { req: [['s_scout', 2]] }),
   s_items: r('survival', 2, '尋寶', '探索時找到裝備的機率提升', { itemFindPct: 0.05 }, { req: [['s_loot', 2]] }),
   s_survivor: r('survival', 2, '搜救', '探索時遇到倖存者的機率提升', { survivorFindPct: 0.08 }),
+  s_recon: r('survival', 1, '偵查', '取得 NPC 勢力情報：Lv1 大約等級、Lv3 確切等級／守軍／傷亡、Lv5 大約物資、Lv7 確切物資與建議戰力、Lv9 下次掠奪時間', { intel: 1 }),
   s_bp: r('survival', 3, '圖紙蒐集', '探索時找到設計圖的機率提升', { blueprintPct: 0.08 }, { req: [['s_items', 3]] }),
   // ---- 載具 ----
   v_wear: r('vehicles', 1, '保養', '載具磨損減少', { vehicleWearReduce: 0.05 }),
@@ -193,7 +194,7 @@ const LABELS = {
   survivorFindPct: (v) => `遇到倖存者 +${pct(v)}`, blueprintPct: (v) => `設計圖 +${pct(v)}`, vehicleWearReduce: (v) => `載具磨損 −${pct(v)}`,
   vehicleFuelReduce: (v) => `載具耗油 −${pct(v)}`, repairCostReduce: (v) => `維修費用 −${pct(v)}`, vehicleSpeedPct: (v) => `載具速度 +${pct(v)}`,
   vehicleCargoPct: (v) => `載具運載 +${pct(v)}`, vehicleFindPct: (v) => `找到載具 +${pct(v)}`, garageSlots: (v) => `車庫 +${Math.floor(v)}`,
-  storeSlots: (v) => `物品格子 +${v}`,
+  storeSlots: (v) => `物品格子 +${v}`, intel: (v) => `偵查 Lv${Math.round(v)}`,
   craftTech: (v) => `製作技術 Lv${v}`, craftCostReduce: (v) => `製作費用 −${pct(v)}`, gunCraft: (v) => `槍械製造 Lv${v}`,
   craftLevelAdd: (v) => `製作裝備等級 +${v}`, craftBpBoost: (v) => `設計圖升階 ${pct(v)}`, craftQualityAdd: (v) => `製作素質 +${pct(v)}`,
   recruitTech: (v) => `招募技術 Lv${v}`, recruitCostReduce: (v) => `招募費用 −${pct(v)}`, boardSlots: (v) => `每小時倖存者 +${Math.floor(v)}`,

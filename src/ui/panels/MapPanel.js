@@ -80,9 +80,24 @@ export class MapPanel {
           <small class="muted block">${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier)}${sp.heal ? `・回復 ${Math.round(sp.heal * 100)}%` : ''}・倉庫有 ${g.state.supplies?.[x.key] || 0}</small></div>
           ${btn(`💰${x.price} 購買`, 'buy', { id: x.id }, { cls: 'btn-xs btn-primary', disabled: !afford })}</div>`;
       }).join('');
-      return `<p class="muted">🧳 帶著稀奇物品四處流浪的商人，越稀有的東西越貴。距避難所 ${g.trader.distance()} 公尺・⏱ ${formatDuration(g.trader.remainingMs())}後離開（遊戲時間 15:00）。</p>
-        <p>💰 你的金錢：<b>${g.state.player.coins}</b></p>
-        <div class="grid">${rows || '<p class="muted">商品都賣完了。</p>'}</div>`;
+      const tabs = `<div class="chips"><button class="chip ${this.traderTab !== 'sell' ? 'active' : ''}" data-action="traderTab" data-tab="buy">🛒 購買</button><button class="chip ${this.traderTab === 'sell' ? 'active' : ''}" data-action="traderTab" data-tab="sell">♻️ 回收</button></div>`;
+      const head = `<p class="muted">🧳 帶著稀奇物品四處流浪的商人，越稀有的東西越貴。距避難所 ${g.trader.distance()} 公尺・⏱ ${formatDuration(g.trader.remainingMs())}後離開（遊戲時間 15:00）。</p>
+        <p>💰 你的金錢：<b>${g.state.player.coins}</b></p>${tabs}`;
+      if (this.traderTab === 'sell') {
+        const sup = g.state.supplies || {};
+        const keys = Object.keys(sup).filter((k) => SUPPLIES[k] && sup[k] > 0)
+          .sort((a, b) => SUPPLIES[b].tier - SUPPLIES[a].tier || sup[b] - sup[a]);
+        const sells = keys.map((k) => {
+          const sp = SUPPLIES[k];
+          const ten = Math.min(10, sup[k]);
+          return `<div class="card row-between"><div><b>${sp.icon} ${sp.name}</b> <small class="muted">倉庫 ${sup[k]}</small>
+            <small class="muted block">${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier)}・回收價每個 💰${g.trader.buybackUnit(k).toFixed(g.trader.buybackUnit(k) < 1 ? 2 : 1)}（售價的 ${Math.round(g.trader.buybackRate(k) * 100)}%）</small></div>
+            <span>${btn(`賣 ${ten}（💰${g.trader.buybackPrice(k, ten)}）`, 'sell', { key: k, qty: ten }, { cls: 'btn-xs', disabled: g.trader.buybackPrice(k, ten) <= 0 })}${btn(`全賣（💰${g.trader.buybackPrice(k, sup[k])}）`, 'sell', { key: k, qty: sup[k] }, { cls: 'btn-xs btn-primary', disabled: g.trader.buybackPrice(k, sup[k]) <= 0 })}</span></div>`;
+        }).join('');
+        return `${head}<p class="muted">商人也收購零件、布料、藥品與彈藥，價格約為他販售價的 1/8；越稀有的物資回收比例越好（1 階 10% → 5 階 15%）。</p>
+          <div class="grid">${sells || '<p class="muted">倉庫裡沒有可以回收的物資。</p>'}</div>`;
+      }
+      return `${head}<div class="grid">${rows || '<p class="muted">商品都賣完了。</p>'}</div>`;
     };
     this.ui.modal.open({
       title: '🧳 流浪商人',
@@ -91,6 +106,8 @@ export class MapPanel {
       live: body,
       onAction: (action, data, m) => {
         if (action === 'buy') this.ui.result(g.trader.buy(data.id));
+        if (action === 'sell') this.ui.result(g.trader.sell(data.key, Number(data.qty)));
+        if (action === 'traderTab') this.traderTab = data.tab;
         m.update(body());
       },
     });
@@ -101,17 +118,25 @@ export class MapPanel {
     const g = this.game;
     const now = Date.now();
     const zone = zoneAt(n.lat, n.lon);
-    const enemies = g.npcs.garrison(n);
-    const loot = Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => `${metaOf(k).icon}${Math.floor(v)}`).join(' ');
+    const v = g.npcs.intelView(n, now);
     const sh = g.shelter.primary();
     const dist = sh ? Math.round(haversine(sh.lat, sh.lon, n.lat, n.lon)) : null;
     const trip = n.trip && n.trip.endAt > now ? n.trip : null;
     const aggr = g.npcs.aggression();
+    const unknown = '<span class="muted">？？？（需提升偵查）</span>';
+    const garrison = v.garrison
+      ? `${v.garrison.map((e) => `${e.icon}${e.name}`).join('、')}${v.wounded ? `<span class="neg">（${v.wounded} 人傷亡中，約 ${formatDuration(Math.max(0, (n.healAt || now) - now))} 後補回 1 人）</span>` : ''}`
+      : unknown;
+    const loot = v.resources ? `💰${v.coins} ${v.resources.map(([k, x]) => `${metaOf(k).icon}${x}`).join(' ')}` : unknown;
     return `
-      <p>🏴‍☠️ <b>${escapeHtml(n.name)}</b>・Lv${n.level}・<span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span>${dist != null ? `・距避難所 ${dist} 公尺` : ''}</p>
-      <p class="muted">守軍：${enemies.map((e) => `${e.icon}${e.name}`).join('、')}（等級 ${n.level}）</p>
-      <p>💰${n.coins} ${loot}</p>
-      <p class="muted">積極度 ${Math.round(aggr * 100)}%（你的文明度越高，NPC 越常來掠奪）。夜晚屍潮期間 NPC 不會出動。</p>
+      <p>🏴‍☠️ <b>${escapeHtml(n.name)}</b>・${v.level}・<span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span>${dist != null ? `・距避難所 ${dist} 公尺` : ''}</p>
+      <p class="muted">🔭 偵查 Lv${v.lv}：${v.lv >= 9 ? '情報完整' : v.lv >= 7 ? '可得知確切物資與戰力' : v.lv >= 5 ? '可得知大約物資' : v.lv >= 3 ? '可得知確切等級、守軍與傷亡' : v.lv >= 1 ? '只知道大約等級' : '只知道名稱'}（研究「偵查」取得更多情報）</p>
+      <p>守軍：${garrison}</p>
+      ${v.siege ? `<p class="muted">🧟 昨晚：${v.siege}</p>` : ''}
+      <p>物資：${loot}</p>
+      ${v.power != null ? `<p class="muted">⚔️ 建議戰力 ${v.power} 以上</p>` : ''}
+      ${v.nextRaid != null ? `<p class="muted">🏴‍☠️ 下次掠奪約在 ${formatDuration(v.nextRaid)} 後（夜晚不出動）</p>` : ''}
+      <p class="muted">積極度 ${Math.round(aggr * 100)}%（你的文明度越高，NPC 越常來掠奪）。夜晚屍潮期間 NPC 不會出動，也要抵禦屍群。</p>
       ${trip ? `<p class="${trip.kind === 'raid' ? 'neg' : 'muted'}">${trip.kind === 'raid' ? `⚔️ 掠奪隊正前往「${escapeHtml(trip.target)}」` : `🔍 正在搜刮「${escapeHtml(trip.target)}」`}・剩 ${formatDuration(trip.endAt - now)}</p>` : ''}
       <p class="muted">攻陷後可搶走據點的物資與金錢（受隊伍運載量限制），據點會被摧毀，一段時間後別處會出現新的勢力。</p>
       <div class="btn-row">${btn('⚔️ 派隊攻打', 'attackNpc', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}</div>`;
@@ -130,7 +155,7 @@ export class MapPanel {
         const sh = g.shelter.primary();
         openTeamPicker(this.ui, {
           title: `⚔️ 攻打：${n.name}`,
-          intro: `<p class="muted">守軍 Lv${n.level}・建議戰力 ${Math.round(g.npcs.power(n))} 以上。帶載具可以搬走更多物資。</p>`,
+          intro: `<p class="muted">守軍 ${g.npcs.intelView(n).level}${g.npcs.intel() >= 7 ? `・建議戰力 ${Math.round(g.npcs.power(n))} 以上` : ''}。帶載具可以搬走更多物資。</p>`,
           vehicles: true,
           distanceM: sh ? haversine(sh.lat, sh.lon, n.lat, n.lon) : 0,
           trip: { poi: g.npcs.asPoi(n.id), searchMin: 2, searchLabel: '攻打' },
@@ -392,9 +417,9 @@ export class MapPanel {
     const dist = sh ? Math.round(haversine(sh.lat, sh.lon, t.lat, t.lon)) : 0;
     const rel = t.kind === 'player' ? g.territory.relation(t.playerId) : 'hostile';
     const body = `
-      <p>${t.kind === 'npc' ? '🏴‍☠️' : '👤'} <b>${escapeHtml(t.name)}</b>・${t.members} 人・約 Lv${t.level}${dist ? `・距避難所 ${dist} 公尺` : ''}</p>
-      <p class="muted">派隊攔截：前往對方目前的位置，抵達時交戰。被擊敗的一方會空手走回自己的據點（返程不公開），身上背包的物資全部被搶走，每件裝備有 ${Math.round(5)}% 機率被搶走。${t.kind === 'player' ? '攻擊後雙方進入敵對。' : ''}</p>
-      <p class="muted">⏱ 對方行程剩 ${formatDuration(Math.max(0, t.endAt - Date.now()))}，太遠的話可能在你抵達前就回到據點。</p>
+      <p>${t.kind === 'npc' ? '🏴‍☠️' : '👤'} <b>${escapeHtml(t.name)}</b>・${t.kind === 'npc' && g.npcs.intel() < 3 ? '人數不明' : `${t.members} 人`}・${t.kind === 'npc' ? g.npcs.intelView(g.npcs.get(t.npcId)).level : `約 Lv${t.level}`}${dist ? `・距避難所 ${dist} 公尺` : ''}</p>
+      <p>${t.phase === 'searching' ? `🔍 正在搜索，約 ${formatDuration(Math.max(0, t.searchEnd - Date.now()))} 後離開` : '🚶 移動中（追不上，等對方停下搜索時才能攔截）'}</p>
+      <p class="muted">派隊攔截：前往對方正在搜索的地點，抵達時交戰；抵達前對方已經離開就會撲空。被擊敗的一方會空手走回自己的據點（返程不公開），身上背包的物資全部被搶走，每件裝備有 ${Math.round(5)}% 機率被搶走。${t.kind === 'player' ? '攻擊後雙方進入敵對。' : ''}</p>
       ${rel === 'friend' ? '<p class="tag tag-green">🤝 友好玩家，無法攻擊</p>' : ''}
       <div class="btn-row">${btn('⚔️ 派隊攔截', 'intercept', {}, { cls: 'btn-danger', disabled: !check.ok, title: check.reason || '' })}</div>
       ${check.ok ? '' : `<small class="muted">${escapeHtml(check.reason)}</small>`}`;
@@ -406,7 +431,7 @@ export class MapPanel {
         m.close();
         openTeamPicker(this.ui, {
           title: `⚔️ 攔截：${t.name}`,
-          intro: `<p class="muted">對方 ${t.members} 人、約 Lv${t.level}。帶載具可以更快追上。</p>`,
+          intro: `<p class="muted">${t.kind === 'npc' ? `對方 ${g.npcs.intel() >= 3 ? `${t.members} 人、` : ''}${g.npcs.intelView(g.npcs.get(t.npcId)).level}` : `對方 ${t.members} 人、約 Lv${t.level}`}。要在對方離開搜索地點前抵達，帶載具可以更快趕到。</p>`,
           vehicles: true,
           distanceM: dist,
           trip: { poi: { id: t.id, lat: t.lat, lon: t.lon, type: 'military', intercept: true }, searchMin: 0 },
