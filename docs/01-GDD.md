@@ -58,7 +58,7 @@
 
 | 類型 | OSM 標籤 | 危險度 | 可取得物資（v8） | 特色 |
 |---|---|---|---|---|
-| 🏠 住宅區 | building=apartments/residential, landuse=residential | ☠ | 食物、布料、低階藥品（機率低） | 新手安全區，不出裝備 |
+| 🏠 住宅區 | building=apartments/residential, landuse=residential | ☠ | 食物、布料、低階藥品（機率低）、少量零件 | 新手安全區，不出裝備 |
 | 🏪 商店 | shop=* | ☠☠ | 食物、布料、低階藥品、彈藥（機率低） | 不出裝備 |
 | 🛒 超市 | shop=supermarket/department_store/mall | ☠☠ | 食物、布料、低階藥品、零件 | 數量較少，但物資是商店的 2 倍 |
 | 🏥 醫院 | amenity=hospital/clinic | ☠☠☠☠ | 食物、各級藥品（含醫藥箱） | 特殊區域，有變異體、Boss |

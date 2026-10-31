@@ -24,7 +24,7 @@ export const LOOT_CATS = {
 export const POI_TYPES = {
   residential: {
     name: '住宅區', icon: '🏠', color: '#8bc34a', danger: 1,
-    loot: { food: 6, fabric: 4, medLow: 1 },
+    loot: { food: 6, fabric: 4, medLow: 1, part: 0.8 },
     itemChance: 0, blueprintChance: 0.01,
     itemBias: { melee: 4, pistol: 2, helmet: 2, armor: 1, legs: 2, gloves: 2, boots: 3, backpack: 3, accessory: 3 },
     enemies: { walker: 8, infected: 2 },

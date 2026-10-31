@@ -26,7 +26,7 @@ export class ExplorePanel {
       const poi = g.exploration.poi(ex.poiId);
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
       return `<div class="card">
-        <div class="row-between"><b>${poi ? poi.icon || POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.kind === 'raid' ? '<span class="tag tag-red">⚔️ 攻打</span>' : ex.kind === 'intercept' ? '<span class="tag tag-red">⚔️ 攔截</span>' : ex.kind === 'hunt' ? '<span class="tag tag-red">🧟 獵殺</span>' : ''}${ex.defeated ? '<span class="tag tag-red">🏳️ 撤回中</span>' : ''}${(ex.vehicleIds || []).length ? `<span class="tag">${ex.vehicleIds.map((id) => { const v = g.vehicles.get(id); return v ? VEHICLES[v.type].icon : ''; }).join('')}</span>` : ''}${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
+        <div class="row-between"><b>${poi ? poi.icon || POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.kind === 'raid' ? '<span class="tag tag-red">⚔️ 攻打</span>' : ex.kind === 'intercept' ? '<span class="tag tag-red">⚔️ 攔截</span>' : ex.kind === 'hunt' ? '<span class="tag tag-red">🧟 獵殺</span>' : ''}${ex.defeated ? '<span class="tag tag-red">🏳️ 撤回中</span>' : ex.recalled ? '<span class="tag">↩️ 召回中</span>' : ''}${(ex.vehicleIds || []).length ? `<span class="tag">${ex.vehicleIds.map((id) => { const v = g.vehicles.get(id); return v ? VEHICLES[v.type].icon : ''; }).join('')}</span>` : ''}${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
         <div class="muted">隊員：${names}・搜索 ${ex.durationMin} 分鐘</div>
         ${this.progressHtml(ex, now)}
         ${timerBar(ex.startAt, ex.endAt, now)}
@@ -74,7 +74,7 @@ export class ExplorePanel {
   onAction(action, data) {
     const g = this.game;
     if (action === 'auto') this.ui.result(g.exploration.toggleAuto(data.id));
-    if (action === 'recall' && confirm('召回隊伍將不會獲得任何收穫，確定？')) this.ui.result(g.exploration.recall(data.id));
+    if (action === 'recall' && confirm('召回後隊伍會從目前位置走回避難所（需要移動時間），這趟不會有任何收穫，確定？')) this.ui.result(g.exploration.recall(data.id));
     if (action === 'track') {
       const ex = g.state.expeditions.find((e) => e.id === data.id);
       const p = ex && g.exploration.progress(ex);
