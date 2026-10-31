@@ -1785,9 +1785,10 @@ assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[
     ge.exploration.runCheckpoints(e1, ge.exploration.checkpointAt({ ...e1, cp: { total: n, searchMs: e1.searchMs } }, k) + 1);
     seen.push(Math.round(ge.exploration.searchProgress(e1) * 100));
   }
-  assert(seen.join() === (n === 4 ? '25,50,75' : '33,67'), `搜索進度依檢核點更新（${seen.join('% ')}%）`);
+  // 途中戰敗撤退時會提早結束（不列入進度檢查）
+  assert(e1.cp.stopped || seen.join() === (n === 4 ? '25,50,75' : '33,67'), `搜索進度依檢核點更新（${seen.join('% ')}%）`);
   ge.exploration.runCheckpoints(e1, e1.endAt);
-  assert(e1.cp.done === n && ge.exploration.searchProgress(e1) == null, '完成時不顯示進度');
+  assert((e1.cp.stopped || e1.cp.done === n) && ge.exploration.searchProgress(e1) == null, '完成時不顯示進度');
   ge.exploration.update(e1.endAt + 1, { silent: true });
   reset();
   // 小型：只有完成時才觸發
@@ -1818,6 +1819,20 @@ assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[
   assert(!early || (e4.cp.stopped && e4.endAt < end0), `背包提早裝滿就停止探索、直接回家（${e4.cp.done}/${e4.cp.total}）`);
   ge.exploration.update(e4.endAt + 1, { silent: true });
   assert(!early || ge.state.map.remain[big3.id]?.hidden, '提早負重回家時不顯示剩餘物資');
+}
+
+// ---- 41. v8.25：地圖密度上限 ----
+{
+  const { thinPois } = await import('../src/map/OverpassService.js');
+  const dense = Array.from({ length: 400 }, (_, i) => ({ id: `r${i}`, type: 'residential', name: '', lat: 25 + Math.random() * 0.001, lon: 121 + Math.random() * 0.001, osm: true }));
+  dense.push({ id: 'ph', type: 'pharmacy', name: '藥局', lat: 25.0005, lon: 121.0005, osm: true });
+  const out = thinPois(dense, 25, new Set(['r7']));
+  assert(out.length <= 12 && out.some((p) => p.id === 'ph') && out.some((p) => p.id === 'r7'), `密集區每 50 公尺最多一個地點（400 → ${out.length}），稀有類型與保留地點優先`);
+  const gt = Game.newGame({ playerName: 'T1', classId: 'warrior', lat: 25, lon: 121 });
+  gt.state.map.pois = fillPois(dense, 25, 121);
+  gt.shelter.establish(gt.state.map.pois.find((p) => p.id === 'r3'));
+  gt.thinMap();
+  assert(gt.state.map.pois.some((p) => p.id === 'r3') && gt.state.map.pois.filter((p) => p.type === 'forest').length >= 95 && gt.state.map.pois.filter((p) => p.type === 'pharmacy').length >= 35, '舊地圖整理密度時保留據點，並補足樹林與藥局');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

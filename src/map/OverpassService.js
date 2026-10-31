@@ -1,5 +1,5 @@
 import { POI_TYPES } from '../config/poiTypes.js';
-import { POI_MAX_PER_TYPE, POI_SPREAD_CELL_M } from '../config/constants.js';
+import { POI_MAX_PER_TYPE, POI_SPREAD_CELL_M, POI_DENSITY_CELL_M } from '../config/constants.js';
 import { haversine } from '../utils/math.js';
 
 /** 依序嘗試的 Overpass 端點（任一失敗即換下一個） */
@@ -131,6 +131,28 @@ export function spreadPick(list, cap, lat0, cellM = POI_SPREAD_CELL_M) {
     } else rest.push(p);
   });
   return picked.concat(rest.slice(0, Math.max(0, cap - picked.length)));
+}
+
+/** 稀有度：越常見的類型越先被淘汰（住宅、商店最常見） */
+const COMMON_RANK = { residential: 0, shop: 1, school: 2, factory: 2, warehouse: 2 };
+
+/**
+ * 限制地圖密度：每個方格只保留一個地點；同格時保留較稀有的類型與有名字的建築。
+ * @param {Set<string>} [keep] 一定要保留的地點（據點、探索目的地、標記）
+ */
+export function thinPois(pois, lat0, keep = new Set(), cellM = POI_DENSITY_CELL_M) {
+  const mPerLat = 111320;
+  const mPerLon = 111320 * Math.cos((lat0 * Math.PI) / 180);
+  const rank = (p) => (keep.has(p.id) ? -100 : (COMMON_RANK[p.type] ?? 5) * -1 + (p.named || (p.osm && !/#\d+$/.test(p.name || '')) ? -0.5 : 0));
+  const sorted = [...pois].sort((a, b) => rank(a) - rank(b));
+  const used = new Set();
+  return sorted.filter((p) => {
+    if (keep.has(p.id)) return true;
+    const cell = `${Math.floor((p.lat * mPerLat) / cellM)}:${Math.floor((p.lon * mPerLon) / cellM)}`;
+    if (used.has(cell)) return false;
+    used.add(cell);
+    return true;
+  });
 }
 
 /**

@@ -26,6 +26,10 @@ export const POI_MAX_PER_TYPE = {
 };
 /** 分散取樣的格子大小（公尺）：同一格優先只取一棟，避免擠在一起 */
 export const POI_SPREAD_CELL_M = 40;
+/** 地圖建築密度上限：每個方格（公尺）最多一個地點，避免密集住宅區擠滿標記 */
+export const POI_DENSITY_CELL_M = 50;
+/** 密度調整版本：變更規則時遞增，舊地圖會在下次開啟時重新整理 */
+export const POI_THIN_VERSION = 1;
 /** 地圖殭屍刷新週期 */
 export const ZOMBIE_REFRESH_MS = 5 * 60 * 1000;
 export const ZOMBIE_MAX_GROUPS = 60;
