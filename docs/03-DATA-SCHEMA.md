@@ -297,3 +297,10 @@ v12 起金屬、布料、藥品不再是基本資源，改為 `supplies` 內的�
 
 ## v13（v8.5.0）
 遊戲一天由現實 30 分鐘改為 1 小時（`DAY_REAL_MS`）。遷移時把 `createdAt` 往前調整為「現在 − 已經過時間 × 2」，讓舊存檔目前的天數與時刻維持不變。
+
+## 新增欄位（v8.7.0，不需遷移）
+| 位置 | 欄位 | 說明 |
+|---|---|---|
+| `defenseLog` | `[{ at, baseName, attacker, success, lost, coins, damaged, injured, kills, waves, wallLost, note }]` | 據點遭襲紀錄（最多 30 筆） |
+| `trader` | `{ day, active, lat, lon, until, stock: [{ id, kind: supply\|gear, key?, qty?, item?, price }] }` | 今天的流浪商人 |
+| `rng.trader` | 數字 | 流浪商人的隨機種子 |
