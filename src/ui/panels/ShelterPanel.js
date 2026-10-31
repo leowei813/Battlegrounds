@@ -120,7 +120,7 @@ export class ShelterPanel {
           <div class="wide"><small>屍潮波次</small><b>${this.waveText(siege)}</b></div>
         </div>
         ${queue ? `<h4>施工佇列</h4>${queue}` : ''}
-        <div class="btn-row">${btn(`🗄️ 物品倉庫（裝備 ${st.inventory.items.length}）`, 'openStorage', {}, { cls: 'btn-sm' })}${btn(`🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`, 'openGarage', {}, { cls: 'btn-sm' })}</div>
+        <div class="btn-row">${btn(`🗄️ 物品倉庫（裝備 ${st.inventory.items.filter((i) => !g.equipment.equippedBy(i.id)).length}）`, 'openStorage', {}, { cls: 'btn-sm' })}${btn(`🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`, 'openGarage', {}, { cls: 'btn-sm' })}</div>
         ${this.renderCivilization(sh)}
         <div class="btn-row">${baseActions}</div>`,
       facilities: `${queue ? `<h4>施工佇列</h4>${queue}` : ''}<div class="fac-list">${facilities}</div>`,
