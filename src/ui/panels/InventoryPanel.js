@@ -55,7 +55,7 @@ export class InventoryPanel {
   /** 倉庫裝備（從避難所頁開啟） */
   openStorage() {
     this.ui.modal.open({
-      title: `🗄️ 物品倉庫（裝備 ${this.game.state.inventory.items.length} 件）`,
+      title: `🗄️ 物品倉庫（裝備 ${this.storedItems().length} 件）`,
       wide: true,
       body: this.renderItems(),
       live: () => this.renderItems(),
@@ -115,9 +115,15 @@ export class InventoryPanel {
       <div class="grid">${crafts}</div>`;
   }
 
+  /** 倉庫頁顯示的裝備：不含隊員身上已裝備的物品 */
+  storedItems() {
+    const eq = this.game.equipment;
+    return this.game.state.inventory.items.filter((i) => !eq.equippedBy(i.id));
+  }
+
   renderItems() {
     const g = this.game;
-    let items = [...g.state.inventory.items];
+    let items = this.storedItems();
     if (this.filter !== 'all') items = items.filter((i) => i.slot === this.filter);
     if (this.rarityFilter !== 'all') items = items.filter((i) => i.rarity === this.rarityFilter);
     items.sort(this.sort === 'power'
@@ -142,7 +148,7 @@ export class InventoryPanel {
     const used = eq.storeUsed();
     const cap = eq.storeCap();
     const counts = {};
-    g.state.inventory.items.forEach((i) => { counts[i.rarity] = (counts[i.rarity] || 0) + 1; });
+    this.storedItems().forEach((i) => { counts[i.rarity] = (counts[i.rarity] || 0) + 1; });
     const rarities = [['all', '全部品級', '#fff'], ...RARITY_ORDER.map((r) => [r, `${RARITIES[r].name} ${counts[r] || 0}`, RARITIES[r].color])]
       .map(([k, n, c]) => `<button class="chip rchip ${this.rarityFilter === k ? 'active' : ''}" style="--rc:${c}" data-action="rfilter" data-r="${k}">${n}</button>`).join('');
     const sup = g.state.supplies || {};
@@ -152,7 +158,7 @@ export class InventoryPanel {
       return `<div class="supply-row"><b>${c.icon} ${c.name}</b> ${list || '<small class="muted">無</small>'}</div>`;
     }).join('');
     return `
-      <p>🗄️ 物品倉庫空間 <b class="${used >= cap ? 'neg' : ''}">${used} / ${cap}</b> 格 <small class="muted">（每件裝備佔 1 格；零件、布料、藥品、彈藥同種類每 ${STACK_MAX} 個佔 1 格；物品倉庫每升一級 +10 格；穿戴中的裝備不佔格子）</small></p>
+      <p>🗄️ 物品倉庫空間 <b class="${used >= cap ? 'neg' : ''}">${used} / ${cap}</b> 格 <small class="muted">（每件裝備佔 1 格；零件、布料、藥品、彈藥同種類每 ${STACK_MAX} 個佔 1 格；物品倉庫每升一級 +10 格；穿戴中的裝備不佔格子，也不顯示在這裡，請到倖存者頁查看）</small></p>
       <h4>材料物品</h4><div class="supply-list">${supplies}</div>
       <h4>裝備</h4>
       <div class="chips">${filters}</div>
