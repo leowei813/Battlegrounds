@@ -6,7 +6,10 @@ import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
 import { isLooted, msToReset, stockOf } from '../../systems/LootStock.js';
 import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
-import { btn, costHtml, metaOf } from '../components.js';
+import {
+  btn, costHtml, metaOf, itemCard,
+} from '../components.js';
+import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { remainOf } from '../../systems/LootStock.js';
 import { MAX_MARKERS } from '../../systems/MarkerSystem.js';
 import { openTeamPicker } from '../TeamPicker.js';
@@ -59,6 +62,39 @@ export class MapPanel {
     this.lastRender = Date.now();
     this.service.render(this.game.state);
     this.service.renderNpcs(this.game.npcs.list);
+    this.service.renderTrader(this.game.state.trader, this.game.trader.isHere());
+  }
+
+  /** 流浪商人：用金錢購買物品（越稀有越貴） */
+  openTrader() {
+    const g = this.game;
+    const body = () => {
+      if (!g.trader.isHere()) return '<p class="muted">流浪商人已經離開了。他會在遊戲時間早上 11 點有機率再出現。</p>';
+      const t = g.state.trader;
+      const rows = t.stock.map((x) => {
+        const afford = g.state.player.coins >= x.price;
+        if (x.kind === 'gear') {
+          return itemCard(x.item, { actions: btn(`💰${x.price} 購買`, 'buy', { id: x.id }, { cls: 'btn-xs btn-primary', disabled: !afford }) });
+        }
+        const sp = SUPPLIES[x.key];
+        return `<div class="card row-between"><div><b>${sp.icon} ${sp.name} ×${x.qty}</b>
+          <small class="muted block">${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier)}${sp.heal ? `・回復 ${Math.round(sp.heal * 100)}%` : ''}・倉庫有 ${g.state.supplies?.[x.key] || 0}</small></div>
+          ${btn(`💰${x.price} 購買`, 'buy', { id: x.id }, { cls: 'btn-xs btn-primary', disabled: !afford })}</div>`;
+      }).join('');
+      return `<p class="muted">🧳 帶著稀奇物品四處流浪的商人，越稀有的東西越貴。距避難所 ${g.trader.distance()} 公尺・⏱ ${formatDuration(g.trader.remainingMs())}後離開（遊戲時間 15:00）。</p>
+        <p>💰 你的金錢：<b>${g.state.player.coins}</b></p>
+        <div class="grid">${rows || '<p class="muted">商品都賣完了。</p>'}</div>`;
+    };
+    this.ui.modal.open({
+      title: '🧳 流浪商人',
+      wide: true,
+      body: body(),
+      live: body,
+      onAction: (action, data, m) => {
+        if (action === 'buy') this.ui.result(g.trader.buy(data.id));
+        m.update(body());
+      },
+    });
   }
 
   /** NPC 據點資訊與攻打 */

@@ -122,6 +122,7 @@ export class UIManager {
     bus.on('ui:openPlayer', ({ playerId }) => this.panels.map.openPlayer(playerId));
     bus.on('ui:openNpc', ({ npcId }) => this.panels.map.openNpc(npcId));
     bus.on('ui:openTeam', (team) => this.panels.map.openTeam(team));
+    bus.on('ui:openTrader', () => this.panels.map.openTrader());
     // 點避難所畫面上的設施：展開管理面板的「設施」分頁
     bus.on('ui:shelterTab', ({ tab }) => {
       this.shelterTab = tab;
@@ -130,6 +131,7 @@ export class UIManager {
       this.refresh(true);
     });
     bus.on('npcs:changed', () => this.panels.map.renderMap(true));
+    bus.on('trader:changed', () => this.panels.map.renderMap(true));
     bus.on('relations:changed', () => this.panels.map.onWorld(this.game.world?.others || []));
     bus.on('gps:update', (gps) => {
       this.panels.map.service?.renderGps(gps);

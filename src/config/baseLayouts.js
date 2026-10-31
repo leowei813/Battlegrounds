@@ -13,7 +13,7 @@ const CORNERS = {
 };
 const GRID = 6;
 const PAD = 0.04; // 與圍牆保留的距離
-const GAP = 0.06; // 格子之間的間隙（格寬比例）
+const GAP = 0.16; // 格子之間的間隙（格寬比例），讓建築之間留點空間
 
 /** 地面上 (u, v) 0～1 → 底圖像素（雙線性內插） */
 export function groundPoint(u, v) {

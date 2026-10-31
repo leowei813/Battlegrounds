@@ -181,7 +181,7 @@ export class ShelterScene extends Phaser.Scene {
       }
       const busy = sh.buildQueue.some((q) => q.kind === 'facility' && q.id === id);
       o.icon.setVisible(true).setPosition(p.x, p.y).setAlpha(f.level > 0 ? 1 : 0.35).setDepth(10 + p.y / 10000);
-      if (o.hasImg) o.icon.setScale((fw * 0.9) / o.icon.width);
+      if (o.hasImg) o.icon.setScale((fw * 0.74) / o.icon.width);
       else o.icon.setFontSize(cellSize);
       o.lv.setVisible(true).setPosition(p.x, p.y + Math.max(cellSize * 0.35, fw * 0.22)).setText(busy ? '🔨' : f.level > 0 ? `Lv${f.level}` : '未建').setDepth(11 + p.y / 10000);
     });
@@ -213,7 +213,7 @@ export class ShelterScene extends Phaser.Scene {
         o.zone.setFillStyle(def.color, hasImg ? 0.01 : 0.35);
         if (hasImg) {
           o.img.setTexture(key).setPosition(p.x, p.y).setDepth(10 + p.y / 10000);
-          o.img.setScale((dw * 0.88) / o.img.width).setAlpha(d.level > 0 ? 1 : 0.5);
+          o.img.setScale((dw * 0.72) / o.img.width).setAlpha(d.level > 0 ? 1 : 0.5);
           o.icon.setText('');
         } else o.icon.setText(def.icon).setFontSize(Math.max(14, Math.round(44 * this.k)));
         o.lv.setText(busy ? '🔨' : `Lv${d.level}`).setPosition(p.x, p.y + Math.max(rx * 0.45, dw * 0.22)).setDepth(11 + p.y / 10000);

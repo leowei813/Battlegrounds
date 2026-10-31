@@ -544,3 +544,4 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .defense-log.ok { border-left: 3px solid var(--ok, #66bb6a); }
 .defense-log.fail { border-left: 3px solid var(--danger); }
 .defense-log > div { margin-top: 3px; }
+.trader-pin { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 22px; border-radius: 50%; background: #3e2723; border: 3px solid #ffca28; box-shadow: 0 0 10px #ffca28aa; }

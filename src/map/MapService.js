@@ -49,6 +49,7 @@ export class MapService {
     this.layers.others = L.layerGroup().addTo(this.map);
     this.layers.npcs = L.layerGroup().addTo(this.map);
     this.layers.gps = L.layerGroup().addTo(this.map);
+    this.layers.trader = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
     this.poiLayer.teamHit = (pt) => {
       const team = this.siegeLayer.teamAt(pt);
@@ -161,6 +162,22 @@ export class MapService {
         .bindTooltip(`🏴‍☠️ ${escapeHtml(n.name)}（Lv${n.level}）`, { direction: 'top', offset: [0, -17] })
         .addTo(this.layers.npcs);
     });
+  }
+
+  /** 流浪商人（遊戲時間 11:00～15:00 有機率出現） */
+  renderTrader(t, here) {
+    if (!this.map) return;
+    const key = here ? `${t.lat},${t.lon}` : '';
+    if (key === this.traderKey) return;
+    this.traderKey = key;
+    this.layers.trader.clearLayers();
+    if (!here) return;
+    L.marker([t.lat, t.lon], {
+      icon: this.icon('<div class="trader-pin">🧳</div>', 'shelter-icon', 38),
+      zIndexOffset: 950,
+    }).on('click', () => bus.emit('ui:openTrader'))
+      .bindTooltip('🧳 流浪商人（點擊交易）', { direction: 'top', offset: [0, -19] })
+      .addTo(this.layers.trader);
   }
 
   /** 其他玩家公開的據點（多人互動） */

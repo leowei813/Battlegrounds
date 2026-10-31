@@ -1301,6 +1301,46 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
   assert(!raid.success ? raid.injured.length >= 0 : true, 'NPC 掠奪紀錄包含重傷名單');
 }
 
+// ---- 25. v8.7：流浪商人 ----
+{
+  const { TRADER } = await import('../src/systems/TraderSystem.js');
+  const gt = Game.newGame({ playerName: 'T', classId: 'warrior', lat: 25, lon: 121 });
+  gt.state.map.pois = fillPois([], 25, 121);
+  gt.shelter.establish(gt.state.map.pois[0]);
+  setHour(gt, 9);
+  gt.trader.update(Date.now());
+  assert(!gt.state.trader && !gt.trader.isHere(), '早上 11 點前商人不會出現');
+  // 找一個會出現的種子
+  let appeared = false;
+  for (let i = 0; i < 20 && !appeared; i += 1) {
+    gt.state.trader = null;
+    gt.state.rng.trader = 1000 + i;
+    setHour(gt, 12);
+    gt.trader.update(Date.now());
+    appeared = gt.trader.isHere();
+  }
+  assert(appeared && gt.state.trader.stock.length === TRADER.goods, `11:00～15:00 有機率出現，帶著 ${TRADER.goods} 項商品`);
+  const until = gt.state.trader.until;
+  const left = (until - Date.now()) / DAY_REAL_MS * 24;
+  assert(left > 2.9 && left < 3.1, `商人待到下午 3 點（剩 ${left.toFixed(2)} 小時）`);
+  const gear = gt.state.trader.stock.filter((x) => x.kind === 'gear');
+  const legendaryPrice = gt.trader.gearPrice(gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'legendary' }));
+  const poorPrice = gt.trader.gearPrice(gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'poor' }));
+  assert(legendaryPrice > poorPrice * 10 && gt.trader.supplyPrice('titanium') > gt.trader.supplyPrice('nail') && gt.trader.supplyPrice('largeKit') > gt.trader.supplyPrice('gauze'), '越稀有的商品越貴');
+  const good = gt.state.trader.stock[0];
+  gt.state.player.coins = 0;
+  assert(!gt.trader.buy(good.id).ok, '金錢不足不能購買');
+  gt.state.player.coins = 1e6;
+  const coins0 = gt.state.player.coins;
+  assert(gt.trader.buy(good.id).ok && gt.state.player.coins === coins0 - good.price && gt.state.trader.stock.length === TRADER.goods - 1, '用金錢購買商品');
+  // 同一天不會重新出現；過了 15:00 離開
+  const stock = JSON.stringify(gt.state.trader.stock);
+  gt.trader.update(Date.now());
+  assert(JSON.stringify(gt.state.trader.stock) === stock, '同一天商品不會重新產生');
+  assert(!gt.trader.isHere(until + 1000), '下午 3 點後商人離開');
+  void gear;
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

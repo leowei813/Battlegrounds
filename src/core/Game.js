@@ -25,6 +25,7 @@ import { fetchPois } from '../map/OverpassService.js';
 import { fillPois } from '../map/PoiGenerator.js';
 import { MarkerSystem } from '../systems/MarkerSystem.js';
 import { InterceptSystem } from '../systems/InterceptSystem.js';
+import { TraderSystem } from '../systems/TraderSystem.js';
 
 /**
  * 遊戲核心（Facade）：持有狀態與所有系統，負責主迴圈、離線結算與存檔。
@@ -55,6 +56,7 @@ export class Game {
     this.gps = new GpsSystem(this);
     this.markers = new MarkerSystem(this);
     this.intercept = new InterceptSystem(this);
+    this.trader = new TraderSystem(this);
 
     this.lastPhase = null;
     this.timers = [];
@@ -75,7 +77,7 @@ export class Game {
     this.lastPhase = this.time.phaseId();
     this.started = true;
     // 重要事件發生時立即存檔
-    ['expedition:done', 'shelter:changed', 'siege:breach', 'siege:wave', 'npc:raid', 'npcs:changed', 'vehicles:changed', 'recruit:board', 'relations:changed']
+    ['expedition:done', 'shelter:changed', 'siege:breach', 'siege:wave', 'npc:raid', 'npcs:changed', 'vehicles:changed', 'recruit:board', 'relations:changed', 'trader:changed']
       .forEach((evt) => bus.on(evt, () => this.requestSave()));
     this.timers.push(setInterval(() => this.tick(), TICK_MS));
     this.startSiegeLoop();
@@ -139,6 +141,7 @@ export class Game {
     this.survivors.updateBoard(now);
     this.exploration.update(now, { silent });
     this.npcs.update(now);
+    this.trader.update(now);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();
