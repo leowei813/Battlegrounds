@@ -11,7 +11,9 @@ const M_PER_LAT = 111320;
 const MAX_FX = 600;
 
 const css = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
-const FX_COLORS = { mg: '#ffee58', em: '#4fc3f7', sniper: '#ffffff', guard: '#ffcc80' };
+const FX_COLORS = {
+  mg: '#ffee58', em: '#4fc3f7', sniper: '#ffffff', guard: '#ffcc80', melee: '#ef9a9a',
+};
 
 /**
  * 地圖上的即時屍潮圖層：在每個據點周圍繪製來襲殭屍、圍牆、防禦塔與射擊特效。

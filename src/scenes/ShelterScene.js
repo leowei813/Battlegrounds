@@ -7,7 +7,9 @@ const MAX_SLOTS = Math.max(...Object.values(BASE_SIZES).map((s) => s.slots));
 import { WORLD } from '../systems/SiegeSystem.js';
 import { bus, EVT } from '../core/EventBus.js';
 
-const FX_COLORS = { mg: 0xffee58, em: 0x4fc3f7, sniper: 0xffffff, guard: 0xffcc80 };
+const FX_COLORS = {
+  mg: 0xffee58, em: 0x4fc3f7, sniper: 0xffffff, guard: 0xffcc80, melee: 0xef9a9a,
+};
 
 /**
  * 避難所場景：俯視角呈現避難所、圍牆、防禦塔與來襲殭屍。

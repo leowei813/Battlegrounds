@@ -5,6 +5,7 @@ import {
   SIEGE_SCALING, BREACH_LOSS, BREACH_BUILDING_DAMAGE_CHANCE, BASE_SIZES,
 } from '../config/civilization.js';
 import { zoneAt } from '../config/zones.js';
+import { SUPPLIES, AMMO_FOR, ammoPerShot } from '../config/supplies.js';
 import { FACILITIES } from '../config/facilities.js';
 import { TIME_PHASES, ZOMBIE_HOURS_FRACTION } from '../config/timePhases.js';
 import {
@@ -23,6 +24,9 @@ const WAVE_LULL = 40;
 const WAVE_SPAWN_GAP = 0.45;
 const MAX_FX = 250;
 const BREACH_GRACE = 90;
+/** 沒有彈藥時只能近戰：駐守人員只打得到貼在圍牆上的殭屍，瞭望塔只打得到塔旁的殭屍 */
+const MELEE_REACH = WORLD.WALL_R + 8;
+const MELEE_REACH_POST = 14;
 /** 殭屍對圍牆的傷害係數（放置遊戲節奏：讓防線有時間反應） */
 const WALL_DMG_MUL = 0.3;
 
@@ -295,14 +299,17 @@ export class BaseSiege {
     if (this.guardCd <= 0) {
       this.guardCd = 1;
       const guards = this.guards();
-      guards.forEach(({ stats }) => {
-        const targets = this.zombies.filter((z) => z.hp > 0 && Math.hypot(z.x, z.y) < 80);
+      guards.forEach(({ sv, stats }) => {
+        // 有遠程武器與彈藥時從中心射擊；否則只能近戰，打得到貼在圍牆上的殭屍
+        const reach = (z) => Math.hypot(z.x, z.y) < (this.canShoot(sv) ? 80 : MELEE_REACH);
+        const targets = this.zombies.filter((z) => z.hp > 0 && reach(z));
         if (!targets.length) return;
         // 集火最靠近圍牆的目標
         const t = targets.reduce((a, b) => (Math.hypot(a.x, a.y) < Math.hypot(b.x, b.y) ? a : b));
+        const atk = this.attackPower(sv, stats);
         const crit = chance(stats.crit);
-        this.damage(t, stats.atk * 0.6 * this.guardMul() * (crit ? stats.critDmg : 1), crit);
-        this.pushFx({ type: 'shot', kind: 'guard', x1: 0, y1: 0, x2: t.x, y2: t.y });
+        this.damage(t, atk.value * 0.6 * this.guardMul() * (crit ? stats.critDmg : 1), crit);
+        this.pushFx({ type: 'shot', kind: atk.ranged ? 'guard' : 'melee', x1: 0, y1: 0, x2: t.x, y2: t.y });
       });
     }
 
@@ -371,14 +378,70 @@ export class BaseSiege {
         const sv = this.game.survivors.get(d.garrisonId);
         if (!sv || sv.status !== 'idle') return;
         const s = this.game.survivors.stats(sv);
+        // 沒有遠程武器或彈藥：只能近戰，打瞭望塔旁邊的殭屍
+        let tgt = target;
+        if (!this.canShoot(sv)) {
+          tgt = inRange.find((z) => Math.hypot(z.x - pos.x, z.y - pos.y) <= MELEE_REACH_POST);
+          if (!tgt) return;
+        }
+        const atk = this.attackPower(sv, s);
         const crit = chance(s.crit);
-        this.damage(target, s.atk * st.garrisonMul * dmgMul * this.guardMul() * (crit ? s.critDmg : 1), crit);
-        this.pushFx({ type: 'shot', kind: 'sniper', x1: pos.x, y1: pos.y, x2: target.x, y2: target.y });
+        this.damage(tgt, atk.value * st.garrisonMul * dmgMul * this.guardMul() * (crit ? s.critDmg : 1), crit);
+        this.pushFx({ type: 'shot', kind: atk.ranged ? 'sniper' : 'melee', x1: pos.x, y1: pos.y, x2: tgt.x, y2: tgt.y });
         break;
       }
       default:
         break;
     }
+  }
+
+  /** 估算用的攻擊力（不消耗彈藥）：沒有彈藥時只算近戰，且打得到的機會較少 */
+  meleeOrRangedAtk(sv) {
+    const s = this.game.survivors.stats(sv);
+    const weapon = this.game.equipment.getItem(sv.equipment?.weapon);
+    if (!weapon || !AMMO_FOR[weapon.type]) return s.atk * 0.5;
+    if (this.canShoot(sv)) return s.atk;
+    return Math.max(1, s.atk - (this.game.equipment.itemStats(weapon).atk || 0)) * 0.5;
+  }
+
+  /** 是否能遠程射擊：武器是槍械／弓弩，且身上或據點庫存有彈藥 */
+  canShoot(sv) {
+    const weapon = this.game.equipment.getItem(sv.equipment?.weapon);
+    const need = weapon && AMMO_FOR[weapon.type];
+    if (!need) return false;
+    const perShot = ammoPerShot(weapon.type);
+    return (sv.bag?.[need.ammo] || 0) + (this.game.state.supplies?.[need.ammo] || 0) >= perShot;
+  }
+
+  /**
+   * 駐守人員一次攻擊的攻擊力：槍械／弓弩每次射擊消耗彈藥（先用身上的，再用據點庫存）；
+   * 沒有彈藥時只能近戰，失去武器的攻擊力。
+   * @returns {{value:number, ranged:boolean}}
+   */
+  attackPower(sv, stats) {
+    const weapon = this.game.equipment.getItem(sv.equipment?.weapon);
+    const need = weapon && AMMO_FOR[weapon.type];
+    if (!need) return { value: stats.atk, ranged: false };
+    let n = ammoPerShot(weapon.type);
+    const bag = sv.bag || {};
+    const store = this.game.state.supplies || {};
+    if ((bag[need.ammo] || 0) + (store[need.ammo] || 0) < n) {
+      if (!sv.noAmmo) this.game.log(`🎯 ${sv.name} 沒有${SUPPLIES[need.ammo].name}了，只能近戰防守`, 'danger');
+      sv.noAmmo = need.ammo;
+      return { value: Math.max(1, stats.atk - (this.game.equipment.itemStats(weapon).atk || 0)), ranged: false };
+    }
+    const fromBag = Math.min(n, bag[need.ammo] || 0);
+    if (fromBag) {
+      bag[need.ammo] -= fromBag;
+      if (bag[need.ammo] <= 0) delete bag[need.ammo];
+      n -= fromBag;
+    }
+    if (n > 0) {
+      store[need.ammo] -= n;
+      if (store[need.ammo] <= 0) delete store[need.ammo];
+    }
+    delete sv.noAmmo;
+    return { value: stats.atk, ranged: true };
   }
 
   damage(z, amount, crit = false) {
@@ -483,12 +546,12 @@ export class BaseSiege {
       const st = DEFENSES[d.type].stats(d.level);
       if (d.type === 'watchPost') {
         const sv = this.game.survivors.get(d.garrisonId);
-        if (sv) dps += this.game.survivors.stats(sv).atk * st.garrisonMul * st.fireRate * mul * this.guardMul();
+        if (sv) dps += this.meleeOrRangedAtk(sv) * st.garrisonMul * st.fireRate * mul * this.guardMul();
       } else {
         dps += st.damage * st.fireRate * mul * this.typeMul(d.type) * (st.aoe ? 1.8 : 1) * (st.chain ? 2 : 1);
       }
     });
-    this.guards().forEach(({ stats }) => { dps += stats.atk * 0.6 * this.guardMul(); });
+    this.guards().forEach(({ sv }) => { dps += this.meleeOrRangedAtk(sv) * 0.6 * this.guardMul(); });
     return Math.round(dps);
   }
 
