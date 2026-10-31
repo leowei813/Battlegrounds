@@ -97,7 +97,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 12, 'state is serializable');
+assert(save.version === 13, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -125,7 +125,7 @@ const g2 = Game.newGame({ playerName: 'Day', classId: 'warrior', lat: 0, lon: 0 
 g2.state.map.pois = fillPois([], 0, 0);
 g2.shelter.establish(g2.state.map.pois[0]);
 const lvDay1 = g2.siege.of().zombieLevel();
-g2.state.createdAt -= 20 * 30 * 60 * 1000; // 經過 20 天
+g2.state.createdAt -= 20 * DAY_REAL_MS; // 經過 20 天
 g2.civilization.invalidate();
 assert(g2.siege.of().zombieLevel() - lvDay1 <= 1, '天數本身不會提升屍潮強度（夜間 ±1）');
 
@@ -151,7 +151,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 12 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -1244,6 +1244,18 @@ assert(migrated.version === 12 && migrated.bases.length === 1 && migrated.bases[
     }
   });
   assert(outside === 0, `製作出的裝備數值都在顯示的範圍內（超出 ${outside}）`);
+}
+
+// ---- 23. v8.5：遊戲一天 = 現實 1 小時，舊存檔維持目前天數與時刻 ----
+{
+  assert(DAY_REAL_MS === 3600000, '遊戲一天為現實 1 小時');
+  const gt = Game.newGame({ playerName: 'T', classId: 'warrior', lat: 25, lon: 121 });
+  gt.state.createdAt = Date.now() - 5.5 * 30 * 60000; // 舊制（30 分鐘一天）下的第 6 天 20:00
+  const old = JSON.parse(JSON.stringify(gt.state));
+  old.version = 12;
+  const mig = SaveManager.migrate(old);
+  const gm = new Game(mig);
+  assert(gm.time.day() === 6 && Math.abs(gm.time.hour() - 20) < 0.1, `舊存檔換算後天數與時刻不變（第 ${gm.time.day()} 天 ${gm.time.hour().toFixed(1)} 時）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
