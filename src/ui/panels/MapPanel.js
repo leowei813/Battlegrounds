@@ -342,8 +342,46 @@ export class MapPanel {
   }
 
   /** 野外隊伍（其他玩家或 NPC）：顯示資訊並可派隊攔截 */
+  /** 點擊地圖上自己的探索隊：顯示行程並可直接召回 */
+  openOwnTeam(expId) {
+    const g = this.game;
+    const ex = g.state.expeditions.find((e) => e.id === expId);
+    if (!ex) {
+      this.ui.toastEl.show('這支隊伍已經回到避難所了', 'info');
+      return;
+    }
+    const now = Date.now();
+    const p = g.exploration.progress(ex, now);
+    const poi = g.exploration.poi(ex.poiId);
+    const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
+    const ph = EXP_PHASES[p?.phase] || {};
+    const status = ex.defeated ? '🏳️ 撤回中' : ex.recalled ? '↩️ 召回中' : `${ph.icon || ''} ${ph.name || ''}`;
+    const canRecall = g.exploration.canRecall(ex, now);
+    const body = `
+      <p>📍 <b>${escapeHtml(poi?.name || '未知地點')}</b>・${status}</p>
+      <p class="muted">👥 ${names || `${ex.memberIds.length} 人`}</p>
+      <p class="muted">⏱ 剩 ${formatDuration(p ? p.remainingMs : Math.max(0, ex.endAt - now))}</p>
+      ${canRecall ? '<p class="muted">召回後隊伍會從目前位置走回避難所（需要移動時間），這趟不會有任何收穫。</p>' : ''}
+      <div class="btn-row">${canRecall ? btn('↩️ 召回', 'recall', {}, { cls: 'btn-danger' }) : ''}${btn('📋 探索頁', 'explore', {}, { cls: 'btn-ghost' })}</div>`;
+    this.ui.modal.open({
+      title: '🚶 我的探索隊',
+      body,
+      onAction: (action, _data, m) => {
+        m.close();
+        if (action === 'recall') {
+          const r = this.ui.result(g.exploration.recall(ex.id));
+          if (r.ok) this.renderMap(true);
+        } else if (action === 'explore') this.ui.switchTab('explore');
+      },
+    });
+  }
+
   openTeam(team) {
     const g = this.game;
+    if (team.kind === 'own') {
+      this.openOwnTeam(team.expId);
+      return;
+    }
     const t = g.intercept.target(team);
     if (!t) {
       this.ui.toastEl.show('這支隊伍已經離開了', 'info');
