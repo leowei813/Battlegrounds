@@ -143,4 +143,4 @@ export const xpToNext = (level) => Math.round(40 * level ** 1.6);
 /** 招募費用（依目前人數） */
 export const recruitCost = (count) => ({ coins: 60 + count * 45, food: 40 + count * 20 });
 /** 人數對應每小時食物消耗 */
-export const FOOD_PER_SURVIVOR_HOUR = 3;
+export const FOOD_PER_SURVIVOR_HOUR = 5;
