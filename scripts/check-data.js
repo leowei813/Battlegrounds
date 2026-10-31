@@ -1386,6 +1386,22 @@ assert(migrated.version === 13 && migrated.bases.length === 1 && migrated.bases[
   assert([...bk.cats].every((c) => c === 'food') && bk.food > res.food * 1.5, `麵包店只有食物，比住宅多（${bk.food} vs ${res.food}）`);
 }
 
+// ---- 28. v8.10：在線食物消耗較高、離線較低 ----
+{
+  const gf = Game.newGame({ playerName: 'F', classId: 'warrior', lat: 25, lon: 121 });
+  gf.state.map.pois = fillPois([], 25, 121);
+  gf.shelter.establish(gf.state.map.pois[0]);
+  const on = gf.resources.rates().upkeep.food;
+  const off = gf.resources.rates({ offline: true }).upkeep.food;
+  assert(on > off && on === 5 * gf.state.survivors.length, `在線每人吃 5、離線吃較少（${on} / ${off}）`);
+  gf.state.resources.food = 1000;
+  gf.resources.apply(3600000, { offline: true });
+  const afterOff = gf.state.resources.food;
+  gf.state.resources.food = 1000;
+  gf.resources.apply(3600000);
+  assert(afterOff > gf.state.resources.food, '離線一小時消耗的食物比在線少');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

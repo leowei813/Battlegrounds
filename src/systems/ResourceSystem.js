@@ -2,7 +2,7 @@ import { RESOURCE_KEYS } from '../config/constants.js';
 import {
   storageCap, FARM_FOOD, RAIN_MEDICINE, WORKBENCH,
 } from '../config/facilities.js';
-import { JOBS, FOOD_PER_SURVIVOR_HOUR } from '../config/survivors.js';
+import { JOBS, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE } from '../config/survivors.js';
 import { isSupply } from '../config/supplies.js';
 
 /**
@@ -28,7 +28,8 @@ export class ResourceSystem {
   /**
    * @returns {{net: Record<string,number>, gross: Record<string,number>, upkeep: Record<string,number>}}
    */
-  rates() {
+  /** @param {{offline?:boolean}} [opts] offline：離線期間的食物消耗較低 */
+  rates({ offline = false } = {}) {
     const st = this.game.state;
     const rb = this.game.research.bonuses();
     // 可能含材料物品（例如紗布、釘子），不在表中的鍵視為 0
@@ -67,7 +68,8 @@ export class ResourceSystem {
     });
     gross.food *= 1 + foodPct;
 
-    upkeep.food += st.survivors.length * FOOD_PER_SURVIVOR_HOUR * Math.max(0.5, 1 - (rb.foodUpkeepReduce || 0));
+    const perHead = offline ? FOOD_PER_SURVIVOR_HOUR_OFFLINE : FOOD_PER_SURVIVOR_HOUR;
+    upkeep.food += st.survivors.length * perHead * Math.max(0.5, 1 - (rb.foodUpkeepReduce || 0));
 
     const keys = [...new Set([...RESOURCE_KEYS, ...Object.keys(gross), ...Object.keys(upkeep)])].filter((k) => gross[k] || upkeep[k] || RESOURCE_KEYS.includes(k));
     const plain = (o) => Object.fromEntries(keys.map((k) => [k, o[k]]));
@@ -80,8 +82,8 @@ export class ResourceSystem {
    * 同時計算飢餓：食物見底且淨收入為負時，所有人員進入飢餓狀態；
    * `lastStarvingMs` 為本區間內處於飢餓的時間（飢餓發生在區間末段）。
    */
-  apply(dtMs) {
-    const { net } = this.rates();
+  apply(dtMs, { offline = false } = {}) {
+    const { net } = this.rates({ offline });
     const foodBefore = this.game.state.resources.food;
     const cap = this.storageCap();
     const res = this.game.state.resources;
