@@ -1,3 +1,4 @@
+import { dormCap } from '../config/facilities.js';
 import {
   CLASSES, CLASS_KEYS, JOBS, SURVIVOR_NAMES, MAX_SURVIVOR_LEVEL, xpToNext, recruitCost,
   SURVIVOR_RARITY, survivorRarityTable, hireFee, RECRUIT_BOARD_SIZE, RECRUIT_BOARD_MS, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
@@ -35,11 +36,30 @@ export class SurvivorSystem {
     return this.list.find((s) => s.isLeader);
   }
 
-  /** 人員上限：3 + 領袖等級 ÷ 5 + 各據點等級總和，最多 10 人（含領袖） */
+  /** 人員上限：3 + 領袖等級 ÷ 5 + 各據點等級總和，最多 10 人（含領袖），且不超過宿舍可住人數 */
   housing() {
+    return Math.min(this.rankCap(), this.dormCap());
+  }
+
+  /** 領袖等級與據點規模決定的上限 */
+  rankCap() {
     const leaderLv = this.leader()?.level || 1;
     const baseLv = this.game.state.bases.reduce((s, b) => s + this.game.shelter.baseLevel(b), 0);
     return Math.min(MAX_SURVIVORS, BASE_SURVIVOR_CAP + Math.floor(leaderLv / LEADER_LEVELS_PER_SLOT) + baseLv);
+  }
+
+  /** 宿舍可住人數（避難所的宿舍） */
+  dormCap() {
+    return dormCap(this.game.shelter.maxLevel('dormitory'));
+  }
+
+  /** 人數已滿時的原因說明 */
+  fullReason() {
+    const dorm = this.game.shelter.maxLevel('dormitory');
+    if (this.dormCap() <= this.rankCap()) {
+      return dorm ? `宿舍只能住 ${this.dormCap()} 人，請升級宿舍` : '需要先在避難所建造宿舍才能招募';
+    }
+    return `人數已達上限（${this.housing()} 人），提升領袖等級或據點等級可增加上限`;
   }
 
   /** 上限明細（UI 說明用） */
@@ -50,6 +70,9 @@ export class SurvivorSystem {
       leader: Math.floor(leaderLv / LEADER_LEVELS_PER_SLOT),
       bases: this.game.state.bases.reduce((s, b) => s + this.game.shelter.baseLevel(b), 0),
       max: MAX_SURVIVORS,
+      rank: this.rankCap(),
+      dorm: this.dormCap(),
+      dormLv: this.game.shelter.maxLevel('dormitory'),
     };
   }
 
@@ -403,7 +426,7 @@ export class SurvivorSystem {
     const board = this.game.state.recruitBoard;
     const sv = board.list.find((c) => c.id === id);
     if (!sv) return { ok: false, reason: '對方已離開' };
-    if (this.isFull()) return { ok: false, reason: `人數已達上限（${this.housing()} 人）` };
+    if (this.isFull()) return { ok: false, reason: this.fullReason() };
     if (!payCost(this.game.state, this.hireCost(sv))) return { ok: false, reason: '金錢不足' };
     board.list = board.list.filter((c) => c.id !== id);
     this.addSurvivor(sv);
@@ -425,7 +448,7 @@ export class SurvivorSystem {
 
   recruitRollNow() {
     if (this.game.state.recruitOffer?.length) return { ok: true, offer: this.game.state.recruitOffer };
-    if (this.isFull()) return { ok: false, reason: `人數已達上限（${this.housing()} 人），提升領袖等級或據點等級可增加上限` };
+    if (this.isFull()) return { ok: false, reason: this.fullReason() };
     if (!canAfford(this.game.state, this.currentRecruitCost())) return { ok: false, reason: '資源不足' };
     payCost(this.game.state, this.currentRecruitCost());
     this.game.state.recruitOffer = Array.from({ length: RECRUIT_CHOICES }, () => this.makeCandidate(this.candidateLevel()));

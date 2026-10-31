@@ -263,6 +263,15 @@ export class SaveManager {
       }
       if (rs?.active?.id === 'a_rain') rs.active.id = 'a_lumber';
     }
+    // v15：新增宿舍（人數上限需要宿舍）。舊存檔依現有人數給予足夠等級，不會有人被趕走
+    if (v < 15) {
+      const n = (data.survivors || []).length;
+      const need = n > 1 ? Math.max(1, n - 2) : 0;
+      (data.bases || []).forEach((b) => {
+        if (!b.facilities || b.facilities.dormitory) return;
+        b.facilities.dormitory = { level: b.kind === 'outpost' ? 0 : need };
+      });
+    }
     data.supplies = data.supplies || {};
     data.defenseLog = data.defenseLog || [];
     if (data.map) {
