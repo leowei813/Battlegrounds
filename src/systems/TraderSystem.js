@@ -3,7 +3,7 @@ import {
 } from '../utils/math.js';
 import { SUPPLIES, SUPPLY_KEYS, medWeight } from '../config/supplies.js';
 import {
-  RARITIES, ITEM_TYPES, tierMul,
+  RARITIES, RARITY_ORDER, ITEM_TYPES, tierMul,
 } from '../config/equipment.js';
 import { DAY_REAL_MS } from '../config/constants.js';
 
@@ -126,9 +126,40 @@ export class TraderSystem {
     return (0.8 + 0.1 * (tier - 1)) / 8;
   }
 
-  /** 回收單價（可能有小數，成交時總價取整數） */
+  /** 回收單價（可能有小數，成交時總價取整數）；研究「以物易物」提高回收價 */
   buybackUnit(key) {
-    return this.supplyPrice(key) * this.buybackRate(key);
+    return this.supplyPrice(key) * this.buybackRate(key) * (1 + this.game.research.bonus('sellPct'));
+  }
+
+  /** 裝備回收價：約為商人賣價的 1/8，品級越高比例越好（劣質 10% → 稀有 15%） */
+  gearBuyback(item) {
+    const idx = Math.max(0, RARITY_ORDER.indexOf(item.rarity));
+    const rate = (0.8 + 0.08 * idx) / 8;
+    return Math.max(1, Math.round(this.gearPrice(item) * rate * (1 + this.game.research.bonus('sellPct'))));
+  }
+
+  /** 把倉庫裡的裝備賣給商人（上鎖、穿戴中的不能賣） */
+  sellItem(itemId) {
+    const g = this.game;
+    if (!this.isHere()) return { ok: false, reason: '流浪商人已經離開了' };
+    const item = g.equipment.getItem(itemId);
+    if (!item) return { ok: false, reason: '找不到裝備' };
+    const price = this.gearBuyback(item);
+    const res = g.equipment.removeItem(itemId);
+    if (!res.ok) return res;
+    g.state.player.coins += price;
+    g.log(`🧳 賣給流浪商人「${item.name}」（💰${price}）`, 'loot');
+    return { ok: true, msg: `賣出「${item.name}」，得到 💰${price}` };
+  }
+
+  /** 一鍵賣出倉庫裡未上鎖的劣質／一般裝備 */
+  sellCommonGear() {
+    const g = this.game;
+    if (!this.isHere()) return { ok: false, reason: '流浪商人已經離開了' };
+    const list = g.equipment.storeItems().filter((i) => (i.rarity === 'poor' || i.rarity === 'common') && !i.locked);
+    let coins = 0;
+    list.forEach((i) => { const r = this.sellItem(i.id); if (r.ok) coins += this.gearBuyback(i); });
+    return list.length ? { ok: true, msg: `賣出 ${list.length} 件裝備，得到 💰${coins}` } : { ok: false, reason: '倉庫沒有可賣的劣質／一般裝備' };
   }
 
   /** 回收總價 */

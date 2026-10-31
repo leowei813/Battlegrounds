@@ -82,6 +82,10 @@ assert(reports.length === 1, 'exploration resolved');
 g.state.player.coins = 1e5;
 Object.keys(g.state.resources).forEach((k) => { g.state.resources[k] = 1e5; });
 fillSupplies(g);
+assert(!g.survivors.recruitRoll().ok && g.survivors.fullReason().includes('宿舍'), '沒有宿舍無法招募');
+g.shelter.primary().facilities.dormitory.level = 1;
+assert(g.survivors.dormCap() === 3 && g.survivors.housing() <= 3, '宿舍 Lv1 可住 3 人');
+g.shelter.primary().facilities.dormitory.level = 8;
 const roll = g.survivors.recruitRoll();
 assert(roll.ok && roll.offer.length === 3, '招募一次出現三位候選人');
 assert(g.survivors.pickRecruit(roll.offer[1].id).ok && !g.state.recruitOffer, '選擇其中一位加入');
@@ -97,7 +101,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 14, 'state is serializable');
+assert(save.version === 15, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -151,7 +155,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 15 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -618,6 +622,7 @@ assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[
   assert(gr.state.recruitBoard.list.map((c) => c.id).join() === firstIds, '一小時內名單不變');
   gr.survivors.updateBoard(Date.now() + 3600e3 + 1000);
   assert(gr.state.recruitBoard.list.map((c) => c.id).join() !== firstIds, '每小時更新名單');
+  gr.shelter.primary().facilities.dormitory.level = 8;
   const n0 = gr.state.survivors.length;
   assert(gr.survivors.hireFromBoard(gr.state.recruitBoard.list[0].id).ok && gr.state.survivors.length === n0 + 1, '招募固定出現的倖存者');
   const legends = Array.from({ length: 3000 }, () => gr.survivors.rollRarity()).filter((r) => r === 'legendary').length;
@@ -686,6 +691,7 @@ assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[
   Object.keys(gs.state.resources).forEach((k) => { gs.state.resources[k] = 1e5; });
   gs.state.player.coins = 1e6;
   // 固定種子：讀回同一份存檔，製作結果相同（無法靠重新讀檔刷結果）
+  gs.shelter.primary().facilities.dormitory.level = 8;
   const snap = JSON.parse(JSON.stringify(SaveManager.pack(gs.state)));
   const a1 = gs.equipment.craft('knife').item;
   const gs2 = new Game(SaveManager.migrate(JSON.parse(JSON.stringify(snap))));
@@ -1354,6 +1360,12 @@ assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[
   const rT = gt.trader.buybackRate('titanium');
   assert(rN >= 0.09 && rN <= 0.14 && rT > rN && rT <= 0.16, `回收價約為售價 1/8，稀有物資比例較好（${rN.toFixed(3)} / ${rT.toFixed(3)}）`);
   assert(!gt.trader.sell('nail', 5).ok, '沒有的物資不能賣');
+  // 裝備只能賣給商人
+  const gi = gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'rare' });
+  gt.equipment.addItem(gi, 't');
+  const c2 = gt.state.player.coins;
+  const gp = gt.trader.gearBuyback(gi);
+  assert(gp > 0 && gp < gt.trader.gearPrice(gi) / 5 && gt.trader.sellItem(gi.id).ok && gt.state.player.coins === c2 + gp && !gt.equipment.getItem(gi.id), `裝備可以賣給商人（約售價 1/8：💰${gp}）`);
   assert(!gt.trader.isHere(until + 1000), '下午 3 點後商人離開');
   void gear;
 }
@@ -1613,6 +1625,23 @@ assert(migrated.version === 14 && migrated.bases.length === 1 && migrated.bases[
   assert(!gd.equipment.discardItem(it.id).ok, '上鎖的裝備不能丟棄');
   it.locked = false;
   assert(gd.equipment.discardItem(it.id).ok && !gd.equipment.getItem(it.id), '可以丟棄裝備');
+}
+
+// ---- 37. v8.20：宿舍 ----
+{
+  const gm = Game.newGame({ playerName: 'M1', classId: 'warrior', lat: 25, lon: 121 });
+  gm.state.map.pois = fillPois([], 25, 121);
+  gm.shelter.establish(gm.state.map.pois[0]);
+  assert(gm.survivors.housing() === 1 && gm.survivors.isFull(), '沒有宿舍時只住得下領袖');
+  gm.shelter.primary().facilities.dormitory.level = 3;
+  assert(gm.survivors.dormCap() === 5, '宿舍每升一級多住 1 人');
+  const old = JSON.parse(JSON.stringify(gm.state));
+  old.version = 14;
+  delete old.bases[0].facilities.dormitory;
+  old.survivors = [old.survivors[0], { ...old.survivors[0], id: 'a', isLeader: false }, { ...old.survivors[0], id: 'b', isLeader: false }, { ...old.survivors[0], id: 'c', isLeader: false }];
+  const mg = SaveManager.migrate(old);
+  const gm2 = new Game(mg);
+  assert(mg.bases[0].facilities.dormitory.level === 2 && gm2.survivors.dormCap() >= 4, '舊存檔依現有人數給予宿舍等級，不會超過上限');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

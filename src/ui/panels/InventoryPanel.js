@@ -158,7 +158,7 @@ export class InventoryPanel {
   renderSelected() {
     const g = this.game;
     const sel = this.sel;
-    if (!sel) return '<p class="muted inv-hint">👆 點選格子查看物品資訊，可以丟棄、出售或交給隊員。</p>';
+    if (!sel) return '<p class="muted inv-hint">👆 點選格子查看物品資訊，可以丟棄或交給隊員（出售請找流浪商人）。</p>';
     if (sel.kind === 'supply') {
       const sp = SUPPLIES[sel.key];
       const have = g.state.supplies?.[sel.key] || 0;
@@ -179,11 +179,10 @@ export class InventoryPanel {
       btn('裝備', 'equipTo', { id: it.id }, { cls: 'btn-xs btn-primary' }),
       btn('交給隊員', 'toBag', { id: it.id }, { cls: 'btn-xs' }),
       btn(it.locked ? '🔓 解鎖' : '🔒 上鎖', 'lock', { id: it.id }, { cls: 'btn-xs btn-ghost' }),
-      btn(`出售 💰${g.equipment.sellValue(it)}`, 'sell', { id: it.id }, { cls: 'btn-xs', disabled: it.locked }),
       btn('拆解', 'dismantle', { id: it.id }, { cls: 'btn-xs btn-ghost', disabled: it.locked }),
       btn('🗑️ 丟棄', 'dropItem', { id: it.id }, { cls: 'btn-xs btn-danger', disabled: it.locked }),
     ].join('');
-    return `<div class="inv-detail">${itemCard(it, { actions })}</div>`;
+    return `<div class="inv-detail">${itemCard(it, { actions })}<small class="muted">💰 想換錢請在流浪商人出現時，到「回收」分頁賣給他。</small></div>`;
   }
 
   renderItems() {
@@ -212,7 +211,7 @@ export class InventoryPanel {
     const carried = g.state.inventory.items.filter((i) => i.loc && i.loc !== 'store' && !eq.equippedBy(i.id)).length;
     return `
       <p>🗄️ 物品倉庫空間 <b class="${used >= cap ? 'neg' : ''}">${used} / ${cap}</b> 格 <small class="muted">（裝備每件 1 格；零件、布料、藥品、彈藥同種類每 ${STACK_MAX} 個 1 格；物品倉庫每升一級 +10 格。穿戴中與隊員背包裡的裝備不在這裡，請到倖存者頁查看${carried ? `，目前有 ${carried} 件在隊員背包` : ''}）</small></p>
-      <div class="row-between"><div class="chips">${filters}</div>${btn('一鍵出售劣質/一般', 'sellCommon', {}, { cls: 'btn-sm btn-ghost' })}</div>
+      <div class="chips">${filters}</div>
       <div class="inv-grid">${cellHtml}${'<div class="inv-cell empty"></div>'.repeat(empty)}</div>
       ${shown.length ? '' : '<p class="muted">這個分類沒有物品。</p>'}
       ${this.renderSelected()}`;
@@ -282,15 +281,7 @@ export class InventoryPanel {
       case 'sort': this.sort = data.s; break;
       case 'rfilter': this.rarityFilter = data.r; break;
       case 'lock': g.equipment.toggleLock(data.id); break;
-      case 'sell': this.ui.result(g.equipment.sell(data.id)); break;
       case 'dismantle': this.ui.result(g.equipment.dismantle(data.id)); break;
-      case 'sellCommon': {
-        const ids = g.state.inventory.items.filter((i) => (i.rarity === 'poor' || i.rarity === 'common') && !i.locked && !g.equipment.equippedBy(i.id)).map((i) => i.id);
-        let coins = 0;
-        ids.forEach((id) => { coins += g.equipment.sellValue(g.equipment.getItem(id)); g.equipment.sell(id); });
-        this.ui.result({ ok: true, msg: ids.length ? `出售 ${ids.length} 件，獲得 ${coins} 金錢` : '沒有可出售的劣質/一般裝備' });
-        break;
-      }
       case 'craft': this.showCraftResult(g.equipment.craft(data.type)); break;
       case 'craftAmmo': this.ui.result(g.equipment.craftAmmo(data.key)); break;
       case 'craftBp': this.showCraftResult(g.equipment.craft(data.type, data.id)); break;

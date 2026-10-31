@@ -78,6 +78,12 @@ export const FACILITIES = {
     cost: (lv) => mat('lumberMill', ['mech', 'struct'], { wood: 40, metal: 40, cloth: 10 }, lv),
     effectText: (lv) => `木材 +${lv * LUMBER_WOOD}/時`,
   },
+  dormitory: {
+    name: '宿舍', icon: '🛏️', startLevel: 0,
+    desc: '倖存者的住處。沒有宿舍無法招募新成員，每升一級可多住 1 人。',
+    cost: (lv) => mat('dormitory', ['struct'], { wood: 90, metal: 25, cloth: 45 }, lv),
+    effectText: (lv) => `可住 ${dormCap(lv)} 人（含領袖）`,
+  },
   workbench: {
     name: '工作台', icon: '🛠️', startLevel: 0,
     desc: '拆解廢料產出木材/金屬/布料，並可製作裝備。',
@@ -105,3 +111,5 @@ export const storageCap = (lv) => 600 + lv * 700 + lv * lv * 120;
 /** 物品倉庫格子：Lv1 30 格，每升一級 +10 */
 export const itemStoreSlots = (lv) => 30 + Math.max(0, lv - 1) * 10;
 export const housingCap = (lv) => 3 + lv * 2;
+/** 宿舍可住人數（含領袖）：沒有宿舍只有領袖 1 人，Lv1 3 人，之後每級 +1 */
+export const dormCap = (lv) => (lv > 0 ? 2 + lv : 1);
