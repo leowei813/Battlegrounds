@@ -108,8 +108,9 @@
 
 ## 5. resources — 資源
 ```json
-{ "food": 200, "wood": 150, "metal": 80, "cloth": 60, "fuel": 40, "medicine": 15 }
+{ "food": 200, "wood": 150, "fuel": 40 }
 ```
+v12 起金屬、布料、藥品不再是基本資源，改為 `supplies` 內的材料物品（見文末 v12）。
 
 ## 6. inventory — 裝備資料
 ```jsonc
@@ -276,3 +277,20 @@
 | `bases[].facilities.itemStore` | `{ level }` | 物品倉庫（舊存檔沿用原倉庫等級） |
 | `map.detected` | `{ 建築ID: 日期編號 }` | GPS 今日偵測過的建築 |
 | `settings.gps` | `boolean` | 是否開啟 GPS 偵測 |
+
+## v12 新增欄位（v8.0.0）
+| 位置 | 欄位 | 說明 |
+|---|---|---|
+| `supplies` | `{ 材料ID: 數量 }` | 物品倉庫內的材料物品：零件（38 種）、布料（10 種）、藥品（8 種）、彈藥（6 種），定義在 `src/config/supplies.js`；同種類每 999 個佔 1 格 |
+| `survivors[].bag` | `{ 資源或材料ID: 數量 }` | 背包也可放材料物品，負重依各材料的重量計算 |
+| `map.markers` | `[{ id, type, name, lat, lon, osm, at }]` | 標記的建築（最多 5 個），重新掃描後仍保留在建築清單 |
+| `map.remain` | `{ 建築ID: { day, res } }` | 探索帶不走而殘留在建築內的物資（當天有效） |
+| `expeditions[]` | `kind: intercept`, `icptTarget`, `icptDone`, `icptResult`, `defeated`, `defeatLoss` | 攔截野外隊伍；被攔截擊敗後折返的隊伍 |
+| `npcs.list[].trip` | `kind: return`, `hidden` | 被攔截後撤回據點的 NPC 隊伍（不顯示在地圖上） |
+| `quests.chestDate` | 日期字串 | 今天是否已開啟每日物資箱 |
+| `stats` | `healed`, `ammoCrafted`, `intercepts`, `chestsOpened`, `forestVisits` | 新任務與成就使用的統計 |
+| `prodAcc`, `repairAcc` | `{ 材料ID: 小數 }` | 生產與修繕的材料小數累積（滿 1 個才增減） |
+| 公開資料 `trips[]` | `id`, `level` | 讓其他玩家可以點選並攔截隊伍 |
+| 事件信箱 | `intercept`, `plunder` | 攔截結果與戰利品（需重新執行 `supabase/schema.sql`） |
+
+**v11 → v12 遷移**：`resources.metal / cloth / medicine`（含隊員背包、NPC 資源）依比例換算成螺絲、釘子、廢鐵、螺栓、電線、鐵板、粗布、棉布、麻布、繃帶、紗布；主線任務進度依任務 ID 換算到新的位置。

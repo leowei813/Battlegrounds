@@ -107,7 +107,7 @@ export class ShelterPanel {
         ${g.shelter.hasShelter() ? '' : `<div class="card warn">🏚️ 目前沒有避難所，無法生產與探索。${btn('🗺️ 到地圖選擇新的避難所', 'gotoMap', {}, { cls: 'btn-sm btn-primary' })}</div>`}
         <div class="chips">${tabs}</div>
         <div class="btn-row">${baseActions}</div>
-        <div class="btn-row">${btn(`📦 倉庫裝備 ${st.inventory.items.length}`, 'openStorage', {}, { cls: 'btn-sm' })}${btn(`🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`, 'openGarage', {}, { cls: 'btn-sm' })}</div>
+        <div class="btn-row">${btn(`🗄️ 物品倉庫（裝備 ${st.inventory.items.length}）`, 'openStorage', {}, { cls: 'btn-sm' })}${btn(`🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`, 'openGarage', {}, { cls: 'btn-sm' })}</div>
         ${this.renderCivilization(sh)}
         <div class="stat-grid">
           <div><small>圍牆（不會自行修復）</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}
