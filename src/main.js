@@ -70,7 +70,7 @@ function showWelcome(ui) {
         <li>🛡️ 在避難所外圍空地建造<b>防禦建築</b>，抵擋越來越強的屍潮。<b>夜晚與午夜</b>格外危險！</li>
         <li>🔬 建造研究中心解鎖新科技，📜 完成任務領取獎勵。</li>
       </ol>
-      <p class="muted">提示：現實 30 分鐘 = 遊戲 1 天。</p>
+      <p class="muted">提示：現實 1 小時 = 遊戲 1 天。</p>
       <div class="btn-row end"><button class="btn btn-primary" data-action="close">開始求生</button></div>`,
   });
 }

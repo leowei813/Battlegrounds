@@ -243,6 +243,11 @@ export class SaveManager {
       const id = OLD_MAIN[data.quests.mainIndex];
       data.quests.mainIndex = id ? Math.max(0, MAIN_QUESTS.findIndex((q) => q.id === id)) : MAIN_QUESTS.length;
     }
+    // v13：遊戲一天由現實 30 分鐘改為 1 小時；調整建檔時間，讓目前的天數與時刻維持不變
+    if (v < 13 && Number.isFinite(data.createdAt)) {
+      const now = Date.now();
+      data.createdAt = now - Math.max(0, now - data.createdAt) * 2;
+    }
     data.supplies = data.supplies || {};
     if (data.map) {
       data.map.markers = data.map.markers || [];

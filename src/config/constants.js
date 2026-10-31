@@ -2,13 +2,13 @@
 
 export const GAME_TITLE = '絕地求生';
 export const SAVE_KEY = 'jdqs_save_v1';
-export const SAVE_VERSION = 12;
+export const SAVE_VERSION = 13;
 
 export const TICK_MS = 1000;
 export const AUTOSAVE_MS = 30 * 1000;
 
-/** 現實 30 分鐘 = 遊戲 1 天 */
-export const DAY_REAL_MS = 30 * 60 * 1000;
+/** 現實 1 小時 = 遊戲 1 天（v13 起；之前為 30 分鐘） */
+export const DAY_REAL_MS = 60 * 60 * 1000;
 /** 遊戲開始時的時刻（早上 8 點） */
 export const START_HOUR = 8;
 
