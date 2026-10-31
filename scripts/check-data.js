@@ -1229,6 +1229,23 @@ assert(migrated.version === 12 && migrated.bases.length === 1 && migrated.bases[
   assert(!gr2.exploration.recall(r.exp.id).ok && gr2.state.expeditions.length === 1, '返程中的隊伍無法召回');
 }
 
+// ---- 22. v8.4：製作畫面的能力範圍 ----
+{
+  const gq2 = Game.newGame({ playerName: 'Q2', classId: 'warrior', lat: 25, lon: 121 });
+  gq2.state.map.pois = fillPois([], 25, 121);
+  gq2.shelter.establish(gq2.state.map.pois[0]);
+  const range = gq2.equipment.craftStatRange('knife');
+  assert(range.atk && range.atk[0] < range.atk[1], `製作畫面顯示能力最小值與最大值（攻擊 ${range.atk}）`);
+  let outside = 0;
+  ['poor', 'common', 'uncommon', 'rare', 'epic'].forEach((rarity) => {
+    for (let i = 0; i < 40; i += 1) {
+      const it = gq2.equipment.generate({ level: gq2.equipment.craftLevel('knife'), model: 'knife', rarity });
+      Object.entries(range).forEach(([k, [a, b]]) => { if (it.stats[k] < a - 1e-9 || it.stats[k] > b + 1e-9) outside += 1; });
+    }
+  });
+  assert(outside === 0, `製作出的裝備數值都在顯示的範圍內（超出 ${outside}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
