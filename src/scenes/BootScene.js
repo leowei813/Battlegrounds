@@ -1,11 +1,24 @@
 import Phaser from 'phaser';
+import small from '../assets/bases/small.webp';
+import medium from '../assets/bases/medium.webp';
+import large from '../assets/bases/large.webp';
+import huge from '../assets/bases/huge.webp';
+
+/** 避難所底圖（依據點規模） */
+const BASE_IMAGES = {
+  small, medium, large, huge,
+};
 
 /**
- * 啟動場景：以程式繪製所有貼圖（不需外部美術資源），完成後進入避難所場景。
+ * 啟動場景：載入避難所底圖，並以程式繪製其他貼圖，完成後進入避難所場景。
  */
 export class BootScene extends Phaser.Scene {
   constructor() {
     super('Boot');
+  }
+
+  preload() {
+    Object.entries(BASE_IMAGES).forEach(([size, url]) => this.load.image(`base-${size}`, url));
   }
 
   create() {

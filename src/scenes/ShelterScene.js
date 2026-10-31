@@ -1,25 +1,22 @@
 import Phaser from 'phaser';
 import { DEFENSES } from '../config/defenses.js';
+import { FACILITIES } from '../config/facilities.js';
 import { BASE_SIZES } from '../config/civilization.js';
+import { BASE_CELLS, BASE_IMAGE_SIZE } from '../config/baseLayouts.js';
+import { bus, EVT } from '../core/EventBus.js';
 
 /** 最大據點的防禦欄位數（場景預先建立的槽位物件數） */
 const MAX_SLOTS = Math.max(...Object.values(BASE_SIZES).map((s) => s.slots));
-import { WORLD } from '../systems/SiegeSystem.js';
-import { bus, EVT } from '../core/EventBus.js';
-
-const FX_COLORS = {
-  mg: 0xffee58, em: 0x4fc3f7, sniper: 0xffffff, guard: 0xffcc80, melee: 0xef9a9a,
-};
+const FACILITY_IDS = Object.keys(FACILITIES);
 
 /**
- * 避難所場景：俯視角呈現避難所、圍牆、防禦塔與來襲殭屍。
- * 邏輯全部在 SiegeSystem，本場景只負責「讀取 → 繪製」。
+ * 避難所場景：依據點規模顯示對應的底圖（小／中／大／巨型），
+ * 一般設施放在圍牆內的綠色格，防禦設施放在靠近大門的藍色格。
+ * 屍潮的邏輯仍在 SiegeSystem 運作，這個畫面暫時不繪製來襲的殭屍。
  */
 export class ShelterScene extends Phaser.Scene {
   constructor() {
     super('Shelter');
-    this.zombieSprites = new Map();
-    this.lines = [];
   }
 
   /** @returns {import('../core/Game.js').Game} */
@@ -33,33 +30,40 @@ export class ShelterScene extends Phaser.Scene {
     return core?.shelter.base(this.registry.get('viewBaseId')) || core?.shelter.primary() || core?.state.bases[0] || null;
   }
 
-  get siege() {
-    const b = this.base;
-    return b ? this.core.siege.of(b.id) : null;
-  }
-
   create() {
     this.ground = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, 'ground').setOrigin(0);
-    this.staticG = this.add.graphics();
-    this.wallG = this.add.graphics();
-    this.zombieLayer = this.add.layer();
-    this.hpG = this.add.graphics();
-    this.fxG = this.add.graphics();
-    this.uiLayer = this.add.layer();
-    this.night = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x050818, 0).setOrigin(0);
-    this.night.setDepth(50);
+    this.bg = this.add.image(0, 0, 'base-medium').setOrigin(0.5).setVisible(false);
+    this.night = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x050818, 0).setOrigin(0).setDepth(50);
 
-    this.centerIcon = this.add.text(0, 0, '🏚️', { fontSize: '40px' }).setOrigin(0.5).setDepth(10);
     this.nameText = this.add.text(0, 0, '', {
-      fontSize: '13px', color: '#ffe082', fontFamily: 'sans-serif', stroke: '#000', strokeThickness: 3,
-    }).setOrigin(0.5).setDepth(10);
+      fontSize: '14px', color: '#ffe082', fontFamily: 'sans-serif', stroke: '#000', strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(20);
+    this.wallText = this.add.text(0, 0, '', {
+      fontSize: '12px', color: '#fff', fontFamily: 'sans-serif', stroke: '#000', strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(20);
+    this.wallBar = this.add.graphics().setDepth(20);
     this.hintText = this.add.text(0, 0, '', {
       fontSize: '16px', color: '#ffffff', fontFamily: 'sans-serif', align: 'center', stroke: '#000', strokeThickness: 4,
     }).setOrigin(0.5).setDepth(60);
 
+    // 一般設施（綠色格）
+    this.facObjs = FACILITY_IDS.map((id) => {
+      const icon = this.add.text(0, 0, FACILITIES[id].icon, { fontSize: '22px' }).setOrigin(0.5, 0.75).setDepth(10);
+      const lv = this.add.text(0, 0, '', {
+        fontSize: '11px', color: '#fff', fontFamily: 'sans-serif', stroke: '#000', strokeThickness: 3,
+      }).setOrigin(0.5).setDepth(11);
+      icon.setInteractive({ useHandCursor: true });
+      icon.on('pointerdown', (pointer) => {
+        if (pointer.event && pointer.event.target !== this.game.canvas) return;
+        bus.emit('ui:shelterTab', { tab: 'facilities' });
+      });
+      return { id, icon, lv };
+    });
+
+    // 防禦設施（藍色格）
     this.slotObjs = [];
     for (let i = 0; i < MAX_SLOTS; i += 1) {
-      const zone = this.add.circle(0, 0, 18, 0x000000, 0.35).setStrokeStyle(2, 0xffffff, 0.4).setDepth(5);
+      const zone = this.add.ellipse(0, 0, 36, 20, 0x000000, 0.35).setStrokeStyle(2, 0x90caf9, 0.7).setDepth(9);
       zone.setInteractive({ useHandCursor: true });
       // 只接受直接點在畫布上的點擊（避免點到上層的面板、彈窗時誤開槽位選單）
       zone.on('pointerdown', (pointer) => {
@@ -67,28 +71,18 @@ export class ShelterScene extends Phaser.Scene {
         bus.emit(EVT.OPEN_SLOT, { slot: i });
       });
       zone.on('pointerover', () => zone.setStrokeStyle(3, 0xffd54f, 1));
-      zone.on('pointerout', () => zone.setStrokeStyle(2, 0xffffff, 0.4));
-      const icon = this.add.text(0, 0, '+', { fontSize: '20px', color: '#fff' }).setOrigin(0.5).setDepth(6);
+      zone.on('pointerout', () => zone.setStrokeStyle(2, 0x90caf9, 0.7));
+      const icon = this.add.text(0, 0, '+', { fontSize: '18px', color: '#fff' }).setOrigin(0.5, 0.75).setDepth(10);
       const lv = this.add.text(0, 0, '', {
         fontSize: '11px', color: '#fff', fontFamily: 'sans-serif', stroke: '#000', strokeThickness: 3,
-      }).setOrigin(0.5).setDepth(6);
+      }).setOrigin(0.5).setDepth(11);
       this.slotObjs.push({ zone, icon, lv });
     }
 
     this.scale.on('resize', () => this.layout());
     this.registry.events.on('changedata-viewInset', () => this.layout());
-    this.registry.events.on('changedata-viewBaseId', () => {
-      this.fxQueue = [];
-      this.zombieSprites.forEach((s) => s.destroy());
-      this.zombieSprites.clear();
-      this.refreshStatic(true);
-    });
-    this.fxQueue = [];
+    this.registry.events.on('changedata-viewBaseId', () => this.refreshStatic(true));
     this.unsubs = [
-      bus.on('siege:fx', (events) => {
-        const id = this.base?.id;
-        events.forEach((e) => { if (e.baseId === id && this.fxQueue.length < 300) this.fxQueue.push(e); });
-      }),
       bus.on('shelter:changed', () => this.refreshStatic()),
       bus.on(EVT.STATE_CHANGED, () => this.refreshStatic()),
     ];
@@ -96,7 +90,7 @@ export class ShelterScene extends Phaser.Scene {
     this.layout();
   }
 
-  /** 計算畫面中心與世界→螢幕縮放（扣除 UI 抽屜遮擋區域） */
+  /** 計算可視區域（扣除 UI 抽屜遮擋）與底圖縮放 */
   layout() {
     const { width, height } = this.scale;
     const inset = this.registry.get('viewInset') || { right: 0, bottom: 0, top: 0 };
@@ -104,186 +98,115 @@ export class ShelterScene extends Phaser.Scene {
     const h = height - inset.bottom - inset.top;
     this.cx = w / 2;
     this.cy = inset.top + h / 2;
-    this.k = Math.max(0.6, Math.min(w, h) / (WORLD.SPAWN_R * 2.1));
+    // 底圖完整放進可視區域
+    this.k = Math.min(w / BASE_IMAGE_SIZE.w, h / BASE_IMAGE_SIZE.h);
     this.ground.setSize(width, height);
     this.night.setSize(width, height);
     this.refreshStatic(true);
   }
 
-  toScreen(x, y) {
-    return { x: this.cx + x * this.k, y: this.cy + y * this.k };
+  /** 底圖像素 → 螢幕座標 */
+  toScreen([px, py]) {
+    return { x: this.cx + (px - BASE_IMAGE_SIZE.w / 2) * this.k, y: this.cy + (py - BASE_IMAGE_SIZE.h / 2) * this.k };
   }
 
   refreshStatic(force = false) {
     const core = this.core;
-    if (!core || !this.staticG) return;
+    if (!core || !this.bg) return;
     const sh = this.base;
-    const key = JSON.stringify([sh?.id, core.state.primaryBaseId, sh?.defenses, sh?.buildQueue.length, this.cx, this.cy, this.k]);
+    const key = JSON.stringify([sh?.id, sh?.size, core.state.primaryBaseId, sh?.defenses, sh && Object.values(sh.facilities).map((f) => f.level),
+      sh?.buildQueue.map((q) => q.id || q.slot), this.cx, this.cy, this.k]);
     if (!force && key === this.lastStaticKey) return;
     this.lastStaticKey = key;
 
     const has = !!sh;
-    const c = this.toScreen(0, 0);
-    this.centerIcon.setPosition(c.x, c.y).setFontSize(Math.round(30 * this.k));
-    this.centerIcon.setText(!has ? '🏚️' : core.shelter.isPrimary(sh) ? '🏰' : '🏠');
-    this.nameText.setPosition(c.x, c.y + 26 * this.k).setText(has ? `${core.shelter.isPrimary(sh) ? '⭐ ' : ''}${sh.name}` : '');
-    this.hintText.setPosition(c.x, c.y - 70 * this.k).setText(has ? '' : '尚未建立避難所\n請到「地圖」選擇一棟建築');
+    this.hintText.setPosition(this.cx, this.cy).setText(has ? '' : '尚未建立避難所\n請到「地圖」選擇一棟建築');
+    this.bg.setVisible(has);
+    this.nameText.setVisible(has);
+    this.wallText.setVisible(has);
+    this.wallBar.setVisible(has);
     if (!has) {
+      this.facObjs.forEach((o) => { o.icon.setVisible(false); o.lv.setVisible(false); });
       this.slotObjs.forEach((o) => { o.zone.setVisible(false); o.icon.setVisible(false); o.lv.setVisible(false); });
-      this.staticG.clear();
       return;
     }
 
-    this.staticG.clear();
-    // 此據點規模以外的槽位隱藏
-    this.slotObjs.forEach((o, i) => {
-      if (i < sh.defenses.length) return;
-      o.zone.setVisible(false);
-      o.icon.setVisible(false);
-      o.lv.setVisible(false);
-    });
-    // 偵查範圍
-    this.staticG.lineStyle(1, 0xffffff, 0.08).strokeCircle(c.x, c.y, WORLD.SPAWN_R * this.k);
-    this.staticG.lineStyle(1, 0xffffff, 0.06).strokeCircle(c.x, c.y, WORLD.SLOT_R * this.k);
+    const size = BASE_CELLS[sh.size] ? sh.size : 'medium';
+    const cells = BASE_CELLS[size];
+    this.bg.setTexture(`base-${size}`).setPosition(this.cx, this.cy).setScale(this.k);
+    const top = this.toScreen([BASE_IMAGE_SIZE.w / 2, 0]);
+    this.nameText.setPosition(this.cx, top.y + 14).setText(`${core.shelter.isPrimary(sh) ? '⭐ ' : '🏴 '}${sh.name}（${BASE_SIZES[size].name}）`);
 
-    sh.defenses.forEach((d, i) => {
-      const p = this.siege.slotPos(i, sh.defenses.length);
-      const s = this.toScreen(p.x, p.y);
-      const o = this.slotObjs[i];
+    // 一般設施：已建造的正常顯示，尚未建造的半透明；前哨站只有圍牆與監視塔
+    const cellSize = Math.max(14, Math.round(30 * this.k));
+    FACILITY_IDS.forEach((id, i) => {
+      const o = this.facObjs[i];
+      const f = sh.facilities[id];
+      const p = cells.facility[i] && this.toScreen(cells.facility[i]);
+      if (!f || !p) {
+        o.icon.setVisible(false);
+        o.lv.setVisible(false);
+        return;
+      }
+      const busy = sh.buildQueue.some((q) => q.kind === 'facility' && q.id === id);
+      o.icon.setVisible(true).setPosition(p.x, p.y).setFontSize(cellSize).setAlpha(f.level > 0 ? 1 : 0.35);
+      o.lv.setVisible(true).setPosition(p.x, p.y + cellSize * 0.35).setText(busy ? '🔨' : f.level > 0 ? `Lv${f.level}` : '未建');
+    });
+
+    // 防禦設施：依據點規模的藍色格
+    this.slotObjs.forEach((o, i) => {
+      const d = sh.defenses[i];
+      const p = d && cells.defense[i] && this.toScreen(cells.defense[i]);
+      if (!p) {
+        o.zone.setVisible(false);
+        o.icon.setVisible(false);
+        o.lv.setVisible(false);
+        return;
+      }
       const busy = core.shelter.isSlotBusy(sh, i);
-      o.zone.setPosition(s.x, s.y).setRadius(Math.max(16, 13 * this.k));
-      o.zone.setVisible(has);
-      o.icon.setVisible(has).setPosition(s.x, s.y);
-      o.lv.setVisible(has).setPosition(s.x, s.y + 16 * this.k);
+      const rx = Math.max(16, 26 * this.k);
+      o.zone.setVisible(true).setPosition(p.x, p.y).setSize(rx * 2, rx * 1.1);
+      o.zone.geom.setSize(rx * 2, rx * 1.1);
+      o.zone.updateDisplayOrigin();
+      o.icon.setVisible(true).setPosition(p.x, p.y);
+      o.lv.setVisible(true).setPosition(p.x, p.y + rx * 0.45);
       if (d.type) {
         const def = DEFENSES[d.type];
-        o.zone.setFillStyle(def.color, 0.55);
-        o.icon.setText(def.icon).setFontSize(Math.round(14 * this.k));
+        o.zone.setFillStyle(def.color, 0.45);
+        o.icon.setText(def.icon).setFontSize(Math.max(14, Math.round(24 * this.k)));
         o.lv.setText(busy ? '🔨' : `Lv${d.level}`);
-        if (d.level > 0 && def.stats(d.level).range && d.type !== 'barricade') {
-          const r = def.stats(d.level).range * (d.type === 'trap' ? 1 : core.shelter.rangeMul(sh));
-          this.staticG.lineStyle(1, def.color, 0.18).strokeCircle(s.x, s.y, r * this.k);
-        }
       } else {
-        o.zone.setFillStyle(0x000000, 0.35);
-        o.icon.setText('+').setFontSize(18);
+        o.zone.setFillStyle(0x000000, 0.3);
+        o.icon.setText('+').setFontSize(Math.max(14, Math.round(20 * this.k)));
         o.lv.setText('');
       }
     });
   }
 
+  /** 圍牆耐久條（畫在名稱下方） */
   drawWall() {
     const core = this.core;
-    const c = this.toScreen(0, 0);
-    this.wallG.clear();
     const base = this.base;
+    this.wallBar.clear();
     if (!base) return;
-    const ratio = Phaser.Math.Clamp(core.shelter.wallHp(base) / core.shelter.wallMax(base), 0, 1);
-    const color = Phaser.Display.Color.Interpolate.ColorWithColor(
-      Phaser.Display.Color.ValueToColor(0xe53935), Phaser.Display.Color.ValueToColor(0x8d6e63), 100, ratio * 100,
-    );
-    const col = Phaser.Display.Color.GetColor(color.r, color.g, color.b);
-    const lv = base.facilities.wall.level;
-    this.wallG.lineStyle(Math.max(3, (3 + lv * 0.6) * this.k), col, 1);
-    this.wallG.strokeCircle(c.x, c.y, WORLD.WALL_R * this.k);
-    // 耐久弧
-    this.wallG.lineStyle(3, 0x66bb6a, 0.9);
-    this.wallG.beginPath();
-    this.wallG.arc(c.x, c.y, (WORLD.WALL_R + 6) * this.k, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
-    this.wallG.strokePath();
+    const hp = core.shelter.wallHp(base);
+    const max = core.shelter.wallMax(base);
+    const ratio = Phaser.Math.Clamp(hp / max, 0, 1);
+    const top = this.toScreen([BASE_IMAGE_SIZE.w / 2, 0]);
+    const w = Math.min(220, BASE_IMAGE_SIZE.w * this.k * 0.4);
+    const x = this.cx - w / 2;
+    const y = top.y + 28;
+    this.wallBar.fillStyle(0x000000, 0.6).fillRoundedRect(x, y, w, 12, 5);
+    this.wallBar.fillStyle(ratio < 0.3 ? 0xe53935 : 0x66bb6a, 1).fillRoundedRect(x, y, Math.max(4, w * ratio), 12, 5);
+    this.wallText.setPosition(this.cx, y + 6).setText(`🧱 ${Math.floor(hp)}/${max}`);
   }
 
-  syncZombies() {
-    const alive = new Set();
-    this.hpG.clear();
-    (this.siege?.zombies || []).forEach((z) => {
-      alive.add(z.id);
-      let spr = this.zombieSprites.get(z.id);
-      if (!spr) {
-        spr = this.add.image(0, 0, 'zombie').setTint(z.color);
-        this.zombieLayer.add(spr);
-        this.zombieSprites.set(z.id, spr);
-      }
-      const s = this.toScreen(z.x, z.y);
-      const size = (z.boss ? 1.6 : 0.6) * this.k;
-      spr.setPosition(s.x, s.y + Math.sin(z.t * 8) * 0.8).setScale(size);
-      spr.setAlpha(performance.now() / 1000 < z.stunUntil ? 0.6 : 1);
-      if (z.hp < z.maxHp) {
-        const w = (z.boss ? 30 : 14) * this.k;
-        this.hpG.fillStyle(0x000000, 0.6).fillRect(s.x - w / 2, s.y - 12 * size - 4, w, 3);
-        this.hpG.fillStyle(0xef5350, 1).fillRect(s.x - w / 2, s.y - 12 * size - 4, w * (z.hp / z.maxHp), 3);
-      }
-    });
-    this.zombieSprites.forEach((spr, id) => {
-      if (!alive.has(id)) {
-        spr.destroy();
-        this.zombieSprites.delete(id);
-      }
-    });
-  }
-
-  spawnFx() {
-    const fx = this.fxQueue;
-    this.fxQueue = [];
-    fx.forEach((e) => {
-      if (e.type === 'shot' || e.type === 'flame') {
-        const a = this.toScreen(e.x1, e.y1);
-        const b = this.toScreen(e.x2, e.y2);
-        this.lines.push({ a, b, color: e.type === 'flame' ? 0xff7043 : FX_COLORS[e.kind] || 0xffffff, ttl: 0.09, w: e.kind === 'em' ? 3 : 2 });
-        if (e.type === 'flame') this.burst(b.x, b.y, 0xff7043, 6, e.r * this.k);
-      } else if (e.type === 'trap') {
-        const p = this.toScreen(e.x, e.y);
-        this.lines.push({ circle: true, a: p, r: e.r * this.k, color: 0xa1887f, ttl: 0.25, w: 2 });
-      } else if (e.type === 'dmg') {
-        if (this.children.length > 600) return;
-        const p = this.toScreen(e.x, e.y);
-        const t = this.add.text(p.x, p.y - 10, String(e.dmg), {
-          fontSize: e.crit ? '15px' : '11px', color: e.crit ? '#ffeb3b' : '#ffffff', fontFamily: 'sans-serif', stroke: '#000', strokeThickness: 3,
-        }).setOrigin(0.5).setDepth(40);
-        this.tweens.add({ targets: t, y: p.y - 34, alpha: 0, duration: 650, onComplete: () => t.destroy() });
-      } else if (e.type === 'death') {
-        const p = this.toScreen(e.x, e.y);
-        this.burst(p.x, p.y, e.color, e.boss ? 24 : 8, 18 * this.k);
-      } else if (e.type === 'wallHit') {
-        if (Math.random() < 0.3) {
-          const p = this.toScreen(e.x * 0.95, e.y * 0.95);
-          this.burst(p.x, p.y, 0xbcaaa4, 3, 8 * this.k);
-        }
-      }
-    });
-  }
-
-  burst(x, y, color, n, spread) {
-    for (let i = 0; i < n; i += 1) {
-      const p = this.add.image(x, y, 'particle').setTint(color).setScale(Phaser.Math.FloatBetween(0.4, 1)).setDepth(30);
-      const a = Math.random() * Math.PI * 2;
-      const d = Math.random() * spread;
-      this.tweens.add({
-        targets: p, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, alpha: 0, scale: 0.1,
-        duration: Phaser.Math.Between(250, 500), onComplete: () => p.destroy(),
-      });
-    }
-  }
-
-  drawLines(dt) {
-    this.fxG.clear();
-    this.lines = this.lines.filter((l) => (l.ttl -= dt) > 0);
-    this.lines.forEach((l) => {
-      this.fxG.lineStyle(l.w, l.color, Math.min(1, l.ttl * 10));
-      if (l.circle) this.fxG.strokeCircle(l.a.x, l.a.y, l.r);
-      else this.fxG.lineBetween(l.a.x, l.a.y, l.b.x, l.b.y);
-    });
-  }
-
-  update(_time, delta) {
+  update() {
     const core = this.core;
     if (!core) return;
-    const dt = delta / 1000;
     this.drawWall();
-    this.syncZombies();
-    this.spawnFx();
-    this.drawLines(dt);
-    const target = core.time.phase().overlay;
+    // 夜晚畫面變暗（底圖較亮，夜色減半）
+    const target = core.time.phase().overlay * 0.6;
     this.night.fillAlpha = Phaser.Math.Linear(this.night.fillAlpha, target, 0.02);
   }
 }
