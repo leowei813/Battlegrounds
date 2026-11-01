@@ -78,7 +78,7 @@ export const RESEARCH = {
   d_volt: r('defense', 3, '高壓電流', '電網傷害大幅提升', { defDmg_electricFence: 0.08 }, { req: [['d_fence', 3]] }),
   d_mg: r('defense', 1, '機槍塔', '解鎖機槍塔，並提升機槍塔傷害', { defDmg_machineGun: 0.05 }, { unlock: ['machineGun'] }),
   d_tower: r('defense', 2, '火力強化', '所有防禦塔傷害提升', { towerDmgPct: 0.04 }, { req: [['d_mg', 2]] }),
-  d_range: r('defense', 2, '精準射擊', '防禦設施傷害提升', { towerRangePct: 0.03 }, { req: [['d_mg', 2]] }),
+  d_range: r('defense', 2, '精準射擊', '防禦設施傷害提升，屍潮防禦範圍擴大', { towerRangePct: 0.03 }, { req: [['d_mg', 2]] }),
   d_armor: r('defense', 2, '減傷結構', '圍牆減傷提升', { wallReduceAdd: 0.01 }, { req: [['d_wall', 3]] }),
   d_guard: r('defense', 2, '守備訓練', '防禦駐守與瞭望塔駐守傷害提升', { guardDmgPct: 0.05 }),
   d_npc: r('defense', 2, '反掠奪', '對 NPC 掠奪隊的防禦傷害提升', { raidDefensePct: 0.08 }),

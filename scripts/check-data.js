@@ -2168,7 +2168,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   const A = mk('協防者', 121);
   const B = mk('被攻擊', 121.0004);
   B.state.bases[0].lat = A.state.bases[0].lat;
-  B.state.bases[0].lon = A.state.bases[0].lon + 0.0008; // 約 80 公尺：警戒範圍相接
+  B.state.bases[0].lon = A.state.bases[0].lon + 0.0003; // 約 30 公尺：警戒範圍相接
   const pres = (gx, id) => ({ id, ...JSON.parse(JSON.stringify(WS.prototype.presence.call({ game: gx }))) });
   A.world = { others: [], myId: 'A' };
   B.world = { others: [], myId: 'B' };
