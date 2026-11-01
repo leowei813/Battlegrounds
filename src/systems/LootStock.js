@@ -92,7 +92,7 @@ function pickSupply(cat, rnd, danger) {
 
 /** 每單位的數量係數：零件、布料、藥品比食物木材稀少 */
 const CAT_AMOUNT = {
-  food: 0.65, wood: 1, fuel: 0.7, part: 0.25, fabric: 0.3, medLow: 0.08, medMid: 0.08, med: 0.08, ammo: 0.6,
+  food: 0.65, wood: 1, fuel: 0.7, part: 0.21, fabric: 0.25, medLow: 0.08, medMid: 0.08, med: 0.08, ammo: 0.6,
 };
 
 /**

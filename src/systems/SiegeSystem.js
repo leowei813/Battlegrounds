@@ -1,6 +1,6 @@
 import { DEFENSES } from '../config/defenses.js';
 import { ENEMIES, BOSSES } from '../config/enemies.js';
-import { RESOURCE_KEYS } from '../config/constants.js';
+import { RESOURCE_KEYS, COIN_GAIN_MUL } from '../config/constants.js';
 import {
   SIEGE_SCALING, BREACH_LOSS, BREACH_BUILDING_DAMAGE_CHANCE, BASE_SIZES,
 } from '../config/civilization.js';
@@ -521,7 +521,7 @@ export class BaseSiege {
       this.pushFx({ type: 'death', x: z.x, y: z.y, color: z.color, boss: z.boss });
       if (z.boss) this.game.log(`👑 「${this.base.name}」防線擊殺了 Boss！`, 'success');
     });
-    this.game.grant({ coins, parts });
+    this.game.grant({ coins: Math.round(coins * COIN_GAIN_MUL), parts });
     // 經驗分給防守人員
     const defenders = [
       ...this.guards().map((g) => g.sv),

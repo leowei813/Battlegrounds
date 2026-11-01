@@ -1,3 +1,4 @@
+import { COIN_GAIN_MUL } from '../config/constants.js';
 import { RECRUIT_STAY_MS } from '../config/survivors.js';
 import {
   MAX_TEAM_SIZE, MAX_EXPEDITIONS, OFFLINE_CAP_MS, RESOURCES,
@@ -342,7 +343,7 @@ export class ExplorationSystem {
     if (result.victory) {
       this.game.state.stats.battlesWon += 1;
       this.game.state.map.zombieGroups = this.game.state.map.zombieGroups.filter((x) => x.id !== g.id);
-      exp.travelEvents.push(`⚔️ ${where}遭遇${label}，擊退！（擊殺 ${result.kills.length}，💰${result.coins}）`);
+      exp.travelEvents.push(`⚔️ ${where}遭遇${label}，擊退！（擊殺 ${result.kills.length}，💰${Math.round(result.coins * COIN_GAIN_MUL)}）`);
       this.game.toast(`⚔️ 前往「${poi?.name}」的隊伍${where}遭遇殭屍，成功擊退`, 'success');
       this.game.log(`⚔️ 探索隊${where}擊退${this.game.zombies.groupLabel(g)}`, 'success');
       this.game.bus.emit('map:changed');
@@ -548,7 +549,7 @@ export class ExplorationSystem {
       resources: loot.resources || {},
       items: (loot.items || []).map((it) => ({ name: it.name, rarity: it.rarity })),
       events: [result.victory
-        ? `⚔️ 擊退${t.label}！（擊殺 ${result.kills.length}，💰${result.coins}）`
+        ? `⚔️ 擊退${t.label}！（擊殺 ${result.kills.length}，💰${Math.round(result.coins * COIN_GAIN_MUL)}）`
         : `💀 攻擊${t.label}失敗，隊伍撤退`],
     };
     const msg = result.victory ? `⚔️ 攻擊隊擊退了${t.label}` : `💀 攻擊隊被${t.label}擊退`;
@@ -730,7 +731,7 @@ export class ExplorationSystem {
       cp.kills += result.kills.length;
       cp.xp += result.xp;
       if (result.victory) {
-        cp.events.push(`  ↳ 勝利！擊殺 ${result.kills.length}，獲得 ${result.coins} 金錢`);
+        cp.events.push(`  ↳ 勝利！擊殺 ${result.kills.length}，獲得 ${Math.round(result.coins * COIN_GAIN_MUL)} 金錢`);
         if (isElite) {
           const item = this.game.equipment.generate({ level: level + 2, bias: pt.itemBias, boost: 0.5 + zone.rarityBoost, minRarity: 'uncommon' });
           cp.items.push(item);

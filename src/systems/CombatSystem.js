@@ -1,3 +1,4 @@
+import { COIN_GAIN_MUL } from '../config/constants.js';
 import { ITEM_MODELS } from '../config/equipment.js';
 import { AMMO_FOR } from '../config/supplies.js';
 import { ALL_ENEMIES, ELITE_MUL } from '../config/enemies.js';
@@ -263,6 +264,6 @@ export class CombatSystem {
       this.game.survivors.gainXp(sv, xpEach);
       if (u) this.game.survivors.setHp(sv, u.hp);
     });
-    this.game.grant({ coins: result.coins, parts: result.parts });
+    this.game.grant({ coins: Math.round(result.coins * COIN_GAIN_MUL), parts: result.parts });
   }
 }
