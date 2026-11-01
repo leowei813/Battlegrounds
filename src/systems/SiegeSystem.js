@@ -14,7 +14,7 @@ import {
 
 export const WORLD = {
   WALL_R: 42,
-  SLOT_R: 62,
+  SLOT_R: 30, // 防禦設施在據點內（只影響特效位置；攻打據點時不論方向都會開火）
   SPAWN_R: 150,
 };
 const MAX_ZOMBIES = 45;
@@ -281,8 +281,9 @@ export class BaseSiege {
       z.t += dt;
       const dist = Math.hypot(z.x, z.y);
       z.slow = 0;
+      // 路障、陷阱圍繞整座據點：接近圍牆的殭屍都會被減速
       auras.forEach((a) => {
-        if (Math.hypot(z.x - a.x, z.y - a.y) < a.range) z.slow = Math.max(z.slow, a.slow);
+        if (dist < WORLD.WALL_R + a.range) z.slow = Math.max(z.slow, a.slow);
       });
       if (now < z.stunUntil) continue;
       if (!active) {
@@ -309,7 +310,6 @@ export class BaseSiege {
 
     // 防禦塔
     const dmgMul = sh.towerDamageMul(base);
-    const rangeMul = sh.rangeMul(base);
     defenses.forEach((d) => {
       const def = DEFENSES[d.type];
       const st = def.stats(d.level);
@@ -321,8 +321,9 @@ export class BaseSiege {
         return;
       }
       const pos = this.slotPos(d.slot);
-      const range = st.range * (d.type === 'trap' ? 1 : rangeMul);
-      const inRange = this.zombies.filter((z) => z.hp > 0 && Math.hypot(z.x - pos.x, z.y - pos.y) <= range);
+      // 攻打據點的殭屍都在防禦設施的火力範圍內（陷阱只作用在圍牆附近）
+      const range = d.type === 'trap' ? WORLD.WALL_R + st.range : WORLD.SPAWN_R;
+      const inRange = this.zombies.filter((z) => z.hp > 0 && Math.hypot(z.x, z.y) <= range);
       if (!inRange.length) {
         this.cooldowns.set(key, 0);
         return;
@@ -419,7 +420,7 @@ export class BaseSiege {
         // 沒有遠程武器或彈藥：只能近戰，打瞭望塔旁邊的殭屍
         let tgt = target;
         if (!this.canShoot(sv)) {
-          tgt = inRange.find((z) => Math.hypot(z.x - pos.x, z.y - pos.y) <= MELEE_REACH_POST);
+          tgt = inRange.find((z) => Math.hypot(z.x, z.y) <= WORLD.WALL_R + MELEE_REACH_POST);
           if (!tgt) return;
         }
         const atk = this.attackPower(sv, s);

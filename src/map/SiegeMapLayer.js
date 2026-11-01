@@ -1,6 +1,5 @@
 import L from 'leaflet';
 import { WORLD } from '../systems/SiegeSystem.js';
-import { DEFENSES } from '../config/defenses.js';
 import { bus } from '../core/EventBus.js';
 import { EXP_PHASES, AMBUSH_RADIUS_M, tripProgress } from '../systems/ExplorationSystem.js';
 import { formatDuration } from '../utils/math.js';
@@ -144,18 +143,7 @@ export const SiegeMapLayer = L.Layer.extend({
       ctx.lineWidth = 3;
       ctx.stroke();
 
-      // 防禦建築
-      base.defenses.forEach((d, i) => {
-        if (!d.type || d.level < 1) return;
-        const p = s.slotPos(i, base.defenses.length);
-        ctx.beginPath();
-        ctx.arc(c.x + p.x * k, c.y + p.y * k, Math.max(3, 6 * Math.min(k, 1.6)), 0, Math.PI * 2);
-        ctx.fillStyle = css(DEFENSES[d.type].color);
-        ctx.fill();
-        ctx.strokeStyle = '#000a';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      });
+      // 防禦設施不畫在地圖上（攻打據點時不論方向都會開火）
 
       // 殭屍
       const zr = Math.max(3.5, Math.min(10, 5 * k));
