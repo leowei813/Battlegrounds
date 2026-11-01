@@ -193,8 +193,23 @@ export class UIManager {
     this.phaser.registry.set('viewInset', inset);
   }
 
+  /** 據點被當成攻擊目標時：螢幕外圍紅框＋上方閃爍「威脅接近中」 */
+  renderThreat() {
+    const list = this.game.threats();
+    if (!this.threatEl) {
+      this.threatEl = document.createElement('div');
+      this.threatEl.className = 'threat-alert';
+      this.threatEl.innerHTML = '<div class="threat-frame"></div><div class="threat-label">⚠️ 威脅接近中</div>';
+      document.body.appendChild(this.threatEl);
+    }
+    const on = list.length > 0;
+    this.threatEl.classList.toggle('on', on);
+    this.threatEl.querySelector('.threat-label').title = list.join('、');
+  }
+
   refresh(force = false) {
     this.renderHud();
+    this.renderThreat();
     this.modal.refreshLive();
     this.renderBadges();
     const panel = this.panels[this.tab];

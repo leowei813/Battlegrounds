@@ -1621,7 +1621,7 @@ assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[
   gq.npcs.resolveIncoming(n, n.trip, Date.now());
   const rec = gq.state.defenseLog[0];
   assert(rec.success && n.wounded > 0, `NPC 掠奪失敗會有人員傷亡（${n.wounded} 人）`);
-  assert(gq.survivors.hpOf(lead) < hp0 && gq.shelter.wallHp(bq) < wall0, `防守成功也會受傷與圍牆受損（生命 ${hp0}→${gq.survivors.hpOf(lead)}，圍牆 −${rec.wallLost}）`);
+  assert(gq.shelter.wallHp(bq) < wall0 || gq.survivors.hpOf(lead) < hp0, `防守成功也有損傷：掠奪隊會先攻擊圍牆（生命 ${hp0}→${gq.survivors.hpOf(lead)}，圍牆 −${rec.wallLost}）`);
   const g0 = gq.npcs.garrison(n).length;
   n.trip = null;
   n.nextRaidAt = Date.now() + 3600e3;
@@ -1857,6 +1857,43 @@ assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[
   gt.shelter.establish(gt.state.map.pois.find((p) => p.id === 'r3'));
   gt.thinMap();
   assert(gt.state.map.pois.some((p) => p.id === 'r3') && gt.state.map.pois.filter((p) => p.type === 'forest').length >= 95 && gt.state.map.pois.filter((p) => p.type === 'pharmacy').length >= 35, '舊地圖整理密度時保留據點，並補足樹林與藥局');
+}
+
+// ---- 42. v8.28：攻擊據點要先破牆、再打贏人員；威脅提示 ----
+{
+  const gw = Game.newGame({ playerName: 'W2', classId: 'warrior', lat: 25, lon: 121 });
+  gw.state.map.pois = fillPois([], 25, 121);
+  gw.shelter.establish(gw.state.map.pois[0]);
+  setHour(gw, 10);
+  const mk = () => Array.from({ length: 3 }, () => gw.combat.createEnemy('raider', 5));
+  const hold = gw.combat.wallAssault(mk(), 1e6, 0);
+  assert(!hold.breached && hold.alive.length === 3 && hold.wallLost > 0, '圍牆太堅固時攻擊者打不破（圍牆仍會受損）');
+  const shot = gw.combat.wallAssault(mk(), 1e6, 1e4);
+  assert(!shot.breached && shot.killed === 3, '破牆期間防禦設施會擊倒攻擊者');
+  const open = gw.combat.wallAssault(mk(), 0, 0);
+  assert(open.breached && open.alive.length === 3, '沒有圍牆時直接進入與人員交戰');
+  // NPC 掠奪：圍牆守住就不會被搶
+  const base = gw.shelter.primary();
+  const n = gw.npcs.spawnAt(gw.state.map.pois.find((p) => !gw.shelter.baseAtPoi(p.id)), 'x', Date.now(), true);
+  n.level = 3;
+  base.facilities.wall.level = 10;
+  base.wallHp = null;
+  gw.state.resources.food = 500;
+  n.trip = { kind: 'raid', baseId: base.id, startAt: Date.now() - 1000, travelMs: 0, endAt: Date.now() + 1000 };
+  gw.npcs.resolveIncoming(n, n.trip, Date.now());
+  assert(gw.state.defenseLog[0].success && gw.state.resources.food >= 499, '圍牆沒被打破就搶不到東西');
+  // 圍牆破了、沒有人防守 → 被掠奪
+  base.wallHp = 0;
+  gw.survivors.leader().status = 'exploring';
+  n.level = 3;
+  gw.npcs.resolveIncoming(n, n.trip, Date.now());
+  assert(!gw.state.defenseLog[0].success && gw.state.resources.food < 500, '圍牆被打破且沒人防守時才會被掠奪');
+  gw.survivors.leader().status = 'idle';
+  // 威脅提示：NPC 掠奪隊正在前來
+  n.trip = { kind: 'raid', baseId: base.id, startAt: Date.now(), travelMs: 60000, endAt: Date.now() + 120000 };
+  assert(gw.threats().some((t) => t.includes(n.name)), '掠奪隊前來時出現威脅提示');
+  n.trip = null;
+  assert(!gw.threats().length, '沒有威脅時不提示');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

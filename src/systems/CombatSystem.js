@@ -16,6 +16,39 @@ export class CombatSystem {
   }
 
   /** 建立敵人實例 */
+  /**
+   * 攻城：攻擊者先破壞圍牆，期間防禦設施持續射擊（集中火力擊倒一個再換下一個）。
+   * 圍牆被打破後才能和據點裡的人員交戰；撐過 maxSec 秒或攻擊者全滅就算守住。
+   * @param {object[]} enemies 攻擊者（maxHp、atk）
+   * @returns {{alive:object[], killed:number, breached:boolean, wallLeft:number, wallLost:number, sec:number}}
+   */
+  wallAssault(enemies, wallHp, towerDps, { maxSec = 120, wallMul = 0.8 } = {}) {
+    const alive = enemies.map((e) => ({ e, hp: e.maxHp }));
+    let wall = Math.max(0, wallHp);
+    let sec = 0;
+    while (alive.length && wall > 0 && sec < maxSec) {
+      sec += 1;
+      wall -= alive.reduce((s, a) => s + a.e.atk * wallMul, 0);
+      let shot = towerDps;
+      while (shot > 0 && alive.length) {
+        const t = alive[0];
+        const d = Math.min(shot, t.hp);
+        t.hp -= d;
+        shot -= d;
+        if (t.hp <= 0) alive.shift();
+      }
+    }
+    wall = Math.max(0, wall);
+    return {
+      alive: alive.map((a) => Object.assign(a.e, { hp: Math.max(1, Math.round(a.hp)) })),
+      killed: enemies.length - alive.length,
+      breached: wall <= 0 && alive.length > 0,
+      wallLeft: wall,
+      wallLost: Math.max(0, wallHp - wall),
+      sec,
+    };
+  }
+
   createEnemy(enemyId, level = 1, elite = false) {
     const def = ALL_ENEMIES[enemyId];
     const l = Math.max(1, level) - 1;

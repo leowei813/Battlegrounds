@@ -44,6 +44,8 @@ export function sanitizePresence(body) {
       alert: num(b.alert, 0, 500) ?? 80, // 警戒範圍（公尺）
       guards: num(b.guards, 0, 20) ?? 0, // 駐守人數
       guardLevel: num(b.guardLevel, 1, 60) ?? 1,
+      wall: num(b.wall, 0, 1e6) ?? 0, // 圍牆耐久
+      dps: num(b.dps, 0, 1e5) ?? 0, // 防禦設施火力
     };
   }).filter(Boolean);
   if (!bases.length) return null;

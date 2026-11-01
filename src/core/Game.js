@@ -22,6 +22,7 @@ import { GpsSystem } from '../systems/GpsSystem.js';
 import { grant } from '../systems/costUtils.js';
 import { isSupply } from '../config/supplies.js';
 import { fetchPois, thinPois } from '../map/OverpassService.js';
+import { haversine } from '../utils/math.js';
 import { POI_THIN_VERSION } from '../config/constants.js';
 import { fillPois } from '../map/PoiGenerator.js';
 import { MarkerSystem } from '../systems/MarkerSystem.js';
@@ -84,6 +85,30 @@ export class Game {
     map.thinV = POI_THIN_VERSION;
     map.fetchedAt = Date.now(); // 觸發地圖重新上傳
     console.info(`[Game] 地圖密度整理：${before} → ${map.pois.length}`);
+  }
+
+  /**
+   * 據點是否正被當成攻擊目標：NPC 掠奪隊正在前來、其他玩家的隊伍正朝據點移動（交易隊除外）、
+   * 或屍潮正在攻擊據點。
+   * @returns {string[]} 威脅說明（空陣列代表安全）
+   */
+  threats(now = Date.now()) {
+    const out = [];
+    const bases = this.state.bases;
+    if (!bases.length) return out;
+    (this.state.npcs?.list || []).forEach((n) => {
+      const t = n.trip;
+      if (t?.kind === 'raid' && !t.resolved && !t.hidden && now < t.startAt + t.travelMs && bases.some((b) => b.id === t.baseId)) out.push(`NPC「${n.name}」掠奪隊`);
+    });
+    (this.world?.others || []).forEach((p) => (p.trips || []).forEach((t) => {
+      if (t.kind === 'trade' || t.defeated || now >= t.startAt + (t.travelMs || 0)) return;
+      if (bases.some((b) => haversine(b.lat, b.lon, t.to.lat, t.to.lon) < 40)) out.push(`玩家「${p.name}」的隊伍`);
+    }));
+    bases.forEach((b) => {
+      const w = this.siege.of(b.id).waveInfo?.();
+      if (w?.active && w.attacking) out.push(`屍潮（${b.name}）`);
+    });
+    return out;
   }
 
   static newGame(opts) {
