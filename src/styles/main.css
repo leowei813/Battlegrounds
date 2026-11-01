@@ -594,3 +594,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .demand-badge span { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: #2e7d32; border: 2px solid #c8e6c9; font-size: 14px; box-shadow: 0 0 6px rgba(102, 187, 106, 0.8); position: relative; cursor: pointer; }
 .demand-badge i { position: absolute; right: -6px; top: -6px; font-style: normal; font-size: 10px; background: #e53935; color: #fff; border-radius: 8px; padding: 0 4px; }
 .demand-form select { padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; max-width: 180px; }
+
+/* ---- 消息按鈕未讀數 ---- */
+.map-tools .btn-icon { position: relative; }
+.map-tools .btn-icon small.unread { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; line-height: 18px; padding: 0 4px; border-radius: 9px; background: #e53935; color: #fff; font-size: 11px; font-weight: 700; }
+.msg-dot { font-style: normal; font-size: 11px; background: #e53935; color: #fff; border-radius: 9px; padding: 0 6px; margin-left: 4px; }

@@ -103,11 +103,10 @@ export class ShelterPanel {
 
     const siege = g.siege.of(sh.id);
     const wallRatio = g.shelter.wallHp(sh) / g.shelter.wallMax(sh);
-    const logs = st.log.slice(0, 10).map((l) => `<li class="log-${l.type}"><time>${new Date(l.t).toLocaleTimeString().slice(0, 5)}</time>${escapeHtml(l.msg)}</li>`).join('');
     const z = g.shelter.sizeInfo(sh);
-    const tab = ['overview', 'facilities', 'defense', 'log'].includes(ui.shelterTab) ? ui.shelterTab : 'overview';
+    const tab = ['overview', 'facilities', 'defense'].includes(ui.shelterTab) ? ui.shelterTab : 'overview';
     const tabBtn = (id, label) => `<button class="seg-btn ${tab === id ? 'active' : ''}" data-action="shelterTab" data-t="${id}">${label}</button>`;
-    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('log', '📜 紀錄')}</div>`;
+    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}</div>`;
     const sections = {
       overview: `
         <div class="label">避難所 ${g.shelter.hasShelter() ? 1 : 0}/1・前哨站 ${g.shelter.outposts().length}/${g.shelter.outpostLimit()} <small>（研究「擴張科技」最多 ${MAX_OUTPOSTS} 座，在地圖點選建築建立）</small></div>
@@ -128,7 +127,6 @@ export class ShelterPanel {
       defense: `<p class="muted">${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築。點空地建造，點已建造的防禦建築升級或派人駐守（也可以直接點上方場景中的槽位）。</p>
         <div class="slot-grid">${defenses}</div>
         <div class="stat-grid"><div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div><div><small>屍潮波次</small><b>${this.waveText(siege)}</b></div></div>`,
-      log: `${this.defenseLogHtml()}<h4>📜 事件紀錄</h4><ul class="log-list">${logs}</ul>`,
     };
     return `<div class="drawer-top">${head}${ui.drawerCollapsed ? '' : tabs2}</div>
       <div class="drawer-body">${sections[tab]}</div>`;

@@ -1,12 +1,11 @@
 import { POI_TYPES } from '../../config/poiTypes.js';
 import { MAX_EXPEDITIONS } from '../../config/constants.js';
 import { VEHICLES } from '../../config/vehicles.js';
-import { RARITIES } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { formatDuration } from '../../utils/math.js';
 import { EXP_PHASES } from '../../systems/ExplorationSystem.js';
 import {
-  btn, timerBar, gainsHtml, metaOf,
+  btn, timerBar, metaOf,
 } from '../components.js';
 
 /**
@@ -38,25 +37,13 @@ export class ExplorePanel {
       </div>`;
     }).join('');
 
-    const reports = (st.reports || []).map((r) => {
-      const open = this.openReport === r.id;
-      return `<div class="card report ${r.success ? '' : 'fail'}">
-        <div class="row-between" data-action="toggleReport" data-id="${r.id}">
-          <b>${r.success ? '✅' : '⚠️'} ${escapeHtml(r.poiName)}</b><small class="muted">${new Date(r.at).toLocaleTimeString().slice(0, 5)} ${open ? '▲' : '▼'}</small>
-        </div>
-        <div class="gains">${gainsHtml(r.resources)} ${r.items.map((it) => `<span class="rarity" style="--rc:${RARITIES[it.rarity].color}">${escapeHtml(it.name)}</span>`).join('')}${r.blueprints.length ? `<span class="tag">📜×${r.blueprints.length}</span>` : ''}</div>
-        ${open ? `<ul class="event-list">${r.events.map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul><small class="muted">隊員：${r.members.map(escapeHtml).join('、')}・擊殺 ${r.kills}</small>` : ''}
-      </div>`;
-    }).join('');
-
     return `<div class="panel-inner">
       <h2>🧭 探索</h2>
       <div class="phase-banner phase-${g.time.phaseId()}">${phase.icon} 目前時段：<b>${phase.name}</b>・${phase.desc}・探索速度 ×${g.time.exploreSpeedMul().toFixed(2)}・物資 ×${phase.lootMul}</div>
       <h3>進行中（${st.expeditions.length}/${MAX_EXPEDITIONS}）</h3>
       ${active || '<p class="muted">目前沒有隊伍在外。</p>'}
       <p class="muted">要派遣探索，請到「地圖」點選建築。</p>
-      <h3>探索報告</h3>
-      ${reports || '<p class="muted">尚無報告。</p>'}
+      <p class="muted">💬 探索報告移到地圖右上方的「消息」按鈕。</p>
     </div>`;
   }
 

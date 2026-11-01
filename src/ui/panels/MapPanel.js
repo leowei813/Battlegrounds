@@ -16,6 +16,7 @@ import { MAX_MARKERS } from '../../systems/MarkerSystem.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { openTradeSetup, openTradeStall } from '../TradeDialog.js';
 import { openDeliver } from '../ExchangeDialog.js';
+import { openMessages, unreadCount } from '../MessageDialog.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { zoneAt, ZONES } from '../../config/zones.js';
 
@@ -194,6 +195,7 @@ export class MapPanel {
       ${has ? '' : '<div class="map-hint">👆 點選地圖上任一建築，將它設為你的<b>避難所</b></div>'}
       <div class="map-tools">
         ${btn('🏰', 'gotoShelter', {}, { cls: 'btn-icon', disabled: !has, title: '回到避難所' })}
+        ${btn(`💬${unreadCount(this.game) ? `<small class="unread">${unreadCount(this.game)}</small>` : ''}`, 'messages', {}, { cls: 'btn-icon', title: '消息：探索報告與避難所紀錄' })}
         ${btn(this.scanning ? '⏳' : '🔄', 'rescan', {}, { cls: 'btn-icon', disabled: this.scanning, title: '重新掃描附近建築' })}
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
         ${btn('📍', 'gps', {}, { cls: `btn-icon ${this.game.gps.enabled ? 'on' : ''}`, title: 'GPS 偵測附近 50 公尺的建築' })}
@@ -365,6 +367,7 @@ export class MapPanel {
     const sh = this.game.shelter.primary();
     if (action === 'gotoShelter' && sh) this.service.focus(sh.lat, sh.lon);
     if (action === 'markers') this.openMarkers();
+    if (action === 'messages') openMessages(this.ui);
     if (action === 'legend') this.showLegend();
     if (action === 'gps') {
       const on = !this.game.gps.enabled;
