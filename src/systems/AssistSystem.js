@@ -7,8 +7,8 @@ export const MAX_ASSIST_DPS = 3000;
 export const ASSIST_TRAVEL_MUL = 0.5;
 /** 防禦範圍涵蓋友好據點時，防禦設施分出多少火力幫忙 */
 export const COVER_DPS_SHARE = 0.5;
-/** 協防隊員的火力倍率（自己據點的防禦駐守為 0.6） */
-export const ASSIST_ATK_MUL = 1;
+/** 協防隊員的火力倍率：比照自己據點的防禦駐守（0.6） */
+export const ASSIST_ATK_MUL = 0.6;
 
 /**
  * 友好玩家的屍潮協防：
