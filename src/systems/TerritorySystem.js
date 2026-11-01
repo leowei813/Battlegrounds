@@ -25,9 +25,9 @@ export class TerritorySystem {
 
   // ---------- 警戒範圍 ----------
 
-  /** 自己據點的警戒範圍：依規模，探照燈每級 +3 公尺 */
+  /** 自己據點的警戒範圍：依規模，探照燈每級 +2 公尺 */
   alertRadius(base) {
-    return (BASE_SIZES[base.size]?.alert || 55) + base.facilities.watchtower.level * 3;
+    return (BASE_SIZES[base.size]?.alert || 55) + base.facilities.watchtower.level * 2;
   }
 
   /** 自己據點的駐守人員：避難所為「防禦駐守」工作的人與瞭望塔駐守；前哨站只有瞭望塔駐守 */

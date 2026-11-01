@@ -94,6 +94,8 @@ function pickSupply(cat, rnd, danger) {
 const CAT_AMOUNT = {
   food: 0.65, wood: 1, fuel: 0.7, part: 0.21, fabric: 0.25, medLow: 0.08, medMid: 0.08, med: 0.08, ammo: 0.6,
 };
+/** 全部物資依比例調降（所有類別一起套用） */
+const LOOT_AMOUNT_MUL = 0.85;
 
 /**
  * 今日物資。已被搜刮則回傳空物資；有殘留物資時回傳殘留的部分（並標記 partial）。
@@ -126,7 +128,7 @@ export function stockOf(poi, at = Date.now(), remainMap = null) {
   for (let i = 0; i < kinds; i += 1) {
     const cat = pickType();
     const key = RESOURCE_KEYS.includes(cat) ? cat : pickSupply(cat, rnd, danger);
-    const amount = Math.max(1, Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zone.lootMul * (pt.amountMul || 1) * CAT_AMOUNT[cat]));
+    const amount = Math.max(1, Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zone.lootMul * (pt.amountMul || 1) * CAT_AMOUNT[cat] * LOOT_AMOUNT_MUL));
     resources[key] = (resources[key] || 0) + amount;
   }
   return {

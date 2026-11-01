@@ -255,14 +255,25 @@ export class MapPanel {
     const tradeCheck = g.trade.canStart(p.id);
     const myTrade = g.trade.activeTo(p.id);
     const toMe = g.trade.incoming(now).filter((x) => x.player.id === p.id);
+    const sieged = rel === 'friend' ? p.bases.filter((b) => b.siege) : [];
+    const as = g.assist.state;
+    const assistingHere = as && as.playerId === p.id && as.until > now;
+    const canAssist = g.assist.canAssist(p.id);
+    const siegeHtml = sieged.map((b) => `<div class="card siege-card"><b>🧟 「${escapeHtml(b.name)}」正遭到屍潮攻擊</b>
+        <small class="block">第 ${b.siege.wave}/${b.siege.maxWaves} 波・剩 ${b.siege.left} 隻・🧱 圍牆 ${b.siege.wallPct}%${b.siege.helpers ? `・🛡️ ${b.siege.helpers} 位玩家協防中` : ''}</small>
+        ${b.primary ? `<div class="btn-row">${assistingHere
+    ? `<span class="tag tag-green">🛡️ 你的 ${g.assist.helpers(now).length} 名防禦駐守協防中（到天亮）</span>${btn('召回協防', 'stopAssist', {}, { cls: 'btn-xs btn-ghost' })}`
+    : btn('🛡️ 派防禦駐守協防', 'assist', {}, { cls: 'btn-xs btn-primary', disabled: !canAssist.ok, title: canAssist.reason || '' })}</div>
+        ${!assistingHere && !canAssist.ok ? `<small class="muted block">${escapeHtml(canAssist.reason)}</small>` : ''}` : ''}</div>`).join('');
     return `<p>${relTag} 🏛️ 文明度 <b>${p.civ}</b>・據點 ${p.bases.length} 個・外出隊伍 ${trips.length} 支</p>
+      ${siegeHtml}
       <div class="btn-row">${diplo}${btn(myTrade ? '🤝 交易隊已出發' : '🤝 派人交易', 'trade', {}, { cls: 'btn-sm btn-primary', disabled: !tradeCheck.ok, title: tradeCheck.reason || '' })}</div>
       ${(p.demands || []).length ? `<div class="label">📢 收購中${p.exchange ? `（交易所 Lv${p.exchange}）` : ''}</div>${p.demands.map((d) => `<div class="card row-between"><span>${g.demand.label(d.key)} ×${d.qty}・每個 💰${d.price}</span>${btn('📦 派人交付', 'deliver', { id: d.id }, { cls: 'btn-xs btn-primary', disabled: !g.demand.canDeliver(p.id, d.id).ok, title: g.demand.canDeliver(p.id, d.id).reason || '' })}</div>`).join('')}` : ''}
       ${toMe.map((x) => `<div class="card row-between"><span>🤝 對方的交易隊${x.arrived ? '正在你的據點擺攤' : '正在前來你的據點'}</span>${btn('查看商品', 'openStall', { trip: x.trip.id }, { cls: 'btn-xs btn-primary', disabled: !x.arrived })}</div>`).join('')}
       <div class="pick-list">${p.bases.map((b, i) => `<div class="pick-row"><span>${b.primary ? '⭐' : '🏴'} ${escapeHtml(b.name)}</span><small class="muted">警戒 ${b.alert}m・駐守 ${b.guards} 人</small>
         <span>${btn('📍', 'fly', { i }, { cls: 'btn-xs btn-ghost' })}${rel === 'friend' ? '' : btn('⚔️ 攻擊', 'attackBase', { i }, { cls: 'btn-xs btn-danger' })}</span></div>`).join('')}</div>
       ${trips.length ? `<div class="label">探索中</div><ul class="event-list">${trips.map((x) => `<li>${EXP_PHASES[tripProgress(x, now).phase].icon} 前往「${escapeHtml(x.target || '某處')}」・${x.members} 人・剩 ${formatDuration(x.endAt - now)}</li>`).join('')}</ul>` : ''}
-      <p class="muted">玩家之間預設中立：探索時會繞開對方的警戒範圍。攻擊後雙方變成敵對——敵對時經過對方有駐守人員的據點範圍會遭到攻擊。友好需要雙方同意，友好時不能互相攻擊。</p>`;
+      <p class="muted">玩家之間預設中立：探索時會繞開對方的警戒範圍。攻擊後雙方變成敵對——敵對時經過對方有駐守人員的據點範圍會遭到攻擊。友好需要雙方同意，友好時不能互相攻擊。友好玩家的據點遭到屍潮攻擊時可以看到狀況；雙方避難所的警戒範圍相接時，可以派「防禦駐守」的倖存者前往協防到天亮（協防期間自己據點少了他們的火力）。</p>`;
   }
 
   openPlayer(playerId) {
@@ -284,6 +295,8 @@ export class MapPanel {
         if (action === 'acceptFriend') this.ui.result(await t.acceptFriend(p.id, p.name));
         if (action === 'declineFriend') this.ui.result(t.declineFriend(p.id));
         if (action === 'unfriend' && confirm(`確定解除與「${p.name}」的友好關係？`)) this.ui.result(await t.removeFriend(p.id));
+        if (action === 'assist') this.ui.result(g.assist.start(p.id));
+        if (action === 'stopAssist') this.ui.result(g.assist.stop());
         if (action === 'trade') {
           openTradeSetup(this.ui, p);
           return;

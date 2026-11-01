@@ -59,9 +59,9 @@ export const FACILITIES = {
   },
   watchtower: {
     name: '探照燈', icon: '🔦', startLevel: 0,
-    desc: '照亮據點四周，提高防禦設施的傷害，也讓探索隊在遭遇戰中更容易搶到先手。',
+    desc: '照亮據點四周，提高防禦設施的傷害、擴大警戒範圍，也讓探索隊在遭遇戰中更容易搶到先手。',
     cost: (lv) => mat('watchtower', ['struct', 'mech'], { wood: 90, metal: 55 }, lv),
-    effectText: (lv) => `防禦設施傷害 +${lv * 6}%，探索遭遇戰先手率 +${lv * 4}%`,
+    effectText: (lv) => `防禦設施傷害 +${lv * 6}%，警戒範圍 +${lv * 2} 公尺，探索遭遇戰先手率 +${lv * 4}%`,
   },
   farm: {
     name: '農場', icon: '🌾', startLevel: 0,
