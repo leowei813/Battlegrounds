@@ -19,6 +19,17 @@ const point = (p) => {
 };
 
 /** 交易擺攤清單：最多 12 項，裝備資料限制大小 */
+/** 小型 JSON 物件（超過大小就丟掉） */
+function smallObj(o, max = 1024) {
+  if (!o || typeof o !== 'object') return null;
+  try {
+    const text = JSON.stringify(o);
+    return text.length <= max ? JSON.parse(text) : null;
+  } catch {
+    return null;
+  }
+}
+
 function sanitizeStall(list) {
   return (Array.isArray(list) ? list : []).slice(0, 12).map((x) => {
     const qty = num(x?.qty, 1, 999999);
@@ -46,6 +57,10 @@ export function sanitizePresence(body) {
       guardLevel: num(b.guardLevel, 1, 60) ?? 1,
       wall: num(b.wall, 0, 1e6) ?? 0, // 圍牆耐久
       dps: num(b.dps, 0, 1e5) ?? 0, // 防禦設施火力
+      // 屍潮狀況、正在前來攻打的隊伍、協防戰果（給友好玩家看；前端讀取時會再驗證）
+      ...(b.siege && typeof b.siege === 'object' ? { siege: smallObj(b.siege) } : {}),
+      ...(Array.isArray(b.raids) && b.raids.length ? { raids: b.raids.slice(0, 5).map(smallObj).filter(Boolean) } : {}),
+      ...(b.assisted && typeof b.assisted === 'object' ? { assisted: smallObj(b.assisted, 2048) } : {}),
     };
   }).filter(Boolean);
   if (!bases.length) return null;
@@ -67,6 +82,7 @@ export function sanitizePresence(body) {
       ...(t.defeated ? { defeated: true } : {}),
       ...(t.kind === 'trade' ? { kind: 'trade', targetId: str(t.targetId, 40), stall: sanitizeStall(t.stall) } : {}),
       ...(t.kind === 'deliver' ? { kind: 'deliver' } : {}),
+      ...(t.kind === 'assist' ? { kind: 'assist' } : {}),
     };
   }).filter(Boolean);
   return {
@@ -79,6 +95,9 @@ export function sanitizePresence(body) {
       const qty = num(d?.qty, 1, 99999);
       return qty == null || !d?.key ? null : { id: str(d.id, 40), key: str(d.key, 20), qty, price: num(d.price, 0, 100000) ?? 0 };
     }).filter(Boolean),
+    // 協防隊與防禦範圍協防
+    ...(body.assist && typeof body.assist === 'object' ? { assist: smallObj(body.assist) } : {}),
+    ...(body.cover && typeof body.cover === 'object' ? { cover: smallObj(body.cover) } : {}),
   };
 }
 

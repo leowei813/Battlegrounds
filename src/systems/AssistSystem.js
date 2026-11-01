@@ -7,6 +7,8 @@ export const MAX_ASSIST_DPS = 3000;
 export const ASSIST_TRAVEL_MUL = 0.5;
 /** 防禦範圍涵蓋友好據點時，防禦設施分出多少火力幫忙 */
 export const COVER_DPS_SHARE = 0.5;
+/** 協防隊員的火力倍率（自己據點的防禦駐守為 0.6） */
+export const ASSIST_ATK_MUL = 1;
 
 /**
  * 友好玩家的屍潮協防：
@@ -134,16 +136,28 @@ export class AssistSystem {
     return this.trips().filter((e) => tripProgress(e, now).phase === 'searching');
   }
 
-  /** 公開的協防火力（目前只公開一支協防隊） */
-  published(now = Date.now()) {
-    const exp = this.activeTrips(now)[0];
-    if (!exp) return null;
+  /** 協防隊的火力（出發時就計算好，讓自己離線時對方也能套用） */
+  teamDps(exp) {
     const g = this.game;
     const list = exp.memberIds.map((id) => g.survivors.get(id)).filter((s) => s && !s.severe);
-    if (!list.length) return null;
     const siege = g.siege.of();
-    const dps = list.reduce((s, sv) => s + siege.meleeOrRangedAtk(sv) * 0.6 * siege.guardMul(), 0);
-    return { to: exp.assistTarget.playerId, dps: Math.min(MAX_ASSIST_DPS, Math.round(dps)), count: list.length, until: exp.startAt + exp.travelMs + exp.searchMs };
+    if (!siege) return { dps: 0, count: 0 };
+    const dps = list.reduce((s, sv) => s + siege.meleeOrRangedAtk(sv, true) * ASSIST_ATK_MUL * siege.guardMul(), 0);
+    return { dps: Math.min(MAX_ASSIST_DPS, Math.round(dps)), count: list.length };
+  }
+
+  /**
+   * 公開的協防資料（目前只公開一支協防隊）。出發時就公開抵達時間：
+   * 即使自己之後關掉遊戲，對方在協防隊抵達後也會套用這份火力。
+   */
+  published(now = Date.now()) {
+    const exp = this.trips().find((e) => e.assistTarget && now < e.startAt + e.travelMs + e.searchMs);
+    if (!exp) return null;
+    const t = this.teamDps(exp);
+    if (!t.count) return null;
+    return {
+      to: exp.assistTarget.playerId, dps: t.dps, count: t.count, at: exp.startAt + exp.travelMs, until: exp.startAt + exp.travelMs + exp.searchMs,
+    };
   }
 
   /**
@@ -158,7 +172,7 @@ export class AssistSystem {
     const out = [];
     (g.world?.others || []).forEach((p) => {
       if (g.territory.relation(p.id) !== 'friend') return;
-      if (myId && p.assist?.to === myId && p.assist.until > now) out.push({ id: p.id, name: p.name, dps: p.assist.dps, count: p.assist.count, kind: 'team' });
+      if (myId && p.assist?.to === myId && p.assist.until > now && (p.assist.at || 0) <= now) out.push({ id: p.id, name: p.name, dps: p.assist.dps, count: p.assist.count, kind: 'team' });
       const home = p.bases.find((b) => b.primary) || p.bases[0];
       if (p.cover && home && haversine(home.lat, home.lon, primary.lat, primary.lon) <= p.cover.r) {
         out.push({ id: `${p.id}#cover`, name: p.name, dps: p.cover.dps, count: 0, kind: 'cover' });
@@ -167,15 +181,41 @@ export class AssistSystem {
     return out;
   }
 
+  /** 對方公開的協防戰果中，自己的部分 */
+  myResult(player) {
+    const myId = this.game.world?.myId;
+    const home = player?.bases.find((b) => b.primary) || player?.bases[0];
+    const a = home?.assisted;
+    if (!a || !myId) return null;
+    const mine = a.list.filter((x) => x.id === myId || x.id === `${myId}#cover`);
+    if (!mine.length) return null;
+    return {
+      night: a.night, result: a.result, base: home.name,
+      dmg: mine.reduce((s, x) => s + x.dmg, 0), kills: mine.reduce((s, x) => s + x.kills, 0),
+      team: mine.some((x) => x.kind === 'team'), cover: mine.some((x) => x.kind === 'cover'),
+    };
+  }
+
+  /** 協防戰報文字 */
+  resultText(name, r) {
+    const how = [r.team ? '協防隊' : '', r.cover ? '防禦設施' : ''].filter(Boolean).join('與');
+    const res = r.result === 'breached' ? '💥 對方據點的防線還是被突破了' : r.result === 'ok' ? '✅ 成功守住對方據點' : '⏳ 屍潮還在進行中';
+    return `🛡️ 協防「${name}」戰報：你的${how}造成 ${r.dmg} 傷害、擊殺 ${r.kills} 隻殭屍；${res}`;
+  }
+
   /** 協防隊回家的報告 */
   report(exp) {
     const g = this.game;
     const t = exp.assistTarget || {};
     const members = exp.memberIds.map((id) => g.survivors.get(id)).filter(Boolean);
+    const r = this.myResult(this.player(t.playerId));
+    // 協防的經驗：每擊殺 1 隻 4 點，平分給隊員
+    const xp = r ? r.kills * 4 : 0;
+    if (xp) members.forEach((m) => g.survivors.gainXp(m, xp / members.length));
     return {
       id: uid('rp'), poiName: `🛡️ 協防「${t.name || '友好玩家'}」`, poiType: 'residential', at: exp.endAt,
-      events: [...(exp.travelEvents || []), '🛡️ 在友好玩家的據點協助抵禦屍潮到天亮', '🏠 協防結束，回到避難所'],
-      resources: {}, items: [], blueprints: [], kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: true,
+      events: [...(exp.travelEvents || []), r ? this.resultText(t.name || '友好玩家', r) : '🛡️ 在友好玩家的據點協助抵禦屍潮（對方尚未回報戰果）', '🏠 協防結束，回到避難所'],
+      resources: {}, items: [], blueprints: [], kills: (exp.travelKills || 0) + (r?.kills || 0), xp: (exp.travelXp || 0) + xp, success: true,
       members: members.map((m) => m.name),
     };
   }
@@ -200,6 +240,19 @@ export class AssistSystem {
       const min = Math.max(1, Math.round((raid.at - now) / 60000));
       g.toast(`⚔️ ${raid.by}正前往攻打友好玩家「${player.name}」的「${base.name}」（約 ${min} 分鐘後抵達）`, 'danger');
       g.log(`⚔️ ${raid.by}正前往攻打友好玩家「${player.name}」的「${base.name}」（約 ${min} 分鐘後抵達）`, 'danger');
+    });
+    // 協防戰報：對方的屍潮結束（守住或被突破）時通知一次
+    (g.world?.others || []).forEach((p) => {
+      if (g.territory.relation(p.id) !== 'friend') return;
+      const r = this.myResult(p);
+      if (!r || r.result === 'ongoing') return;
+      const key = `done|${p.id}|${r.night}`;
+      if (this.notified.has(key) || (g.state.assistSeen || []).includes(key)) return;
+      this.notified.set(key, true);
+      g.state.assistSeen = [key, ...(g.state.assistSeen || [])].slice(0, 20);
+      const text = this.resultText(p.name, r);
+      g.log(text, r.result === 'ok' ? 'success' : 'danger');
+      g.toast(text, r.result === 'ok' ? 'success' : 'danger');
     });
     if (!g.siege.of()?.active()) return;
     this.incoming(now).forEach((h) => {
