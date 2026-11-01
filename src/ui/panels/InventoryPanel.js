@@ -13,7 +13,7 @@ import {
 import { STACK_MAX } from '../../config/equipment.js';
 
 /**
- * 製作分頁（裝備與載具製作）；倉庫裝備清單與車庫由避難所頁以彈窗開啟。
+ * 製作分頁（裝備與載具製作）；倉庫裝備清單與車庫顯示在避難所頁的「倉庫」「車庫」分頁。
  */
 export class InventoryPanel {
   constructor(ui) {

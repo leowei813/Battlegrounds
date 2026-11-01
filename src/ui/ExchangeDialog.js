@@ -5,46 +5,53 @@ import { CLASSES } from '../config/survivors.js';
 import { MAX_DEMAND_QTY, MAX_DEMAND_PRICE } from '../systems/DemandSystem.js';
 import { btn, metaOf } from './components.js';
 
-/** 交易所：管理自己的收購需求 */
-export function openExchange(ui) {
+/**
+ * 交易所：管理自己的收購需求（避難所頁的「交易所」分頁）。
+ * @param {{key?:string, qty?:number, price?:number}} form 表單目前輸入的值（重新繪製時保留）
+ */
+export function exchangeBody(ui, form = {}) {
   const g = ui.game;
-  const body = () => {
-    const lv = g.demand.exchangeLevel();
-    if (lv < 1) return '<p class="muted">需要先在避難所建造🏪交易所，才能和其他玩家交易與發布收購需求。</p>';
-    const rows = g.demand.list.map((d) => `<div class="card row-between"><div><b>${g.demand.label(d.key)}</b>
-      <small class="muted block">已收 ${d.filled}/${d.qty}・每個 💰${d.price}・保留中 💰${(d.qty - d.filled) * d.price}</small></div>
-      ${btn('取消（退還保留金額）', 'cancel', { id: d.id }, { cls: 'btn-xs btn-ghost' })}</div>`).join('');
-    const opts = [
-      `<optgroup label="基礎物資">${RESOURCE_KEYS.map((k) => `<option value="${k}">${metaOf(k).icon} ${metaOf(k).name}</option>`).join('')}</optgroup>`,
-      ...Object.entries(SUPPLY_CATS).map(([cat, c]) => `<optgroup label="${c.name}">${SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === cat).map((k) => `<option value="${k}">${SUPPLIES[k].icon} ${SUPPLIES[k].name}</option>`).join('')}</optgroup>`),
-    ].join('');
-    const full = g.demand.list.length >= g.demand.maxDemands();
-    return `<p>🏪 交易所 Lv${lv}：可以同時掛 <b>${g.demand.maxDemands()}</b> 項收購（目前 ${g.demand.list.length} 項）。</p>
-      <p class="muted">掛出收購後，其他玩家會在地圖上看到你據點的 📢 圖示，可以派倖存者帶著物資走過來交付。收購總額（數量 × 單價）會先保留起來，交付時自動付款，取消時退還。</p>
-      <p>💰 你的金錢：<b>${g.state.player.coins}</b></p>
-      <h4>收購中</h4><div class="grid">${rows || '<p class="muted">目前沒有收購需求。</p>'}</div>
-      <h4>發布收購</h4>
-      <div class="trade-row demand-form">
-        <label>物資 <select class="d-key">${opts}</select></label>
-        <label>數量 <input type="number" class="d-qty" min="1" max="${MAX_DEMAND_QTY}" value="10" inputmode="numeric"></label>
-        <label>單價 💰<input type="number" class="d-price" min="0" max="${MAX_DEMAND_PRICE}" value="5" inputmode="numeric"></label>
-        ${btn('📢 掛出收購', 'post', {}, { cls: 'btn-sm btn-primary', disabled: full, title: full ? '已達同時收購上限，升級交易所可增加' : '' })}
-      </div>`;
-  };
-  ui.modal.open({
-    title: '🏪 交易所',
-    wide: true,
-    body: body(),
-    onAction: (action, data, m) => {
-      if (action === 'cancel') ui.result(g.demand.cancel(data.id));
-      if (action === 'post') {
-        const f = m.el.querySelector('.demand-form');
-        ui.result(g.demand.post(f.querySelector('.d-key').value, f.querySelector('.d-qty').value, f.querySelector('.d-price').value));
-      }
-      g.changed?.();
-      m.update(body());
-    },
-  });
+  const lv = g.demand.exchangeLevel();
+  if (lv < 1) return '<p class="muted">需要先在避難所建造🏪交易所，才能和其他玩家交易與發布收購需求。</p>';
+  const rows = g.demand.list.map((d) => `<div class="card row-between"><div><b>${g.demand.label(d.key)}</b>
+    <small class="muted block">已收 ${d.filled}/${d.qty}・每個 💰${d.price}・保留中 💰${(d.qty - d.filled) * d.price}</small></div>
+    ${btn('取消（退還保留金額）', 'exCancel', { id: d.id }, { cls: 'btn-xs btn-ghost' })}</div>`).join('');
+  const opt = (k, label) => `<option value="${k}" ${form.key === k ? 'selected' : ''}>${label}</option>`;
+  const opts = [
+    `<optgroup label="基礎物資">${RESOURCE_KEYS.map((k) => opt(k, `${metaOf(k).icon} ${metaOf(k).name}`)).join('')}</optgroup>`,
+    ...Object.entries(SUPPLY_CATS).map(([cat, c]) => `<optgroup label="${c.name}">${SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === cat).map((k) => opt(k, `${SUPPLIES[k].icon} ${SUPPLIES[k].name}`)).join('')}</optgroup>`),
+  ].join('');
+  const full = g.demand.list.length >= g.demand.maxDemands();
+  return `<p>🏪 交易所 Lv${lv}：可以同時掛 <b>${g.demand.maxDemands()}</b> 項收購（目前 ${g.demand.list.length} 項）。</p>
+    <p class="muted">掛出收購後，其他玩家會在地圖上看到你據點的 📢 圖示，可以派倖存者帶著物資走過來交付。收購總額（數量 × 單價）會先保留起來，交付時自動付款，取消時退還。</p>
+    <p>💰 你的金錢：<b>${g.state.player.coins}</b></p>
+    <h4>收購中</h4><div class="grid">${rows || '<p class="muted">目前沒有收購需求。</p>'}</div>
+    <h4>發布收購</h4>
+    <div class="trade-row demand-form">
+      <label>物資 <select class="d-key">${opts}</select></label>
+      <label>數量 <input type="number" class="d-qty" min="1" max="${MAX_DEMAND_QTY}" value="${form.qty ?? 10}" inputmode="numeric"></label>
+      <label>單價 💰<input type="number" class="d-price" min="0" max="${MAX_DEMAND_PRICE}" value="${form.price ?? 5}" inputmode="numeric"></label>
+      ${btn('📢 掛出收購', 'exPost', {}, { cls: 'btn-sm btn-primary', disabled: full, title: full ? '已達同時收購上限，升級交易所可增加' : '' })}
+    </div>`;
+}
+
+/** 讀取收購表單目前的值 */
+export function exchangeForm(root) {
+  const f = root?.querySelector('.demand-form');
+  if (!f) return null;
+  return { key: f.querySelector('.d-key').value, qty: f.querySelector('.d-qty').value, price: f.querySelector('.d-price').value };
+}
+
+/** 交易所分頁的操作；回傳是否處理了 */
+export function exchangeAction(ui, action, data, root) {
+  const g = ui.game;
+  if (action === 'exCancel') ui.result(g.demand.cancel(data.id));
+  else if (action === 'exPost') {
+    const f = exchangeForm(root);
+    if (f) ui.result(g.demand.post(f.key, f.qty, f.price));
+  } else return false;
+  g.changed?.();
+  return true;
 }
 
 /** 出貨方：派倖存者帶物資到對方據點交付收購 */

@@ -1,4 +1,4 @@
-import { openExchange } from '../ExchangeDialog.js';
+import { exchangeBody, exchangeAction, exchangeForm } from '../ExchangeDialog.js';
 import { FACILITIES, FACILITY_MAX_LEVEL, OUTPOST_FACILITIES } from '../../config/facilities.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL } from '../../config/defenses.js';
 import { CLASSES } from '../../config/survivors.js';
@@ -12,6 +12,11 @@ import {
 /**
  * 避難所分頁（側邊/底部抽屜）：設施升級、施工佇列、防禦建築、事件紀錄。
  */
+/** 避難所面板的分頁 */
+const SHELTER_TABS = ['overview', 'facilities', 'defense', 'storage', 'garage', 'exchange'];
+/** 避難所面板本身處理的操作（其餘在倉庫、車庫分頁時交給倉庫面板） */
+const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon'];
+
 export class ShelterPanel {
   constructor(ui) {
     this.ui = ui;
@@ -104,9 +109,11 @@ export class ShelterPanel {
     const siege = g.siege.of(sh.id);
     const wallRatio = g.shelter.wallHp(sh) / g.shelter.wallMax(sh);
     const z = g.shelter.sizeInfo(sh);
-    const tab = ['overview', 'facilities', 'defense'].includes(ui.shelterTab) ? ui.shelterTab : 'overview';
+    const tab = SHELTER_TABS.includes(ui.shelterTab) ? ui.shelterTab : 'overview';
+    const inv = ui.panels.inventory;
+    const storeN = g.equipment.storeItems().length;
     const tabBtn = (id, label) => `<button class="seg-btn ${tab === id ? 'active' : ''}" data-action="shelterTab" data-t="${id}">${label}</button>`;
-    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}</div>`;
+    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('storage', `🗄️ 倉庫 ${storeN}`)}${tabBtn('garage', `🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`)}${tabBtn('exchange', `🏪 交易所${g.demand.list.length ? ` ${g.demand.list.length}` : ''}`)}</div>`;
     const sections = {
       overview: `
         <div class="label">避難所 ${g.shelter.hasShelter() ? 1 : 0}/1・前哨站 ${g.shelter.outposts().length}/${g.shelter.outpostLimit()} <small>（研究「擴張科技」最多 ${MAX_OUTPOSTS} 座，在地圖點選建築建立）</small></div>
@@ -120,13 +127,15 @@ export class ShelterPanel {
           <div class="wide"><small>屍潮波次</small><b>${this.waveText(siege)}</b></div>
         </div>
         ${queue ? `<h4>施工佇列</h4>${queue}` : ''}
-        <div class="btn-row">${btn(`🗄️ 物品倉庫（裝備 ${st.inventory.items.filter((i) => !g.equipment.equippedBy(i.id)).length}）`, 'openStorage', {}, { cls: 'btn-sm' })}${btn(`🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`, 'openGarage', {}, { cls: 'btn-sm' })}${btn(`🏪 交易所${g.demand.list.length ? `（收購 ${g.demand.list.length}）` : ''}`, 'openExchange', {}, { cls: 'btn-sm', disabled: g.shelter.maxLevel('exchange') < 1, title: g.shelter.maxLevel('exchange') < 1 ? '需要先建造交易所' : '' })}</div>
         ${this.renderCivilization(sh)}
         <div class="btn-row">${baseActions}</div>`,
       facilities: `${queue ? `<h4>施工佇列</h4>${queue}` : ''}<div class="fac-list">${facilities}</div>`,
       defense: `<p class="muted">${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築。點空地建造，點已建造的防禦建築升級或派人駐守（也可以直接點上方場景中的槽位）。</p>
         <div class="slot-grid">${defenses}</div>
         <div class="stat-grid"><div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div><div><small>屍潮波次</small><b>${this.waveText(siege)}</b></div></div>`,
+      storage: tab === 'storage' ? `<h4>🗄️ 物品倉庫（裝備 ${storeN} 件）</h4>${inv.renderItems()}` : '',
+      garage: tab === 'garage' ? inv.renderGarage() : '',
+      exchange: tab === 'exchange' ? exchangeBody(ui, this.exForm || {}) : '',
     };
     return `<div class="drawer-top">${head}${ui.drawerCollapsed ? '' : tabs2}</div>
       <div class="drawer-body">${sections[tab]}</div>`;
@@ -167,9 +176,34 @@ export class ShelterPanel {
     if (action === 'slot') this.openSlot(+data.slot);
     if (action === 'viewBase') this.ui.setViewBase(data.id);
     if (action === 'abandon') openAbandonDialog(this.ui, base);
-    if (action === 'openStorage') this.ui.panels.inventory.openStorage();
-    if (action === 'openExchange') openExchange(this.ui);
-    if (action === 'openGarage') this.ui.panels.inventory.openGarage();
+    const tab = this.ui.shelterTab;
+    const root = this.ui.panelEl;
+    if (tab === 'exchange' && exchangeAction(this.ui, action, data, root)) {
+      if (action === 'exPost') this.exForm = null;
+      this.ui.refresh(true);
+      return;
+    }
+    if ((tab === 'storage' || tab === 'garage') && !SHELTER_ACTIONS.includes(action)) {
+      const inv = this.ui.panels.inventory;
+      const input = root?.querySelector('#inv-drop-qty');
+      if (input) inv.dropQty = Number(input.value) || 1;
+      inv.onAction(action, data);
+      this.ui.refresh(true);
+      // 手機上詳細資訊在格子下方：選取後捲動到可見位置
+      if (action === 'selSupply' || action === 'selItem') root?.querySelector('.inv-detail')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+
+  /** 保留輸入中的值（面板每秒重新繪製） */
+  afterRender(el) {
+    if (this.boundEl === el) return;
+    this.boundEl = el;
+    const save = (e) => {
+      if (e.target.id === 'inv-drop-qty') this.ui.panels.inventory.dropQty = Number(e.target.value) || 1;
+      if (e.target.closest?.('.demand-form')) this.exForm = exchangeForm(el);
+    };
+    el.addEventListener('input', save);
+    el.addEventListener('change', save);
   }
 
   slotBody(base, slot) {
