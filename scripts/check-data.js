@@ -2233,6 +2233,17 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   lead.status = 'idle';
 }
 
+// ---- 55. v8.49：等級越高吃得越多 ----
+{
+  const gf = Game.newGame({ playerName: 'F', classId: 'warrior', lat: 25, lon: 121 });
+  const lead = gf.survivors.leader();
+  lead.level = 1;
+  const u1 = gf.resources.rates().upkeep.food;
+  lead.level = 21;
+  const u2 = gf.resources.rates().upkeep.food;
+  assert(Math.abs(u2 / u1 - 1.6) < 0.01, `等級越高食物消耗越多（Lv1 ${u1.toFixed(1)} → Lv21 ${u2.toFixed(1)}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
