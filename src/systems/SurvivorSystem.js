@@ -82,8 +82,19 @@ export class SurvivorSystem {
     return SURVIVOR_RARITY[sv.rarity]?.growth ?? 1;
   }
 
+  /** 品級資料（主角沒有品級，比照最高品級） */
+  rarityDef(sv) {
+    return sv.isLeader ? SURVIVOR_RARITY.legendary : SURVIVOR_RARITY[sv.rarity] || SURVIVOR_RARITY.common;
+  }
+
+  /** 可解放的技能數：依品級（劣質 1 → 稀有 6） */
+  skillSlots(sv) {
+    return this.rarityDef(sv).skills;
+  }
+
+  /** 已解放的技能：品級允許的前幾個技能中，等級已達到的 */
   activeSkills(sv) {
-    return CLASSES[sv.classId].skills.filter((sk) => sv.level >= sk.unlock);
+    return CLASSES[sv.classId].skills.slice(0, this.skillSlots(sv)).filter((sk) => sv.level >= sk.unlock);
   }
 
   /** 合併所有已解鎖技能效果 */
@@ -104,10 +115,11 @@ export class SurvivorSystem {
     const cls = CLASSES[sv.classId];
     // 品級越高，每級提升的能力越多
     const lv = (sv.level - 1) * this.growthMul(sv);
+    const bm = this.rarityDef(sv).base; // 品級越高，基礎能力越好
     const s = {
-      hp: cls.base.hp + cls.growth.hp * lv,
-      atk: cls.base.atk + cls.growth.atk * lv,
-      def: cls.base.def + cls.growth.def * lv,
+      hp: cls.base.hp * bm + cls.growth.hp * lv,
+      atk: cls.base.atk * bm + cls.growth.atk * lv,
+      def: cls.base.def * bm + cls.growth.def * lv,
       crit: cls.base.crit,
       critDmg: cls.base.critDmg,
       dodge: cls.base.dodge,
@@ -132,6 +144,11 @@ export class SurvivorSystem {
     });
     const fx = this.skillEffects(sv);
     defPct += fx.defPct || 0;
+    atkPct += fx.atkPct || 0;
+    hpPct += fx.hpPct || 0;
+    s.crit += fx.critAdd || 0;
+    s.dodge += fx.dodgeAdd || 0;
+    s.lifeSteal += fx.lifeStealAdd || 0;
     const rb = this.game.research.bonuses();
     const weapon = this.game.equipment.getItem(sv.equipment.weapon);
     atkPct += (rb.atkPct || 0) + (weapon ? rb[`catAtk_${weapon.cat}`] || 0 : 0);
