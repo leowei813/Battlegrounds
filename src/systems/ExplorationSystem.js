@@ -257,7 +257,9 @@ export class ExplorationSystem {
         exp.encountered.push(g.id);
         const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
         const evade = Math.max(0, ...members.map((m) => this.game.survivors.skillEffects(m).exploreSpeed || 0));
-        if (!chance(AMBUSH_CHANCE * (1 - evade * 1.5) * Math.max(0.2, 1 - this.game.research.bonus('ambushReduce')))) {
+        // 越安全的區域越不容易被殭屍群襲擊
+        const zoneMul = this.game.zombies.encounterMul(g.lat, g.lon);
+        if (!chance(AMBUSH_CHANCE * zoneMul * (1 - evade * 1.5) * Math.max(0.2, 1 - this.game.research.bonus('ambushReduce')))) {
           exp.travelEvents.push(`👣 悄悄避開了附近的${this.game.zombies.groupLabel(g)}`);
           return;
         }
@@ -611,7 +613,9 @@ export class ExplorationSystem {
       pt: POI_TYPES[poi.type],
       zone: zoneAt(poi.lat, poi.lon),
       danger: this.game.zombies.areaDanger(poi),
-      level: this.game.zombies.areaLevel(poi),
+      // 夜晚遭遇的殭屍依區域安全程度調整等級（午夜較強，但安全區有上限）
+      level: this.game.zombies.nightLevel(poi, phase),
+      zoneMul: phase.zombies ? this.game.zombies.encounterMul(poi.lat, poi.lon) : 1,
       phase,
       lootMul: phase.lootMul * (1 + this.game.research.bonus('lootPct'))
         * (1 + Math.max(0, ...fx.map((f) => f.lootPct || 0)))
@@ -690,7 +694,7 @@ export class ExplorationSystem {
 
     // 2. 隨機事件
     const ev = weightedPick({
-      none: 46, zombies: 28 * phase.zombieMul, survivor: 5 * (1 + this.game.research.bonus('survivorFindPct')), special: 10, elite: 3 + danger * phase.danger,
+      none: 46, zombies: 28 * phase.zombieMul * ctx.zoneMul, survivor: 5 * (1 + this.game.research.bonus('survivorFindPct')), special: 10, elite: (3 + danger * phase.danger) * ctx.zoneMul,
     });
     if (ev === 'survivor') {
       const cand = this.game.survivors.makeCandidate(randInt(1, Math.max(1, level - 1)));

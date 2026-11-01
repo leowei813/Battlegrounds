@@ -2005,6 +2005,33 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(P.state.player.coins === 900, `玩家突襲成功會搶走金錢（${P.state.player.coins}）`);
 }
 
+// ---- 45. v8.34：區域安全程度影響夜間殭屍 ----
+{
+  const { zoneAt: za } = await import('../src/config/zones.js');
+  const { TIME_PHASES: TP } = await import('../src/config/timePhases.js');
+  const gz = Game.newGame({ playerName: 'Z2', classId: 'warrior', lat: 25, lon: 121 });
+  gz.state.map.pois = fillPois([], 25, 121);
+  gz.shelter.establish(gz.state.map.pois[0]);
+  const by = {};
+  gz.state.map.pois.forEach((p) => { const id = za(p.lat, p.lon).id; (by[id] = by[id] || []).push(p); });
+  const maxLv = (id, ph) => Math.max(...(by[id] || []).map((p) => gz.zombies.nightLevel(p, TP[ph])));
+  if (by.safe) {
+    assert(maxLv('safe', 'midnight') <= 4 + gz.civilization.levelBonus(), `安全區午夜也不會出現強殭屍（最高 Lv${maxLv('safe', 'midnight')}）`);
+    assert(gz.zombies.encounterMul(by.safe[0].lat, by.safe[0].lon) < 0.5, '安全區遇到殭屍的機率較低');
+  }
+  const ids = ['safe', 'normal', 'alert', 'danger', 'lethal', 'abyss'].filter((id) => by[id]);
+  const mids = ids.map((id) => maxLv(id, 'midnight'));
+  assert(mids.every((v, i) => i === 0 || v >= mids[i - 1]), `午夜殭屍等級依區域危險程度拉開差距（${ids.map((id, i) => `${id} ${mids[i]}`).join('、')}）`);
+  const p0 = gz.state.map.pois.find((p) => za(p.lat, p.lon).danger >= 1);
+  if (p0) assert(gz.zombies.nightLevel(p0, TP.midnight) >= gz.zombies.nightLevel(p0, TP.night), '午夜比夜晚更危險');
+  // 安全區不會出現夜行者
+  if (by.safe) {
+    let stalkers = 0;
+    for (let i = 0; i < 200; i += 1) if (gz.zombies.makeGroup(by.safe[i % by.safe.length], TP.midnight, Date.now()).enemyId === 'nightStalker') stalkers += 1;
+    assert(stalkers === 0, '安全區不會出現夜行者');
+  }
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
