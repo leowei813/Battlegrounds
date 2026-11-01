@@ -60,6 +60,10 @@ export function remainOf(poi, remainMap, at = Date.now()) {
   return r && r.day === dayKey(at) && Object.keys(r.res || {}).length ? r.res : null;
 }
 
+/** 基礎建設材料的出現機率倍率 */
+const BASIC_BUILD_BOOST = 1.4;
+const isBasicBuild = (k) => SUPPLIES[k]?.tag === 'struct' && SUPPLIES[k].tier <= 2;
+
 /** 依類別與危險度挑出具體的材料物品 */
 function pickSupply(cat, rnd, danger) {
   let keys;
@@ -79,7 +83,8 @@ function pickSupply(cat, rnd, danger) {
   } else {
     keys = suppliesOf(cat);
     // 越危險的地點越容易出現高階零件與布料
-    weight = (k) => 0.45 ** Math.max(0, SUPPLIES[k].tier - Math.ceil(danger / 1.3));
+    // 基礎建設材料（第 1～2 階結構零件，例如釘子、螺絲、鐵絲、鐵板）較容易出現
+    weight = (k) => 0.45 ** Math.max(0, SUPPLIES[k].tier - Math.ceil(danger / 1.3)) * (isBasicBuild(k) ? BASIC_BUILD_BOOST : 1);
   }
   const total = keys.reduce((sum, k) => sum + weight(k), 0);
   let r = rnd() * total;
