@@ -197,6 +197,16 @@ export class MapService {
         .on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
         .bindTooltip(`${{ hostile: '⚔️ 敵對', friend: '🤝 友好', neutral: '👤 中立' }[rel]}・${escapeHtml(p.name)}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）${b.primary && p.demands?.length ? '・📢 收購中' : ''}`, { direction: 'top', offset: [0, -d / 2] })
         .addTo(this.layers.others);
+      // 友好玩家正遭到屍潮攻擊：顯示 🧟 圖示與狀況，點擊可協防
+      if (rel === 'friend' && b.siege) {
+        const s = b.siege;
+        L.marker([b.lat, b.lon], {
+          icon: L.divIcon({ className: 'siege-badge', html: '<span>🧟</span>', iconSize: [26, 26], iconAnchor: [d / 2 + 20, d / 2 + 14] }),
+          zIndexOffset: 950,
+        }).on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
+          .bindTooltip(`🧟 ${escapeHtml(p.name)} 正遭到屍潮攻擊：第 ${s.wave}/${s.maxWaves} 波・剩 ${s.left} 隻・圍牆 ${s.wallPct}%${s.helpers ? `・🛡️ ${s.helpers} 位協防中` : ''}（點擊查看）`, { direction: 'top' })
+          .addTo(this.layers.others);
+      }
       // 有收購需求：主要據點旁顯示 📢 圖示，點擊查看
       if (b.primary && p.demands?.length) {
         L.marker([b.lat, b.lon], {

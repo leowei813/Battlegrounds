@@ -593,6 +593,9 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 /* ---- 交易所收購圖示 ---- */
 .demand-badge span { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: #2e7d32; border: 2px solid #c8e6c9; font-size: 14px; box-shadow: 0 0 6px rgba(102, 187, 106, 0.8); position: relative; cursor: pointer; }
 .demand-badge i { position: absolute; right: -6px; top: -6px; font-style: normal; font-size: 10px; background: #e53935; color: #fff; border-radius: 8px; padding: 0 4px; }
+.siege-badge span { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: #b71c1c; border: 2px solid #ffcdd2; font-size: 14px; cursor: pointer; animation: siege-pulse 1.2s ease-in-out infinite; }
+@keyframes siege-pulse { 0%, 100% { box-shadow: 0 0 4px rgba(229, 57, 53, 0.6); } 50% { box-shadow: 0 0 14px rgba(229, 57, 53, 1); } }
+.siege-card { border-color: #e53935; background: rgba(229, 57, 53, 0.08); }
 .demand-form select { padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; max-width: 180px; }
 
 /* ---- 消息按鈕未讀數 ---- */

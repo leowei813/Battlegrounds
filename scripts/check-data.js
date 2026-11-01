@@ -2153,6 +2153,53 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(ga.survivors.discardBag(lead.id, 'nail', Infinity).ok && !lead.bag.nail, '背包物品可以全部丟棄');
 }
 
+// ---- 52. v8.45：友好玩家屍潮協防 ----
+{
+  const { WorldSync: WS } = await import('../src/multiplayer/WorldSync.js');
+  const mk = (name, lon) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon });
+    gx.state.map.pois = fillPois([], 25, lon);
+    gx.shelter.establish(gx.state.map.pois[0]);
+    return gx;
+  };
+  const A = mk('協防者', 121);
+  const B = mk('被攻擊', 121.0004);
+  B.state.bases[0].lat = A.state.bases[0].lat;
+  B.state.bases[0].lon = A.state.bases[0].lon + 0.0008; // 約 80 公尺：警戒範圍相接
+  const pres = (gx, id) => ({ id, ...JSON.parse(JSON.stringify(WS.prototype.presence.call({ game: gx }))) });
+  A.world = { others: [], myId: 'A' };
+  B.world = { others: [], myId: 'B' };
+  [A, B].forEach((gx) => setHour(gx, 23));
+  const sb = B.siege.of();
+  sb.update(0.1);
+  sb.startWave();
+  for (let i = 0; i < 3; i += 1) sb.spawn('walker');
+  const pb = pres(B, 'B');
+  assert(pb.bases[0].siege && pb.bases[0].siege.wave === 1 && pb.bases[0].siege.left > 0, '被屍潮攻擊時公開資料附上屍潮狀況');
+  A.world.others = [pb];
+  assert(!A.assist.canAssist('B').ok, '不是友好玩家不能協防');
+  A.state.relations.players.B = { status: 'friend', name: '被攻擊' };
+  B.state.relations.players.A = { status: 'friend', name: '協防者' };
+  const guard = A.survivors.leader();
+  guard.job = 'guard';
+  assert(A.assist.friendSieges().length === 1, '友好玩家的屍潮狀況看得到');
+  assert(A.assist.start('B').ok && A.siege.of().guards().length === 0, '派防禦駐守協防，自己據點少了他們的火力');
+  const pa = pres(A, 'A');
+  assert(pa.assist && pa.assist.to === 'B' && pa.assist.dps > 0, '協防火力寫在公開資料');
+  B.world.others = [pa];
+  assert(B.assist.incoming().length === 1, '被協防的一方收到協防');
+  sb.waveLeft = 0;
+  const ids = new Set(sb.zombies.map((z) => z.id));
+  const hpOf = () => sb.zombies.filter((z) => ids.has(z.id)).reduce((s, z) => s + z.hp, 0);
+  const hp0 = hpOf();
+  for (let i = 0; i < 12; i += 1) sb.step(0.1);
+  const hp1 = hpOf();
+  assert(hp1 < hp0, `協防火力會打殭屍（${hp0} → ${hp1}）`);
+  pa.bases[0].lon += 0.01;
+  assert(B.assist.incoming().length === 0, '警戒範圍沒有相接就不算協防');
+  assert(A.assist.stop().ok && A.siege.of().guards().length === 1, '召回協防後回到崗位');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

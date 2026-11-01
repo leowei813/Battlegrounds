@@ -353,6 +353,20 @@ export class BaseSiege {
       });
     }
 
+    // 友好玩家前來協防：每秒依對方公開的火力攻擊最靠近圍牆的殭屍
+    this.assistCd = (this.assistCd ?? 1) - dt;
+    if (this.assistCd <= 0 && active && sh.isPrimary(base)) {
+      this.assistCd = 1;
+      (this.game.assist?.incoming() || []).forEach((h) => {
+        const targets = this.zombies.filter((z) => z.hp > 0);
+        if (!targets.length || !h.dps) return;
+        const t = targets.reduce((a, b) => (Math.hypot(a.x, a.y) < Math.hypot(b.x, b.y) ? a : b));
+        this.damage(t, h.dps);
+        const a = Math.atan2(t.y, t.x) + randFloat(-0.5, 0.5);
+        this.pushFx({ type: 'shot', kind: 'guard', x1: Math.cos(a) * WORLD.WALL_R, y1: Math.sin(a) * WORLD.WALL_R, x2: t.x, y2: t.y });
+      });
+    }
+
     this.collectDead();
     if (!active) this.zombies = this.zombies.filter((z) => !z.retreated);
 
@@ -362,8 +376,9 @@ export class BaseSiege {
   /** 防禦駐守的倖存者住在主要據點，只防衛主要據點 */
   guards() {
     if (!this.game.shelter.isPrimary(this.base)) return [];
+    const away = this.game.assist?.assistingIds() || new Set(); // 正在協防友好玩家
     return this.game.state.survivors
-      .filter((s) => s.job === 'guard' && s.status === 'idle' && !s.severe && !this.game.survivors.isGarrisoned(s.id))
+      .filter((s) => s.job === 'guard' && s.status === 'idle' && !s.severe && !this.game.survivors.isGarrisoned(s.id) && !away.has(s.id))
       .map((s) => ({ sv: s, stats: this.game.survivors.stats(s) }));
   }
 

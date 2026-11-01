@@ -2,9 +2,12 @@ import { BASE_SIZES } from '../config/civilization.js';
 import { bus } from '../core/EventBus.js';
 import { sha256 } from '../utils/sha256.js';
 import { uid } from '../utils/math.js';
+import { MAX_ASSIST_DPS } from '../systems/AssistSystem.js';
 
 /** 上傳／下載間隔 */
 const SYNC_MS = 30000;
+/** 自己或友好玩家正遭到屍潮攻擊（或正在協防）時加快同步，讓對方即時看到狀況 */
+const FAST_SYNC_MS = 10000;
 /** 顯示多遠範圍內的其他玩家（公里） */
 export const WORLD_RADIUS_KM = 5;
 export const WORLD_EVT = 'world:updated';
@@ -27,6 +30,25 @@ function cleanStall(list) {
   }).filter(Boolean);
 }
 
+/** 屍潮狀況（只有正在被攻擊時才有） */
+function cleanSiege(s) {
+  if (!s || typeof s !== 'object') return null;
+  const int = (v, max) => (finite(v) ? Math.min(max, Math.max(0, Math.round(v))) : 0);
+  return {
+    wave: int(s.wave, 99), maxWaves: int(s.maxWaves, 99), left: int(s.left, 9999), wallPct: int(s.wallPct, 100), helpers: int(s.helpers, 20),
+  };
+}
+
+/** 協防資料：要協防的玩家與火力 */
+function cleanAssist(a) {
+  if (!a || typeof a !== 'object' || !finite(a.until) || !a.to) return null;
+  return {
+    to: String(a.to).slice(0, 40), until: a.until,
+    dps: finite(a.dps) ? Math.min(MAX_ASSIST_DPS, Math.max(0, Math.round(a.dps))) : 0,
+    count: finite(a.count) ? Math.min(20, Math.max(1, Math.round(a.count))) : 1,
+  };
+}
+
 function cleanPlayer(p) {
   if (!p || typeof p !== 'object') return null;
   const bases = (Array.isArray(p.bases) ? p.bases : []).filter(validPoint).slice(0, 5)
@@ -38,6 +60,7 @@ function cleanPlayer(p) {
       guardLevel: finite(b.guardLevel) ? Math.min(60, Math.max(1, Math.round(b.guardLevel))) : 1,
       wall: finite(b.wall) ? Math.min(1e6, Math.max(0, b.wall)) : 0,
       dps: finite(b.dps) ? Math.min(1e5, Math.max(0, b.dps)) : 0,
+      siege: cleanSiege(b.siege),
     }));
   if (!bases.length) return null;
   const trips = (Array.isArray(p.trips) ? p.trips : []).slice(0, 10).filter((t) => validPoint(t?.from) && validPoint(t?.to)
@@ -60,6 +83,18 @@ function cleanPlayer(p) {
   return {
     id: String(p.id || ''), name: String(p.name || '倖存者').slice(0, 16), civ: finite(p.civ) ? p.civ : 0, bases, trips,
     exchange: finite(p.exchange) ? Math.min(20, Math.max(0, Math.floor(p.exchange))) : 0, demands,
+    assist: cleanAssist(p.assist),
+  };
+}
+
+/** 據點正在被屍潮攻擊時的狀況（公開給友好玩家看） */
+export function siegeStatus(g, b) {
+  const w = g.siege.of(b.id).waveInfo();
+  if (!w.active || !w.attacking) return null;
+  const max = g.shelter.wallMax(b) || 1;
+  return {
+    wave: w.wave, maxWaves: w.maxWaves, left: w.left, wallPct: Math.round((g.shelter.wallHp(b) / max) * 100),
+    helpers: g.shelter.isPrimary(b) ? g.assist.incoming().length : 0,
   };
 }
 
@@ -127,12 +162,27 @@ export class WorldSync {
   start() {
     if (!this.provider || this.timer) return;
     this.dropLegacy().finally(() => this.sync());
-    this.timer = setInterval(() => this.sync(), SYNC_MS);
+    this.timer = setInterval(() => {
+      const gap = Date.now() - (this.lastTryAt || 0);
+      if (gap >= SYNC_MS || (gap >= FAST_SYNC_MS && this.urgent())) this.sync();
+    }, FAST_SYNC_MS);
   }
 
   stop() {
     clearInterval(this.timer);
     this.timer = null;
+  }
+
+  /** 是否需要加快同步 */
+  urgent() {
+    const g = this.game;
+    return !!g.assist?.state || g.threats().length > 0 || (g.assist?.friendSieges().length || 0) > 0;
+  }
+
+  /** 盡快同步一次（例如剛出發協防） */
+  syncSoon() {
+    clearTimeout(this.soonTimer);
+    this.soonTimer = setTimeout(() => this.sync(), 500);
   }
 
   /** 自己公開的內容：據點、進行中的探索隊伍（只含地圖顯示需要的資料） */
@@ -144,6 +194,7 @@ export class WorldSync {
       civ: g.civilization.value(),
       exchange: g.shelter.maxLevel('exchange'),
       demands: g.demand.published(),
+      assist: g.assist.published(),
       bases: g.state.bases.map((b) => {
         const gar = g.territory.garrison(b);
         return {
@@ -151,6 +202,8 @@ export class WorldSync {
           alert: g.territory.alertRadius(b), guards: gar.count, guardLevel: gar.level,
           // 攻擊者要先打破圍牆，期間防禦設施會射擊（只公開看得到的強度，不含彈藥存量）
           wall: Math.round(g.shelter.wallHp(b)), dps: g.siege.of(b.id).defenseDps({ apparent: true }),
+          // 正在被屍潮攻擊：友好玩家可以看到狀況並前來協防
+          siege: siegeStatus(g, b),
         };
       }),
       // 被攔截而撤回的隊伍也會顯示移動，但其他玩家的地圖不顯示時間，也無法再攔截
@@ -176,6 +229,8 @@ export class WorldSync {
     if (!this.provider || g.locked) return;
     const center = g.shelter.primary() || g.state.map.center;
     const { id, token } = this.identity();
+    this.myId = id;
+    this.lastTryAt = Date.now();
     try {
       if (this.sharing && g.state.bases.length) {
         await this.provider.worldPut(id, token, this.presence());
