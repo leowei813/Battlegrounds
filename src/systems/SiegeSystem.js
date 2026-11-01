@@ -31,7 +31,7 @@ const MELEE_REACH_POST = 14;
 const WALL_DMG_MUL = 0.3;
 /** 圍牆被打破後，每隔幾秒與衝進來的殭屍交戰一次 */
 const GATE_FIGHT_EVERY = 3;
-/** 防守失敗時摧毀 1 棟防禦設施的機率 */
+/** 防守失敗時 1 棟防禦設施損毀（降 1 級）的機率 */
 const BREACH_DAMAGE = { chance: 0.35 };
 
 /**
@@ -662,14 +662,21 @@ export class BaseSiege {
    * 突破後建築損毀：每棟已建造的設施/防禦建築有機率降 1 級，1 級的會被拆除。
    * @returns {string[]} 損毀描述
    */
-  /** 防守失敗：有機率摧毀 1 棟防禦設施（一般設施不受影響） */
+  /** 防守失敗：有機率讓 1 棟防禦設施降 1 級（1 級的會被拆毀；一般設施不受影響） */
   damageBuildings(base) {
     const out = [];
     const list = base.defenses.filter((d) => d.type && d.level >= 1);
     if (!list.length || !chance(BREACH_DAMAGE.chance)) return out;
+    // 降 1 級；原本只有 1 級的才會被拆毀
     const d = pick(list);
-    out.push(`${DEFENSES[d.type].name}（Lv${d.level}）被摧毀`);
-    Object.assign(d, { type: null, level: 0, garrisonId: null });
+    const name = DEFENSES[d.type].name;
+    if (d.level <= 1) {
+      out.push(`${name}被拆毀`);
+      Object.assign(d, { type: null, level: 0, garrisonId: null });
+    } else {
+      d.level -= 1;
+      out.push(`${name}損毀，降為 Lv${d.level}`);
+    }
     this.game.civilization.invalidate();
     return out;
   }
