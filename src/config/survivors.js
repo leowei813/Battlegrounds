@@ -143,8 +143,8 @@ export const VITALS = {
   deathGameDays: 3, // 飢餓且生命為 0 持續遊戲內 3 天 → 永久死亡（領袖除外）
   medicRegenBonus: 0.25, // 每位在醫療站工作的醫生，全員回復速度 +25%（上限 +100%）
 };
-/** 升級所需經驗：等級越高越困難（Lv10 約 1.25 倍、Lv20 約 2 倍、Lv40 約 5 倍於舊公式） */
-export const xpToNext = (level) => Math.round(40 * level ** 1.6 * (1 + (level / 20) ** 2));
+/** 升級所需經驗：Lv4 以後大幅增加（每多一級 +50%），等級越高越困難 */
+export const xpToNext = (level) => Math.round(40 * level ** 1.6 * (1 + (level / 20) ** 2) * (level <= 4 ? 1 : 1 + 0.5 * (level - 4)));
 /** 招募費用（依目前人數） */
 export const recruitCost = (count) => ({ coins: 60 + count * 45, food: 40 + count * 20 });
 /** 人數對應每小時食物消耗 */

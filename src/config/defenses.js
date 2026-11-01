@@ -1,12 +1,14 @@
 import { materialize, tierFromLevel } from './supplies.js';
-import { MAX_LEVEL, timeCurve, costCurve } from './leveling.js';
+import {
+  MAX_LEVEL, timeCurve, costCurve, hardMul, HARD_PLAIN, HARD_MAT,
+} from './leveling.js';
 
 /**
  * 防禦建築。位於避難所外圍的槽位，在 SiegeSystem 中自動攻擊殭屍。
  * range 以「世界單位」表示（避難所中心到外圍約 100）。
  */
 const scale = (base, lv, g = 1.7) =>
-  Object.fromEntries(Object.entries(base).map(([k, v]) => [k, Math.round(v * costCurve(lv, g))]));
+  Object.fromEntries(Object.entries(base).map(([k, v]) => [k, Math.round(v * costCurve(lv, g) * hardMul(lv, HARD_PLAIN))]));
 
 export const DEFENSE_MAX_LEVEL = MAX_LEVEL;
 
@@ -17,7 +19,7 @@ export const DEFENSE_MAX_LEVEL = MAX_LEVEL;
 const MAT_KEYS = ['metal', 'cloth', 'medicine'];
 const mat = (key, tags, base, lv) => {
   const plain = scale(Object.fromEntries(Object.entries(base).filter(([k]) => !MAT_KEYS.includes(k))), lv);
-  const abstract = Object.fromEntries(Object.entries(base).filter(([k]) => MAT_KEYS.includes(k)).map(([k, v]) => [k, v * costCurve(lv, 1.3)]));
+  const abstract = Object.fromEntries(Object.entries(base).filter(([k]) => MAT_KEYS.includes(k)).map(([k, v]) => [k, v * costCurve(lv, 1.3) * hardMul(lv, HARD_MAT)]));
   return materialize({ ...plain, ...abstract }, { tier: tierFromLevel(lv, DEFENSE_MAX_LEVEL), tags, key });
 };
 
@@ -66,5 +68,5 @@ export const DEFENSES = {
   },
 };
 
-/** 施工秒數：Lv1 10 秒、Lv6 約 1 分、Lv10 約 30 分、Lv15 約 1.6 天 */
-export const defenseBuildTime = (lv) => Math.round(10 * timeCurve(lv, 1.5, 2.3));
+/** 施工秒數：Lv1 10 秒、Lv6 約 1 分、Lv10 約 2 小時、Lv15 約 20 天 */
+export const defenseBuildTime = (lv) => Math.round(10 * timeCurve(lv, 1.5, 3.05));

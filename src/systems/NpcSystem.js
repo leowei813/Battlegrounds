@@ -87,10 +87,14 @@ export class NpcSystem {
     st.cellNext = st.cellNext || {};
     const o = this.origin();
     const used = new Set(this.list.map((n) => n.poiId));
+    // 不會生成在任何警戒範圍內：自己的據點、其他玩家的據點、其他 NPC 據點
+    const zones = this.alertZones();
+    const inAlert = (p) => zones.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r);
     const cells = new Map();
     this.game.state.map.pois.forEach((p) => {
       if (used.has(p.id) || this.game.shelter.baseAtPoi(p.id) || POI_TYPES[p.type].danger < 2) return;
       if (haversine(o.lat, o.lon, p.lat, p.lon) < NPC_CONFIG.minFromShelterM) return;
+      if (inAlert(p)) return;
       const key = this.cellOf(p.lat, p.lon);
       if (!cells.has(key)) cells.set(key, []);
       cells.get(key).push(p);
@@ -102,13 +106,25 @@ export class NpcSystem {
       const pool = [...pois];
       while (need > 0 && pool.length) {
         const poi = pool.splice(Math.floor(randFloat(0, pool.length)), 1)[0];
-        this.spawnAt(poi, key, now, silent);
+        if (inAlert(poi)) continue; // 同一輪剛生成的 NPC 範圍也要避開
+        const n = this.spawnAt(poi, key, now, silent);
+        zones.push({ lat: n.lat, lon: n.lon, r: 60 + n.level });
         need -= 1;
         added += 1;
       }
     });
     if (added) this.game.bus.emit('npcs:changed');
     return added;
+  }
+
+  /** 所有警戒範圍（公尺）：自己的據點、其他玩家的據點、NPC 據點 */
+  alertZones() {
+    const g = this.game;
+    return [
+      ...g.state.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: g.territory.alertRadius(b) })),
+      ...(g.world?.others || []).flatMap((p) => p.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: b.alert || 80 }))),
+      ...this.list.map((n) => ({ lat: n.lat, lon: n.lon, r: 60 + n.level })),
+    ];
   }
 
   spawnAt(poi, cell, now = Date.now(), silent = false) {

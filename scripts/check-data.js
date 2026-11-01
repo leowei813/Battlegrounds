@@ -2044,7 +2044,14 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(MAX_RESEARCH_LEVEL === 15 && FACILITY_MAX_LEVEL === 15 && DEFENSE_MAX_LEVEL === 15, '研究、設施、防禦最高 15 級');
   const day = 86400;
   const longest = Math.max(...Object.keys(RS).map((id) => rt(id, 15)));
-  assert(Math.abs(longest / day - 30) < 1.5, `最難的研究 Lv15 約 30 天（${(longest / day).toFixed(1)} 天）`);
+  assert(Math.abs(longest / day - 10) < 0.6, `最難的研究 Lv15 約 10 天（${(longest / day).toFixed(1)} 天）`);
+  assert(Math.abs(facilityBuildTime(15) / day - 20) < 1 && Math.abs(defenseBuildTime(15) / day - 20) < 1, `建築 Lv15 約 20 天（設施 ${(facilityBuildTime(15) / day).toFixed(1)}、防禦 ${(defenseBuildTime(15) / day).toFixed(1)} 天）`);
+  // Lv4 以後升級難度大幅提高：費用與經驗
+  const { FACILITIES: FC, storageCap: sc } = await import('../src/config/facilities.js');
+  const parts = (c) => Object.entries(c).filter(([k]) => !['wood', 'food', 'fuel', 'coins', 'parts'].includes(k)).reduce((a2, [, v]) => a2 + v, 0);
+  assert(parts(FC.wall.cost(10)) > parts(FC.wall.cost(4)) * 4, 'Lv4 以後的升級材料大幅增加');
+  assert(xp(10) / xp(4) > 8, `倖存者 Lv4 以後升級所需經驗大幅增加（Lv4 ${xp(4)} → Lv10 ${xp(10)}）`);
+  for (let l = 2; l <= 15; l += 1) assert(FC.warehouse.cost(l).wood <= sc(l - 1) * 1.1, `倉庫 Lv${l} 的木材費用在上一級倉庫容量內`);
   assert(Object.keys(RS).every((id) => [1, 2, 3, 4, 5, 6].every((l) => rt(id, l) <= day)) && [1, 2, 3, 4, 5, 6].every((l) => facilityBuildTime(l) <= day && defenseBuildTime(l) <= day), '前 6 級的研究與建造都不超過 1 天');
   const gaps = Array.from({ length: 14 }, (_, i) => facilityBuildTime(i + 2) - facilityBuildTime(i + 1));
   assert(gaps.every((v, i) => i === 0 || v >= gaps[i - 1]), '等級越高，每級增加的時長越多');
@@ -2097,6 +2104,19 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(off === 0 && on > 0, `電網要有發電機運轉才有作用（沒電 +${off}／有電 +${on}）`);
   ge.state.resources.fuel = 0;
   assert(s.defenseDps() - none === 0, '發電機沒燃料時電網也不會作用');
+}
+
+// ---- 49. v8.39：NPC 不會生成在警戒範圍內 ----
+{
+  const gn = Game.newGame({ playerName: 'N8', classId: 'warrior', lat: 25, lon: 121 });
+  gn.state.map.pois = fillPois([], 25, 121);
+  gn.shelter.establish(gn.state.map.pois[0]);
+  gn.npcs.fillCells(Date.now(), { silent: true });
+  const base = gn.shelter.primary();
+  const bad = gn.npcs.list.filter((n) => haversine(base.lat, base.lon, n.lat, n.lon) <= gn.territory.alertRadius(base));
+  assert(gn.npcs.list.length > 0 && !bad.length, `NPC 據點不會生成在玩家據點的警戒範圍內（${gn.npcs.list.length} 個）`);
+  const overlap = gn.npcs.list.some((a2) => gn.npcs.list.some((b2) => a2 !== b2 && haversine(a2.lat, a2.lon, b2.lat, b2.lon) <= 60 + b2.level));
+  assert(!overlap, 'NPC 據點不會生成在其他 NPC 的警戒範圍內');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
