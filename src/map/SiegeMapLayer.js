@@ -96,7 +96,8 @@ export const SiegeMapLayer = L.Layer.extend({
   frame(base) {
     const c = this.map.latLngToContainerPoint([base.lat, base.lon]);
     const n = this.map.latLngToContainerPoint([base.lat + 100 / M_PER_LAT, base.lon]);
-    const k = ((c.y - n.y) / 100) * METERS_PER_UNIT;
+    // 範圍大小隨探照燈與「精準射擊」科技成長，全部升滿才是完整大小
+    const k = ((c.y - n.y) / 100) * METERS_PER_UNIT * this.game.shelter.siegeRangeScale(base);
     return { c, k };
   },
 
