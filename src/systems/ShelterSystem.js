@@ -327,7 +327,8 @@ export class ShelterSystem {
     const base = this.resolve(b);
     const gen = this.game.resources.generatorActive() ? base.facilities.generator.level * 0.06 * (1 + this.game.research.bonus('generatorPct')) : 0;
     const eng = this.isPrimary(base) ? this.engineerEffect('towerDmg') : 0;
-    return 1 + this.game.research.bonus('towerDmgPct') + gen + eng;
+    // 探照燈與「精準射擊」研究：照亮目標，提高防禦設施的傷害（防禦設施不論方向都會開火，沒有射程限制）
+    return 1 + this.game.research.bonus('towerDmgPct') + gen + eng + (this.rangeMul(base) - 1);
   }
 
   rangeMul(b) {
