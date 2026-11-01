@@ -250,7 +250,7 @@ export class InventoryPanel {
       .map(([r, p]) => `<span class="odd" style="--rc:${RARITIES[r].color}">${RARITIES[r].name} ${(p * 100).toFixed(p < 0.01 ? 2 : 1)}%</span>`).join('');
     return `
       <p>📦 倉庫空間 <b>${eq.storeUsed()} / ${eq.storeCap()}</b> 格（空間不足時無法製作）</p>
-      <p class="muted">工作台 Lv${wb}：簡易製作不需要工作台；其餘裝備需要對應等級的工作台，工作台等級越高<b>可製作的型號越多</b>。槍械另需研究「槍械製造」。製作品級只受研究「製作技術」影響（Lv${eq.craftTech()}/10）。</p>
+      <p class="muted">工作台 Lv${wb}：簡易製作不需要工作台；其餘裝備需要對應等級的工作台，工作台等級越高<b>可製作的型號越多</b>。槍械另需研究「槍械製造」。製作品級只受研究「製作技術」影響（Lv${eq.craftTech()}/15）。</p>
       <div class="odds"><small class="muted">製作品級機率：</small>${odds}</div>
       <p class="muted">每件裝備下方為製作出來的能力範圍（最低～最高，已含品級差異；另有依品級隨機出現的詞綴）。</p>
       ${bps ? `<h3>設計圖</h3>${bps}` : ''}

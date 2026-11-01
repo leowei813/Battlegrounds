@@ -96,10 +96,10 @@ export const SURVIVOR_RARITY = {
 
 /**
  * 倖存者品級機率（%）：初始稀有 0%、罕見 0.1%；研究「招募技術」每級提升，滿級稀有 0.2%。
- * @param {number} tech 招募技術等級 0～10
+ * @param {number} tech 招募技術等級 0～15（換算成 0～10 的進度）
  */
 export function survivorRarityTable(tech = 0) {
-  const t = Math.max(0, Math.min(10, tech));
+  const t = (Math.max(0, Math.min(15, tech)) * 10) / 15;
   const legendary = 0.02 * t;
   const epic = 0.1 + 0.05 * t;
   const rare = 2 + 0.3 * t;
@@ -143,7 +143,8 @@ export const VITALS = {
   deathGameDays: 3, // 飢餓且生命為 0 持續遊戲內 3 天 → 永久死亡（領袖除外）
   medicRegenBonus: 0.25, // 每位在醫療站工作的醫生，全員回復速度 +25%（上限 +100%）
 };
-export const xpToNext = (level) => Math.round(40 * level ** 1.6);
+/** 升級所需經驗：等級越高越困難（Lv10 約 1.25 倍、Lv20 約 2 倍、Lv40 約 5 倍於舊公式） */
+export const xpToNext = (level) => Math.round(40 * level ** 1.6 * (1 + (level / 20) ** 2));
 /** 招募費用（依目前人數） */
 export const recruitCost = (count) => ({ coins: 60 + count * 45, food: 40 + count * 20 });
 /** 人數對應每小時食物消耗 */

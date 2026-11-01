@@ -259,10 +259,10 @@ export const benchFor = (model) => (model.simple ? 0 : model.tier);
 
 /**
  * 製作的品級機率（%）：初始稀有 0%、罕見 0.1%；研究「製作技術」每級提升，滿級稀有 0.2%。
- * @param {number} tech 製作技術等級 0～10
+ * @param {number} tech 製作技術等級 0～15（換算成 0～10 的進度）
  */
 export function craftRarityTable(tech = 0) {
-  const t = Math.max(0, Math.min(10, tech));
+  const t = (Math.max(0, Math.min(15, tech)) * 10) / 15;
   const legendary = 0.02 * t;
   const epic = 0.1 + 0.05 * t;
   const rare = 4.9 + 0.4 * t;

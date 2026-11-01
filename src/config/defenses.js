@@ -1,13 +1,14 @@
 import { materialize, tierFromLevel } from './supplies.js';
+import { MAX_LEVEL, timeCurve, costCurve } from './leveling.js';
 
 /**
  * 防禦建築。位於避難所外圍的槽位，在 SiegeSystem 中自動攻擊殭屍。
  * range 以「世界單位」表示（避難所中心到外圍約 100）。
  */
 const scale = (base, lv, g = 1.7) =>
-  Object.fromEntries(Object.entries(base).map(([k, v]) => [k, Math.round(v * g ** (lv - 1))]));
+  Object.fromEntries(Object.entries(base).map(([k, v]) => [k, Math.round(v * costCurve(lv, g))]));
 
-export const DEFENSE_MAX_LEVEL = 10;
+export const DEFENSE_MAX_LEVEL = MAX_LEVEL;
 
 /**
  * 升級費用：木材、燃料等依等級快速成長；抽象的金屬／布料／藥品換算成具體零件與布料，
@@ -16,7 +17,7 @@ export const DEFENSE_MAX_LEVEL = 10;
 const MAT_KEYS = ['metal', 'cloth', 'medicine'];
 const mat = (key, tags, base, lv) => {
   const plain = scale(Object.fromEntries(Object.entries(base).filter(([k]) => !MAT_KEYS.includes(k))), lv);
-  const abstract = Object.fromEntries(Object.entries(base).filter(([k]) => MAT_KEYS.includes(k)).map(([k, v]) => [k, v * 1.3 ** (lv - 1)]));
+  const abstract = Object.fromEntries(Object.entries(base).filter(([k]) => MAT_KEYS.includes(k)).map(([k, v]) => [k, v * costCurve(lv, 1.3)]));
   return materialize({ ...plain, ...abstract }, { tier: tierFromLevel(lv, DEFENSE_MAX_LEVEL), tags, key });
 };
 
@@ -59,4 +60,5 @@ export const DEFENSES = {
   },
 };
 
-export const defenseBuildTime = (lv) => Math.round(6 * 1.55 ** (lv - 1));
+/** 施工秒數：Lv1 10 秒、Lv6 約 1 分、Lv10 約 30 分、Lv15 約 1.6 天 */
+export const defenseBuildTime = (lv) => Math.round(10 * timeCurve(lv, 1.5, 2.3));

@@ -55,12 +55,12 @@ export class SurvivorPanel {
       .map(([r, p]) => `<span class="odd" style="--rc:${RARITIES[r].color}">${RARITIES[r].name} ${p < 1 ? p.toFixed(2) : p.toFixed(1)}%</span>`).join('');
     const tech = g.research.level('r_tech');
     const odds = fmtOdds(g.survivors.rarityOdds());
-    const nextOdds = tech < 10 ? fmtOdds(survivorRarityTable(tech + 1)) : '';
+    const nextOdds = tech < 15 ? fmtOdds(survivorRarityTable(tech + 1)) : '';
     const oddsCard = `<div class="card odds-card"><b>🎲 招募品級機率</b> <small class="muted">（廣播招募、附近的倖存者、探索遇到的都適用）</small>
       <div class="odds">${odds}</div>
-      <small class="muted block">研究「招募技術」可提高高品級機率：目前 Lv${tech}/10${tech < 10 ? '，升到下一級後：' : '（已滿級）'}</small>
+      <small class="muted block">研究「招募技術」可提高高品級機率：目前 Lv${tech}/15${tech < 15 ? '，升到下一級後：' : '（已滿級）'}</small>
       ${nextOdds ? `<div class="odds dim">${nextOdds}</div>` : ''}
-      <small class="muted block">滿級時：${fmtOdds(survivorRarityTable(10))}</small></div>`;
+      <small class="muted block">滿級時：${fmtOdds(survivorRarityTable(15))}</small></div>`;
     const cap = g.survivors.housingBreakdown();
     const list = st.survivors.map((sv) => survivorCard(g, sv, {
       actions: `${btn('詳情 / 裝備', 'detail', { id: sv.id }, { cls: 'btn-sm' })}${g.survivors.hpOf(sv) < g.survivors.maxHp(sv) ? btn('💊 治療', 'heal', { id: sv.id }, { cls: 'btn-sm btn-primary', disabled: g.survivors.isStarving(), title: g.survivors.isStarving() ? '飢餓中無法治療' : '' }) : ''}${sv.isLeader ? '' : btn('🚪 驅逐', 'dismiss', { id: sv.id }, { cls: 'btn-sm btn-ghost', disabled: sv.status === 'exploring' })}`,
