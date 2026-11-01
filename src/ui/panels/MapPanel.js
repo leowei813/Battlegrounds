@@ -274,7 +274,19 @@ export class MapPanel {
     const canAssist = g.assist.canAssist(p.id);
     const home = p.bases.find((b) => b.primary) || p.bases[0];
     const covered = rel === 'friend' && g.assist.covers(home);
-    const assistRow = rel !== 'friend' ? '' : `<div class="btn-row">${myAssist
+    // 協防狀況：抵達與否、提供的火力、對方回報的戰果、對方是否開著遊戲
+    const assistInfo = (() => {
+      if (!myAssist) return '';
+      const ap = tripProgress(myAssist, now);
+      const pub = g.assist.published(now);
+      const r = g.assist.myResult(p);
+      const idle = p.updatedAt && now - p.updatedAt > 90000;
+      return `<div class="card"><b>🛡️ 我的協防隊</b> <small class="muted">${ap.phase === 'searching' ? '已抵達，協防到天亮' : ap.phase === 'returning' ? '回程中' : `前往中・約 ${formatDuration(ap.phaseRemainingMs)}後抵達`}</small>
+        ${pub ? `<small class="block">每秒提供約 ${pub.dps} 傷害（${pub.count} 人）</small>` : ''}
+        <small class="block">${r ? `對方回報：你造成 ${r.dmg} 傷害、擊殺 ${r.kills} 隻${r.result === 'ok' ? '・✅ 守住了' : r.result === 'breached' ? '・💥 被突破' : ''}` : '對方尚未回報戰果（殭屍出現並被協防隊攻擊後才會有）'}</small>
+        ${idle ? `<small class="neg block">⚠️ 對方約 ${formatDuration(now - p.updatedAt)}沒有更新：屍潮只在對方開著遊戲時進行，協防也只在那時生效</small>` : ''}</div>`;
+    })();
+    const assistRow = rel !== 'friend' ? '' : `${assistInfo}<div class="btn-row">${myAssist
     ? `<span class="tag tag-green">🛡️ 你的協防隊${tripProgress(myAssist, now).phase === 'searching' ? '正在協防（到天亮）' : '在路上'}</span>${btn('召回協防隊', 'stopAssist', { id: myAssist.id }, { cls: 'btn-xs btn-ghost' })}`
     : btn('🛡️ 派隊協防', 'assist', {}, { cls: 'btn-xs btn-primary', disabled: !canAssist.ok, title: canAssist.reason || '' })}</div>
       ${!myAssist && !canAssist.ok && sieged.length ? `<small class="muted block">${escapeHtml(canAssist.reason)}</small>` : ''}
@@ -357,9 +369,8 @@ export class MapPanel {
     const b = p.bases.find((x) => x.primary) || p.bases[0];
     openTeamPicker(this.ui, {
       title: `🛡️ 協防：${p.name}・${b.name}`,
-      intro: '<p class="muted">隊伍趕往友好玩家的據點（移動速度是一般的 2 倍），抵達後一起抵禦屍潮到天亮再回家；可以隨時召回。</p>',
+      intro: '<p class="muted">隊伍趕往友好玩家的據點（移動速度是一般的 2 倍，自動繞開 NPC 與敵對玩家的警戒範圍），抵達後一起抵禦屍潮到天亮再回家；可以隨時召回。屍潮只在對方開著遊戲時進行，協防也只在那時生效。</p>',
       vehicles: true,
-      routeOption: true,
       distanceM: sh ? haversine(sh.lat, sh.lon, b.lat, b.lon) : 0,
       trip: { poi: g.assist.asPoi(`assist:${p.id}`), searchMin: 0, searchLabel: '協防' },
       confirmLabel: '出發協防！',
@@ -413,6 +424,7 @@ export class MapPanel {
   /** 各據點即時屍潮摘要；點擊可飛到該據點 */
   siegeBanner() {
     const g = this.game;
+    const helpers = g.assist.incoming();
     const rows = g.state.bases.map((b) => {
       const s = g.siege.of(b.id);
       const ratio = g.shelter.wallHp(b) / g.shelter.wallMax(b);
@@ -421,7 +433,7 @@ export class MapPanel {
     if (!rows.length) return '';
     return `<div class="siege-banner">${rows.map(({ b, n, ratio }) => `
       <button class="siege-chip ${ratio < 0.3 ? 'danger' : ''}" data-action="flyTo" data-id="${b.id}">
-        ${g.shelter.isPrimary(b) ? '⭐' : '🏠'} ${escapeHtml(b.name)}・🧟${n}・🧱${Math.round(ratio * 100)}%
+        ${g.shelter.isPrimary(b) ? '⭐' : '🏠'} ${escapeHtml(b.name)}・🧟${n}・🧱${Math.round(ratio * 100)}%${g.shelter.isPrimary(b) && helpers.length ? `・🛡️協防 ${helpers.length}` : ''}
       </button>`).join('')}</div>`;
   }
 

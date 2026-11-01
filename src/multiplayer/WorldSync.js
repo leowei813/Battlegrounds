@@ -118,6 +118,8 @@ export function cleanPlayer(p) {
     id: String(p.id || ''), name: String(p.name || '倖存者').slice(0, 16), civ: finite(p.civ) ? p.civ : 0, bases, trips,
     exchange: finite(p.exchange) ? Math.min(20, Math.max(0, Math.floor(p.exchange))) : 0, demands,
     assist: cleanAssist(p.assist),
+    // 最後一次上傳的時間（判斷對方是否開著遊戲）
+    updatedAt: finite(p.updatedAt) ? p.updatedAt : 0,
     cover: p.cover && finite(p.cover.r) && finite(p.cover.dps)
       ? { r: Math.min(400, Math.max(0, p.cover.r)), dps: Math.min(MAX_ASSIST_DPS, Math.max(0, Math.round(p.cover.dps))) } : null,
   };
