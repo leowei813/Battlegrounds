@@ -72,17 +72,50 @@ export class ZombieSpawnSystem {
     this.game.bus.emit('map:changed');
   }
 
+  /**
+   * 區域安全程度對夜間殭屍的影響：越安全遇到的機率越低、殭屍越弱。
+   * 安全區 ×0.4、一般區 ×0.6、警戒區 ×0.8、危險區 ×1.0、致死區 ×1.2、深淵區 ×1.5
+   */
+  encounterMul(lat, lon) {
+    const z = zoneAt(lat, lon);
+    return Math.min(1.5, Math.max(0.4, 0.6 + 0.2 * z.danger));
+  }
+
+  /**
+   * 區域等級上限：越安全的區域殭屍越弱（白天、夜晚都適用）；午夜上限提高，但仍依區域拉開差距。
+   * 安全區 3（午夜 4）、一般區 6（8）、警戒區 9（12）、危險區 12（16）、致死區 15（20）、深淵區 21（28），再加文明度加成。
+   */
+  zoneLevelCap(lat, lon, phase = null) {
+    const z = zoneAt(lat, lon);
+    const d = Math.max(-1, z.danger);
+    return 3 + 3 * (d + 1) + (phase?.special ? 2 + Math.max(-1, d) + (d > 0 ? d : 0) : 0) + this.game.civilization.levelBonus();
+  }
+
+  /**
+   * 殭屍等級：區域等級＋夜晚加成（午夜較高，加成依區域危險程度放大），並受區域上限限制。
+   */
+  nightLevel(poi, phase) {
+    const z = zoneAt(poi.lat, poi.lon);
+    const base = this.areaLevel(poi);
+    const bonus = phase?.zombies ? Math.round(Math.max(0, phase.danger - 1) * 2 * (1 + Math.max(0, z.danger))) : 0;
+    return Math.max(1, Math.min(base + bonus, this.zoneLevelCap(poi.lat, poi.lon, phase)));
+  }
+
   makeGroup(poi, phase, now) {
     const pt = POI_TYPES[poi.type];
     const danger = this.areaDanger(poi);
+    const zone = zoneAt(poi.lat, poi.lon);
     let enemyId = weightedPick(pt.enemies);
     let boss = false;
-    if (phase.zombies && chance(phase.special ? 0.35 : 0.15)) enemyId = 'nightStalker';
-    if (pt.special && chance(0.06 + danger * 0.01)) {
+    // 夜行者只出現在警戒區以上（一般區午夜才有少量），安全區不會出現
+    const stalker = zone.danger >= 1 ? (phase.special ? 0.35 : 0.15) : zone.danger === 0 && phase.special ? 0.08 : 0;
+    if (phase.zombies && chance(stalker)) enemyId = 'nightStalker';
+    // Boss 只在警戒區以上的特殊建築
+    if (pt.special && zone.danger >= 1 && chance(0.06 + danger * 0.01)) {
       enemyId = pick(Object.keys(BOSSES));
       boss = true;
     }
-    const count = boss ? 1 : Math.max(1, Math.round(randInt(1, 2 + danger) * Math.min(1.6, phase.zombieMul * 0.8)));
+    const count = boss ? 1 : Math.max(1, Math.round(randInt(1, 2 + danger) * Math.min(1.6, phase.zombieMul * 0.8) * this.encounterMul(poi.lat, poi.lon)));
     const pos = offsetLatLon(poi.lat, poi.lon, randFloat(15, 60), randFloat(0, Math.PI * 2));
     return {
       id: uid('zg'),
@@ -91,8 +124,8 @@ export class ZombieSpawnSystem {
       lon: pos.lon,
       enemyId,
       count,
-      level: Math.round(this.areaLevel(poi) * phase.danger * (boss ? 1.2 : 1)),
-      elite: !boss && chance(0.05 * danger),
+      level: Math.round(this.nightLevel(poi, phase) * (boss ? 1.2 : 1)),
+      elite: !boss && zone.danger >= 0 && chance(0.05 * danger),
       boss,
       spawnedAt: now,
     };
