@@ -64,13 +64,13 @@ export const CLASS_KEYS = Object.keys(CLASSES);
  * produce：每小時基礎產出；classBonus：同職業時倍率。
  */
 export const JOBS = {
-  idle: { name: '閒置', icon: '💤', produce: {} },
-  scavenge: { name: '附近拾荒', icon: '🔍', produce: { wood: 2, scrap: 0.6, coarse: 0.4, fuel: 0.5 }, classBonus: { scout: 1.6 } },
-  farm: { name: '農場工作', icon: '🌾', produce: { food: 4 }, classBonus: { farmer: 1.8 } },
-  workshop: { name: '工作台', icon: '🛠️', produce: { wood: 2, nail: 0.6, screw: 0.6 }, classBonus: { engineer: 1.8 } },
-  clinic: { name: '醫療站', icon: '🏥', produce: { gauze: 0.4, bandage: 0.2 }, classBonus: { medic: 2 } },
-  guard: { name: '防禦駐守', icon: '🛡️', produce: {}, classBonus: { warrior: 1.5 } },
-  repair: { name: '修繕圍牆', icon: '🔨', produce: {}, classBonus: { engineer: 1.8 } },
+  idle: { name: '閒置', icon: '💤', produce: {}, desc: '不做任何工作，在據點休息。' },
+  scavenge: { name: '附近拾荒', icon: '🔍', desc: '在據點附近撿拾木材、廢鐵、粗布與燃料（偵察兵效率較高）。', produce: { wood: 2, scrap: 0.6, coarse: 0.4, fuel: 0.5 }, classBonus: { scout: 1.6 } },
+  farm: { name: '農場工作', icon: '🌾', desc: '照顧作物，持續生產食物（農夫效率較高，部分技能還會提高農場產量）。', produce: { food: 4 }, classBonus: { farmer: 1.8 } },
+  workshop: { name: '工作台', icon: '🛠️', desc: '在工作台加工，產出木材、釘子與螺絲（工程師效率較高）。', produce: { wood: 2, nail: 0.6, screw: 0.6 }, classBonus: { engineer: 1.8 } },
+  clinic: { name: '醫療站', icon: '🏥', desc: '製作紗布與繃帶。醫生在醫療站工作時，全員的回復速度每人 +25%（最多 +100%）。', produce: { gauze: 0.4, bandage: 0.2 }, classBonus: { medic: 2 } },
+  guard: { name: '防禦駐守', icon: '🛡️', desc: '留守主要據點：夜晚屍潮時一起攻擊殭屍、NPC 掠奪時參與防守，也算在警戒範圍的駐守人數（戰士效率較高）。', produce: {}, classBonus: { warrior: 1.5 } },
+  repair: { name: '修繕圍牆', icon: '🔨', desc: '修理受損的圍牆，主要消耗木材（工程師效率較高；沒有零件時改用純木材、速度減半）。', produce: {}, classBonus: { engineer: 1.8 } },
 };
 
 export const SURVIVOR_NAMES = [
