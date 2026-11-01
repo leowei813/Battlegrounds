@@ -63,6 +63,10 @@ export function remainOf(poi, remainMap, at = Date.now()) {
 /** 基礎建設材料的出現機率倍率 */
 const BASIC_BUILD_BOOST = 1.4;
 const isBasicBuild = (k) => SUPPLIES[k]?.tag === 'struct' && SUPPLIES[k].tier <= 2;
+/** 第 1 階（基礎消耗性）零件與布料的出現機率倍率 */
+const BASIC_TIER_BOOST = 1.6;
+/** 零件與布料依階級的數量倍率：基礎材料較多，階級越高越少 */
+const TIER_AMOUNT = [1, 1.3, 0.9, 0.7, 0.5, 0.35];
 
 /** 依類別與危險度挑出具體的材料物品 */
 function pickSupply(cat, rnd, danger) {
@@ -84,7 +88,8 @@ function pickSupply(cat, rnd, danger) {
     keys = suppliesOf(cat);
     // 越危險的地點越容易出現高階零件與布料
     // 基礎建設材料（第 1～2 階結構零件，例如釘子、螺絲、鐵絲、鐵板）較容易出現
-    weight = (k) => 0.45 ** Math.max(0, SUPPLIES[k].tier - Math.ceil(danger / 1.3)) * (isBasicBuild(k) ? BASIC_BUILD_BOOST : 1);
+    weight = (k) => 0.45 ** Math.max(0, SUPPLIES[k].tier - Math.ceil(danger / 1.3)) * (isBasicBuild(k) ? BASIC_BUILD_BOOST : 1)
+      * (SUPPLIES[k].tier === 1 ? BASIC_TIER_BOOST : 1);
   }
   const total = keys.reduce((sum, k) => sum + weight(k), 0);
   let r = rnd() * total;
@@ -133,7 +138,8 @@ export function stockOf(poi, at = Date.now(), remainMap = null) {
   for (let i = 0; i < kinds; i += 1) {
     const cat = pickType();
     const key = RESOURCE_KEYS.includes(cat) ? cat : pickSupply(cat, rnd, danger);
-    const amount = Math.max(1, Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zone.lootMul * (pt.amountMul || 1) * CAT_AMOUNT[cat] * LOOT_AMOUNT_MUL));
+    const tierMul = cat === 'part' || cat === 'fabric' ? TIER_AMOUNT[SUPPLIES[key]?.tier || 1] : 1;
+    const amount = Math.max(1, Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zone.lootMul * (pt.amountMul || 1) * CAT_AMOUNT[cat] * LOOT_AMOUNT_MUL * tierMul));
     resources[key] = (resources[key] || 0) + amount;
   }
   return {
