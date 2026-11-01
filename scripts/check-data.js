@@ -1836,7 +1836,8 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(ge.exploration.recall(e3.id, t1).ok && e3.cp?.done === 1, '撤回前先結算已經到的檢核點');
   const r3 = ge.exploration.update(e3.endAt + 1, { silent: true })[0];
   const r3got = Object.values(r3.resources).reduce((a2, b2) => a2 + b2, 0);
-  assert(r3.events.some((x) => x.includes('中途撤回')) && (r3got > 0 || e3.cp.stock.empty), `中途撤回可帶回已取得的物資（${r3got}）`);
+  const expect3 = Object.entries(e3.cp.gained).reduce((a2, [, v]) => a2 + Math.floor(v + 1e-9), 0);
+  assert(r3.events.some((x) => x.includes('中途撤回')) && r3got >= expect3 && (expect3 > 0 || e3.cp.stock.empty || e3.cp.failed || Object.values(e3.cp.gained).every((v) => v < 1)), `中途撤回可帶回已取得的物資（${r3got}）`);
   const rem3 = ge.state.map.remain[big2.id];
   assert(!rem3 || rem3.hidden, '未完成探索不會顯示建築剩餘物資');
   reset();
