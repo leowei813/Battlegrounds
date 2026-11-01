@@ -21,8 +21,14 @@ export const TRADER = {
   supplyPrice: [0, 3, 8, 20, 50, 120],
   /** 裝備價格 = 出售價 × 倍率 */
   gearMarkup: 4,
-  /** 商人售價倍率（回收價不受影響） */
-  sellMul: 1.5,
+  /** 商人售價倍率（回收價不受影響）：越稀有加價越多 */
+  sellMul: 2,
+  /** 材料、藥品、彈藥依階級（1～5）的售價倍率 */
+  supplySellMul: [1, 2, 2.6, 3.6, 5, 7],
+  /** 裝備依品級的售價倍率 */
+  gearSellMul: {
+    poor: 2, common: 2.5, uncommon: 3.5, rare: 5, epic: 7, legendary: 10,
+  },
   /** 出現的裝備品級權重（越高越少見） */
   gearRarity: {
     poor: 18, common: 34, uncommon: 28, rare: 14, epic: 5, legendary: 1,
@@ -121,7 +127,8 @@ export class TraderSystem {
 
   /** 商人的售價（基準價 × 售價倍率） */
   supplyPrice(key) {
-    return Math.max(1, Math.round(this.baseSupplyPrice(key) * TRADER.sellMul));
+    const tier = SUPPLIES[key]?.tier || 1;
+    return Math.max(1, Math.round(this.baseSupplyPrice(key) * (TRADER.supplySellMul[tier] || TRADER.sellMul)));
   }
 
   baseGearPrice(item) {
@@ -129,7 +136,7 @@ export class TraderSystem {
   }
 
   gearPrice(item) {
-    return Math.round(this.baseGearPrice(item) * TRADER.sellMul);
+    return Math.round(this.baseGearPrice(item) * (TRADER.gearSellMul[item.rarity] || TRADER.sellMul));
   }
 
   /** 回收比例：約為販售價的 1/8，越稀有（階級越高）比例越好（1 階 10% → 5 階 15%） */
