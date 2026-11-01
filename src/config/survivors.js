@@ -13,6 +13,9 @@ export const CLASSES = {
       { id: 'cleave', name: '橫掃', unlock: 1, desc: '攻擊有 20% 機率波及另一名敵人', effect: { cleaveChance: 0.2 } },
       { id: 'bulwark', name: '鋼鐵意志', unlock: 5, desc: '防禦 +20%', effect: { defPct: 0.2 } },
       { id: 'rage', name: '怒火', unlock: 10, desc: '生命低於 30% 時攻擊 +50%', effect: { rage: 0.5 } },
+      { id: 'toughness', name: '堅韌', unlock: 12, desc: '生命 +15%', effect: { hpPct: 0.15 } },
+      { id: 'veteran', name: '百戰老兵', unlock: 16, desc: '攻擊 +15%', effect: { atkPct: 0.15 } },
+      { id: 'juggernaut', name: '不屈', unlock: 22, desc: '防禦 +20%、吸血 +5%', effect: { defPct: 0.2, lifeStealAdd: 0.05 } },
     ],
   },
   medic: {
@@ -23,6 +26,9 @@ export const CLASSES = {
       { id: 'heal', name: '急救', unlock: 1, desc: '每 4 秒治療生命最低的隊友', effect: { healEvery: 4, healPct: 0.12 } },
       { id: 'triage', name: '傷患分流', unlock: 5, desc: '隊伍受傷恢復時間 -40%', effect: { injuryReduce: 0.4 } },
       { id: 'pharma', name: '製藥', unlock: 8, desc: '駐守避難所時紗布 +2/時', effect: { medicinePerHour: 2 } },
+      { id: 'vital', name: '生命專家', unlock: 12, desc: '生命 +12%、閃避 +3%', effect: { hpPct: 0.12, dodgeAdd: 0.03 } },
+      { id: 'surgeon', name: '外科手術', unlock: 16, desc: '戰鬥中的急救治療量 +8%（最大生命比例）', effect: { healPct: 0.08 } },
+      { id: 'apothecary', name: '藥劑大師', unlock: 22, desc: '駐守避難所時紗布再 +2/時', effect: { medicinePerHour: 2 } },
     ],
   },
   engineer: {
@@ -33,6 +39,9 @@ export const CLASSES = {
       { id: 'repair', name: '維修', unlock: 1, desc: '修繕圍牆的速度 +50%', effect: { repairBonus: 0.5 } },
       { id: 'efficient', name: '高效施工', unlock: 4, desc: '建造費用 -10%', effect: { buildDiscount: 0.1 } },
       { id: 'overclock', name: '超頻', unlock: 8, desc: '防禦塔傷害 +15%', effect: { towerDmg: 0.15 } },
+      { id: 'tinker', name: '精密改裝', unlock: 12, desc: '防禦塔傷害再 +10%', effect: { towerDmg: 0.1 } },
+      { id: 'fortify', name: '加固專家', unlock: 16, desc: '修繕圍牆的速度再 +50%', effect: { repairBonus: 0.5 } },
+      { id: 'mechAim', name: '機械瞄準', unlock: 22, desc: '攻擊 +15%、暴擊率 +5%', effect: { atkPct: 0.15, critAdd: 0.05 } },
     ],
   },
   farmer: {
@@ -43,6 +52,9 @@ export const CLASSES = {
       { id: 'harvest', name: '豐收', unlock: 1, desc: '駐守時食物產量 +20%', effect: { foodPct: 0.2 } },
       { id: 'forage', name: '野外覓食', unlock: 4, desc: '探索時食物收穫 +30%', effect: { forage: 0.3 } },
       { id: 'herbal', name: '草藥種植', unlock: 8, desc: '駐守時紗布 +1/時', effect: { medicinePerHour: 1 } },
+      { id: 'stamina', name: '吃苦耐勞', unlock: 12, desc: '生命 +15%', effect: { hpPct: 0.15 } },
+      { id: 'bountiful', name: '大豐收', unlock: 16, desc: '駐守時食物產量再 +20%', effect: { foodPct: 0.2 } },
+      { id: 'scavenger', name: '拾荒專家', unlock: 22, desc: '探索物資 +15%', effect: { lootPct: 0.15 } },
     ],
   },
   scout: {
@@ -53,6 +65,9 @@ export const CLASSES = {
       { id: 'pathfinder', name: '尋路', unlock: 1, desc: '隊伍探索時間 -15%', effect: { exploreSpeed: 0.15 } },
       { id: 'keenEye', name: '銳眼', unlock: 4, desc: '探索物資 +20%，裝備掉落率 +25%', effect: { lootPct: 0.2, itemPct: 0.25 } },
       { id: 'ambush', name: '伏擊', unlock: 8, desc: '戰鬥首擊必定暴擊', effect: { firstStrikeCrit: true } },
+      { id: 'evasion', name: '閃避大師', unlock: 12, desc: '閃避 +5%', effect: { dodgeAdd: 0.05 } },
+      { id: 'sniper', name: '狙擊', unlock: 16, desc: '暴擊率 +8%、攻擊 +10%', effect: { critAdd: 0.08, atkPct: 0.1 } },
+      { id: 'treasure', name: '尋寶專家', unlock: 22, desc: '裝備掉落率 +25%、探索物資 +10%', effect: { itemPct: 0.25, lootPct: 0.1 } },
     ],
   },
 };
@@ -85,13 +100,17 @@ export const MAX_SURVIVOR_LEVEL = 50;
  * 倖存者品級（與裝備相同的 6 階與顏色）：品級越高，每次升級提升的能力越多。
  * growth 為等級成長倍率；weight 為招募/遭遇時出現的權重。
  */
+/**
+ * 品級：growth 每級成長倍率、base 基礎能力倍率、skills 可解放的技能數（每個職業共 6 個技能）。
+ * 品級越高能力越好、可解放的技能越多。
+ */
 export const SURVIVOR_RARITY = {
-  poor: { growth: 0.8 },
-  common: { growth: 0.9 },
-  uncommon: { growth: 1.0 },
-  rare: { growth: 1.15 },
-  epic: { growth: 1.3 },
-  legendary: { growth: 1.5 },
+  poor: { growth: 0.8, base: 0.9, skills: 1 },
+  common: { growth: 0.9, base: 1, skills: 2 },
+  uncommon: { growth: 1.0, base: 1.06, skills: 3 },
+  rare: { growth: 1.15, base: 1.12, skills: 4 },
+  epic: { growth: 1.3, base: 1.2, skills: 5 },
+  legendary: { growth: 1.5, base: 1.3, skills: 6 },
 };
 
 /**

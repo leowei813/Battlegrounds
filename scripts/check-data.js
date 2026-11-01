@@ -2119,6 +2119,20 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(!overlap, 'NPC 據點不會生成在其他 NPC 的警戒範圍內');
 }
 
+// ---- 50. v8.40：品級決定可解放的技能數與基礎能力 ----
+{
+  const gs2 = Game.newGame({ playerName: 'S1', classId: 'warrior', lat: 25, lon: 121 });
+  const mk = (rarity) => ({ ...gs2.survivors.makeCandidate(1), classId: 'warrior', rarity, level: 30, isLeader: false });
+  const poor = mk('poor');
+  const leg = mk('legendary');
+  assert(gs2.survivors.skillSlots(poor) === 1 && gs2.survivors.skillSlots(leg) === 6, '劣質只能解放 1 個技能，稀有可解放 6 個');
+  assert(gs2.survivors.activeSkills(poor).length === 1 && gs2.survivors.activeSkills(leg).length === 6, '等級足夠時，品級越高解放的技能越多');
+  const p1 = { ...poor, level: 1 };
+  const l1 = { ...leg, level: 1 };
+  assert(gs2.survivors.stats(l1).hp > gs2.survivors.stats(p1).hp && gs2.survivors.stats(l1).atk > gs2.survivors.stats(p1).atk, '同等級時，品級越高基礎能力越好');
+  assert(Object.values((await import('../src/config/survivors.js')).CLASSES).every((c) => c.skills.length === 6), '每個職業有 6 個技能');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
