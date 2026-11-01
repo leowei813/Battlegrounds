@@ -50,9 +50,16 @@ function cleanPlayer(p) {
       id: String(t.id || '').slice(0, 40), level: finite(t.level) ? Math.min(60, Math.max(1, Math.round(t.level))) : 1,
       defeated: !!t.defeated,
       ...(t.kind === 'trade' ? { kind: 'trade', targetId: String(t.targetId || '').slice(0, 40), stall: cleanStall(t.stall) } : {}),
+      ...(t.kind === 'deliver' ? { kind: 'deliver' } : {}),
     }));
+  const demands = (Array.isArray(p.demands) ? p.demands : []).slice(0, 10).map((d) => ({
+    id: String(d?.id || '').slice(0, 40), key: String(d?.key || '').slice(0, 20),
+    qty: finite(d?.qty) ? Math.min(99999, Math.max(0, Math.floor(d.qty))) : 0,
+    price: finite(d?.price) ? Math.min(100000, Math.max(0, Math.floor(d.price))) : 0,
+  })).filter((d) => d.id && d.key && d.qty > 0);
   return {
     id: String(p.id || ''), name: String(p.name || '倖存者').slice(0, 16), civ: finite(p.civ) ? p.civ : 0, bases, trips,
+    exchange: finite(p.exchange) ? Math.min(20, Math.max(0, Math.floor(p.exchange))) : 0, demands,
   };
 }
 
@@ -135,6 +142,8 @@ export class WorldSync {
     return {
       name: g.state.player.name,
       civ: g.civilization.value(),
+      exchange: g.shelter.maxLevel('exchange'),
+      demands: g.demand.published(),
       bases: g.state.bases.map((b) => {
         const gar = g.territory.garrison(b);
         return {
@@ -156,6 +165,7 @@ export class WorldSync {
           // 交易隊：對方玩家與擺攤商品
           ...(ex.kind === 'trade' && ex.trade && !ex.recalled && !ex.tradeEnded && !ex.defeated
             ? { kind: 'trade', targetId: ex.trade.playerId, stall: g.trade.stallOf(ex) } : {}),
+          ...(ex.kind === 'deliver' && !ex.defeated ? { kind: 'deliver' } : {}),
         };
       }).filter(Boolean),
     };

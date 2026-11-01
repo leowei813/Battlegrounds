@@ -195,8 +195,17 @@ export class MapService {
       const { icon, d } = this.baseIcon(b.size, b.primary, `other-pin rel-${rel}`);
       L.marker([b.lat, b.lon], { icon, zIndexOffset: 800 })
         .on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
-        .bindTooltip(`${{ hostile: '⚔️ 敵對', friend: '🤝 友好', neutral: '👤 中立' }[rel]}・${escapeHtml(p.name)}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）`, { direction: 'top', offset: [0, -d / 2] })
+        .bindTooltip(`${{ hostile: '⚔️ 敵對', friend: '🤝 友好', neutral: '👤 中立' }[rel]}・${escapeHtml(p.name)}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）${b.primary && p.demands?.length ? '・📢 收購中' : ''}`, { direction: 'top', offset: [0, -d / 2] })
         .addTo(this.layers.others);
+      // 有收購需求：主要據點旁顯示 📢 圖示，點擊查看
+      if (b.primary && p.demands?.length) {
+        L.marker([b.lat, b.lon], {
+          icon: L.divIcon({ className: 'demand-badge', html: `<span>📢${p.demands.length > 1 ? `<i>${p.demands.length}</i>` : ''}</span>`, iconSize: [26, 26], iconAnchor: [-d / 2 + 6, d / 2 + 14] }),
+          zIndexOffset: 900,
+        }).on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
+          .bindTooltip(`📢 ${escapeHtml(p.name)} 收購 ${p.demands.length} 項物資（點擊查看）`, { direction: 'top' })
+          .addTo(this.layers.others);
+      }
     }));
   }
 

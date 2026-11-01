@@ -1735,6 +1735,10 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   };
   wire(A, 'A');
   wire(B, 'B');
+  // 交易需要雙方都有交易所
+  A.shelter.primary().facilities.exchange.level = 1;
+  assert(!A.trade.canStart('B').ok, '對方沒有交易所時不能交易');
+  B.shelter.primary().facilities.exchange.level = 1;
   const pres = (gx, id) => ({ id, ...JSON.parse(JSON.stringify(WS.prototype.presence.call({ game: gx }))) });
   const deliver = (gx, id) => { gx.territory.handleEvents(box[id].splice(0)); };
   A.world.others = [pres(B, 'B')];
@@ -1928,6 +1932,71 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   gc.state.resources.wood = cap;
   gc.siege.of(base.id).breach();
   assert(gc.state.resources.wood === cap, '屍潮突破時地窖裡的物資也不會損失');
+}
+
+// ---- 44. v8.31：交易所與收購需求 ----
+{
+  const { WorldSync: WS2 } = await import('../src/multiplayer/WorldSync.js');
+  const mk = (name, lat) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat, lon: 121 });
+    gx.state.map.pois = fillPois([], lat, 121);
+    gx.shelter.establish(gx.state.map.pois[0]);
+    setHour(gx, 10);
+    return gx;
+  };
+  const P = mk('收購方', 25);
+  const S = mk('出貨方', 25.003);
+  const box = { P: [], S: [] };
+  const wire = (gx, id) => {
+    gx.world = { others: [], identity: () => ({ id, token: 't' }), provider: { worldSend: async (_f, _t, to, type, data) => { box[to].push({ from: id, fromName: gx.state.player.name, type, data: JSON.parse(JSON.stringify(data)) }); } } };
+  };
+  wire(P, 'P');
+  wire(S, 'S');
+  const pres = (gx, id) => ({ id, ...JSON.parse(JSON.stringify(WS2.prototype.presence.call({ game: gx }))) });
+  const deliverBox = (gx, id) => gx.territory.handleEvents(box[id].splice(0));
+  assert(!P.demand.post('nail', 10, 5).ok, '沒有交易所不能發布收購');
+  P.shelter.primary().facilities.exchange.level = 1;
+  P.state.player.coins = 100;
+  assert(!P.demand.post('nail', 100, 5).ok, '金錢不足時不能掛單（收購總額要先保留）');
+  assert(P.demand.post('nail', 10, 5).ok && P.state.player.coins === 50, '掛單時保留收購總額');
+  assert(!P.demand.post('screw', 1, 1).ok, '交易所 Lv1 只能掛一項');
+  const pp = pres(P, 'P');
+  assert(pp.exchange === 1 && pp.demands.length === 1 && pp.demands[0].qty === 10, '公開資料包含交易所等級與收購需求');
+  S.world.others = [pp];
+  const dm = pp.demands[0];
+  assert(!S.demand.canDeliver('P', dm.id).ok, '出貨方沒有交易所時不能交付');
+  S.shelter.primary().facilities.exchange.level = 1;
+  S.state.supplies.nail = 20;
+  const sv = S.survivors.leader();
+  const r = S.demand.deliver('P', dm.id, sv.id, 15);
+  assert(r.ok && r.exp.deliver.qty === 10 && S.state.supplies.nail === 10, `派人交付（最多交付需求的數量：${r.exp?.deliver?.qty}）`);
+  S.demand.checkDeliveries(r.exp.startAt + r.exp.travelMs - 1000);
+  assert(!r.exp.deliver.delivered, '還沒抵達不會交付（需要移動時間）');
+  S.demand.checkDeliveries(r.exp.startAt + r.exp.travelMs + 1);
+  assert(r.exp.deliver.delivered && !sv.bag.nail, '抵達時交出物資');
+  const pn0 = P.state.supplies.nail || 0;
+  deliverBox(P, 'P');
+  assert(P.state.supplies.nail === pn0 + 10 && !P.demand.list.length && P.state.player.coins === 50, '收購方收下物資，收滿後自動結束');
+  const sc0 = S.state.player.coins;
+  deliverBox(S, 'S');
+  assert(S.state.player.coins === sc0 + 50, '出貨方收到款項');
+  // 收購已結束時交付 → 物資退回
+  P.demand.onSell('S', '出貨方', { demandId: dm.id, key: 'nail', qty: 5 });
+  const sn0 = S.state.supplies.nail;
+  deliverBox(S, 'S');
+  assert(S.state.supplies.nail === sn0 + 5, '收購已經結束時，物資退回出貨方');
+  const rep = S.exploration.update(r.exp.endAt + 1, { silent: true })[0];
+  assert(rep?.success, '交付隊回家有報告');
+  // 取消收購退還保留金額
+  P.state.player.coins = 100;
+  P.demand.post('wood', 10, 3);
+  const c0 = P.state.player.coins;
+  assert(P.demand.cancel(P.demand.list[0].id).ok && P.state.player.coins === c0 + 30, '取消收購退還保留金額');
+  // 玩家突襲也會搶金錢（地窖除外）
+  P.state.player.coins = 1000;
+  P.shelter.primary().facilities.cellar.level = 0;
+  P.territory.handleEvents([{ from: 'S', fromName: '出貨方', type: 'attack', data: { win: true, lossPct: 0.1 } }]);
+  assert(P.state.player.coins === 900, `玩家突襲成功會搶走金錢（${P.state.player.coins}）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

@@ -1,3 +1,4 @@
+import { openExchange } from '../ExchangeDialog.js';
 import { FACILITIES, FACILITY_MAX_LEVEL, OUTPOST_FACILITIES } from '../../config/facilities.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL } from '../../config/defenses.js';
 import { CLASSES } from '../../config/survivors.js';
@@ -120,7 +121,7 @@ export class ShelterPanel {
           <div class="wide"><small>屍潮波次</small><b>${this.waveText(siege)}</b></div>
         </div>
         ${queue ? `<h4>施工佇列</h4>${queue}` : ''}
-        <div class="btn-row">${btn(`🗄️ 物品倉庫（裝備 ${st.inventory.items.filter((i) => !g.equipment.equippedBy(i.id)).length}）`, 'openStorage', {}, { cls: 'btn-sm' })}${btn(`🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`, 'openGarage', {}, { cls: 'btn-sm' })}</div>
+        <div class="btn-row">${btn(`🗄️ 物品倉庫（裝備 ${st.inventory.items.filter((i) => !g.equipment.equippedBy(i.id)).length}）`, 'openStorage', {}, { cls: 'btn-sm' })}${btn(`🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`, 'openGarage', {}, { cls: 'btn-sm' })}${btn(`🏪 交易所${g.demand.list.length ? `（收購 ${g.demand.list.length}）` : ''}`, 'openExchange', {}, { cls: 'btn-sm', disabled: g.shelter.maxLevel('exchange') < 1, title: g.shelter.maxLevel('exchange') < 1 ? '需要先建造交易所' : '' })}</div>
         ${this.renderCivilization(sh)}
         <div class="btn-row">${baseActions}</div>`,
       facilities: `${queue ? `<h4>施工佇列</h4>${queue}` : ''}<div class="fac-list">${facilities}</div>`,
@@ -169,6 +170,7 @@ export class ShelterPanel {
     if (action === 'viewBase') this.ui.setViewBase(data.id);
     if (action === 'abandon') openAbandonDialog(this.ui, base);
     if (action === 'openStorage') this.ui.panels.inventory.openStorage();
+    if (action === 'openExchange') openExchange(this.ui);
     if (action === 'openGarage') this.ui.panels.inventory.openGarage();
   }
 
