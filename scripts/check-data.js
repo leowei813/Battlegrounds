@@ -2192,6 +2192,10 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   const as = A.assist.start('B', [guard.id]);
   assert(as.ok && guard.status === 'exploring', `可以直接派隊協防（${as.reason || ''}）`);
   assert(as.exp.travelMs < normalTravel * 0.6, `協防隊移動較快（${Math.round(normalTravel / 1000)} → ${Math.round(as.exp.travelMs / 1000)} 秒）`);
+  const early = pres(A, 'A');
+  assert(early.assist && early.assist.at > Date.now() && early.assist.dps > 0, '出發時就公開協防火力與抵達時間（協防方離線也有效）');
+  B.world.others = [early];
+  assert(!B.assist.incoming().some((h) => h.kind === 'team'), '協防隊抵達前不算協防');
   const shift = as.exp.travelMs + 1000;
   as.exp.startAt -= shift; as.exp.endAt -= shift;
   const pa = pres(A, 'A');
@@ -2206,6 +2210,15 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   for (let i = 0; i < 12; i += 1) sb.step(0.1);
   const hp1 = hpOf();
   assert(hp1 < hp0, `協防火力會打殭屍（${hp0} → ${hp1}）`);
+  const lg = B.state.bases[0].assistLog;
+  assert(lg && lg.list.A && lg.list.A.dmg > 0, `記錄協防玩家的傷害（${JSON.stringify(lg?.list)}）`);
+  sb.endNight();
+  assert(B.state.defenseLog[0].note.includes('協防') && B.state.defenseLog[0].note.includes('協防者'), `防守紀錄寫入協防（${B.state.defenseLog[0].note}）`);
+  A.world.others = [pres(B, 'B')];
+  const mr = A.assist.myResult(A.world.others[0]);
+  assert(mr && mr.result === 'ok' && mr.dmg > 0 && mr.team, `協防方看得到自己的戰果（${JSON.stringify(mr)}）`);
+  A.assist.update();
+  assert(A.state.log.some((l) => String(l.msg || l.text || l).includes('協防「被攻擊」戰報')), '協防方收到戰報');
   assert(A.exploration.recall(as.exp.id).ok && !pres(A, 'A').assist, '可以召回協防隊');
   // 防禦範圍涵蓋友好據點：防禦設施自動協助
   const cv = { r: 200, dps: 50 };

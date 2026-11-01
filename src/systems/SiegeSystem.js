@@ -65,6 +65,23 @@ export class BaseSiege {
     return n && n.night === this.nightKey() ? n.waves : 0;
   }
 
+  /** 今晚友好玩家的協防紀錄（存在據點上，重新整理也不會遺失） */
+  assistLog() {
+    const night = this.nightKey();
+    const b = this.base;
+    if (b.assistLog?.night !== night) b.assistLog = { night, result: 'ongoing', list: {} };
+    return b.assistLog;
+  }
+
+  /** 防守紀錄裡的協防說明 */
+  assistNote(result) {
+    const log = this.base?.assistLog;
+    if (!log || !Object.keys(log.list).length) return '';
+    if (log.result === 'ongoing') log.result = result;
+    const parts = Object.values(log.list).map((x) => `「${x.name}」${x.kind === 'cover' ? '的防禦設施' : '的協防隊'}（傷害 ${x.dmg}、擊殺 ${x.kills}）`);
+    return `🛡️ 友好協防：${parts.join('、')}`;
+  }
+
   /** 入夜：開始統計今晚的防守 */
   startNight() {
     this.wave = Math.max(this.wave, this.savedWaves());
@@ -78,7 +95,7 @@ export class BaseSiege {
     if (this.wave > 0 && !this.breachedTonight && this.base) {
       this.game.shelter.recordDefense({
         base: this.base, attacker: '屍潮', success: true, waves: this.wave, kills: this.nightKills,
-        wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)),
+        wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)), note: this.assistNote('ok'),
       });
     }
   }
@@ -361,7 +378,13 @@ export class BaseSiege {
         const targets = this.zombies.filter((z) => z.hp > 0);
         if (!targets.length || !h.dps) return;
         const t = targets.reduce((a, b) => (Math.hypot(a.x, a.y) < Math.hypot(b.x, b.y) ? a : b));
+        // 記錄每位協防玩家的傷害與擊殺（寫進防守紀錄，也公開給協防的人當戰報）
+        const log = this.assistLog();
+        const rec = log.list[h.id] || (log.list[h.id] = { name: h.name, kind: h.kind, dmg: 0, kills: 0 });
+        const before = t.hp;
         this.damage(t, h.dps);
+        rec.dmg += Math.round(Math.min(before, h.dps));
+        if (t.hp <= 0) rec.kills += 1;
         const a = Math.atan2(t.y, t.x) + randFloat(-0.5, 0.5);
         this.pushFx({ type: 'shot', kind: 'guard', x1: Math.cos(a) * WORLD.WALL_R, y1: Math.sin(a) * WORLD.WALL_R, x2: t.x, y2: t.y });
       });
@@ -570,7 +593,7 @@ export class BaseSiege {
     this.breachedTonight = true;
     sh.recordDefense({
       base, attacker: '屍潮', success: false, lost, damaged, kills: this.nightKills, waves: this.wave,
-      wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note: '防線被突破，圍牆耐久歸零',
+      wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note: ['防線被突破，圍牆耐久歸零', this.assistNote('breached')].filter(Boolean).join('。'),
     });
     const dmgText = damaged.length ? `，${damaged.length} 棟建築損毀` : '';
     damaged.forEach((d) => this.game.log(`🏚️ ${base.name}：${d}`, 'danger'));
