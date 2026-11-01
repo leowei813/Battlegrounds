@@ -6,19 +6,27 @@ import { SUPPLIES, suppliesOf, medWeight } from '../config/supplies.js';
 /**
  * 建築每日物資：以「建築 ID + 當地日期」為種子隨機產生當天的物資種類與數量，
  * 因此不需要為上千棟建築額外存檔，同一天內結果固定。
- * 建築被探索後清空（記錄 lootedDay），每個現實日晚上 12:00（當地時間）重置並重新隨機。
+ * 建築被探索後清空（記錄 lootedDay），每天早上 6:00 與下午 6:00（當地時間）各重置一次並重新隨機。
  */
 
-/** 當地日期的天數編號（每天 00:00 換日） */
+/** 每天的刷新時間（當地時間，小時） */
+export const REFRESH_HOURS = [6, 18];
+const HALF_DAY = 12 * 3600000;
+
+/** 物資刷新時段編號（每天 06:00、18:00 換一個時段） */
 export function dayKey(at = Date.now()) {
   const d = new Date(at);
-  return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000);
+  const local = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
+  return Math.floor((local - REFRESH_HOURS[0] * 3600000) / HALF_DAY);
 }
 
-/** 距離下一次 00:00 重置的毫秒數 */
+/** 距離下一次物資刷新（06:00 或 18:00）的毫秒數 */
 export function msToReset(at = Date.now()) {
   const d = new Date(at);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime() - at;
+  const next = REFRESH_HOURS.map((h) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h).getTime())
+    .concat(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, REFRESH_HOURS[0]).getTime())
+    .find((t) => t > at);
+  return next - at;
 }
 
 function hashString(s) {

@@ -416,7 +416,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(base.facilities.wall.level >= 1, '圍牆最低保留 1 級');
 }
 {
-  // 每日物資：探索後清空，隔天 00:00 重置且隨機
+  // 物資：探索後清空，每天 06:00、18:00 刷新且隨機
   const { stockOf, dayKey } = await import('../src/systems/LootStock.js');
   const poi = { id: 'osm_w1', type: 'shop', name: 'x', lat: 0, lon: 0 };
   const today = stockOf(poi);
@@ -425,7 +425,12 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   poi.lootedDay = dayKey();
   assert(stockOf(poi).empty, '探索後物資清空');
   const tomorrow = Date.now() + 86400000;
-  assert(!stockOf(poi, tomorrow).empty, '隔天 00:00 重置');
+  assert(!stockOf(poi, tomorrow).empty, '下一個時段重新刷新');
+  const d0 = new Date(); d0.setHours(5, 59, 0, 0);
+  const d1 = new Date(d0); d1.setHours(6, 1, 0, 0);
+  const d2 = new Date(d0); d2.setHours(17, 59, 0, 0);
+  const d3 = new Date(d0); d3.setHours(18, 1, 0, 0);
+  assert(dayKey(d0.getTime()) !== dayKey(d1.getTime()) && dayKey(d1.getTime()) === dayKey(d2.getTime()) && dayKey(d2.getTime()) !== dayKey(d3.getTime()), '每天 06:00 與 18:00 各刷新一次');
   const days = new Set(Array.from({ length: 10 }, (_, i) => JSON.stringify(stockOf({ ...poi, lootedDay: 0 }, Date.now() + i * 86400000).resources)));
   assert(days.size > 5, '每天物資的種類與數量隨機');
 }
