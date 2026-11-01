@@ -281,13 +281,13 @@ export class MapPanel {
       const pub = g.assist.published(now);
       const r = g.assist.myResult(p);
       const idle = p.updatedAt && now - p.updatedAt > 90000;
-      return `<div class="card"><b>🛡️ 我的協防隊</b> <small class="muted">${ap.phase === 'searching' ? '已抵達，協防到天亮' : ap.phase === 'returning' ? '回程中' : `前往中・約 ${formatDuration(ap.phaseRemainingMs)}後抵達`}</small>
+      return `<div class="card"><b>🛡️ 我的協防隊</b> <small class="muted">${ap.phase === 'searching' ? '已抵達，協防中' : ap.phase === 'returning' ? '回程中' : `前往中・約 ${formatDuration(ap.phaseRemainingMs)}後抵達`}</small>
         ${pub ? `<small class="block">每秒提供約 ${pub.dps} 傷害（${pub.count} 人）</small>` : ''}
         <small class="block">${r ? `對方回報：你造成 ${r.dmg} 傷害、擊殺 ${r.kills} 隻${r.result === 'ok' ? '・✅ 守住了' : r.result === 'breached' ? '・💥 被突破' : ''}` : '對方尚未回報戰果（殭屍出現並被協防隊攻擊後才會有）'}</small>
         ${idle ? `<small class="neg block">⚠️ 對方約 ${formatDuration(now - p.updatedAt)}沒有更新：屍潮只在對方開著遊戲時進行，協防也只在那時生效</small>` : ''}</div>`;
     })();
     const assistRow = rel !== 'friend' ? '' : `${assistInfo}<div class="btn-row">${myAssist
-    ? `<span class="tag tag-green">🛡️ 你的協防隊${tripProgress(myAssist, now).phase === 'searching' ? '正在協防（到天亮）' : '在路上'}</span>${btn('召回協防隊', 'stopAssist', { id: myAssist.id }, { cls: 'btn-xs btn-ghost' })}`
+    ? `<span class="tag tag-green">🛡️ 你的協防隊${tripProgress(myAssist, now).phase === 'searching' ? '正在協防' : '在路上'}</span>${btn('召回協防隊', 'stopAssist', { id: myAssist.id }, { cls: 'btn-xs btn-ghost' })}`
     : btn('🛡️ 派隊協防', 'assist', {}, { cls: 'btn-xs btn-primary', disabled: !canAssist.ok, title: canAssist.reason || '' })}</div>
       ${!myAssist && !canAssist.ok && sieged.length ? `<small class="muted block">${escapeHtml(canAssist.reason)}</small>` : ''}
       ${covered ? '<small class="pos block">🛡️ 你的屍潮防禦範圍涵蓋對方的據點：屍潮時防禦設施會自動分出一半火力協助</small>' : ''}`;
@@ -306,7 +306,7 @@ export class MapPanel {
       <div class="pick-list">${p.bases.map((b, i) => `<div class="pick-row"><span>${b.primary ? '⭐' : '🏴'} ${escapeHtml(b.name)}</span><small class="muted">警戒 ${b.alert}m・駐守 ${b.guards} 人</small>
         <span>${btn('📍', 'fly', { i }, { cls: 'btn-xs btn-ghost' })}${rel === 'friend' ? '' : btn('⚔️ 攻擊', 'attackBase', { i }, { cls: 'btn-xs btn-danger' })}</span></div>`).join('')}</div>
       ${trips.length ? `<div class="label">探索中</div><ul class="event-list">${trips.map((x) => `<li>${EXP_PHASES[tripProgress(x, now).phase].icon} 前往「${escapeHtml(x.target || '某處')}」・${x.members} 人・剩 ${formatDuration(x.endAt - now)}</li>`).join('')}</ul>` : ''}
-      <p class="muted">玩家之間預設中立：探索時會繞開對方的警戒範圍。攻擊後雙方變成敵對——敵對時經過對方有駐守人員的據點範圍會遭到攻擊。友好需要雙方同意，友好時不能互相攻擊。友好玩家的據點遭到屍潮攻擊時可以看到狀況；夜晚可以直接派隊前往協防（趕路較快）；自己避難所的屍潮防禦範圍涵蓋到對方據點時，防禦設施也會自動協助。</p>`;
+      <p class="muted">玩家之間預設中立：探索時會繞開對方的警戒範圍。攻擊後雙方變成敵對——敵對時經過對方有駐守人員的據點範圍會遭到攻擊。友好需要雙方同意，友好時不能互相攻擊。友好玩家的據點遭到屍潮攻擊時可以看到狀況；夜晚屍潮或有 NPC／玩家正前來攻打時，可以直接派隊前往協防（趕路較快，一起守城迎戰）；自己避難所的屍潮防禦範圍涵蓋到對方據點時，防禦設施也會自動協助。</p>`;
   }
 
   openPlayer(playerId) {
@@ -369,7 +369,7 @@ export class MapPanel {
     const b = p.bases.find((x) => x.primary) || p.bases[0];
     openTeamPicker(this.ui, {
       title: `🛡️ 協防：${p.name}・${b.name}`,
-      intro: '<p class="muted">隊伍趕往友好玩家的據點（移動速度是一般的 2 倍，自動繞開 NPC 與敵對玩家的警戒範圍），抵達後一起抵禦屍潮到天亮再回家；可以隨時召回。屍潮只在對方開著遊戲時進行，協防也只在那時生效。</p>',
+      intro: '<p class="muted">隊伍趕往友好玩家的據點（移動速度是一般的 2 倍，自動繞開 NPC 與敵對玩家的警戒範圍），抵達後一起防守：夜晚抵禦屍潮到天亮；白天留守 1 小時，NPC 或玩家來攻打時一起守城、破牆後一起迎戰（會受傷，重傷需要治療）。可以隨時召回。屍潮只在對方開著遊戲時進行。</p>',
       vehicles: true,
       distanceM: sh ? haversine(sh.lat, sh.lon, b.lat, b.lon) : 0,
       trip: { poi: g.assist.asPoi(`assist:${p.id}`), searchMin: 0, searchLabel: '協防' },

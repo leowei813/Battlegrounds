@@ -1,7 +1,24 @@
+import { AssistSystem } from './AssistSystem.js';
 import { BASE_SIZES } from '../config/civilization.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
 import { planRoute, crossings } from '../map/routing.js';
 import { uid, chance, randFloat, haversine } from '../utils/math.js';
+
+/** 驗證攻擊事件裡附帶的協防結果 */
+function cleanHelpers(h) {
+  if (!h || typeof h !== 'object') return null;
+  const out = {};
+  Object.entries(h).slice(0, 5).forEach(([id, x]) => {
+    if (!x || typeof x !== 'object') return;
+    out[String(id).slice(0, 40)] = {
+      name: String(x.name || '').slice(0, 16), kills: Math.min(50, Math.max(0, Math.floor(Number(x.kills) || 0))),
+      units: (Array.isArray(x.units) ? x.units : []).slice(0, 6).map((u) => ({
+        i: Math.min(5, Math.max(0, Math.floor(Number(u?.i) || 0))), hp: Math.max(0, Math.floor(Number(u?.hp) || 0)), down: !!u?.down,
+      })),
+    };
+  });
+  return Object.keys(out).length ? out : null;
+}
 
 /** NPC 據點的警戒範圍（公尺） */
 export const npcAlert = (n) => 60 + n.level;
@@ -142,7 +159,12 @@ export class TerritorySystem {
       const st = g.survivors.stats(m);
       return { sv: m, maxHp: Math.max(1, g.survivors.hpOf(m)), atk: st.atk };
     });
-    const as = g.combat.wallAssault(attackers, zone.wall || 0, zone.dps || 0);
+    // 對方的友好玩家協防隊：守城時一起射擊、破牆後一起迎戰
+    const allyFoes = g.assist.defendersOf(poi.playerId, exp.endAt);
+    const helperNames = Object.fromEntries((g.world?.others || []).filter((p) => p.assist?.to === poi.playerId).map((p) => [p.id, p.name]));
+    const allyDps = (g.world?.others || []).filter((p) => p.assist?.to === poi.playerId && p.assist.until > exp.endAt && (p.assist.at || 0) <= exp.endAt).reduce((s, p) => s + (p.assist.dps || 0), 0);
+    let helperResult = null;
+    const as = g.combat.wallAssault(attackers, zone.wall || 0, (zone.dps || 0) + allyDps);
     attackers.forEach((a) => {
       if (!as.alive.includes(a)) g.survivors.becomeSevere(a.sv, '在突襲中被防禦設施擊倒', exp.endAt);
       else g.survivors.setHp(a.sv, a.hp);
@@ -152,13 +174,14 @@ export class TerritorySystem {
     if (zone.wall > 0 && !as.breached) {
       win = false;
       report.events.push(fighters.length ? '🧱 圍牆太堅固，久攻不下只好撤退' : '💀 隊員全被防禦設施擊倒');
-    } else if (zone.guards > 0) {
-      // 2. 圍牆被打破後才能和駐守人員交戰，打贏才可掠奪
-      const result = g.combat.simulate(fighters, this.defenders(zone));
+    } else if (zone.guards > 0 || allyFoes.length) {
+      // 2. 圍牆被打破後才能和駐守人員（與對方的友好協防隊）交戰，打贏才可掠奪
+      const result = g.combat.simulate(fighters, [...(zone.guards > 0 ? this.defenders(zone) : []), ...allyFoes]);
       g.combat.applyOutcome(fighters, result, exp.endAt);
       report.kills += result.kills.length;
       win = result.victory;
-      report.events.push(`⚔️ 圍牆被打破！對方據點有 ${zone.guards} 名駐守人員迎戰`);
+      helperResult = AssistSystem.summarize(result.foes.filter((f) => f.ally), helperNames);
+      report.events.push(`⚔️ 圍牆被打破！對方據點有 ${zone.guards} 名駐守人員迎戰${allyFoes.length ? `，還有 ${allyFoes.length} 名友好玩家的協防隊員` : ''}`);
     } else report.events.push('🏃 圍牆被打破，對方據點沒有駐守人員');
     if (win) {
       // 搶奪：依運載量取得物資與金錢（對方會損失 10% 資源）
@@ -171,7 +194,10 @@ export class TerritorySystem {
     } else {
       report.events.push('💀 突襲失敗，隊伍撤退！');
     }
-    this.send(poi.playerId, 'attack', { base: poi.name.split('・')[1] || '', win, lossPct: win ? PVP_LOSS : 0, wallLost: Math.round(as.wallLost) });
+    this.send(poi.playerId, 'attack', {
+      base: poi.name.split('・')[1] || '', win, lossPct: win ? PVP_LOSS : 0, wallLost: Math.round(as.wallLost),
+      ...(helperResult ? { helpers: helperResult } : {}),
+    });
     g.log(`⚔️ 攻擊玩家「${poi.name}」${win ? '成功' : '失敗'}，雙方進入敵對`, win ? 'success' : 'danger');
     return report;
   }
@@ -246,6 +272,9 @@ export class TerritorySystem {
       if (e.type === 'attack') {
         this.setHostile(e.from, name);
         const base = g.state.bases.find((b) => b.name === e.data?.base) || g.shelter.primary();
+        // 協防隊員的結果（由攻擊方結算後附上）：公開給協防的人
+        const helpers = cleanHelpers(e.data?.helpers);
+        const assistNote = helpers ? g.assist.recordRaid(base, `玩家「${name}」`, !e.data?.win, helpers) : '';
         // 圍牆被攻擊的損傷（被打破時歸零）
         const wallLost = e.data?.win ? Infinity : Math.min(g.shelter.wallMax(base), Math.max(0, Number(e.data?.wallLost) || 0));
         const wallBefore = g.shelter.wallHp(base);
@@ -260,11 +289,11 @@ export class TerritorySystem {
           // 金錢也會被搶（地窖裡的除外）
           const coinsLost = Math.floor(g.shelter.exposed('coins') * pct);
           g.state.player.coins -= coinsLost;
-          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: false, lost, coins: coinsLost, wallLost: wallBefore - base.wallHp, note: `圍牆被打破，被搶走 ${Math.round(pct * 100)}% 資源與金錢` });
+          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: false, lost, coins: coinsLost, wallLost: wallBefore - base.wallHp, note: [`圍牆被打破，被搶走 ${Math.round(pct * 100)}% 資源與金錢`, assistNote].filter(Boolean).join('。') });
           g.log(`💀 玩家「${name}」突襲了「${e.data.base || '你的據點'}」，搶走 ${Math.round(pct * 100)}% 資源！雙方進入敵對`, 'danger');
           g.toast(`💀 玩家「${name}」突襲成功，搶走 ${Math.round(pct * 100)}% 資源！`, 'danger');
         } else {
-          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: true, wallLost: wallBefore - base.wallHp, note: base.wallHp > 0 ? '圍牆撐住了，對方久攻不下撤退' : '圍牆被打破，駐守人員擊退了突襲' });
+          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: true, wallLost: wallBefore - base.wallHp, note: [base.wallHp > 0 ? '圍牆撐住了，對方久攻不下撤退' : '圍牆被打破，駐守人員擊退了突襲', assistNote].filter(Boolean).join('。') });
           g.log(`🛡️ 擊退了玩家「${name}」的突襲！雙方進入敵對`, 'success');
           g.toast(`🛡️ 擊退了玩家「${name}」的突襲`, 'success');
         }

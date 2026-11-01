@@ -9,6 +9,11 @@ export const ASSIST_TRAVEL_MUL = 0.5;
 export const COVER_DPS_SHARE = 0.5;
 /** 協防隊員的火力倍率：比照自己據點的防禦駐守（0.6） */
 export const ASSIST_ATK_MUL = 0.6;
+/** 白天協防（防守 NPC／玩家攻打）的留守時間 */
+export const ASSIST_DAY_STAY_MS = 60 * 60 * 1000;
+/** 公開的協防隊員戰鬥數值上限（防止竄改） */
+const UNIT_CAP = { hp: 20000, atk: 3000, def: 2000 };
+const clampNum = (v, min, max, d = min) => (Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d);
 
 /**
  * 友好玩家的屍潮協防：
@@ -106,7 +111,8 @@ export class AssistSystem {
     if (!p) return { ok: false, reason: '找不到這位玩家（可能已離線）' };
     if (g.territory.relation(playerId) !== 'friend') return { ok: false, reason: '只能協防友好玩家' };
     const base = p.bases.find((b) => b.primary) || p.bases[0];
-    if (!g.time.phase().zombies) return { ok: false, reason: '屍潮只在夜晚來襲，入夜後才能派隊協防' };
+    const raids = (base?.raids || []).some((r) => r.at > Date.now());
+    if (!g.time.phase().zombies && !raids) return { ok: false, reason: '對方目前沒有危險：夜晚屍潮，或有 NPC／玩家正前來攻打時才能派隊協防' };
     if (this.trips().some((e) => e.assistTarget?.playerId === playerId)) return { ok: false, reason: '已經有隊伍在協防對方' };
     return { ok: true, player: p, base };
   }
@@ -125,8 +131,9 @@ export class AssistSystem {
     if (!st.ok) return st;
     const exp = st.exp;
     exp.assistTarget = target;
-    // 抵達後留守到天亮
-    exp.searchMs = Math.max(60000, g.time.nextDawn(now) - (now + exp.travelMs));
+    // 抵達後留守：夜晚到天亮；白天（防守 NPC／玩家攻打）留守 1 小時
+    const until = g.time.phase(now).zombies ? g.time.nextDawn(now) : now + exp.travelMs + ASSIST_DAY_STAY_MS;
+    exp.searchMs = Math.max(60000, until - (now + exp.travelMs));
     exp.endAt = exp.startAt + exp.travelMs * 2 + exp.searchMs;
     g.world?.syncSoon?.();
     return { ok: true, exp, msg: `隊伍出發協防「${c.player.name}」，約 ${Math.max(1, Math.round(exp.travelMs / 60000))} 分鐘後抵達，留守到天亮` };
@@ -156,8 +163,18 @@ export class AssistSystem {
     if (!exp) return null;
     const t = this.teamDps(exp);
     if (!t.count) return null;
+    // 隊員的戰鬥數值：對方遭到 NPC 或玩家攻打時，協防隊員一起上場防守
+    const units = exp.memberIds.map((id, i) => {
+      const sv = this.game.survivors.get(id);
+      if (!sv || sv.severe) return null;
+      const s = this.game.survivors.stats(sv);
+      return {
+        i, name: sv.name, lv: sv.level, hp: Math.round(this.game.survivors.hpOf(sv)), maxHp: Math.round(s.hp), atk: Math.round(s.atk), def: Math.round(s.def),
+        crit: +s.crit.toFixed(3), critDmg: +s.critDmg.toFixed(2), dodge: +s.dodge.toFixed(3), atkSpeed: +s.atkSpeed.toFixed(2),
+      };
+    }).filter(Boolean);
     return {
-      to: exp.assistTarget.playerId, dps: t.dps, count: t.count, at: exp.startAt + exp.travelMs, until: exp.startAt + exp.travelMs + exp.searchMs,
+      to: exp.assistTarget.playerId, dps: t.dps, count: t.count, at: exp.startAt + exp.travelMs, until: exp.startAt + exp.travelMs + exp.searchMs, units, tripId: exp.id,
     };
   }
 
@@ -173,13 +190,94 @@ export class AssistSystem {
     const out = [];
     (g.world?.others || []).forEach((p) => {
       if (g.territory.relation(p.id) !== 'friend') return;
-      if (myId && p.assist?.to === myId && p.assist.until > now && (p.assist.at || 0) <= now) out.push({ id: p.id, name: p.name, dps: p.assist.dps, count: p.assist.count, kind: 'team' });
+      if (myId && p.assist?.to === myId && p.assist.until > now && (p.assist.at || 0) <= now) {
+        out.push({ id: p.id, name: p.name, dps: p.assist.dps, count: p.assist.count, kind: 'team', units: p.assist.units || [], tripId: p.assist.tripId });
+      }
       const home = p.bases.find((b) => b.primary) || p.bases[0];
       if (p.cover && home && haversine(home.lat, home.lon, primary.lat, primary.lon) <= p.cover.r) {
         out.push({ id: `${p.id}#cover`, name: p.name, dps: p.cover.dps, count: 0, kind: 'cover' });
       }
     });
     return out;
+  }
+
+  // ================= 協防 NPC／玩家攻打 =================
+
+  /** 協防隊員轉成戰鬥單位（side 由戰鬥決定）；ally 標記來源 */
+  static unitOf(h, u) {
+    const maxHp = clampNum(u.maxHp, 1, UNIT_CAP.hp, 100);
+    return {
+      id: `ally:${h.id}:${u.i}`, ally: { player: h.id, i: u.i }, name: `${String(u.name || '協防隊員').slice(0, 12)}（${String(h.name).slice(0, 8)}）`,
+      maxHp, hp: clampNum(u.hp, 1, maxHp, maxHp), atk: clampNum(u.atk, 1, UNIT_CAP.atk, 10), def: clampNum(u.def, 0, UNIT_CAP.def, 0),
+      crit: clampNum(u.crit, 0, 0.8, 0.05), critDmg: clampNum(u.critDmg, 1, 4, 1.5), dodge: clampNum(u.dodge, 0, 0.6, 0.02), atkSpeed: clampNum(u.atkSpeed, 0.2, 4, 1),
+      level: clampNum(u.lv, 1, 60, 1), xp: 0, coins: 0, partsChance: 0, icon: '🛡️',
+    };
+  }
+
+  /** 來協防自己（被攻打方）的隊員戰鬥單位 */
+  allyUnits() {
+    return this.incoming().filter((h) => h.kind === 'team').flatMap((h) => (h.units || []).slice(0, 6).map((u) => AssistSystem.unitOf(h, u)));
+  }
+
+  /** 攻打其他玩家時：正在協防對方的友好玩家隊員（攻擊方看到的守軍） */
+  defendersOf(playerId, now = Date.now()) {
+    return (this.game.world?.others || []).filter((p) => p.assist?.to === playerId && p.assist.until > now && (p.assist.at || 0) <= now)
+      .flatMap((p) => (p.assist.units || []).slice(0, 6).map((u) => AssistSystem.unitOf({ id: p.id, name: p.name }, u)));
+  }
+
+  /**
+   * 整理一場防守戰中協防隊員的結果：{ 玩家ID: { name, kills, units: [{ i, hp, down }] } }
+   * @param {object[]} units 戰鬥結果中屬於協防隊員的單位（含 ally、hp、down、kills）
+   */
+  static summarize(units, names = {}) {
+    const out = {};
+    units.filter((u) => u.ally).forEach((u) => {
+      const k = u.ally.player;
+      const e = out[k] || (out[k] = { name: names[k] || '', kills: 0, units: [] });
+      e.kills += u.kills || 0;
+      e.units.push({ i: u.ally.i, hp: Math.max(0, Math.round(u.hp)), down: !!u.down });
+    });
+    return out;
+  }
+
+  /** 被攻打方：記錄這場防守戰的協防結果（公開給協防的人，對方據此套用傷勢與收到戰報） */
+  recordRaid(base, attacker, success, helpers) {
+    if (!base || !helpers || !Object.keys(helpers).length) return '';
+    base.raidAssist = { id: uid('ra'), at: Date.now(), attacker: String(attacker).slice(0, 40), result: success ? 'ok' : 'breached', list: helpers };
+    const names = Object.values(helpers).map((x) => `「${x.name}」的協防隊（擊倒 ${x.kills}${x.units.some((u) => u.down) ? `，${x.units.filter((u) => u.down).length} 人重傷` : ''}）`);
+    return `🛡️ 友好協防：${names.join('、')}`;
+  }
+
+  /** 協防的一方：讀取對方公開的防守戰結果，套用自己隊員的傷勢並收到戰報 */
+  checkRaidResults() {
+    const g = this.game;
+    const myId = g.world?.myId;
+    if (!myId) return;
+    (g.world?.others || []).forEach((p) => {
+      if (g.territory.relation(p.id) !== 'friend') return;
+      p.bases.forEach((b) => {
+        const ra = b.raidAssist;
+        const mine = ra?.list?.[myId];
+        if (!mine) return;
+        const key = `raid|${ra.id}`;
+        if ((g.state.assistSeen || []).includes(key)) return;
+        g.state.assistSeen = [key, ...(g.state.assistSeen || [])].slice(0, 30);
+        const exp = g.state.expeditions.find((e) => e.kind === 'assist' && e.assistTarget?.playerId === p.id);
+        const hurt = [];
+        (mine.units || []).forEach((u) => {
+          const sv = exp && g.survivors.get(exp.memberIds[u.i]);
+          if (!sv) return;
+          if (u.down) {
+            g.survivors.becomeSevere(sv, '在協防中', Date.now());
+            hurt.push(sv.name);
+          } else if (Number.isFinite(u.hp)) g.survivors.setHp(sv, Math.min(g.survivors.hpOf(sv), u.hp));
+        });
+        if (exp) exp.travelEvents = [...(exp.travelEvents || []), `🛡️ 協防「${p.name}」抵禦${ra.attacker}：擊倒 ${mine.kills} 人${hurt.length ? `，${hurt.join('、')} 重傷` : ''}`];
+        const text = `🛡️ 協防「${p.name}」戰報：抵禦${ra.attacker}的攻打，你的協防隊擊倒 ${mine.kills} 人${hurt.length ? `，${hurt.join('、')} 重傷` : ''}；${ra.result === 'ok' ? '✅ 成功守住' : '💥 對方據點還是被攻破了'}`;
+        g.log(text, ra.result === 'ok' ? 'success' : 'danger');
+        g.toast(text, ra.result === 'ok' ? 'success' : 'danger');
+      });
+    });
   }
 
   /** 對方公開的協防戰果中，自己的部分 */
@@ -242,6 +340,7 @@ export class AssistSystem {
       g.toast(`⚔️ ${raid.by}正前往攻打友好玩家「${player.name}」的「${base.name}」（約 ${min} 分鐘後抵達）`, 'danger');
       g.log(`⚔️ ${raid.by}正前往攻打友好玩家「${player.name}」的「${base.name}」（約 ${min} 分鐘後抵達）`, 'danger');
     });
+    this.checkRaidResults();
     // 協防戰報：對方的屍潮結束（守住或被突破）時通知一次
     (g.world?.others || []).forEach((p) => {
       if (g.territory.relation(p.id) !== 'friend') return;

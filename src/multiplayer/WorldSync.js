@@ -62,6 +62,27 @@ function cleanAssisted(a) {
   };
 }
 
+/** 最近一場防守戰的協防結果保留多久（讓協防的人有時間讀到） */
+const RAID_ASSIST_KEEP_MS = 6 * 60 * 60 * 1000;
+
+function cleanRaidAssist(r) {
+  if (!r || typeof r !== 'object' || !r.list || typeof r.list !== 'object') return null;
+  const list = {};
+  Object.entries(r.list).slice(0, 5).forEach(([id, x]) => {
+    if (!x || typeof x !== 'object') return;
+    list[String(id).slice(0, 40)] = {
+      name: String(x.name || '').slice(0, 16), kills: finite(x.kills) ? Math.min(50, Math.max(0, Math.floor(x.kills))) : 0,
+      units: (Array.isArray(x.units) ? x.units : []).slice(0, 6).map((u) => ({
+        i: finite(u?.i) ? Math.min(5, Math.max(0, Math.floor(u.i))) : 0, hp: finite(u?.hp) ? Math.max(0, Math.floor(u.hp)) : 0, down: !!u?.down,
+      })),
+    };
+  });
+  return {
+    id: String(r.id || '').slice(0, 40), at: finite(r.at) ? r.at : 0, attacker: String(r.attacker || '').slice(0, 40),
+    result: r.result === 'ok' ? 'ok' : 'breached', list,
+  };
+}
+
 /** 協防資料：要協防的玩家與火力 */
 function cleanAssist(a) {
   if (!a || typeof a !== 'object' || !finite(a.until) || !a.to) return null;
@@ -69,6 +90,12 @@ function cleanAssist(a) {
     to: String(a.to).slice(0, 40), until: a.until, at: finite(a.at) ? a.at : 0,
     dps: finite(a.dps) ? Math.min(MAX_ASSIST_DPS, Math.max(0, Math.round(a.dps))) : 0,
     count: finite(a.count) ? Math.min(20, Math.max(1, Math.round(a.count))) : 1,
+    tripId: String(a.tripId || '').slice(0, 40),
+    // 協防隊員的戰鬥數值（使用時會再限制範圍）
+    units: (Array.isArray(a.units) ? a.units : []).slice(0, 6).filter((u) => u && typeof u === 'object').map((u) => ({
+      i: finite(u.i) ? Math.min(5, Math.max(0, Math.floor(u.i))) : 0, name: String(u.name || '').slice(0, 12),
+      lv: u.lv, hp: u.hp, maxHp: u.maxHp, atk: u.atk, def: u.def, crit: u.crit, critDmg: u.critDmg, dodge: u.dodge, atkSpeed: u.atkSpeed,
+    })),
   };
 }
 
@@ -85,6 +112,7 @@ export function cleanPlayer(p) {
       dps: finite(b.dps) ? Math.min(1e5, Math.max(0, b.dps)) : 0,
       siege: cleanSiege(b.siege),
       assisted: cleanAssisted(b.assisted),
+      raidAssist: cleanRaidAssist(b.raidAssist),
       raids: (Array.isArray(b.raids) ? b.raids : []).slice(0, 5).filter((r) => r && finite(r.at))
         .map((r) => ({
           by: String(r.by || '不明隊伍').slice(0, 30), kind: r.kind === 'npc' ? 'npc' : 'player', at: r.at,
@@ -249,6 +277,8 @@ export class WorldSync {
           raids: g.territory.incomingRaids(b),
           // 友好玩家協防的戰果（協防的人據此收到戰報）
           assisted: assistedOf(b),
+          // 最近一場 NPC／玩家攻打的協防結果（協防的人據此套用傷勢、收到戰報）
+          raidAssist: b.raidAssist && Date.now() - b.raidAssist.at < RAID_ASSIST_KEEP_MS ? b.raidAssist : null,
         };
       }),
       // 被攔截而撤回的隊伍也會顯示移動，但其他玩家的地圖不顯示時間，也無法再攔截

@@ -1,3 +1,4 @@
+import { AssistSystem } from './AssistSystem.js';
 import { NPC_CONFIG, NPC_NAMES, npcAggression } from '../config/npcs.js';
 import { RESOURCE_KEYS, RAID_TRAVEL } from '../config/constants.js';
 import { ShelterSystem } from './ShelterSystem.js';
@@ -448,7 +449,12 @@ export class NpcSystem {
     const raiders = all.length;
     const siege = g.siege.of(base.id);
     const wallBefore = g.shelter.wallHp(base);
-    const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps() * (1 + g.research.bonus('raidDefensePct')));
+    // 友好玩家的協防隊：守城時一起射擊，圍牆被打破後一起迎戰
+    const isHome = g.shelter.isPrimary(base);
+    const helpers = isHome ? g.assist.incoming().filter((h) => h.kind === 'team') : [];
+    const allies = isHome ? g.assist.allyUnits() : [];
+    const helpDps = helpers.reduce((s, h) => s + (h.dps || 0), 0);
+    const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps() * (1 + g.research.bonus('raidDefensePct')) + helpDps);
     base.wallHp = as.wallLeft;
     const enemies = as.alive;
     const defenders = this.defenders(base);
@@ -456,11 +462,16 @@ export class NpcSystem {
     // 2. 圍牆被打破後，與據點中的人員交戰；打贏才能掠奪
     let victory = !as.breached;
     let result = null;
-    if (as.breached && defenders.length) {
-      result = g.combat.simulate(defenders, enemies, { firstStrikeBonus: base.facilities.watchtower.level * 0.04 });
+    if (as.breached && (defenders.length || allies.length)) {
+      result = g.combat.simulate(defenders, enemies, { firstStrikeBonus: base.facilities.watchtower.level * 0.04, allies });
       g.combat.applyOutcome(defenders, result, now);
       victory = result.victory;
     }
+    const label0 = `NPC「${n.name}」`;
+    const helperNames = Object.fromEntries(helpers.map((h) => [h.id, h.name]));
+    const helperSum = AssistSystem.summarize(result ? result.team : [], helperNames);
+    helpers.forEach((h) => { if (!helperSum[h.id]) helperSum[h.id] = { name: h.name, kills: 0, units: [] }; });
+    const assistNote = g.assist.recordRaid(base, label0, victory, helperSum);
     const kills = as.killed + (result?.kills.length || 0);
     // NPC 的傷亡：被防禦設施或防守人員擊倒的掠奪者，需要時間補回
     this.wound(n, Math.min(kills, this.fullCount(n)), now);
@@ -472,7 +483,7 @@ export class NpcSystem {
         ? (enemies.length ? `圍牆撐住了 ${as.sec} 秒，掠奪隊放棄撤退` : '防禦設施在圍牆被打破前擊退了掠奪隊')
         : `圍牆被打破，防守人員（${defenders.map((d) => d.name).join('、')}）擊退了掠奪隊`;
       g.shelter.recordDefense({
-        base, attacker: label, success: true, kills, injured, wallLost: as.wallLost, note: how,
+        base, attacker: label, success: true, kills, injured, wallLost: as.wallLost, note: [how, assistNote].filter(Boolean).join('。'),
       });
       g.toast(`🛡️「${base.name}」擊退了「${n.name}」的掠奪隊！`, 'success');
       n.level = Math.max(1, n.level - 1);
@@ -494,7 +505,7 @@ export class NpcSystem {
     g.state.stats.battlesLost += 1;
     g.shelter.recordDefense({
       base, attacker: label, success: false, lost: stolen, coins, kills, injured: ShelterSystem.newlySevere(severeBefore, defenders),
-      wallLost: as.wallLost, note: `圍牆被打破；${defenders.length ? `防守人員（${defenders.map((d) => d.name).join('、')}）戰敗` : '據點裡沒有人可以防守'}`,
+      wallLost: as.wallLost, note: [`圍牆被打破；${defenders.length || allies.length ? `防守人員（${[...defenders.map((d) => d.name), ...allies.map((a) => a.name)].join('、')}）戰敗` : '據點裡沒有人可以防守'}`, assistNote].filter(Boolean).join('。'),
     });
     const total = Object.values(stolen).reduce((s, v) => s + v, 0);
     g.toast(`💀「${n.name}」掠奪了「${base.name}」！搶走 ${total} 單位物資`, 'danger');

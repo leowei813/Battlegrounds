@@ -61,6 +61,7 @@ export function sanitizePresence(body) {
       ...(b.siege && typeof b.siege === 'object' ? { siege: smallObj(b.siege) } : {}),
       ...(Array.isArray(b.raids) && b.raids.length ? { raids: b.raids.slice(0, 5).map(smallObj).filter(Boolean) } : {}),
       ...(b.assisted && typeof b.assisted === 'object' ? { assisted: smallObj(b.assisted, 2048) } : {}),
+      ...(b.raidAssist && typeof b.raidAssist === 'object' ? { raidAssist: smallObj(b.raidAssist, 2048) } : {}),
     };
   }).filter(Boolean);
   if (!bases.length) return null;
@@ -96,7 +97,7 @@ export function sanitizePresence(body) {
       return qty == null || !d?.key ? null : { id: str(d.id, 40), key: str(d.key, 20), qty, price: num(d.price, 0, 100000) ?? 0 };
     }).filter(Boolean),
     // 協防隊與防禦範圍協防
-    ...(body.assist && typeof body.assist === 'object' ? { assist: smallObj(body.assist) } : {}),
+    ...(body.assist && typeof body.assist === 'object' ? { assist: smallObj(body.assist, 3072) } : {}),
     ...(body.cover && typeof body.cover === 'object' ? { cover: smallObj(body.cover) } : {}),
   };
 }
