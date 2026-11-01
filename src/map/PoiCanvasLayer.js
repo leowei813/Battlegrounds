@@ -98,9 +98,9 @@ export const PoiCanvasLayer = L.Layer.extend({
       const def = POI_TYPES[poi.type];
       const bs = BASE_SIZES[sizeOf(poi)];
       const rr = r * bs.mul;
-      // 今天已被搜刮的建築變淡（還有殘留物資的稍微亮一點）
+      // 這個時段已被搜刮一空的建築變淡；還有殘留物資的維持原本亮度
       const left = this.remain?.[poi.id]?.day === today;
-      ctx.globalAlpha = poi.lootedDay === today ? (left ? 0.65 : 0.3) : 1;
+      ctx.globalAlpha = poi.lootedDay === today && !left ? 0.3 : 1;
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, rr, 0, Math.PI * 2);
       ctx.fillStyle = icons ? 'rgba(17,17,17,0.82)' : def.color;
