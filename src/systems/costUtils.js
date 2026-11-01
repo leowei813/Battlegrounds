@@ -17,30 +17,64 @@ function pool(state, key) {
   return null;
 }
 
-/** 目前擁有的數量（資源、貨幣或倉庫裡的材料物品） */
-export function amountOf(state, key) {
+/**
+ * 待在避難所的倖存者背包：待命中（沒有外出探索）、且不是駐守在前哨站的人。
+ * 建造、升級、研究等支出也可以使用他們身上的物資。
+ */
+export function homeBags(state) {
+  const away = new Set();
+  (state.bases || []).forEach((b) => {
+    if (b.id === state.primaryBaseId) return;
+    (b.defenses || []).forEach((d) => { if (d.garrisonId) away.add(d.garrisonId); });
+  });
+  return (state.survivors || []).filter((s) => s.status === 'idle' && !away.has(s.id) && s.bag).map((s) => s.bag);
+}
+
+/** 倉庫裡的數量（不含倖存者背包） */
+export function storedOf(state, key) {
   return pool(state, key)?.[key] ?? 0;
 }
 
+/** 目前可用的數量：倉庫（資源、貨幣、材料物品）＋待在避難所的倖存者背包 */
+export function amountOf(state, key) {
+  const base = storedOf(state, key);
+  if (CURRENCY_KEYS.includes(key)) return base;
+  return base + homeBags(state).reduce((s, bag) => s + Math.max(0, Math.floor(bag[key] || 0)), 0);
+}
+
 export function canAfford(state, cost = {}) {
-  return Object.entries(cost).every(([k, v]) => (pool(state, k)?.[k] ?? 0) >= v);
+  return Object.entries(cost).every(([k, v]) => amountOf(state, k) >= v);
 }
 
 /** 缺少的項目 { key: 缺少數量 } */
 export function missing(state, cost = {}) {
   const out = {};
   Object.entries(cost).forEach(([k, v]) => {
-    const have = pool(state, k)?.[k] ?? 0;
+    const have = amountOf(state, k);
     if (have < v) out[k] = v - have;
   });
   return out;
 }
 
+/** 支付：先扣倉庫，不夠的部分再從待在避難所的倖存者背包扣 */
 export function payCost(state, cost = {}) {
   if (!canAfford(state, cost)) return false;
   Object.entries(cost).forEach(([k, v]) => {
     const p = pool(state, k);
-    p[k] -= v;
+    const fromStore = Math.min(v, Math.max(0, p[k] || 0));
+    p[k] = (p[k] || 0) - fromStore;
+    let left = v - fromStore;
+    if (left > 0 && !CURRENCY_KEYS.includes(k)) {
+      homeBags(state).forEach((bag) => {
+        if (left <= 0) return;
+        const n = Math.min(left, Math.floor(bag[k] || 0));
+        if (!n) return;
+        bag[k] -= n;
+        if (bag[k] <= 0) delete bag[k];
+        left -= n;
+      });
+    }
+    if (left > 0) p[k] -= left; // 理論上不會發生（canAfford 已檢查）
     if (isSupply(k) && p[k] <= 0) delete p[k];
   });
   return true;

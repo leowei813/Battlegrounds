@@ -2217,6 +2217,22 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(raid >= normal * 3.9 && raid >= 5 * 60000 / 2, `突襲玩家避難所的移動時間大幅拉長（${Math.round(normal / 1000)} 秒 → ${Math.round(raid / 1000)} 秒）`);
 }
 
+// ---- 54. v8.48：建造、升級、研究可使用待在避難所的倖存者背包物資 ----
+{
+  const { canAfford: ca, payCost: pc, amountOf: ao } = await import('../src/systems/costUtils.js');
+  const gb = Game.newGame({ playerName: 'B', classId: 'warrior', lat: 25, lon: 121 });
+  gb.state.map.pois = fillPois([], 25, 121);
+  gb.shelter.establish(gb.state.map.pois[0]);
+  const lead = gb.survivors.leader();
+  gb.state.supplies.nail = 5;
+  lead.bag = { ...(lead.bag || {}), nail: 10 };
+  assert(ao(gb.state, 'nail') === 15 && ca(gb.state, { nail: 12 }), '可用數量包含待在避難所的倖存者背包');
+  assert(pc(gb.state, { nail: 12 }) && !gb.state.supplies.nail && lead.bag.nail === 3, '先扣倉庫，不夠再從背包扣');
+  lead.status = 'exploring';
+  assert(!ca(gb.state, { nail: 2 }), '外出中的倖存者背包不能用');
+  lead.status = 'idle';
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

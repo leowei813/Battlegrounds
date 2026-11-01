@@ -217,6 +217,9 @@ export class UIManager {
       panel.renderOverlay();
       return;
     }
+    // 正在輸入（輸入框、下拉選單有焦點）時不重新繪製，避免打斷輸入
+    const active = document.activeElement;
+    if (!force && active && this.panelEl.contains(active) && ['INPUT', 'SELECT', 'TEXTAREA'].includes(active.tagName)) return;
     const html = panel.render();
     if (!force && html === this.lastHtml) return;
     this.lastHtml = html;
