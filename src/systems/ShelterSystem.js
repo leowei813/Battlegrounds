@@ -14,7 +14,7 @@ import { createBase } from '../core/GameState.js';
 import { canAfford, payCost, scaleCost } from './costUtils.js';
 
 /** 屍潮範圍在地圖上的最小比例（完整大小約半徑 225 公尺） */
-export const SIEGE_RANGE = { min: 0.4 };
+export const SIEGE_RANGE = { min: 0.4, fullM: 225 };
 
 /**
  * 據點系統：
@@ -356,6 +356,11 @@ export class ShelterSystem {
     const wt = Math.min(1, (base.facilities.watchtower?.level || 0) / FACILITY_MAX_LEVEL);
     const rs = RESEARCH.d_range ? Math.min(1, this.game.research.level('d_range') / RESEARCH.d_range.maxLevel) : 0;
     return SIEGE_RANGE.min + (1 - SIEGE_RANGE.min) * (wt * 0.6 + rs * 0.4);
+  }
+
+  /** 屍潮防禦範圍（地圖上最外層圓圈）的半徑（公尺） */
+  siegeRangeMeters(b) {
+    return SIEGE_RANGE.fullM * this.siegeRangeScale(b);
   }
 
   rangeMul(b) {

@@ -50,7 +50,11 @@ export class TerritorySystem {
     (g.state.npcs?.list || []).forEach((n) => {
       const t = n.trip;
       if (t?.kind === 'raid' && t.baseId === base.id && !t.resolved && !t.hidden && now < t.startAt + t.travelMs) {
-        out.push({ by: `NPC「${n.name}」`, kind: 'npc', at: t.startAt + t.travelMs });
+        // 行軍路線與時間：友好玩家的地圖上也會畫出 NPC 部隊
+        out.push({
+          by: `NPC「${n.name}」`, kind: 'npc', at: t.startAt + t.travelMs, npc: n.name, level: n.level,
+          from: t.from, startAt: t.startAt, ...(t.path?.length >= 2 ? { path: t.path.slice(0, 20) } : {}),
+        });
       }
     });
     (g.world?.others || []).forEach((p) => (p.trips || []).forEach((t) => {

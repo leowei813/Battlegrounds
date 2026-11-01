@@ -615,7 +615,7 @@ export class BaseSiege {
     return !!this.base && (this.base.facilities.generator?.level || 0) > 0 && this.game.resources.generatorActive();
   }
 
-  defenseDps({ apparent = false } = {}) {
+  defenseDps({ apparent = false, towersOnly = false } = {}) {
     const sh = this.game.shelter;
     const base = this.base;
     if (!base) return 0;
@@ -632,7 +632,7 @@ export class BaseSiege {
         dps += st.damage * st.fireRate * mul * this.typeMul(d.type) * (st.aoe ? 1.8 : 1) * (st.chain ? 2 : 1);
       }
     });
-    this.guards().forEach(({ sv }) => { dps += this.meleeOrRangedAtk(sv, apparent) * 0.6 * this.guardMul(); });
+    if (!towersOnly) this.guards().forEach(({ sv }) => { dps += this.meleeOrRangedAtk(sv, apparent) * 0.6 * this.guardMul(); });
     return Math.round(dps);
   }
 

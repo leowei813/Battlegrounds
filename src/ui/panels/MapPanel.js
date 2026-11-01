@@ -256,29 +256,31 @@ export class MapPanel {
     const myTrade = g.trade.activeTo(p.id);
     const toMe = g.trade.incoming(now).filter((x) => x.player.id === p.id);
     const sieged = rel === 'friend' ? p.bases.filter((b) => b.siege) : [];
-    const as = g.assist.state;
-    const assistingHere = as && as.playerId === p.id && as.until > now;
+    const myAssist = g.assist.trips().find((e) => e.assistTarget?.playerId === p.id);
     const canAssist = g.assist.canAssist(p.id);
+    const home = p.bases.find((b) => b.primary) || p.bases[0];
+    const covered = rel === 'friend' && g.assist.covers(home);
+    const assistRow = rel !== 'friend' ? '' : `<div class="btn-row">${myAssist
+    ? `<span class="tag tag-green">🛡️ 你的協防隊${tripProgress(myAssist, now).phase === 'searching' ? '正在協防（到天亮）' : '在路上'}</span>${btn('召回協防隊', 'stopAssist', { id: myAssist.id }, { cls: 'btn-xs btn-ghost' })}`
+    : btn('🛡️ 派隊協防', 'assist', {}, { cls: 'btn-xs btn-primary', disabled: !canAssist.ok, title: canAssist.reason || '' })}</div>
+      ${!myAssist && !canAssist.ok && sieged.length ? `<small class="muted block">${escapeHtml(canAssist.reason)}</small>` : ''}
+      ${covered ? '<small class="pos block">🛡️ 你的屍潮防禦範圍涵蓋對方的據點：屍潮時防禦設施會自動分出一半火力協助</small>' : ''}`;
     const siegeHtml = sieged.map((b) => `<div class="card siege-card"><b>🧟 「${escapeHtml(b.name)}」正遭到屍潮攻擊</b>
-        <small class="block">第 ${b.siege.wave}/${b.siege.maxWaves} 波・剩 ${b.siege.left} 隻・🧱 圍牆 ${b.siege.wallPct}%${b.siege.helpers ? `・🛡️ ${b.siege.helpers} 位玩家協防中` : ''}</small>
-        ${b.primary ? `<div class="btn-row">${assistingHere
-    ? `<span class="tag tag-green">🛡️ 你的 ${g.assist.helpers(now).length} 名防禦駐守協防中（到天亮）</span>${btn('召回協防', 'stopAssist', {}, { cls: 'btn-xs btn-ghost' })}`
-    : btn('🛡️ 派防禦駐守協防', 'assist', {}, { cls: 'btn-xs btn-primary', disabled: !canAssist.ok, title: canAssist.reason || '' })}</div>
-        ${!assistingHere && !canAssist.ok ? `<small class="muted block">${escapeHtml(canAssist.reason)}</small>` : ''}` : ''}</div>`).join('');
+        <small class="block">第 ${b.siege.wave}/${b.siege.maxWaves} 波・剩 ${b.siege.left} 隻・🧱 圍牆 ${b.siege.wallPct}%${b.siege.helpers ? `・🛡️ ${b.siege.helpers} 位玩家協防中` : ''}</small></div>`).join('');
     const raidHtml = rel === 'friend' ? p.bases.map((b) => {
       const list = (b.raids || []).filter((r) => r.at > now);
       return list.length ? `<div class="card siege-card"><b>⚔️ 「${escapeHtml(b.name)}」正被攻打</b>
         ${list.map((r) => `<small class="block">${r.kind === 'npc' ? '🏴‍☠️' : '👤'} ${escapeHtml(r.by)}・約 ${formatDuration(r.at - now)}後抵達</small>`).join('')}</div>` : '';
     }).join('') : '';
     return `<p>${relTag} 🏛️ 文明度 <b>${p.civ}</b>・據點 ${p.bases.length} 個・外出隊伍 ${trips.length} 支</p>
-      ${raidHtml}${siegeHtml}
+      ${raidHtml}${siegeHtml}${assistRow}
       <div class="btn-row">${diplo}${btn(myTrade ? '🤝 交易隊已出發' : '🤝 派人交易', 'trade', {}, { cls: 'btn-sm btn-primary', disabled: !tradeCheck.ok, title: tradeCheck.reason || '' })}</div>
       ${(p.demands || []).length ? `<div class="label">📢 收購中${p.exchange ? `（交易所 Lv${p.exchange}）` : ''}</div>${p.demands.map((d) => `<div class="card row-between"><span>${g.demand.label(d.key)} ×${d.qty}・每個 💰${d.price}</span>${btn('📦 派人交付', 'deliver', { id: d.id }, { cls: 'btn-xs btn-primary', disabled: !g.demand.canDeliver(p.id, d.id).ok, title: g.demand.canDeliver(p.id, d.id).reason || '' })}</div>`).join('')}` : ''}
       ${toMe.map((x) => `<div class="card row-between"><span>🤝 對方的交易隊${x.arrived ? '正在你的據點擺攤' : '正在前來你的據點'}</span>${btn('查看商品', 'openStall', { trip: x.trip.id }, { cls: 'btn-xs btn-primary', disabled: !x.arrived })}</div>`).join('')}
       <div class="pick-list">${p.bases.map((b, i) => `<div class="pick-row"><span>${b.primary ? '⭐' : '🏴'} ${escapeHtml(b.name)}</span><small class="muted">警戒 ${b.alert}m・駐守 ${b.guards} 人</small>
         <span>${btn('📍', 'fly', { i }, { cls: 'btn-xs btn-ghost' })}${rel === 'friend' ? '' : btn('⚔️ 攻擊', 'attackBase', { i }, { cls: 'btn-xs btn-danger' })}</span></div>`).join('')}</div>
       ${trips.length ? `<div class="label">探索中</div><ul class="event-list">${trips.map((x) => `<li>${EXP_PHASES[tripProgress(x, now).phase].icon} 前往「${escapeHtml(x.target || '某處')}」・${x.members} 人・剩 ${formatDuration(x.endAt - now)}</li>`).join('')}</ul>` : ''}
-      <p class="muted">玩家之間預設中立：探索時會繞開對方的警戒範圍。攻擊後雙方變成敵對——敵對時經過對方有駐守人員的據點範圍會遭到攻擊。友好需要雙方同意，友好時不能互相攻擊。友好玩家的據點遭到屍潮攻擊時可以看到狀況；雙方避難所的警戒範圍相接時，可以派「防禦駐守」的倖存者前往協防到天亮（協防期間自己據點少了他們的火力）。</p>`;
+      <p class="muted">玩家之間預設中立：探索時會繞開對方的警戒範圍。攻擊後雙方變成敵對——敵對時經過對方有駐守人員的據點範圍會遭到攻擊。友好需要雙方同意，友好時不能互相攻擊。友好玩家的據點遭到屍潮攻擊時可以看到狀況；夜晚可以直接派隊前往協防（趕路較快）；自己避難所的屍潮防禦範圍涵蓋到對方據點時，防禦設施也會自動協助。</p>`;
   }
 
   openPlayer(playerId) {
@@ -300,8 +302,11 @@ export class MapPanel {
         if (action === 'acceptFriend') this.ui.result(await t.acceptFriend(p.id, p.name));
         if (action === 'declineFriend') this.ui.result(t.declineFriend(p.id));
         if (action === 'unfriend' && confirm(`確定解除與「${p.name}」的友好關係？`)) this.ui.result(await t.removeFriend(p.id));
-        if (action === 'assist') this.ui.result(g.assist.start(p.id));
-        if (action === 'stopAssist') this.ui.result(g.assist.stop());
+        if (action === 'assist') {
+          this.openAssist(p);
+          return;
+        }
+        if (action === 'stopAssist') this.ui.result(g.exploration.recall(data.id));
         if (action === 'trade') {
           openTradeSetup(this.ui, p);
           return;
@@ -323,6 +328,27 @@ export class MapPanel {
         }
         if (this.ui.modal.current === m) m.update(this.playerBody(p));
         this.onWorld(g.world?.others || []);
+      },
+    });
+  }
+
+  /** 派隊協防友好玩家的據點（趕路比一般快，抵達後留守到天亮） */
+  openAssist(p) {
+    const g = this.game;
+    const sh = g.shelter.primary();
+    const b = p.bases.find((x) => x.primary) || p.bases[0];
+    openTeamPicker(this.ui, {
+      title: `🛡️ 協防：${p.name}・${b.name}`,
+      intro: '<p class="muted">隊伍趕往友好玩家的據點（移動速度是一般的 2 倍），抵達後一起抵禦屍潮到天亮再回家；可以隨時召回。</p>',
+      vehicles: true,
+      routeOption: true,
+      distanceM: sh ? haversine(sh.lat, sh.lon, b.lat, b.lon) : 0,
+      trip: { poi: g.assist.asPoi(`assist:${p.id}`), searchMin: 0, searchLabel: '協防' },
+      confirmLabel: '出發協防！',
+      onConfirm: (ids, _dur, _auto, vids, opts) => {
+        const r = this.ui.result(g.assist.start(p.id, ids, { vehicleIds: vids, ...opts }));
+        if (r.ok) this.renderMap(true);
+        return r;
       },
     });
   }

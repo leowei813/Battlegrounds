@@ -1,42 +1,31 @@
-import { haversine } from '../utils/math.js';
+import { haversine, uid } from '../utils/math.js';
+import { tripProgress } from './ExplorationSystem.js';
 
 /** 協防火力上限（每秒傷害，防止竄改的公開資料） */
 export const MAX_ASSIST_DPS = 3000;
+/** 協防隊趕路較快：步行時間倍率 */
+export const ASSIST_TRAVEL_MUL = 0.5;
+/** 防禦範圍涵蓋友好據點時，防禦設施分出多少火力幫忙 */
+export const COVER_DPS_SHARE = 0.5;
 
 /**
  * 友好玩家的屍潮協防：
- *  - 主要據點正在被屍潮攻擊時，公開資料會附上屍潮狀況（波次、剩餘殭屍、圍牆耐久），友好玩家可以即時看到。
- *  - 自己主要據點的警戒範圍與友好玩家據點的警戒範圍相接（重疊）時，可以派「防禦駐守」的倖存者前往協防到天亮。
- *  - 協防的人透過公開資料告知對方火力；對方的屍潮模擬每秒對殭屍造成這些傷害。協防期間自己據點少了這些駐守火力。
+ *  - 主要據點正在被屍潮攻擊時，公開資料會附上屍潮狀況，友好玩家可以即時看到。
+ *  - 派隊協防：直接指派隊伍前往友好玩家的據點（趕路比一般探索快），抵達後一起打殭屍到天亮或被召回。
+ *  - 防禦範圍涵蓋：自己避難所的屍潮防禦範圍（地圖上最外層的圓圈）涵蓋到友好據點時，防禦設施會自動分出火力協助。
+ *  - 協助的火力透過公開資料傳給對方；對方的屍潮模擬每秒對殭屍造成這些傷害。
  */
 export class AssistSystem {
   constructor(game) {
     this.game = game;
+    this.cache = new Map();
     this.notified = new Map(); // 友好玩家屍潮通知（每晚一次）
     this.helpersSeen = new Set();
   }
 
-  get state() {
-    return this.game.state.assist || null;
-  }
-
-  /** 正在協防中的倖存者 ID */
-  assistingIds(now = Date.now()) {
-    const a = this.state;
-    if (!a || a.until <= now) return new Set();
-    return new Set(a.ids || []);
-  }
-
-  /** 可以派去協防的人：防禦駐守、待命、沒有重傷、沒有在前哨站駐守 */
-  candidates() {
-    const g = this.game;
-    return g.state.survivors.filter((s) => s.job === 'guard' && g.survivors.isAvailable(s));
-  }
-
-  /** 正在協防的人（中途被派出探索、受重傷就不算） */
-  helpers(now = Date.now()) {
-    const ids = this.assistingIds(now);
-    return this.candidates().filter((s) => ids.has(s.id));
+  /** 舊版（指派防禦駐守）的協防已改為派隊，保留空集合相容 */
+  assistingIds() {
+    return new Set();
   }
 
   /** 友好玩家正在被屍潮攻擊的據點 */
@@ -61,90 +50,148 @@ export class AssistSystem {
     return out;
   }
 
-  /** 兩個據點的警戒範圍是否相接 */
-  inRange(myBase, other) {
-    if (!myBase || !other) return false;
-    const d = haversine(myBase.lat, myBase.lon, other.lat, other.lon);
-    return d <= this.game.territory.alertRadius(myBase) + (other.alert || 0);
+  // ================= 防禦範圍涵蓋 =================
+
+  /** 自己避難所的屍潮防禦範圍（公尺） */
+  coverRadius(base = this.game.shelter.primary()) {
+    return base ? Math.round(this.game.shelter.siegeRangeMeters(base)) : 0;
+  }
+
+  /** 公開的防禦範圍與可以分出的防禦設施火力 */
+  publishedCover() {
+    const g = this.game;
+    const b = g.shelter.primary();
+    if (!b) return null;
+    const dps = Math.round(g.siege.of(b.id).defenseDps({ towersOnly: true }) * COVER_DPS_SHARE);
+    return dps > 0 ? { r: this.coverRadius(b), dps: Math.min(MAX_ASSIST_DPS, dps) } : null;
+  }
+
+  /** 自己的防禦範圍是否涵蓋這個據點 */
+  covers(base) {
+    const sh = this.game.shelter.primary();
+    return !!sh && !!base && haversine(sh.lat, sh.lon, base.lat, base.lon) <= this.coverRadius(sh);
+  }
+
+  // ================= 派隊協防 =================
+
+  player(playerId) {
+    return (this.game.world?.others || []).find((p) => p.id === playerId) || null;
+  }
+
+  /** 讓探索系統把協防目的地當成地點：id = assist:玩家ID */
+  asPoi(id) {
+    if (!String(id).startsWith('assist:')) return null;
+    let t = this.cache.get(id) || this.game.state.expeditions.find((e) => e.poiId === id)?.assistTarget;
+    if (!t) {
+      const p = this.player(id.slice(7));
+      const b = p && (p.bases.find((x) => x.primary) || p.bases[0]);
+      if (b) t = { playerId: p.id, name: p.name, baseName: b.name, lat: b.lat, lon: b.lon };
+    }
+    return t && {
+      id, name: `🛡️ 協防「${t.name}」`, lat: t.lat, lon: t.lon, type: 'residential', icon: '🛡️', assist: true, target: t,
+    };
+  }
+
+  /** 進行中的協防隊 */
+  trips() {
+    return this.game.state.expeditions.filter((e) => e.kind === 'assist' && !e.recalled && !e.defeated);
   }
 
   canAssist(playerId) {
     const g = this.game;
-    const p = (g.world?.others || []).find((x) => x.id === playerId);
+    const p = this.player(playerId);
+    if (!g.shelter.hasShelter()) return { ok: false, reason: '請先建立避難所' };
     if (!p) return { ok: false, reason: '找不到這位玩家（可能已離線）' };
     if (g.territory.relation(playerId) !== 'friend') return { ok: false, reason: '只能協防友好玩家' };
     const base = p.bases.find((b) => b.primary) || p.bases[0];
-    if (!base?.siege) return { ok: false, reason: '對方目前沒有遭到屍潮攻擊' };
-    if (!this.inRange(g.shelter.primary(), base)) return { ok: false, reason: '你的避難所警戒範圍要和對方據點的警戒範圍相接才能協防' };
-    const a = this.state;
-    if (a && a.until > Date.now() && a.playerId !== playerId) return { ok: false, reason: `已經在協防「${a.name}」` };
-    if (!this.candidates().length) return { ok: false, reason: '沒有可以出動的「防禦駐守」倖存者' };
+    if (!g.time.phase().zombies) return { ok: false, reason: '屍潮只在夜晚來襲，入夜後才能派隊協防' };
+    if (this.trips().some((e) => e.assistTarget?.playerId === playerId)) return { ok: false, reason: '已經有隊伍在協防對方' };
     return { ok: true, player: p, base };
   }
 
-  /** 派防禦駐守的倖存者前往協防到天亮 */
-  start(playerId) {
+  /** 派隊伍前往友好玩家的據點協防到天亮 */
+  start(playerId, memberIds, { vehicleIds = [], avoidHostile = false } = {}) {
     const g = this.game;
     const c = this.canAssist(playerId);
     if (!c.ok) return c;
-    const ids = this.candidates().map((s) => s.id);
-    g.state.assist = { playerId, name: c.player.name, until: g.time.nextDawn(), ids };
-    g.log(`🛡️ 派出 ${ids.length} 名防禦駐守前往協防「${c.player.name}」（到天亮）`, 'info');
+    const id = `assist:${playerId}`;
+    const target = { playerId, name: c.player.name, baseName: c.base.name, lat: c.base.lat, lon: c.base.lon };
+    this.cache.set(id, target);
+    const now = Date.now();
+    const st = g.exploration.start(id, memberIds, 0, false, now, { kind: 'assist', vehicleIds, avoidHostile });
+    if (!st.ok) return st;
+    const exp = st.exp;
+    exp.assistTarget = target;
+    // 抵達後留守到天亮
+    exp.searchMs = Math.max(60000, g.time.nextDawn(now) - (now + exp.travelMs));
+    exp.endAt = exp.startAt + exp.travelMs * 2 + exp.searchMs;
     g.world?.syncSoon?.();
-    return { ok: true, msg: `${ids.length} 名防禦駐守前往協防「${c.player.name}」` };
+    return { ok: true, exp, msg: `隊伍出發協防「${c.player.name}」，約 ${Math.max(1, Math.round(exp.travelMs / 60000))} 分鐘後抵達，留守到天亮` };
   }
 
-  stop() {
-    const g = this.game;
-    if (!this.state) return { ok: false, reason: '目前沒有在協防' };
-    const name = this.state.name;
-    delete g.state.assist;
-    g.world?.syncSoon?.();
-    return { ok: true, msg: `協防「${name}」的倖存者已經回到崗位` };
+  /** 已抵達、正在協防的隊伍 */
+  activeTrips(now = Date.now()) {
+    return this.trips().filter((e) => tripProgress(e, now).phase === 'searching');
   }
 
-  /** 協防的公開火力 */
+  /** 公開的協防火力（目前只公開一支協防隊） */
   published(now = Date.now()) {
-    const a = this.state;
-    if (!a || a.until <= now) return null;
-    const list = this.helpers(now);
+    const exp = this.activeTrips(now)[0];
+    if (!exp) return null;
+    const g = this.game;
+    const list = exp.memberIds.map((id) => g.survivors.get(id)).filter((s) => s && !s.severe);
     if (!list.length) return null;
-    const siege = this.game.siege.of();
+    const siege = g.siege.of();
     const dps = list.reduce((s, sv) => s + siege.meleeOrRangedAtk(sv) * 0.6 * siege.guardMul(), 0);
-    return { to: a.playerId, dps: Math.min(MAX_ASSIST_DPS, Math.round(dps)), count: list.length, until: a.until };
+    return { to: exp.assistTarget.playerId, dps: Math.min(MAX_ASSIST_DPS, Math.round(dps)), count: list.length, until: exp.startAt + exp.travelMs + exp.searchMs };
   }
 
   /**
-   * 前來協防自己主要據點的友好玩家（對方的避難所警戒範圍要和自己相接）。
-   * @returns {{name:string, dps:number, count:number}[]}
+   * 協助自己主要據點的友好玩家：派隊前來的，以及防禦範圍涵蓋到這裡的。
+   * @returns {{id:string, name:string, dps:number, count:number, kind:'team'|'cover'}[]}
    */
   incoming(now = Date.now()) {
     const g = this.game;
     const myId = g.world?.myId;
     const primary = g.shelter.primary();
-    if (!myId || !primary) return [];
-    return (g.world?.others || []).filter((p) => p.assist?.to === myId && p.assist.until > now
-      && g.territory.relation(p.id) === 'friend'
-      && this.inRange(primary, p.bases.find((b) => b.primary) || p.bases[0]))
-      .map((p) => ({ id: p.id, name: p.name, dps: p.assist.dps, count: p.assist.count }));
+    if (!primary) return [];
+    const out = [];
+    (g.world?.others || []).forEach((p) => {
+      if (g.territory.relation(p.id) !== 'friend') return;
+      if (myId && p.assist?.to === myId && p.assist.until > now) out.push({ id: p.id, name: p.name, dps: p.assist.dps, count: p.assist.count, kind: 'team' });
+      const home = p.bases.find((b) => b.primary) || p.bases[0];
+      if (p.cover && home && haversine(home.lat, home.lon, primary.lat, primary.lon) <= p.cover.r) {
+        out.push({ id: `${p.id}#cover`, name: p.name, dps: p.cover.dps, count: 0, kind: 'cover' });
+      }
+    });
+    return out;
   }
 
-  /** 每秒：協防結束、友好玩家屍潮通知、有人來協防的通知 */
+  /** 協防隊回家的報告 */
+  report(exp) {
+    const g = this.game;
+    const t = exp.assistTarget || {};
+    const members = exp.memberIds.map((id) => g.survivors.get(id)).filter(Boolean);
+    return {
+      id: uid('rp'), poiName: `🛡️ 協防「${t.name || '友好玩家'}」`, poiType: 'residential', at: exp.endAt,
+      events: [...(exp.travelEvents || []), '🛡️ 在友好玩家的據點協助抵禦屍潮到天亮', '🏠 協防結束，回到避難所'],
+      resources: {}, items: [], blueprints: [], kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: true,
+      members: members.map((m) => m.name),
+    };
+  }
+
+  /** 每秒：友好玩家屍潮／被攻打通知、有人來協防的通知 */
   update(now = Date.now()) {
     const g = this.game;
-    const a = this.state;
-    if (a && a.until <= now) {
-      g.log(`🌅 天亮了，協防「${a.name}」的倖存者回到崗位`, 'info');
-      delete g.state.assist;
-    }
+    if (g.state.assist) delete g.state.assist; // 舊版協防資料
     const night = g.time.nightKey(now);
     this.friendSieges().forEach(({ player, base }) => {
       const key = `${player.id}|${night}`;
       if (this.notified.has(key)) return;
       this.notified.set(key, true);
-      const near = this.inRange(g.shelter.primary(), base);
-      g.toast(`🧟 友好玩家「${player.name}」的據點正遭到屍潮攻擊${near ? '，可以派人協防' : ''}`, 'danger');
-      g.log(`🧟 友好玩家「${player.name}」的「${base.name}」正遭到屍潮攻擊（第 ${base.siege.wave}/${base.siege.maxWaves} 波）`, 'danger');
+      const cover = this.covers(base) ? '，你的防禦範圍涵蓋那裡，防禦設施會自動協助' : '';
+      g.toast(`🧟 友好玩家「${player.name}」的據點正遭到屍潮攻擊，可以派隊協防${cover}`, 'danger');
+      g.log(`🧟 友好玩家「${player.name}」的「${base.name}」正遭到屍潮攻擊（第 ${base.siege.wave}/${base.siege.maxWaves} 波）${cover}`, 'danger');
     });
     this.friendRaids(now).forEach(({ player, base, raid }) => {
       const key = `raid|${player.id}|${raid.by}|${Math.round(raid.at / 60000)}`;
@@ -154,12 +201,14 @@ export class AssistSystem {
       g.toast(`⚔️ ${raid.by}正前往攻打友好玩家「${player.name}」的「${base.name}」（約 ${min} 分鐘後抵達）`, 'danger');
       g.log(`⚔️ ${raid.by}正前往攻打友好玩家「${player.name}」的「${base.name}」（約 ${min} 分鐘後抵達）`, 'danger');
     });
+    if (!g.siege.of()?.active()) return;
     this.incoming(now).forEach((h) => {
       const key = `${h.id}|${night}`;
       if (this.helpersSeen.has(key)) return;
       this.helpersSeen.add(key);
-      g.toast(`🛡️ 友好玩家「${h.name}」派了 ${h.count} 人前來協防`, 'success');
-      g.log(`🛡️ 友好玩家「${h.name}」派了 ${h.count} 人前來協防`, 'success');
+      const text = h.kind === 'team' ? `🛡️ 友好玩家「${h.name}」派了 ${h.count} 人前來協防` : `🛡️ 友好玩家「${h.name}」的防禦設施正在協助抵禦屍潮`;
+      g.toast(text, 'success');
+      g.log(text, 'success');
     });
   }
 }

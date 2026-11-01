@@ -2073,6 +2073,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(a1.trip.travelMs >= 5 * 60000, `NPC 掠奪避難所的移動時間較長（${Math.round(a1.trip.travelMs / 60000)} 分鐘）`);
   const rr = gn.territory.incomingRaids(gn.shelter.primary());
   assert(rr.length === 1 && rr[0].kind === 'npc' && rr[0].at === a1.trip.startAt + a1.trip.travelMs, '正在前來的掠奪隊會公開給友好玩家');
+  assert(rr[0].from && rr[0].startAt === a1.trip.startAt && rr[0].npc === a1.name, '公開掠奪隊的出發點與時間，友好玩家地圖可以畫出行軍路線');
   let extra = 0;
   for (let i = 0; i < 200; i += 1) { a2.trip = null; gn.npcs.launchRaid(a2, Date.now()); if (a2.trip?.kind === 'raid') extra += 1; }
   assert(extra < 30, `已有掠奪隊時，其他 NPC 很少同時攻打（200 次中 ${extra} 次）`);
@@ -2184,13 +2185,20 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   A.state.relations.players.B = { status: 'friend', name: '被攻擊' };
   B.state.relations.players.A = { status: 'friend', name: '協防者' };
   const guard = A.survivors.leader();
-  guard.job = 'guard';
   assert(A.assist.friendSieges().length === 1, '友好玩家的屍潮狀況看得到');
-  assert(A.assist.start('B').ok && A.siege.of().guards().length === 0, '派防禦駐守協防，自己據點少了他們的火力');
+  B.state.bases[0].lon = A.state.bases[0].lon + 0.02; // 約 2 公里：警戒範圍不相接也能協防
+  pb.bases[0].lon = B.state.bases[0].lon;
+  const normalTravel = A.exploration.plan({ id: 'x', lat: pb.bases[0].lat, lon: pb.bases[0].lon, type: 'residential' }, [guard], 0).travelMs;
+  const as = A.assist.start('B', [guard.id]);
+  assert(as.ok && guard.status === 'exploring', `可以直接派隊協防（${as.reason || ''}）`);
+  assert(as.exp.travelMs < normalTravel * 0.6, `協防隊移動較快（${Math.round(normalTravel / 1000)} → ${Math.round(as.exp.travelMs / 1000)} 秒）`);
+  const shift = as.exp.travelMs + 1000;
+  as.exp.startAt -= shift; as.exp.endAt -= shift;
   const pa = pres(A, 'A');
-  assert(pa.assist && pa.assist.to === 'B' && pa.assist.dps > 0, '協防火力寫在公開資料');
+  assert(pa.assist && pa.assist.to === 'B' && pa.assist.dps > 0, '抵達後協防火力寫在公開資料');
+  assert(pa.trips.some((t) => t.kind === 'assist'), '協防隊在公開資料標示為協防（不會被當成突襲）');
   B.world.others = [pa];
-  assert(B.assist.incoming().length === 1, '被協防的一方收到協防');
+  assert(B.assist.incoming().some((h) => h.kind === 'team'), '被協防的一方收到協防');
   sb.waveLeft = 0;
   const ids = new Set(sb.zombies.map((z) => z.id));
   const hpOf = () => sb.zombies.filter((z) => ids.has(z.id)).reduce((s, z) => s + z.hp, 0);
@@ -2198,9 +2206,16 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   for (let i = 0; i < 12; i += 1) sb.step(0.1);
   const hp1 = hpOf();
   assert(hp1 < hp0, `協防火力會打殭屍（${hp0} → ${hp1}）`);
-  pa.bases[0].lon += 0.01;
-  assert(B.assist.incoming().length === 0, '警戒範圍沒有相接就不算協防');
-  assert(A.assist.stop().ok && A.siege.of().guards().length === 1, '召回協防後回到崗位');
+  assert(A.exploration.recall(as.exp.id).ok && !pres(A, 'A').assist, '可以召回協防隊');
+  // 防禦範圍涵蓋友好據點：防禦設施自動協助
+  const cv = { r: 200, dps: 50 };
+  B.world.others = [{ ...pa, assist: null, cover: cv }];
+  assert(!B.assist.incoming().length, '防禦範圍沒有涵蓋就不會協助');
+  B.state.bases[0].lon = A.state.bases[0].lon + 0.001; // 約 100 公尺
+  assert(B.assist.incoming().some((h) => h.kind === 'cover' && h.dps === 50), '防禦範圍涵蓋友好據點時自動協助');
+  A.shelter.primary().defenses[0] = { ...A.shelter.primary().defenses[0], type: 'machineGun', level: 1 };
+  const pc = pres(A, 'A').cover;
+  assert(pc && pc.r > 0 && pc.dps > 0, `公開防禦範圍與可分出的火力（${JSON.stringify(pc)}）`);
 }
 
 // ---- 53. v8.46：突襲避難所移動時間較長、載具仍加速 ----

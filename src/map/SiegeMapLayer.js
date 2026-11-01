@@ -207,11 +207,26 @@ export const SiegeMapLayer = L.Layer.extend({
       // 其他玩家的隊伍只看得到移動，看不到剩餘時間；被攔截撤回中的隊伍不能再攔截
       if (trip.kind === 'deliver') {
         this.drawTrip(ctx, size, p, `📦 ${player.name}・交付`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false);
+      } else if (trip.kind === 'assist') {
+        this.drawTrip(ctx, size, p, `🛡️ ${player.name}・協防`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false);
       } else if (trip.kind === 'trade') {
         this.drawTrip(ctx, size, p, `🤝 ${player.name}・交易`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false);
       } else this.drawTrip(ctx, size, p, `👤 ${player.name}${trip.defeated ? '・🏳️撤回' : ''}`, ['rgba(38,198,218,0.55)', '#00838f', '#e0f7fa', 'rgba(0,77,64,0.85)'], !!trip.defeated);
       if (trip.id && !trip.defeated) this.teams.push({ kind: 'player', playerId: player.id, tripId: trip.id, pos: p.pos });
     }));
+    // 友好玩家的據點正被 NPC 掠奪隊攻打：同樣畫出行軍路線與部隊（只到抵達為止）
+    (this.game.world?.others || []).forEach((player) => {
+      if (this.game.territory.relation(player.id) !== 'friend') return;
+      player.bases.forEach((b) => (b.raids || []).forEach((r) => {
+        if (!r.from || now >= r.at) return;
+        const trip = {
+          from: r.from, to: { lat: b.lat, lon: b.lon }, ...(r.path ? { path: r.path } : {}),
+          startAt: r.startAt, travelMs: r.at - r.startAt, searchMs: 0, endAt: r.at,
+        };
+        const p = tripProgress(trip, now);
+        this.drawTrip(ctx, size, p, `⚔️ ${r.npc || 'NPC'}・攻打${player.name}`, ['rgba(229,57,53,0.75)', '#b71c1c', '#ffebee', 'rgba(127,0,0,0.9)'], false);
+      }));
+    });
     this.game.npcs.trips(now).forEach(({ npc, trip, p }) => {
       const raid = trip.kind === 'raid';
       const beaten = !!trip.hidden;
