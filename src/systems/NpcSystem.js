@@ -189,6 +189,8 @@ export class NpcSystem {
       }
       if (!this.list.includes(n)) return;
       if (n.trip && now >= n.trip.endAt) this.finishTrip(n, now);
+      // 有傷員時要先治療（補回人手）才會外出探索或掠奪
+      if (n.wounded > 0) return;
       if (!n.trip && now >= n.nextRaidAt) this.launchRaid(n, now);
       if (!n.trip && now >= n.nextExploreAt) this.launchExplore(n, now);
     });
@@ -355,6 +357,8 @@ export class NpcSystem {
     if (this.game.time.phase(now).zombies) return;
     const bases = this.game.state.bases;
     if (!bases.length) return;
+    // 盡量避免多個 NPC 同時攻打玩家：已經有掠奪隊在路上時大多會放棄，玩家文明度很高時才比較常發生
+    if (!this.allowConcurrentRaid(now)) return;
     const base = pick(bases);
     const t = this.tripTimes(n, base, 0, base.id);
     // 抵達時若已入夜（屍潮），NPC 會放棄這次掠奪
@@ -364,6 +368,21 @@ export class NpcSystem {
     };
     this.game.log(`🏴‍☠️「${n.name}」的掠奪隊正朝「${base.name}」前進！`, 'danger');
     this.game.toast(`🏴‍☠️「${n.name}」（${this.intelView(n).levelShort}）的掠奪隊正朝「${base.name}」前進！`, 'danger');
+  }
+
+  /** 正在前往玩家據點的 NPC 掠奪隊數量 */
+  activeRaids(now = Date.now()) {
+    return this.list.filter((m) => m.trip?.kind === 'raid' && !m.trip.resolved && !m.trip.hidden && now < m.trip.endAt).length;
+  }
+
+  /** 已經有掠奪隊時，是否還要再發動（機率很低，文明度很高時才提高） */
+  allowConcurrentRaid(now = Date.now()) {
+    const active = this.activeRaids(now);
+    if (!active) return true;
+    const civ = this.game.civilization.value();
+    const c = NPC_CONFIG;
+    const p = civ < c.concurrentCiv ? c.concurrentChance : Math.min(c.concurrentMax, c.concurrentChance + (civ - c.concurrentCiv) / 1000);
+    return chance(p / active);
   }
 
   /** NPC 行程抵達目的地的時間 */
@@ -379,6 +398,11 @@ export class NpcSystem {
     if (trip.kind === 'explore') {
       const poi = this.game.state.map.pois.find((p) => p.id === trip.poiId);
       const at = this.arriveAt(trip);
+      // 探索途中遭遇殭屍：可能有人受傷，要治療（補回人手）後才能再外出
+      if (poi) {
+        const night = this.game.time.phase(at).zombies ? 1.6 : 1;
+        if (chance(NPC_CONFIG.exploreInjuryChance * this.game.zombies.encounterMul(poi.lat, poi.lon) * night)) this.wound(n, chance(0.3) ? 2 : 1, now);
+      }
       const remain = this.game.state.map.remain || {};
       if (!poi || (poi.lootedDay === dayKey(at) && !remain[poi.id])) return;
       const stock = stockOf(poi, at, remain);

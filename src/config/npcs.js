@@ -17,6 +17,12 @@ export const NPC_CONFIG = {
   raidStealPct: 0.15, // 掠奪成功時搶走的資源比例
   raidWallDamage: 0.3, // 掠奪成功時圍牆損失
   woundHealMs: 20 * 60000, // NPC 傷亡人員每隔多久補回 1 人
+  /** 同時有其他 NPC 正在掠奪玩家時，再發動掠奪的機率（文明度達到 concurrentCiv 後才逐漸提高） */
+  concurrentChance: 0.05,
+  concurrentCiv: 350,
+  concurrentMax: 0.5,
+  /** NPC 探索時遭遇殭屍而受傷的基礎機率（依區域安全程度與夜晚調整） */
+  exploreInjuryChance: 0.25,
   /** 玩家防守成功時，與掠奪隊交火造成的損傷：每位防守人員損失最大生命的比例範圍、圍牆損失比例（依掠奪者人數） */
   skirmishHp: [0.05, 0.18],
   skirmishWall: 0.012,
