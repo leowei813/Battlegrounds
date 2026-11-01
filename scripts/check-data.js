@@ -589,7 +589,10 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   Object.keys(gn.state.resources).forEach((k) => { gn.state.resources[k] = 1000; });
   npc.level = 30;
   npc.trip = null;
+  npc.wounded = 0;
   npc.nextRaidAt = t0;
+  // 其他 NPC 不在掠奪中（避免同時攻打的機制擋下這次）
+  gn.npcs.list.forEach((m) => { if (m !== npc && m.trip?.kind === 'raid') m.trip = null; });
   gn.npcs.update(t0 + 3000);
   assert(npc.trip?.kind === 'raid', '白天 NPC 會出動掠奪');
   gn.npcs.update(npc.trip.startAt + npc.trip.travelMs + 1);

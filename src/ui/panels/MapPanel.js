@@ -403,32 +403,37 @@ export class MapPanel {
   /** 點擊地圖上自己的探索隊：顯示行程並可直接召回 */
   openOwnTeam(expId) {
     const g = this.game;
-    const ex = g.state.expeditions.find((e) => e.id === expId);
-    if (!ex) {
+    if (!g.state.expeditions.some((e) => e.id === expId)) {
       this.ui.toastEl.show('這支隊伍已經回到避難所了', 'info');
       return;
     }
-    const now = Date.now();
-    const p = g.exploration.progress(ex, now);
-    const poi = g.exploration.poi(ex.poiId);
-    const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
-    const ph = EXP_PHASES[p?.phase] || {};
-    const status = ex.defeated ? '🏳️ 撤回中' : ex.recalled ? '↩️ 召回中' : `${ph.icon || ''} ${ph.name || ''}`;
-    const canRecall = g.exploration.canRecall(ex, now);
-    const body = `
+    const body = () => {
+      const ex = g.state.expeditions.find((e) => e.id === expId);
+      if (!ex) return '<p class="muted">這支隊伍已經回到避難所了，請到「💬 消息」查看探索報告。</p>';
+      const now = Date.now();
+      const p = g.exploration.progress(ex, now);
+      const poi = g.exploration.poi(ex.poiId);
+      const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
+      const ph = EXP_PHASES[p?.phase] || {};
+      const status = ex.defeated ? '🏳️ 撤回中' : ex.recalled ? '↩️ 召回中' : `${ph.icon || ''} ${ph.name || ''}`;
+      const canRecall = g.exploration.canRecall(ex, now);
+      return `
       <p>📍 <b>${escapeHtml(poi?.name || '未知地點')}</b>・${status}</p>
       <p class="muted">👥 ${names || `${ex.memberIds.length} 人`}</p>
       <p class="muted">⏱ 剩 ${formatDuration(p ? p.remainingMs : Math.max(0, ex.endAt - now))}</p>
+      ${this.ui.panels.explore.checkpointHtml(ex)}
       ${ex.kind === 'trade' && ex.trade ? `<p>🤝 擺攤商品：${ex.trade.goods.map((x) => `${escapeHtml(g.trade.goodName(x))} ${x.sold}/${x.qty}`).join('、')}・已收入 💰${ex.trade.earned || 0}</p>` : ''}
       ${canRecall ? `<p class="muted">${ex.kind === 'trade' ? '召回後倖存者會結束交易、走回避難所，沒賣完的商品會帶回家。' : '召回後隊伍會從目前位置走回避難所（需要移動時間），只會帶回已經到過的檢核點找到的物資。'}</p>` : ''}
       <div class="btn-row">${canRecall ? btn('↩️ 召回', 'recall', {}, { cls: 'btn-danger' }) : ''}${btn('📋 探索頁', 'explore', {}, { cls: 'btn-ghost' })}</div>`;
+    };
     this.ui.modal.open({
       title: '🚶 我的探索隊',
-      body,
+      body: body(),
+      live: body,
       onAction: (action, _data, m) => {
         m.close();
         if (action === 'recall') {
-          const r = this.ui.result(g.exploration.recall(ex.id));
+          const r = this.ui.result(g.exploration.recall(expId));
           if (r.ok) this.renderMap(true);
         } else if (action === 'explore') this.ui.switchTab('explore');
       },

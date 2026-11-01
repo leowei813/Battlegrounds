@@ -81,14 +81,24 @@ export class ExplorePanel {
 
   /** 搜索檢核點：進度（完成時不顯示）與目前找到的東西 */
   checkpointHtml(ex) {
+    if (ex.kind !== 'explore' || ex.defeated) return '';
+    const g = this.game;
     const cp = ex.cp;
-    if (!cp || ex.kind !== 'explore') return '';
-    const prog = this.game.exploration.searchProgress(ex);
-    const found = Object.entries(cp.gained || {}).map(([k, v]) => [k, Math.round(v)]).filter(([, v]) => v > 0)
+    const poi = g.exploration.poi(ex.poiId);
+    const total = cp?.total || (poi ? g.exploration.checkpointCount(poi) : 1);
+    const done = cp?.done || 0;
+    const phase = g.exploration.progress(ex)?.phase;
+    // 進度：搜索中顯示已完成的檢核點比例；完成後不顯示
+    let prog = '';
+    if (phase === 'outbound' && !ex.recalled) prog = `<div class="muted">🔍 抵達後開始搜索（${total > 1 ? `${total} 個檢核點` : '搜索完成時結算'}）</div>`;
+    else if (phase === 'searching' && done < total && !cp?.stopped) prog = `<div class="pos">🔍 搜索進度 ${Math.round((done / total) * 100)}%${total > 1 ? `（檢核點 ${done}/${total}）` : ''}</div>`;
+    const found = Object.entries(cp?.gained || {}).map(([k, v]) => [k, Math.floor(v + 1e-9)]).filter(([, v]) => v > 0)
       .map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} ${v}`);
-    (cp.items || []).forEach((it) => found.push(`🎁「${escapeHtml(it.name)}」`));
-    if (cp.blueprints?.length) found.push(`📜×${cp.blueprints.length}`);
-    return `${prog != null ? `<div class="pos">🔍 搜索進度 ${Math.round(prog * 100)}%</div>` : ''}
-      ${found.length ? `<small class="muted block">🎒 已取得：${found.join('、')}</small>` : ''}`;
+    (cp?.items || []).forEach((it) => found.push(`🎁「${escapeHtml(it.name)}」`));
+    if (cp?.blueprints?.length) found.push(`📜×${cp.blueprints.length}`);
+    const got = found.length
+      ? `<small class="block">🎒 已取得：${found.join('、')}</small>`
+      : phase === 'searching' || done ? '<small class="muted block">🎒 已取得：還沒找到物資</small>' : '';
+    return `${prog}${got}`;
   }
 }
