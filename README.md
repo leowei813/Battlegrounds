@@ -6,7 +6,7 @@
 
 🎮 **線上試玩：<https://leowei813.github.io/Battlegrounds/>**（需輸入通行碼）
 
-目前版本：**v8.49.0**（各版本改動見 [CHANGELOG.md](CHANGELOG.md)）
+目前版本：**v8.50.0**（各版本改動見 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 快速開始
 

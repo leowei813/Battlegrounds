@@ -105,7 +105,7 @@ export class Game {
       if (t?.kind === 'raid' && !t.resolved && !t.hidden && now < t.startAt + t.travelMs && bases.some((b) => b.id === t.baseId)) out.push(`NPC「${n.name}」掠奪隊`);
     });
     (this.world?.others || []).forEach((p) => (p.trips || []).forEach((t) => {
-      if (t.kind === 'trade' || t.defeated || now >= t.startAt + (t.travelMs || 0)) return;
+      if (t.kind === 'trade' || t.kind === 'assist' || t.kind === 'deliver' || t.defeated || now >= t.startAt + (t.travelMs || 0)) return;
       if (bases.some((b) => haversine(b.lat, b.lon, t.to.lat, t.to.lon) < 40)) out.push(`玩家「${p.name}」的隊伍`);
     }));
     bases.forEach((b) => {

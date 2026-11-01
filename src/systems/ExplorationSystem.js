@@ -1,3 +1,4 @@
+import { ASSIST_TRAVEL_MUL } from './AssistSystem.js';
 import { COIN_GAIN_MUL, RAID_TRAVEL } from '../config/constants.js';
 import { RECRUIT_STAY_MS } from '../config/survivors.js';
 import {
@@ -102,7 +103,7 @@ export class ExplorationSystem {
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   poi(id) {
     return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id)
-      || this.game.intercept?.asPoi(id) || this.game.trade?.asPoi(id) || this.game.demand?.asPoi(id) || this.huntPoi(id) || null;
+      || this.game.intercept?.asPoi(id) || this.game.trade?.asPoi(id) || this.game.demand?.asPoi(id) || this.game.assist?.asPoi(id) || this.huntPoi(id) || null;
   }
 
   /**
@@ -133,6 +134,8 @@ export class ExplorationSystem {
     // 突襲玩家避難所：路程大幅拉長（防守方有時間準備），載具仍然加速
     let walkMin = (distanceM / 1000) * MIN_PER_KM_ONE_WAY;
     if (poi?.pvp) walkMin = Math.max(walkMin * RAID_TRAVEL.playerMul, RAID_TRAVEL.minMin);
+    // 協防友好玩家：趕路較快
+    if (poi?.assist) walkMin *= ASSIST_TRAVEL_MUL;
     const travelMs = Math.round((walkMin / (speed * trip.speed)) * 60000);
     const searchMs = Math.round((durationMin / (speed * teamMul)) * 60000);
     return {
@@ -186,7 +189,7 @@ export class ExplorationSystem {
     if (!v.ok) return v;
     if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'deliver' ? 0 : kind === 'raid' || kind === 'pvp' ? 2 : this.searchMinutes(v.poi);
+    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'deliver' || kind === 'assist' ? 0 : kind === 'raid' || kind === 'pvp' ? 2 : this.searchMinutes(v.poi);
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
@@ -470,6 +473,7 @@ export class ExplorationSystem {
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
         const report = exp.kind === 'trade' && !exp.defeated ? this.game.trade.report(exp)
           : exp.kind === 'deliver' && !exp.defeated ? this.game.demand.report(exp)
+          : exp.kind === 'assist' && !exp.defeated && !exp.recalled ? this.game.assist.report(exp)
           : exp.recalled ? (exp.kind === 'explore' ? this.finishExplore(exp, { recalled: true }) : this.recalledReport(exp))
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)

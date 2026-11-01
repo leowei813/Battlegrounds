@@ -62,7 +62,14 @@ function cleanPlayer(p) {
       dps: finite(b.dps) ? Math.min(1e5, Math.max(0, b.dps)) : 0,
       siege: cleanSiege(b.siege),
       raids: (Array.isArray(b.raids) ? b.raids : []).slice(0, 5).filter((r) => r && finite(r.at))
-        .map((r) => ({ by: String(r.by || '不明隊伍').slice(0, 30), kind: r.kind === 'npc' ? 'npc' : 'player', at: r.at })),
+        .map((r) => ({
+          by: String(r.by || '不明隊伍').slice(0, 30), kind: r.kind === 'npc' ? 'npc' : 'player', at: r.at,
+          ...(r.kind === 'npc' && validPoint(r.from) && finite(r.startAt) && r.startAt < r.at ? {
+            npc: String(r.npc || '').slice(0, 30), level: finite(r.level) ? Math.min(60, Math.max(1, Math.round(r.level))) : 1,
+            from: { lat: r.from.lat, lon: r.from.lon }, startAt: r.startAt,
+            ...(Array.isArray(r.path) && r.path.length >= 2 && r.path.length <= 20 && r.path.every(validPoint) ? { path: r.path.map((q) => ({ lat: q.lat, lon: q.lon })) } : {}),
+          } : {}),
+        })),
     }));
   if (!bases.length) return null;
   const trips = (Array.isArray(p.trips) ? p.trips : []).slice(0, 10).filter((t) => validPoint(t?.from) && validPoint(t?.to)
@@ -76,6 +83,7 @@ function cleanPlayer(p) {
       defeated: !!t.defeated,
       ...(t.kind === 'trade' ? { kind: 'trade', targetId: String(t.targetId || '').slice(0, 40), stall: cleanStall(t.stall) } : {}),
       ...(t.kind === 'deliver' ? { kind: 'deliver' } : {}),
+      ...(t.kind === 'assist' ? { kind: 'assist' } : {}),
     }));
   const demands = (Array.isArray(p.demands) ? p.demands : []).slice(0, 10).map((d) => ({
     id: String(d?.id || '').slice(0, 40), key: String(d?.key || '').slice(0, 20),
@@ -86,6 +94,8 @@ function cleanPlayer(p) {
     id: String(p.id || ''), name: String(p.name || '倖存者').slice(0, 16), civ: finite(p.civ) ? p.civ : 0, bases, trips,
     exchange: finite(p.exchange) ? Math.min(20, Math.max(0, Math.floor(p.exchange))) : 0, demands,
     assist: cleanAssist(p.assist),
+    cover: p.cover && finite(p.cover.r) && finite(p.cover.dps)
+      ? { r: Math.min(400, Math.max(0, p.cover.r)), dps: Math.min(MAX_ASSIST_DPS, Math.max(0, Math.round(p.cover.dps))) } : null,
   };
 }
 
@@ -178,7 +188,7 @@ export class WorldSync {
   /** 是否需要加快同步 */
   urgent() {
     const g = this.game;
-    return !!g.assist?.state || g.threats().length > 0 || (g.assist?.friendSieges().length || 0) > 0
+    return (g.assist?.trips().length || 0) > 0 || g.threats().length > 0 || (g.assist?.friendSieges().length || 0) > 0
       || (g.assist?.friendRaids().length || 0) > 0;
   }
 
@@ -198,6 +208,8 @@ export class WorldSync {
       exchange: g.shelter.maxLevel('exchange'),
       demands: g.demand.published(),
       assist: g.assist.published(),
+      // 屍潮防禦範圍與可分出的防禦火力（涵蓋友好據點時自動協助）
+      cover: g.assist.publishedCover(),
       bases: g.state.bases.map((b) => {
         const gar = g.territory.garrison(b);
         return {
@@ -224,6 +236,7 @@ export class WorldSync {
           ...(ex.kind === 'trade' && ex.trade && !ex.recalled && !ex.tradeEnded && !ex.defeated
             ? { kind: 'trade', targetId: ex.trade.playerId, stall: g.trade.stallOf(ex) } : {}),
           ...(ex.kind === 'deliver' && !ex.defeated ? { kind: 'deliver' } : {}),
+          ...(ex.kind === 'assist' && !ex.defeated ? { kind: 'assist' } : {}),
         };
       }).filter(Boolean),
     };
