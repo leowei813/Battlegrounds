@@ -1,5 +1,8 @@
 import { ASSIST_TRAVEL_MUL } from './AssistSystem.js';
-import { COIN_GAIN_MUL, RAID_TRAVEL } from '../config/constants.js';
+
+/** 自動探索換點次數上限 */
+export const AUTO_HOP_MAX = 5;
+import { COIN_GAIN_MUL, RAID_TRAVEL, POI_SCAN_RADIUS } from '../config/constants.js';
 import { RECRUIT_STAY_MS } from '../config/survivors.js';
 import {
   MAX_TEAM_SIZE, MAX_EXPEDITIONS, OFFLINE_CAP_MS, RESOURCES,
@@ -178,6 +181,46 @@ export class ExplorationSystem {
     const members = memberIds.map((id) => this.game.survivors.get(id));
     if (members.some((m) => !m || !this.game.survivors.isAvailable(m))) return { ok: false, reason: '有隊員無法出發' };
     return { ok: true, poi, members };
+  }
+
+  /** 自動探索可以換到其他地點的次數：基本 1 次，研究「巡迴搜索」每級 +1，最多 5 次 */
+  autoHopLimit() {
+    return Math.min(AUTO_HOP_MAX, 1 + Math.floor(this.game.research.bonus('autoHops')));
+  }
+
+  /** 地點目前是否還有物資（今日物資或上次留下的） */
+  hasStock(poi, at = Date.now()) {
+    return !!poi && POI_TYPES[poi.type] && !stockOf(poi, at, this.game.state.map.remain).empty;
+  }
+
+  /**
+   * 自動探索的下一個目的地：原地點還有物資就再去一次；
+   * 沒有物資時換到附近還有物資、危險度不高於原地點的地點（換點次數有上限）。
+   * @returns {{ok:boolean, poiId?:string, hops?:number, note?:string, reason?:string}}
+   */
+  autoNext(exp, at = Date.now()) {
+    const g = this.game;
+    const poi = this.poi(exp.poiId);
+    const hops = exp.autoHops || 0;
+    if (this.hasStock(poi, at)) return { ok: true, poiId: exp.poiId, hops };
+    const limit = this.autoHopLimit();
+    if (hops >= limit) return { ok: false, reason: `「${poi?.name || '這裡'}」已經沒有物資，自動換點次數已用完（${limit} 次；研究「巡迴搜索」可以增加，最多 ${AUTO_HOP_MAX} 次）` };
+    const danger = POI_TYPES[poi?.type]?.danger ?? 1;
+    const busy = new Set([
+      ...this.list.map((e) => e.poiId), ...g.state.bases.map((b) => b.poiId), ...(g.state.npcs?.list || []).map((n) => n.poiId),
+    ]);
+    const sh = g.shelter.primary();
+    const origin = poi || sh;
+    const next = g.state.map.pois
+      .filter((p) => p.id !== exp.poiId && !busy.has(p.id) && POI_TYPES[p.type] && (POI_TYPES[p.type].danger ?? 1) <= danger
+        && (!sh || haversine(sh.lat, sh.lon, p.lat, p.lon) <= POI_SCAN_RADIUS) && this.hasStock(p, at))
+      .map((p) => ({ p, d: haversine(origin.lat, origin.lon, p.lat, p.lon) }))
+      .sort((a, b) => a.d - b.d)[0]?.p;
+    if (!next) return { ok: false, reason: `「${poi?.name || '這裡'}」已經沒有物資，附近也找不到還有物資的地點` };
+    return {
+      ok: true, poiId: next.id, hops: hops + 1,
+      note: `🔁 「${poi?.name || '這裡'}」已經沒有物資，自動前往附近的「${next.name}」（自動換點 ${hops + 1}/${limit}）`,
+    };
   }
 
   /**
@@ -489,8 +532,14 @@ export class ExplorationSystem {
           return m && !m.severe;
         });
         if (exp.kind === 'explore' && !exp.defeated && !exp.recalled && exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
-          const r = this.start(exp.poiId, exp.memberIds, exp.durationMin, true, exp.endAt, { vehicleIds: exp.vehicleIds || [], avoidHostile: exp.avoidHostile });
-          if (!r.ok) report.events.push(`⏹️ 自動探索停止：${r.reason}`);
+          const next = this.autoNext(exp, exp.endAt);
+          if (!next.ok) report.events.push(`⏹️ 自動探索停止：${next.reason}`);
+          else {
+            if (next.note) report.events.push(next.note);
+            const r = this.start(next.poiId, exp.memberIds, exp.durationMin, true, exp.endAt, { vehicleIds: exp.vehicleIds || [], avoidHostile: exp.avoidHostile });
+            if (!r.ok) report.events.push(`⏹️ 自動探索停止：${r.reason}`);
+            else r.exp.autoHops = next.hops;
+          }
         }
       });
       due = this.list.filter((e) => e.endAt <= now);

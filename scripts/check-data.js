@@ -2272,6 +2272,31 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(Math.abs(u2 / u1 - 1.6) < 0.01, `等級越高食物消耗越多（Lv1 ${u1.toFixed(1)} → Lv21 ${u2.toFixed(1)}）`);
 }
 
+// ---- 56. v8.51：自動探索搜空後換到附近地點（次數有上限） ----
+{
+  const ga = Game.newGame({ playerName: 'Au', classId: 'scout', lat: 25.03, lon: 121.56 });
+  ga.state.map.pois = fillPois([], 25.03, 121.56);
+  ga.shelter.establish(ga.state.map.pois[0]);
+  setHour(ga, 10);
+  ga.state.research.levels.s_scout = 1;
+  ga.research.invalidate();
+  const ex = ga.exploration;
+  const poi = ga.state.map.pois.find((p) => !ga.shelter.baseAtPoi(p.id) && ex.hasStock(p));
+  assert(ex.autoHopLimit() === 1, '自動換點基本 1 次');
+  const n0 = ex.autoNext({ poiId: poi.id, autoHops: 0 });
+  assert(n0.ok && n0.poiId === poi.id, '原地點還有物資時再去同一個地點');
+  const orig = ex.hasStock.bind(ex);
+  ex.hasStock = (p, at) => (p.id === poi.id ? false : orig(p, at));
+  const n1 = ex.autoNext({ poiId: poi.id, autoHops: 0 });
+  assert(n1.ok && n1.poiId !== poi.id && n1.hops === 1, `搜空後換到附近的地點（${n1.note || n1.reason}）`);
+  const n2 = ex.autoNext({ poiId: poi.id, autoHops: 1 });
+  assert(!n2.ok && n2.reason.includes('次數已用完'), '換點次數用完就停止');
+  ga.state.research.levels.s_route = 4;
+  ga.research.invalidate();
+  assert(ex.autoHopLimit() === 5 && ex.autoNext({ poiId: poi.id, autoHops: 4 }).ok, '研究「巡迴搜索」最多 5 次');
+  ex.hasStock = orig;
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

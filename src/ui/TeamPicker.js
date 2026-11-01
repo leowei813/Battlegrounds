@@ -82,7 +82,8 @@ export function openTeamPicker(ui, opts) {
     const vehicles = opts.vehicles ? vehicleHtml(game, cars, ids.map((id) => game.survivors.get(id)), opts.distanceM || 0) : '';
     const durs = opts.withDuration
       ? `${opts.fixedDuration ? '' : `<div class="label">探索時長</div><div class="chips">${EXPLORE_DURATIONS.map((d) => `<button class="chip ${d === duration ? 'active' : ''}" data-action="dur" data-d="${d}">${d} 分鐘</button>`).join('')}</div>`}
-         <label class="toggle ${autoUnlocked ? '' : 'disabled'}"><input type="checkbox" data-role="auto" ${auto ? 'checked' : ''} ${autoUnlocked ? '' : 'disabled'}> 🔁 自動探索（完成後自動再出發）${autoUnlocked ? '' : '<small>（需研究「斥候訓練」）</small>'}</label>`
+         <label class="toggle ${autoUnlocked ? '' : 'disabled'}"><input type="checkbox" data-role="auto" ${auto ? 'checked' : ''} ${autoUnlocked ? '' : 'disabled'}> 🔁 自動探索（完成後自動再出發）${autoUnlocked ? '' : '<small>（需研究「斥候訓練」）</small>'}</label>
+         ${autoUnlocked ? `<small class="muted block">這裡還有物資就再來一次；搜空後自動換到附近還有物資的地點（危險度不高於這裡），最多換 ${game.exploration.autoHopLimit()} 次（研究「巡迴搜索」可增加，最多 5 次）。隊員重傷或戰敗時停止。</small>` : ''}`
       : '';
     return `${opts.intro}
       <div class="label">選擇隊員（最多 ${MAX_TEAM_SIZE} 人）・隊伍戰力 <b>${power}</b></div>
