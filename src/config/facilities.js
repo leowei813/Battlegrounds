@@ -1,5 +1,7 @@
 import { materialize, tierFromLevel } from './supplies.js';
-import { MAX_LEVEL, timeCurve, costCurve } from './leveling.js';
+import {
+  MAX_LEVEL, timeCurve, costCurve, hardMul, HARD_PLAIN, HARD_MAT,
+} from './leveling.js';
 
 /**
  * 避難所設施。
@@ -8,7 +10,7 @@ import { MAX_LEVEL, timeCurve, costCurve } from './leveling.js';
  */
 /** 升級成本隨等級快速成長（每級 ×1.8），高等級需要大量探索物資 */
 const scale = (base, level, growth = 1.8) =>
-  Object.fromEntries(Object.entries(base).map(([k, v]) => [k, Math.round(v * costCurve(level, growth))]));
+  Object.fromEntries(Object.entries(base).map(([k, v]) => [k, Math.round(v * costCurve(level, growth) * hardMul(level, HARD_PLAIN))]));
 
 export const FACILITY_MAX_LEVEL = MAX_LEVEL;
 
@@ -19,7 +21,7 @@ export const FACILITY_MAX_LEVEL = MAX_LEVEL;
 const MAT_KEYS = ['metal', 'cloth', 'medicine'];
 const mat = (key, tags, base, lv) => {
   const plain = scale(Object.fromEntries(Object.entries(base).filter(([k]) => !MAT_KEYS.includes(k))), lv);
-  const abstract = Object.fromEntries(Object.entries(base).filter(([k]) => MAT_KEYS.includes(k)).map(([k, v]) => [k, v * costCurve(lv, 1.3)]));
+  const abstract = Object.fromEntries(Object.entries(base).filter(([k]) => MAT_KEYS.includes(k)).map(([k, v]) => [k, v * costCurve(lv, 1.3) * hardMul(lv, HARD_MAT)]));
   return materialize({ ...plain, ...abstract }, { tier: tierFromLevel(lv, FACILITY_MAX_LEVEL), tags, key });
 };
 
@@ -123,11 +125,12 @@ export const FACILITIES = {
 };
 
 /** 施工秒數 */
-/** 施工秒數：Lv1 40 秒、Lv6 約 7 分、Lv10 約 3 小時、Lv15 約 7 天 */
-export const facilityBuildTime = (lv) => Math.round(40 * timeCurve(lv, 1.6, 2.245));
+/** 施工秒數：Lv1 40 秒、Lv6 約 7 分、Lv10 約 11 小時、Lv15 約 20 天 */
+export const facilityBuildTime = (lv) => Math.round(40 * timeCurve(lv, 1.6, 2.522));
 
 export const wallMaxHp = (lv) => 400 + lv * 350 + lv * lv * 40;
-export const storageCap = (lv) => 600 + lv * 700 + lv * lv * 120;
+/** 消耗品上限：Lv6 以後成長加快，配合高等級的升級費用 */
+export const storageCap = (lv) => 600 + lv * 700 + lv * lv * 120 + (lv > 6 ? 1500 * (lv - 6) ** 2 : 0);
 /** 物品倉庫格子：Lv1 30 格，每升一級 +10 */
 export const itemStoreSlots = (lv) => 30 + Math.max(0, lv - 1) * 10;
 export const housingCap = (lv) => 3 + lv * 2;

@@ -1,4 +1,6 @@
-import { MAX_LEVEL, timeCurve, costCurve } from './leveling.js';
+import {
+  MAX_LEVEL, timeCurve, costCurve, hardMul, HARD_PLAIN, HARD_MAT,
+} from './leveling.js';
 import { materialize } from './supplies.js';
 
 /**
@@ -156,21 +158,21 @@ export const labLevelFor = (id, level) => Math.max(requiredLabLevel(RESEARCH[id]
 /** 研究到第 level 級的費用 */
 export function researchCost(id, level) {
   const def = RESEARCH[id];
-  const amount = TIER_AMOUNT[def.tier] * def.costMul * costCurve(level, 1.6);
+  const amount = TIER_AMOUNT[def.tier] * def.costMul * costCurve(level, 1.6) * hardMul(level, HARD_PLAIN);
   // 金屬／布料／藥品換算成具體零件與布料：研究階級越高、等級越高，需要越高階的材料（數量成長較慢）
-  const matAmount = TIER_AMOUNT[def.tier] * def.costMul * costCurve(level, 1.25);
+  const matAmount = TIER_AMOUNT[def.tier] * def.costMul * costCurve(level, 1.25) * hardMul(level, HARD_MAT);
   const abstract = (k) => ['metal', 'cloth', 'medicine'].includes(k);
   const raw = Object.fromEntries(Object.entries(BRANCH_COST[def.branch]).map(([k, m]) => [k, Math.round((abstract(k) ? matAmount : amount) * m)]));
   const tier = Math.min(5, Math.max(1, def.tier - 1 + Math.ceil(level / 5)));
   const cost = materialize(raw, { tier, tags: BRANCH_TAGS[def.branch] || ['mech'], key: id });
-  const parts = Math.round(TIER_PARTS[def.tier] * costCurve(level, 1.4));
+  const parts = Math.round(TIER_PARTS[def.tier] * costCurve(level, 1.4) * hardMul(level, HARD_MAT));
   if (parts) cost.parts = parts;
   return cost;
 }
 
 /** 研究到第 level 級的基本時間（秒） */
-/** 研究秒數：前 6 級每級 ×1.5（第 4 階 Lv6 約 2.5 小時），之後每級 ×1.873；第 4 階 Lv15 約 30 天 */
-export const researchTime = (id, level) => Math.round(TIER_TIME[RESEARCH[id].tier] * timeCurve(level, 1.5, 1.873));
+/** 研究秒數：前 6 級每級 ×1.5（第 4 階 Lv6 約 2.5 小時），之後每級 ×1.658；第 4 階 Lv15 約 10 天 */
+export const researchTime = (id, level) => Math.round(TIER_TIME[RESEARCH[id].tier] * timeCurve(level, 1.5, 1.658));
 
 /** 效果說明 */
 const pct = (v) => `${+(v * 100).toFixed(1)}%`;

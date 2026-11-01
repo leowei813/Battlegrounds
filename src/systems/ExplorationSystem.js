@@ -827,7 +827,8 @@ export class ExplorationSystem {
     report.vehicles = cp.vehicles;
     report.blueprints = cp.blueprints;
     this.game.state.inventory.blueprints.push(...cp.blueprints);
-    members.forEach((m) => this.game.survivors.gainXp(m, Math.round((4 + exp.durationMin) * (cp.done / cp.total))));
+    // 經驗主要來自戰鬥；探索本身只給一點點經驗
+    members.forEach((m) => this.game.survivors.gainXp(m, cp.done >= cp.total ? 1 : 0));
     // 建築的剩餘物資：完整探索完只剩帶不走的（會顯示數量）；沒探索完的剩餘物資留在建築裡，但不知道有多少
     const arriveAt = exp.startAt + (exp.travelMs || 0);
     poi.lootedDay = dayKey(arriveAt);

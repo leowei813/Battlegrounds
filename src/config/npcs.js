@@ -3,8 +3,8 @@
  * 也會掠奪玩家據點。玩家文明度越高，NPC 越積極。屍潮來襲（夜晚）時 NPC 不會出動攻擊。
  */
 export const NPC_CONFIG = {
-  perCell: 2, // 每 1 平方公里（1 公里格子）內的 NPC 據點數
-  cellKm: 1,
+  perCell: 2, // 每個格子（約 0.9 公里見方）內的 NPC 據點數
+  cellKm: 0.9, // 格子略小：NPC 據點密度略增（每平方公里約 2.5 個）
   minFromShelterM: 300, // 不會出現在避難所旁邊
   respawnMs: [30 * 60000, 60 * 60000], // 被摧毀後重新出現的時間
   levelUpMs: [90 * 60000, 150 * 60000], // 升級間隔
