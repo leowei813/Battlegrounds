@@ -104,6 +104,19 @@ export class SurvivorPanel {
     return this.ui.result(this.game.survivors.dismiss(id)).ok;
   }
 
+  /** 工作說明：每項工作的內容與這位倖存者的每小時產出 */
+  jobsHelp(sv) {
+    const lvMul = 1 + sv.level * 0.03;
+    const rows = Object.entries(JOBS).map(([jid, j]) => {
+      const mul = (j.classBonus?.[sv.classId] || 1) * lvMul;
+      const out = Object.entries(j.produce).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} ${(v * mul).toFixed(1)}`).join('、');
+      return `<li class="${sv.job === jid ? 'on' : ''}"><b>${j.icon} ${j.name}</b>${j.classBonus?.[sv.classId] ? ` <span class="tag">本職業 ×${j.classBonus[sv.classId]}</span>` : ''}：${j.desc || ''}${out ? `<small class="muted block">每小時約：${out}</small>` : ''}</li>`;
+    }).join('');
+    const cur = JOBS[sv.job] || JOBS.idle;
+    return `<div class="job-now">${cur.icon} <b>${cur.name}</b>：${cur.desc || ''}</div>
+      <details class="job-help"><summary>ℹ️ 所有工作說明（含這位倖存者的每小時產出）</summary><ul class="skill-list">${rows}</ul></details>`;
+  }
+
   detailBody(id) {
     const g = this.game;
     const sv = g.survivors.get(id);
@@ -122,7 +135,7 @@ export class SurvivorPanel {
     }).join('');
     const jobs = Object.entries(JOBS).map(([jid, j]) => {
       const bonus = j.classBonus?.[sv.classId];
-      return `<button class="chip ${sv.job === jid ? 'active' : ''}" data-action="job" data-job="${jid}">${j.icon} ${j.name}${bonus ? ` ×${bonus}` : ''}</button>`;
+      return `<button class="chip ${sv.job === jid ? 'active' : ''}" data-action="job" data-job="${jid}" title="${escapeHtml(j.desc || '')}">${j.icon} ${j.name}${bonus ? ` ×${bonus}` : ''}</button>`;
     }).join('');
     const hurt = g.survivors.hpOf(sv) < g.survivors.maxHp(sv);
     const starving = g.survivors.isStarving();
@@ -133,10 +146,11 @@ export class SurvivorPanel {
         ${hpBar(g, sv)}
         ${progressBar(sv.xp / xpToNext(sv.level), 'xp', `XP ${sv.xp}/${xpToNext(sv.level)}`)}
         <div class="stat-line">${statLine({ hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, critDmg: s.critDmg - 1, dodge: s.dodge })}<span>攻速 ${s.atkSpeed}</span></div>
-        ${hurt ? `<div class="heal-box ${sv.severe ? 'warn' : ''}"><div class="row-between">${sv.severe ? '🩸 重傷：無法行動，生命回到 30% 才能脫離' : '🩹 受傷：生命會自然恢復'}${starving ? '<span class="tag tag-red">🍽️ 飢餓中無法治療</span>' : ''}</div>
+        ${hurt ? `<div class="heal-box ${sv.severe ? 'warn' : ''}"><div class="row-between">${sv.severe ? '🩸 重傷：無法行動，生命回到 30% 才能脫離' : '🩹 受傷：有診療室或醫生照護時才會慢慢恢復，也可以直接用藥'}${starving ? '<span class="tag tag-red">🍽️ 飢餓中無法治療</span>' : ''}</div>
         ${starving ? '' : `<div class="label">💊 治療：選擇要使用的藥品</div>${this.medsHtml(sv)}`}</div>` : ''}
         <h4>技能</h4><ul class="skill-list">${skills}</ul>
         <h4>工作指派 <small class="muted">（閒置在避難所時生效）</small></h4><div class="chips">${jobs}</div>
+        ${this.jobsHelp(sv)}
         <h4>裝備</h4><div class="equip-grid">${slots}</div>
         ${this.bagHtml(sv)}
         ${sv.isLeader ? '' : `<div class="btn-row end">${btn('🚪 驅逐', 'dismiss', {}, { cls: 'btn-ghost btn-sm', disabled: sv.status === 'exploring' })}</div>`}

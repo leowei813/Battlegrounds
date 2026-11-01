@@ -573,3 +573,9 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .trade-row.gear .item-card { flex: 1 1 100%; margin: 0; }
 .trade-row input[type=number], .trade-buy input { width: 76px; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
 .trade-buy { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+
+/* ---- 工作說明 ---- */
+.job-now { margin: 6px 0; padding: 6px 10px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
+.job-help { margin: 4px 0 8px; font-size: 13px; }
+.job-help summary { cursor: pointer; color: var(--accent); }
+.job-help li.on b { color: var(--accent); }
