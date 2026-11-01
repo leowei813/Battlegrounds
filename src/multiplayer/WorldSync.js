@@ -72,7 +72,7 @@ function cleanAssist(a) {
   };
 }
 
-function cleanPlayer(p) {
+export function cleanPlayer(p) {
   if (!p || typeof p !== 'object') return null;
   const bases = (Array.isArray(p.bases) ? p.bases : []).filter(validPoint).slice(0, 5)
     .map((b) => ({

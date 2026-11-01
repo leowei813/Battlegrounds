@@ -302,23 +302,39 @@ export class TradeSystem {
     const cost = good.price * n;
     if (g.state.player.coins < cost) return { ok: false, reason: `金錢不足（需要 💰${cost}）` };
     let label;
+    const bought = {};
     if (good.item) {
       const it = g.equipment.importItem(good.item);
       if (!it) return { ok: false, reason: '這件裝備的資料有誤' };
       if (!g.equipment.fits(it, 'store')) return { ok: false, reason: '物品倉庫空間不足' };
       g.equipment.addItem(it, `玩家「${c.player.name}」`);
+      bought.itemId = it.id;
       label = `「${it.name}」`;
     } else {
       if (!isGood(good.key)) return { ok: false, reason: '不明的商品' };
       if (isSupply(good.key) && g.equipment.supplyRoom(good.key) < n) return { ok: false, reason: '物品倉庫空間不足' };
       g.grant({ [good.key]: n });
+      bought.key = good.key;
       label = `${iconOf(good.key)}${nameOf(good.key)}×${n}`;
     }
     g.state.player.coins -= cost;
     const b = this.state.bought;
     b[tripId] = b[tripId] || {};
     b[tripId][goodId] = Math.max(good.sold || 0, b[tripId][goodId] || 0) + n;
-    g.territory.send(playerId, 'tradeBuy', { tripId, goodId, qty: n, coins: cost });
+    // 送不出去（離線、伺服器拒絕）時取消這筆購買：退錢、收回商品
+    Promise.resolve(g.territory.send(playerId, 'tradeBuy', { tripId, goodId, qty: n, coins: cost })).then((ok) => {
+      if (ok) return;
+      g.state.player.coins += cost;
+      b[tripId][goodId] = Math.max(0, (b[tripId][goodId] || 0) - n);
+      if (bought.itemId) g.equipment.removeItem?.(bought.itemId);
+      else if (bought.key) {
+        const pool = isSupply(bought.key) ? g.state.supplies : g.state.resources;
+        pool[bought.key] = Math.max(0, (pool[bought.key] || 0) - n);
+        if (isSupply(bought.key) && pool[bought.key] <= 0) delete pool[bought.key];
+      }
+      g.log(`⚠️ 無法通知賣方（連線或伺服器問題），已取消購買 ${label} 並退回 💰${cost}`, 'danger');
+      g.changed?.();
+    });
     g.log(`🤝 向玩家「${c.player.name}」買了 ${label}${cost ? `（💰${cost}）` : '（免費）'}`, 'loot');
     return { ok: true, msg: `買到 ${label}${cost ? `，花了 💰${cost}` : '（免費）'}` };
   }

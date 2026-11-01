@@ -193,7 +193,13 @@ export class TerritorySystem {
     try {
       await w.provider.worldSend(id, token, playerId, type, data);
       return true;
-    } catch {
+    } catch (err) {
+      // 伺服器拒絕這種事件：多半是資料庫函式還是舊版（需要重新執行 supabase/schema.sql 或更新伺服器）
+      if (err?.kind === 'invalid' && !this.warnedInvalid) {
+        this.warnedInvalid = true;
+        this.game.log('⚠️ 伺服器不接受交易／收購事件：請管理者更新伺服器（Supabase 需重新執行 supabase/schema.sql）', 'danger');
+        this.game.toast('⚠️ 伺服器尚未支援交易事件，交易已取消並退回', 'danger');
+      }
       return false;
     }
   }

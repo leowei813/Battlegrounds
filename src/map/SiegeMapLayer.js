@@ -4,6 +4,9 @@ import { bus } from '../core/EventBus.js';
 import { EXP_PHASES, AMBUSH_RADIUS_M, tripProgress } from '../systems/ExplorationSystem.js';
 import { formatDuration } from '../utils/math.js';
 
+/** 停在目的地時的狀態名稱（不是探索） */
+const STAY_NAMES = { trade: '🏪 擺攤中', assist: '🛡️ 協防中', deliver: '📦 交付中' };
+
 /** 屍潮世界座標 1 單位 = 1.5 公尺（出生圈半徑 150 → 約 225 公尺） */
 export const METERS_PER_UNIT = 1.5;
 const M_PER_LAT = 111320;
@@ -206,11 +209,11 @@ export const SiegeMapLayer = L.Layer.extend({
       const p = tripProgress(trip, now);
       // 其他玩家的隊伍只看得到移動，看不到剩餘時間；被攔截撤回中的隊伍不能再攔截
       if (trip.kind === 'deliver') {
-        this.drawTrip(ctx, size, p, `📦 ${player.name}・交付`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false);
+        this.drawTrip(ctx, size, p, `📦 ${player.name}・交付`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false, '交付中');
       } else if (trip.kind === 'assist') {
-        this.drawTrip(ctx, size, p, `🛡️ ${player.name}・協防`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false);
+        this.drawTrip(ctx, size, p, `🛡️ ${player.name}・協防`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false, '協防中');
       } else if (trip.kind === 'trade') {
-        this.drawTrip(ctx, size, p, `🤝 ${player.name}・交易`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false);
+        this.drawTrip(ctx, size, p, `🤝 ${player.name}${trip.targetId === this.game.trade.myId() ? '・來找你交易（點擊）' : '・交易隊'}`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false, '擺攤中');
       } else this.drawTrip(ctx, size, p, `👤 ${player.name}${trip.defeated ? '・🏳️撤回' : ''}`, ['rgba(38,198,218,0.55)', '#00838f', '#e0f7fa', 'rgba(0,77,64,0.85)'], !!trip.defeated);
       if (trip.id && !trip.defeated) this.teams.push({ kind: 'player', playerId: player.id, tripId: trip.id, pos: p.pos });
     }));
@@ -264,7 +267,7 @@ export const SiegeMapLayer = L.Layer.extend({
     pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
   },
 
-  drawTrip(ctx, size, p, name, [line, fill, stroke, labelBg], retreat = false) {
+  drawTrip(ctx, size, p, name, [line, fill, stroke, labelBg], retreat = false, stayName = '') {
     const m = this.map.latLngToContainerPoint([p.pos.lat, p.pos.lon]);
     this.tracePath(ctx, p);
     ctx.setLineDash([3, 6]);
@@ -285,7 +288,7 @@ export const SiegeMapLayer = L.Layer.extend({
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(ph.icon, m.x, m.y + 1);
-    const label = retreat ? name : `${name}・${ph.name}`;
+    const label = retreat ? name : `${name}・${(p.phase === 'searching' && stayName) || ph.name}`;
     ctx.font = 'bold 10px sans-serif';
     const w = ctx.measureText(label).width + 10;
     ctx.fillStyle = labelBg;
@@ -347,7 +350,8 @@ export const SiegeMapLayer = L.Layer.extend({
 
       // 資訊標籤：階段・已移動/總路程・剩餘時間
       const km = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)}km` : `${v}m`);
-      const phName = exp.defeated ? '🏳️ 撤回中' : exp.recalled ? '↩️ 召回中' : `${ph.icon} ${ph.name}`;
+      const stay = p.phase === 'searching' && STAY_NAMES[exp.kind];
+      const phName = exp.defeated ? '🏳️ 撤回中' : exp.recalled ? '↩️ 召回中' : stay || `${ph.icon} ${ph.name}`;
       const line1 = exp.defeated || exp.recalled ? `${phName}・剩 ${km(Math.max(0, p.totalM - p.movedM))}` : p.totalM ? `${phName}・${km(p.movedM)} / ${km(p.totalM)}` : phName;
       const line2 = `⏱ 剩 ${formatDuration(p.remainingMs)}`;
       ctx.font = 'bold 11px sans-serif';

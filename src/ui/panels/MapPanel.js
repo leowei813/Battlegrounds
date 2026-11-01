@@ -234,7 +234,10 @@ export class MapPanel {
     const n = w.others.length;
     const trips = w.others.reduce((s, p) => s + p.trips.filter((t) => t.endAt > Date.now()).length, 0);
     const reqs = Object.keys(this.game.territory.rel.requestsIn).length;
-    return `<button class="world-chip" data-action="worldSettings">👥 附近玩家 ${n}・隊伍 ${trips}${reqs ? `・🤝 ${reqs} 個友好請求` : ''}</button>`;
+    // 來找自己交易的商隊：直接提供入口（商隊停在自己據點上，地圖上不好點）
+    const stalls = this.game.trade.incoming().filter((x) => x.arrived);
+    const stallChips = stalls.slice(0, 1).map((x) => `<button class="world-chip trade-chip" data-action="openStall" data-player="${x.player.id}" data-trip="${x.trip.id}">🤝 ${escapeHtml(x.player.name)} 的交易隊正在擺攤${stalls.length > 1 ? `（另有 ${stalls.length - 1} 隊）` : ''}・點擊交易</button>`).join('');
+    return `<button class="world-chip" data-action="worldSettings">👥 附近玩家 ${n}・隊伍 ${trips}${reqs ? `・🤝 ${reqs} 個友好請求` : ''}</button>${stallChips}`;
   }
 
   /** 其他玩家資訊 */
@@ -435,6 +438,7 @@ export class MapPanel {
     }
     if (action === 'gpsFocus' && this.game.gps.pos) this.service.focus(this.game.gps.pos.lat, this.game.gps.pos.lon, 18);
     if (action === 'worldSettings') this.ui.switchTab('settings');
+    if (action === 'openStall') openTradeStall(this.ui, data.player, data.trip);
     if (action === 'flyTo') {
       const b = this.game.shelter.base(data.id);
       if (b) this.service.focus(b.lat, b.lon, 17);
