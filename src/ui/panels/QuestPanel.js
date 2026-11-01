@@ -30,10 +30,14 @@ export class QuestPanel {
       ? this.questCard(main, q.progress(main.cond), q.isDone(main.cond), 'claimMain', {})
       : '<p class="muted">🎉 你已完成所有主線任務！</p>';
     const dailies = q.dailyDefs().map((d) => this.questCard(d.def, q.progress(d.def.cond, d.baseline), q.isDone(d.def.cond, d.baseline), 'claimDaily', { id: d.id }, d.claimed)).join('');
-    const ach = ACHIEVEMENTS.map((a) => {
-      const claimed = !!g.state.quests.achievements[a.id];
-      return this.questCard(a, q.progress(a.cond), q.isDone(a.cond), 'claimAch', { id: a.id }, claimed);
-    }).join('');
+    // 成就：可領取的排最前面，已領取的收合到最下方（點擊展開）
+    const card = (a) => this.questCard(a, q.progress(a.cond), q.isDone(a.cond), 'claimAch', { id: a.id }, !!g.state.quests.achievements[a.id]);
+    const open = ACHIEVEMENTS.filter((a) => !g.state.quests.achievements[a.id])
+      .sort((a, b) => Number(q.isDone(b.cond)) - Number(q.isDone(a.cond)));
+    const done = ACHIEVEMENTS.filter((a) => g.state.quests.achievements[a.id]);
+    const ach = `${open.map(card).join('') || '<p class="muted">所有成就都已達成！</p>'}`;
+    const doneHtml = done.length ? `<div class="btn-row">${btn(`${this.showDone ? '▲ 收合' : '▼ 展開'}已達成的成就（${done.length}）`, 'toggleDoneAch', {}, { cls: 'btn-sm btn-ghost' })}</div>
+      ${this.showDone ? `<div class="grid">${done.map(card).join('')}</div>` : ''}` : '';
     const doneAch = Object.keys(g.state.quests.achievements).length;
     const claimedN = q.dailyDefs().filter((d) => d.claimed).length;
     const opened = g.state.quests.chestDate === g.state.quests.dailyDate;
@@ -44,7 +48,7 @@ export class QuestPanel {
       <h2>📜 任務</h2>
       <h3>主線 <small>${Math.min(g.state.quests.mainIndex + 1, MAIN_QUESTS.length)}/${MAIN_QUESTS.length}</small></h3>${mainHtml}
       <h3>每日任務 <small class="muted">每天 00:00 重置</small></h3><div class="grid">${dailies}</div>${chest}
-      <h3>成就 <small>${doneAch}/${ACHIEVEMENTS.length}</small></h3><div class="grid">${ach}</div>
+      <h3>成就 <small>${doneAch}/${ACHIEVEMENTS.length}</small></h3><div class="grid">${ach}</div>${doneHtml}
     </div>`;
   }
 
@@ -53,6 +57,10 @@ export class QuestPanel {
     if (action === 'claimMain') this.ui.result(q.claimMain());
     if (action === 'claimDaily') this.ui.result(q.claimDaily(data.id));
     if (action === 'claimAch') this.ui.result(q.claimAchievement(data.id));
+    if (action === 'toggleDoneAch') {
+      this.showDone = !this.showDone;
+      this.ui.refresh(true);
+    }
     if (action === 'openChest') {
       const r = this.ui.result(q.openChest());
       if (r.ok) this.ui.modal.open({ title: '🎁 每日物資箱', body: `<ul class="event-list">${r.lines.map((l) => `<li>${escapeHtml(l)}</li>`).join('') || '<li>倉庫已滿，什麼都放不下</li>'}</ul>` });
