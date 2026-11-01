@@ -70,3 +70,10 @@ export const STARTING_COINS = 150;
 
 /** 戰鬥（探索、攔截、屍潮等）掉落金錢的倍率 */
 export const COIN_GAIN_MUL = 0.8;
+
+/**
+ * 攻打玩家避難所（玩家突襲、NPC 掠奪）的移動時間較長，讓防守方有時間準備。
+ *  - playerMul / npcMul：步行時間倍率
+ *  - minMin：步行最少分鐘數（載具仍有加速效果）
+ */
+export const RAID_TRAVEL = { playerMul: 4, npcMul: 2.5, minMin: 5 };

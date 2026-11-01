@@ -1,5 +1,5 @@
 import { NPC_CONFIG, NPC_NAMES, npcAggression } from '../config/npcs.js';
-import { RESOURCE_KEYS } from '../config/constants.js';
+import { RESOURCE_KEYS, RAID_TRAVEL } from '../config/constants.js';
 import { ShelterSystem } from './ShelterSystem.js';
 import { unitWeight } from '../config/supplies.js';
 import { POI_TYPES } from '../config/poiTypes.js';
@@ -377,13 +377,16 @@ export class NpcSystem {
     if (!this.allowConcurrentRaid(now)) return;
     const base = pick(bases);
     const t = this.tripTimes(n, base, 0, base.id);
+    // 掠奪避難所的移動時間較長，讓玩家有時間準備防守
+    t.travelMs = Math.round(Math.max(t.travelMs * RAID_TRAVEL.npcMul, RAID_TRAVEL.minMin * 60000));
     // 抵達時若已入夜（屍潮），NPC 會放棄這次掠奪
     n.trip = {
       kind: 'raid', baseId: base.id, target: base.name, from: { lat: n.lat, lon: n.lon }, to: { lat: base.lat, lon: base.lon },
       startAt: now, endAt: now + t.travelMs * 2, ...t,
     };
-    this.game.log(`🏴‍☠️「${n.name}」的掠奪隊正朝「${base.name}」前進！`, 'danger');
-    this.game.toast(`🏴‍☠️「${n.name}」（${this.intelView(n).levelShort}）的掠奪隊正朝「${base.name}」前進！`, 'danger');
+    const eta = `約 ${Math.max(1, Math.round(t.travelMs / 60000))} 分鐘後抵達`;
+    this.game.log(`🏴‍☠️「${n.name}」的掠奪隊正朝「${base.name}」前進！（${eta}）`, 'danger');
+    this.game.toast(`🏴‍☠️「${n.name}」（${this.intelView(n).levelShort}）的掠奪隊正朝「${base.name}」前進！（${eta}）`, 'danger');
   }
 
   /** 正在前往玩家據點的 NPC 掠奪隊數量 */

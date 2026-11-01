@@ -2070,6 +2070,9 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   const a2 = gn.npcs.spawnAt(free[2], 'y', Date.now(), true);
   gn.npcs.launchRaid(a1, Date.now());
   assert(a1.trip?.kind === 'raid' && gn.npcs.activeRaids() === 1, 'NPC 發動掠奪');
+  assert(a1.trip.travelMs >= 5 * 60000, `NPC 掠奪避難所的移動時間較長（${Math.round(a1.trip.travelMs / 60000)} 分鐘）`);
+  const rr = gn.territory.incomingRaids(gn.shelter.primary());
+  assert(rr.length === 1 && rr[0].kind === 'npc' && rr[0].at === a1.trip.startAt + a1.trip.travelMs, '正在前來的掠奪隊會公開給友好玩家');
   let extra = 0;
   for (let i = 0; i < 200; i += 1) { a2.trip = null; gn.npcs.launchRaid(a2, Date.now()); if (a2.trip?.kind === 'raid') extra += 1; }
   assert(extra < 30, `已有掠奪隊時，其他 NPC 很少同時攻打（200 次中 ${extra} 次）`);
@@ -2198,6 +2201,20 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   pa.bases[0].lon += 0.01;
   assert(B.assist.incoming().length === 0, '警戒範圍沒有相接就不算協防');
   assert(A.assist.stop().ok && A.siege.of().guards().length === 1, '召回協防後回到崗位');
+}
+
+// ---- 53. v8.46：突襲避難所移動時間較長、載具仍加速 ----
+{
+  const gp = Game.newGame({ playerName: 'P', classId: 'warrior', lat: 25, lon: 121 });
+  gp.state.map.pois = fillPois([], 25, 121);
+  gp.shelter.establish(gp.state.map.pois[0]);
+  setHour(gp, 10);
+  const sh = gp.shelter.primary();
+  const to = { id: 'x', lat: sh.lat, lon: sh.lon + 0.01, name: 'x', type: 'residential' };
+  const m = [gp.survivors.leader()];
+  const normal = gp.exploration.plan(to, m, 5).travelMs;
+  const raid = gp.exploration.plan({ ...to, pvp: true, zoneId: 'z' }, m, 5).travelMs;
+  assert(raid >= normal * 3.9 && raid >= 5 * 60000 / 2, `突襲玩家避難所的移動時間大幅拉長（${Math.round(normal / 1000)} 秒 → ${Math.round(raid / 1000)} 秒）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
