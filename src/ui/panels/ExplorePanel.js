@@ -3,7 +3,6 @@ import { MAX_EXPEDITIONS } from '../../config/constants.js';
 import { VEHICLES } from '../../config/vehicles.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { formatDuration } from '../../utils/math.js';
-import { EXP_PHASES } from '../../systems/ExplorationSystem.js';
 import {
   btn, timerBar, metaOf,
 } from '../components.js';
@@ -52,11 +51,10 @@ export class ExplorePanel {
     const p = this.game.exploration.progress(ex, now);
     if (!p) return '';
     const km = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} km` : `${v} m`);
-    const steps = Object.entries(EXP_PHASES).map(([id, ph]) => `<span class="step ${id === p.phase ? 'on' : ''}">${ph.icon} ${ph.name}</span>`).join('<span class="arrow">›</span>');
-    return `<div class="exp-steps">${steps}</div>
-      <div class="row-between exp-stats">
-        <span>${p.totalM ? `📏 已移動 <b>${km(p.movedM)}</b> / ${km(p.totalM)}` : '📏 （更新前出發的隊伍，無路程資料）'}</span>
-        <span>⏱ 剩餘 <b>${formatDuration(p.remainingMs)}</b>${p.phase !== 'returning' ? `<small class="muted">（本階段 ${formatDuration(p.phaseRemainingMs)}）</small>` : ''}</span>
+    // 只顯示整體進度（不顯示前往／搜索／返程階段）
+    return `<div class="row-between exp-stats">
+        <span>${p.totalM ? `📏 已移動 <b>${km(p.movedM)}</b> / ${km(p.totalM)}` : ''}</span>
+        <span>⏱ 剩餘 <b>${formatDuration(p.remainingMs)}</b></span>
       </div>
       ${p.phase !== 'searching' && this.game.state.map.zombieGroups.length ? '<div class="tag tag-red">🌙 夜間移動中：經過殭屍群附近可能遇襲</div>' : ''}`;
   }

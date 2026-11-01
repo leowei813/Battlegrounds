@@ -414,11 +414,10 @@ export class MapPanel {
       const p = g.exploration.progress(ex, now);
       const poi = g.exploration.poi(ex.poiId);
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
-      const ph = EXP_PHASES[p?.phase] || {};
-      const status = ex.defeated ? '🏳️ 撤回中' : ex.recalled ? '↩️ 召回中' : `${ph.icon || ''} ${ph.name || ''}`;
+      const status = ex.defeated ? '🏳️ 撤回中' : ex.recalled ? '↩️ 召回中' : '';
       const canRecall = g.exploration.canRecall(ex, now);
       return `
-      <p>📍 <b>${escapeHtml(poi?.name || '未知地點')}</b>・${status}</p>
+      <p>📍 <b>${escapeHtml(poi?.name || '未知地點')}</b>${status ? `・${status}` : ''}</p>
       <p class="muted">👥 ${names || `${ex.memberIds.length} 人`}</p>
       <p class="muted">⏱ 剩 ${formatDuration(p ? p.remainingMs : Math.max(0, ex.endAt - now))}</p>
       ${this.ui.panels.explore.checkpointHtml(ex)}

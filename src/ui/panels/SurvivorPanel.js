@@ -60,7 +60,7 @@ export class SurvivorPanel {
       <div class="odds">${odds}</div>
       <small class="muted block">研究「招募技術」可提高高品級機率：目前 Lv${tech}/15${tech < 15 ? '，升到下一級後：' : '（已滿級）'}</small>
       ${nextOdds ? `<div class="odds dim">${nextOdds}</div>` : ''}
-      <small class="muted block">滿級時：${fmtOdds(survivorRarityTable(15))}</small></div>`;
+</div>`;
     const cap = g.survivors.housingBreakdown();
     const list = st.survivors.map((sv) => survivorCard(g, sv, {
       actions: `${btn('詳情 / 裝備', 'detail', { id: sv.id }, { cls: 'btn-sm' })}${g.survivors.hpOf(sv) < g.survivors.maxHp(sv) ? btn('💊 治療', 'heal', { id: sv.id }, { cls: 'btn-sm btn-primary', disabled: g.survivors.isStarving(), title: g.survivors.isStarving() ? '飢餓中無法治療' : '' }) : ''}${sv.isLeader ? '' : btn('🚪 驅逐', 'dismiss', { id: sv.id }, { cls: 'btn-sm btn-ghost', disabled: sv.status === 'exploring' })}`,
