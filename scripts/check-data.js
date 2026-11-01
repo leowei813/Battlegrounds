@@ -2049,6 +2049,30 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(xp(30) / xp(29) > 1 && xp(40) - xp(39) > xp(20) - xp(19) && ratio(40) > 1, '倖存者等級越高升級越困難');
 }
 
+// ---- 47. v8.36：NPC 很少同時攻打、受傷要先治療 ----
+{
+  const gn = Game.newGame({ playerName: 'N9', classId: 'warrior', lat: 25, lon: 121 });
+  gn.state.map.pois = fillPois([], 25, 121);
+  gn.shelter.establish(gn.state.map.pois[0]);
+  setHour(gn, 10);
+  const free = gn.state.map.pois.filter((p) => !gn.shelter.baseAtPoi(p.id));
+  const a1 = gn.npcs.spawnAt(free[1], 'x', Date.now(), true);
+  const a2 = gn.npcs.spawnAt(free[2], 'y', Date.now(), true);
+  gn.npcs.launchRaid(a1, Date.now());
+  assert(a1.trip?.kind === 'raid' && gn.npcs.activeRaids() === 1, 'NPC 發動掠奪');
+  let extra = 0;
+  for (let i = 0; i < 200; i += 1) { a2.trip = null; gn.npcs.launchRaid(a2, Date.now()); if (a2.trip?.kind === 'raid') extra += 1; }
+  assert(extra < 30, `已有掠奪隊時，其他 NPC 很少同時攻打（200 次中 ${extra} 次）`);
+  // 受傷的 NPC 不會外出
+  a2.trip = null;
+  a2.wounded = 1;
+  a2.healAt = Date.now() + 3600e3;
+  a2.nextRaidAt = 0;
+  a2.nextExploreAt = 0;
+  gn.npcs.update(Date.now());
+  assert(!a2.trip, '有傷員的 NPC 要先治療才會外出探索或掠奪');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
