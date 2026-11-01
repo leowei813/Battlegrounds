@@ -11,6 +11,23 @@
  *  - { type: 'civilization', value }       目前文明度
  * 每日任務使用 { type: 'statDelta', key, value }：自每日重置起的增量。
  */
+import { COIN_GAIN_MUL } from './constants.js';
+import { SUPPLIES } from './supplies.js';
+
+/** 每日任務材料獎勵依稀有度調降：越高階降越多；基礎物資（食物、木材…）視同第 1 階 */
+export const DAILY_TIER_MUL = { 1: 0.9, 2: 0.85, 3: 0.8, 4: 0.75, 5: 0.7 };
+
+/** 套用金錢調降（全部任務、成就）與每日材料調降 */
+const scaleReward = (daily) => (q) => ({
+  ...q,
+  reward: Object.fromEntries(Object.entries(q.reward).map(([k, v]) => {
+    if (k === 'item') return [k, v];
+    if (k === 'coins') return [k, Math.round(v * COIN_GAIN_MUL)];
+    if (!daily) return [k, v];
+    return [k, Math.max(1, Math.round(v * DAILY_TIER_MUL[SUPPLIES[k]?.tier || 1]))];
+  })),
+});
+
 export const MAIN_QUESTS = [
   { id: 'm1', name: '落腳之處', desc: '在地圖上選擇一棟建築作為避難所', cond: { type: 'shelterSet' }, reward: { coins: 50, food: 100 } },
   { id: 'm2', name: '第一次出擊', desc: '完成 1 次探索', cond: { type: 'stat', key: 'explorations', value: 1 }, reward: { coins: 60, wood: 100 } },
@@ -31,7 +48,7 @@ export const MAIN_QUESTS = [
   { id: 'm12b', name: '開疆拓土', desc: '擁有 2 個據點', cond: { type: 'bases', value: 2 }, reward: { coins: 600, wood: 400, ironPlate: 20, hinge: 15, rebar: 15 } },
   { id: 'm12c', name: '文明的火種', desc: '文明度達到 200（城鎮）', cond: { type: 'civilization', value: 200 }, reward: { coins: 800, parts: 12 } },
   { id: 'm13', name: '重建文明', desc: '科技總等級達 30', cond: { type: 'research', value: 30 }, reward: { coins: 1500, parts: 25, item: 'legendary' } },
-];
+].map(scaleReward(false));
 
 /** 每日任務：只放隨時都能做到的目標（不放受時間、運氣或夜晚限制的，例如研究、建築升級、找到裝備、治療、守夜） */
 export const DAILY_POOL = [
@@ -41,7 +58,7 @@ export const DAILY_POOL = [
   { id: 'd_craft', name: '日常製作', desc: '製作 1 件裝備', cond: { type: 'statDelta', key: 'crafted', value: 1 }, reward: { coins: 60, coarse: 15, cotton: 15 } },
   { id: 'd_ammo', name: '日常軍火', desc: '製作 1 批彈藥或箭矢', cond: { type: 'statDelta', key: 'ammoCrafted', value: 1 }, reward: { coins: 70, scrap: 15, spring: 3 } },
   { id: 'd_forest', name: '日常伐木', desc: '探索樹林 1 次', cond: { type: 'statDelta', key: 'forestVisits', value: 1 }, reward: { coins: 50, wood: 200 } },
-];
+].map(scaleReward(true));
 export const DAILY_COUNT = 4;
 
 /**
@@ -87,4 +104,4 @@ export const ACHIEVEMENTS = [
   { id: 'a_upg100', name: '建築大師', desc: '完成 100 次建築升級', cond: { type: 'stat', key: 'upgrades', value: 100 }, reward: { coins: 3000, titanium: 5 } },
   { id: 'a_day60', name: '不朽', desc: '存活 60 天', cond: { type: 'stat', key: 'daysSurvived', value: 60 }, reward: { coins: 8000, item: 'legendary' } },
   { id: 'a_breach', name: '浴火重生', desc: '避難所首次被突破後存活', cond: { type: 'stat', key: 'breaches', value: 1 }, reward: { coins: 100, wood: 300 } },
-];
+].map(scaleReward(false));
