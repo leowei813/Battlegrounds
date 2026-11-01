@@ -255,6 +255,17 @@ export class MapPanel {
     const tradeCheck = g.trade.canStart(p.id);
     const myTrade = g.trade.activeTo(p.id);
     const toMe = g.trade.incoming(now).filter((x) => x.player.id === p.id);
+    // 自己派往這位玩家的交易隊：顯示擺攤狀況並可召回
+    const tradeHtml = myTrade ? (() => {
+      const tp = g.exploration.progress(myTrade, now);
+      const where = myTrade.recalled || myTrade.tradeEnded ? '↩️ 回程中' : tp?.phase === 'searching' ? `🏪 正在對方據點擺攤・約 ${formatDuration(tp.phaseRemainingMs)}後離開` : tp?.phase === 'returning' ? '↩️ 回程中' : `🚶 前往中・約 ${formatDuration(tp?.phaseRemainingMs || 0)}後抵達`;
+      const goods = (myTrade.trade?.goods || []).map((x) => `${escapeHtml(g.trade.goodName(x))} 已賣 ${x.sold}/${x.qty}${x.price ? `（💰${x.price}${x.itemId ? '' : '/個'}）` : '（免費）'}`).join('<br>');
+      const canRecall = g.exploration.canRecall(myTrade, now) && !myTrade.tradeEnded;
+      return `<div class="card"><b>🤝 我的交易隊</b> <small class="muted">${where}</small>
+        <small class="block">${goods || '沒有商品'}</small>
+        <small class="block">💰 已收入 <b>${myTrade.trade?.earned || 0}</b>（對方購買後送達）</small>
+        ${canRecall ? `<div class="btn-row">${btn('↩️ 召回交易隊', 'recallTrade', { id: myTrade.id }, { cls: 'btn-xs btn-danger' })}</div><small class="muted block">召回後倖存者結束交易走回避難所，沒賣完的商品會帶回家。</small>` : ''}</div>`;
+    })() : '';
     const sieged = rel === 'friend' ? p.bases.filter((b) => b.siege) : [];
     const myAssist = g.assist.trips().find((e) => e.assistTarget?.playerId === p.id);
     const canAssist = g.assist.canAssist(p.id);
@@ -273,7 +284,7 @@ export class MapPanel {
         ${list.map((r) => `<small class="block">${r.kind === 'npc' ? '🏴‍☠️' : '👤'} ${escapeHtml(r.by)}・約 ${formatDuration(r.at - now)}後抵達</small>`).join('')}</div>` : '';
     }).join('') : '';
     return `<p>${relTag} 🏛️ 文明度 <b>${p.civ}</b>・據點 ${p.bases.length} 個・外出隊伍 ${trips.length} 支</p>
-      ${raidHtml}${siegeHtml}${assistRow}
+      ${tradeHtml}${raidHtml}${siegeHtml}${assistRow}
       <div class="btn-row">${diplo}${btn(myTrade ? '🤝 交易隊已出發' : '🤝 派人交易', 'trade', {}, { cls: 'btn-sm btn-primary', disabled: !tradeCheck.ok, title: tradeCheck.reason || '' })}</div>
       ${(p.demands || []).length ? `<div class="label">📢 收購中${p.exchange ? `（交易所 Lv${p.exchange}）` : ''}</div>${p.demands.map((d) => `<div class="card row-between"><span>${g.demand.label(d.key)} ×${d.qty}・每個 💰${d.price}</span>${btn('📦 派人交付', 'deliver', { id: d.id }, { cls: 'btn-xs btn-primary', disabled: !g.demand.canDeliver(p.id, d.id).ok, title: g.demand.canDeliver(p.id, d.id).reason || '' })}</div>`).join('')}` : ''}
       ${toMe.map((x) => `<div class="card row-between"><span>🤝 對方的交易隊${x.arrived ? '正在你的據點擺攤' : '正在前來你的據點'}</span>${btn('查看商品', 'openStall', { trip: x.trip.id }, { cls: 'btn-xs btn-primary', disabled: !x.arrived })}</div>`).join('')}
@@ -307,6 +318,10 @@ export class MapPanel {
           return;
         }
         if (action === 'stopAssist') this.ui.result(g.exploration.recall(data.id));
+        if (action === 'recallTrade' && confirm('召回交易隊？沒賣完的商品會帶回家。')) {
+          const r = this.ui.result(g.exploration.recall(data.id));
+          if (r.ok) this.renderMap(true);
+        }
         if (action === 'trade') {
           openTradeSetup(this.ui, p);
           return;

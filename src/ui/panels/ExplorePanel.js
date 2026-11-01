@@ -31,6 +31,7 @@ export class ExplorePanel {
         ${this.progressHtml(ex, now)}
         ${timerBar(ex.startAt, ex.endAt, now)}
         ${this.checkpointHtml(ex)}
+        ${ex.kind === 'trade' && ex.trade ? `<small class="block">🤝 擺攤：${ex.trade.goods.map((x) => `${escapeHtml(g.trade.goodName(x))} 已賣 ${x.sold}/${x.qty}`).join('、') || '沒有商品'}</small>` : ''}
         ${(ex.travelEvents || []).length ? `<ul class="event-list">${ex.travelEvents.slice(-3).map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul>` : ''}
         <div class="btn-row">${btn('🗺️ 在地圖上追蹤', 'track', { id: ex.id }, { cls: 'btn-sm btn-primary' })}${btn(ex.auto ? '停止自動' : '🔁 自動探索', 'auto', { id: ex.id }, { cls: 'btn-sm btn-ghost', disabled: !g.research.hasUnlock('autoExplore') })}${g.exploration.canRecall(ex, now) ? btn('召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' }) : ''}</div>
       </div>`;
