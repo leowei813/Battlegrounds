@@ -1,6 +1,6 @@
 import { BUILD_QUEUE_SIZE } from '../config/constants.js';
 import {
-  FACILITIES, FACILITY_MAX_LEVEL, facilityBuildTime, wallMaxHp, OUTPOST_FACILITIES, REPAIR,
+  FACILITIES, FACILITY_MAX_LEVEL, cellarCap, cellarCoins, facilityBuildTime, wallMaxHp, OUTPOST_FACILITIES, REPAIR,
 } from '../config/facilities.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
 import { JOBS } from '../config/survivors.js';
@@ -81,6 +81,18 @@ export class ShelterSystem {
   maxLevel(fid) {
     const bases = OUTPOST_FACILITIES.includes(fid) ? this.bases : this.bases.filter((b) => b.kind !== 'outpost');
     return bases.reduce((m, b) => Math.max(m, b.facilities[fid].level), 0);
+  }
+
+  /** 地窖保護的數量（金錢用 coins） */
+  cellarProtect(key) {
+    const lv = this.maxLevel('cellar');
+    return key === 'coins' ? cellarCoins(lv) : cellarCap(lv);
+  }
+
+  /** 會被掠奪的數量：超過地窖容量的部分 */
+  exposed(key) {
+    const have = key === 'coins' ? this.game.state.player.coins : this.game.state.resources[key] || 0;
+    return Math.max(0, have - this.cellarProtect(key));
   }
 
   /** 所有據點中該設施的等級總和 */

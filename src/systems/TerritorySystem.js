@@ -224,9 +224,8 @@ export class TerritorySystem {
           const pct = Math.min(0.3, Math.max(0, Number(e.data.lossPct) || PVP_LOSS));
           const lost = {};
           RESOURCE_KEYS.forEach((k) => {
-            const after = Math.floor(g.state.resources[k] * (1 - pct));
-            lost[k] = g.state.resources[k] - after;
-            g.state.resources[k] = after;
+            lost[k] = Math.floor(g.shelter.exposed(k) * pct); // 地窖裡的搶不走
+            g.state.resources[k] -= lost[k];
           });
           g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: false, lost, wallLost: wallBefore - base.wallHp, note: `圍牆被打破，被搶走 ${Math.round(pct * 100)}% 資源` });
           g.log(`💀 玩家「${name}」突襲了「${e.data.base || '你的據點'}」，搶走 ${Math.round(pct * 100)}% 資源！雙方進入敵對`, 'danger');

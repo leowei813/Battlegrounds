@@ -529,7 +529,7 @@ export class BaseSiege {
     const res = this.game.state.resources;
     const lost = {};
     RESOURCE_KEYS.forEach((k) => {
-      lost[k] = Math.floor(res[k] * rate);
+      lost[k] = Math.floor(sh.exposed(k) * rate); // 地窖裡的不會損失
       res[k] -= lost[k];
     });
     this.zombies.forEach((z) => this.pushFx({ type: 'death', x: z.x, y: z.y, color: z.color }));

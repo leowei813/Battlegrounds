@@ -84,6 +84,12 @@ export const FACILITIES = {
     cost: (lv) => mat('dormitory', ['struct'], { wood: 90, metal: 25, cloth: 45 }, lv),
     effectText: (lv) => `可住 ${dormCap(lv)} 人（含領袖）`,
   },
+  cellar: {
+    name: '地窖', icon: '🕳️', startLevel: 0,
+    desc: '藏起一小部分食物、木材、燃料與金錢。數量在地窖容量以內的部分不會被掠奪（NPC、玩家、屍潮都搶不走）。',
+    cost: (lv) => mat('cellar', ['struct'], { wood: 90, metal: 30, cloth: 15 }, lv),
+    effectText: (lv) => `食物、木材、燃料各藏 ${cellarCap(lv)}、金錢 ${cellarCoins(lv)}`,
+  },
   clinic: {
     name: '診療室', icon: '🩺', startLevel: 0,
     desc: '在據點內休息的倖存者會慢慢回復生命，等級越高回復越快。沒有診療室不會自然回復；主要還是要靠藥品治療。',
@@ -117,6 +123,9 @@ export const storageCap = (lv) => 600 + lv * 700 + lv * lv * 120;
 /** 物品倉庫格子：Lv1 30 格，每升一級 +10 */
 export const itemStoreSlots = (lv) => 30 + Math.max(0, lv - 1) * 10;
 export const housingCap = (lv) => 3 + lv * 2;
+/** 地窖容量：每種基礎物資（食物、木材、燃料）可藏的數量；金錢另計 */
+export const cellarCap = (lv) => (lv > 0 ? 60 * lv + 15 * lv * lv : 0);
+export const cellarCoins = (lv) => (lv > 0 ? 50 * lv + 10 * lv * lv : 0);
 /** 宿舍可住人數（含領袖）：沒有宿舍最多 3 人，每升一級 +1 */
 export const dormCap = (lv) => 3 + Math.max(0, lv);
 /** 診療室：在據點休息時每分鐘回復最大生命的比例（沒有診療室不會自然回復） */

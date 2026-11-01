@@ -1,3 +1,4 @@
+import { FACILITIES } from '../config/facilities.js';
 import { SAVE_KEY, SAVE_VERSION } from '../config/constants.js';
 import { STAT_KEYS, newSeeds } from './GameState.js';
 import { POI_KEYS } from '../config/poiTypes.js';
@@ -278,6 +279,11 @@ export class SaveManager {
         if (b.facilities && !b.facilities.clinic) b.facilities.clinic = { level: b.kind === 'outpost' ? 0 : 1 };
       });
     }
+    // 新增的設施（例如地窖）：舊據點補上 Lv0
+    (data.bases || []).forEach((b) => {
+      if (!b.facilities) return;
+      Object.keys(FACILITIES).forEach((id) => { if (!b.facilities[id]) b.facilities[id] = { level: 0 }; });
+    });
     data.supplies = data.supplies || {};
     data.defenseLog = data.defenseLog || [];
     if (data.map) {
