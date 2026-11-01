@@ -2297,6 +2297,51 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   ex.hasStock = orig;
 }
 
+// ---- 57. v8.52.3：伺服器拒絕交易事件時退回 ----
+{
+  const mk = (name, lat) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat, lon: 121 });
+    gx.state.map.pois = fillPois([], lat, 121);
+    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shelter.primary().facilities.exchange.level = 1;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }), provider: { worldSend: async () => { const e = new Error('x'); e.kind = 'invalid'; throw e; } } };
+    return gx;
+  };
+  const { WorldSync: WS2, cleanPlayer } = await import('../src/multiplayer/WorldSync.js');
+  const pres = (gx, id) => cleanPlayer({ id, ...JSON.parse(JSON.stringify(WS2.prototype.presence.call({ game: gx }))) });
+  const S = mk('S', 25);
+  const Bq = mk('Bq', 25.004);
+  Bq.state.player.coins = 500;
+  Bq.demand.post('nail', 10, 5);
+  S.world.others = [pres(Bq, 'Bq')];
+  S.state.supplies.nail = 30;
+  const lead = S.survivors.leader();
+  const dv = S.demand.deliver('Bq', S.world.others[0].demands[0].id, lead.id, 10);
+  assert(dv.ok, `可以出發交付（${dv.reason || ''}）`);
+  const sh = dv.exp.travelMs + 1000;
+  dv.exp.startAt -= sh; dv.exp.endAt -= sh;
+  S.demand.checkDeliveries();
+  await new Promise((r) => setTimeout(r, 10));
+  assert(lead.bag.nail === 10 && !dv.exp.deliver.handed, `通知失敗時物資放回背包帶回家（背包 ${lead.bag.nail}）`);
+  // 交易購買失敗：退錢、收回商品
+  S.exploration.update(dv.exp.endAt + 1, { silent: true });
+  S.state.supplies.nail = 30;
+  S.world.others = [pres(Bq, 'Bq')];
+  const tr = S.trade.start('Bq', lead.id, [{ key: 'nail', qty: 5, price: 4 }]);
+  assert(tr.ok, `交易隊出發（${tr.reason || ''}）`);
+  if (tr.ok) {
+    const s2 = tr.exp.travelMs + 1000;
+    tr.exp.startAt -= s2; tr.exp.endAt -= s2;
+    Bq.world.others = [pres(S, 'S')];
+    const trip = Bq.world.others[0].trips.find((t) => t.kind === 'trade');
+    const c0 = Bq.state.player.coins;
+    const n0 = Bq.state.supplies.nail || 0;
+    assert(Bq.trade.buy('S', trip.id, trip.stall[0].id, 5).ok, '購買');
+    await new Promise((r) => setTimeout(r, 10));
+    assert(Bq.state.player.coins === c0 && (Bq.state.supplies.nail || 0) === n0, `通知賣方失敗時取消購買並退錢（💰${Bq.state.player.coins}）`);
+  }
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

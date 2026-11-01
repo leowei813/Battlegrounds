@@ -30,6 +30,8 @@ export class SupabaseProvider {
     if (body?.status === 'forbidden') throw new CloudError('forbidden', '帳號或密碼錯誤');
     if (body?.status === 'notfound') throw new CloudError('notfound', '雲端找不到這份存檔');
     if (body?.status === 'conflict') throw new CloudError('conflict', '其他裝置已更新存檔', body.meta);
+    // 例如事件類型不在資料庫允許清單中（資料庫函式是舊版，需要重新執行 supabase/schema.sql）
+    if (body?.status === 'invalid') throw new CloudError('invalid', '伺服器不接受這個操作（資料庫可能需要更新）');
     return body;
   }
 

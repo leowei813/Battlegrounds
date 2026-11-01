@@ -173,7 +173,18 @@ export class DemandSystem {
       if (n > 0) {
         bag[dv.key] -= n;
         if (bag[dv.key] <= 0) delete bag[dv.key];
-        g.territory.send(dv.playerId, 'demandSell', { demandId: dv.demandId, key: dv.key, qty: n });
+        // 送不出去（離線、伺服器拒絕）時把物資放回背包，帶回家
+        Promise.resolve(g.territory.send(dv.playerId, 'demandSell', { demandId: dv.demandId, key: dv.key, qty: n })).then((ok) => {
+          if (ok) return;
+          const s2 = g.survivors.get(exp.memberIds[0]);
+          if (s2) {
+            s2.bag = s2.bag || {};
+            s2.bag[dv.key] = (s2.bag[dv.key] || 0) + n;
+          }
+          dv.handed = 0;
+          exp.travelEvents = [...(exp.travelEvents || []), `⚠️ 無法通知對方（連線或伺服器問題），${nameOf(dv.key)}×${n} 帶回家`];
+          g.changed?.();
+        });
       }
       dv.handed = n;
       exp.travelEvents = [...(exp.travelEvents || []), n
