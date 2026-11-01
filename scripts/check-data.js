@@ -2076,6 +2076,29 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(!a2.trip, '有傷員的 NPC 要先治療才會外出探索或掠奪');
 }
 
+// ---- 48. v8.38：電網需要發電機運轉 ----
+{
+  const { DEFENSES: DF } = await import('../src/config/defenses.js');
+  const ge = Game.newGame({ playerName: 'E9', classId: 'warrior', lat: 25, lon: 121 });
+  ge.state.map.pois = fillPois([], 25, 121);
+  ge.shelter.establish(ge.state.map.pois[0]);
+  const base = ge.shelter.primary();
+  assert(DF.trap.name === '尖刺陷阱' && DF.electricFence && DF.electricFence.requires === 'd_fence' && RESEARCH.d_fence && RESEARCH.d_volt, '陷阱改名尖刺陷阱，新增電網與相關科技');
+  assert(!ge.shelter.isDefenseUnlocked('electricFence'), '電網需要研究解鎖');
+  const s = ge.siege.of(base.id);
+  const none = s.defenseDps();
+  base.defenses[0].type = 'electricFence';
+  base.defenses[0].level = 3;
+  base.facilities.generator.level = 0;
+  const off = s.defenseDps() - none;
+  base.facilities.generator.level = 1;
+  ge.state.resources.fuel = 100;
+  const on = s.defenseDps() - none;
+  assert(off === 0 && on > 0, `電網要有發電機運轉才有作用（沒電 +${off}／有電 +${on}）`);
+  ge.state.resources.fuel = 0;
+  assert(s.defenseDps() - none === 0, '發電機沒燃料時電網也不會作用');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

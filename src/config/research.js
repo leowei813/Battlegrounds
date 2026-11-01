@@ -71,7 +71,9 @@ export const RESEARCH = {
   // ---- 防禦 ----
   d_wall: r('defense', 1, '加固工事', '圍牆耐久提升', { wallHpPct: 0.05 }),
   d_repair: r('defense', 1, '快速修補', '修繕圍牆速度提升、耗材降低', { repairPct: 0.1 }),
-  d_trap: r('defense', 1, '陷阱工藝', '陷阱傷害提升', { defDmg_trap: 0.06 }),
+  d_trap: r('defense', 1, '陷阱工藝', '尖刺陷阱傷害提升', { defDmg_trap: 0.06 }),
+  d_fence: r('defense', 2, '電網', '解鎖電網（需要發電機運轉），並提升電網傷害', { defDmg_electricFence: 0.05 }, { unlock: ['electricFence'], req: [['d_trap', 2]] }),
+  d_volt: r('defense', 3, '高壓電流', '電網傷害大幅提升', { defDmg_electricFence: 0.08 }, { req: [['d_fence', 3]] }),
   d_mg: r('defense', 1, '機槍塔', '解鎖機槍塔，並提升機槍塔傷害', { defDmg_machineGun: 0.05 }, { unlock: ['machineGun'] }),
   d_tower: r('defense', 2, '火力強化', '所有防禦塔傷害提升', { towerDmgPct: 0.04 }, { req: [['d_mg', 2]] }),
   d_range: r('defense', 2, '精準射擊', '防禦設施傷害提升', { towerRangePct: 0.03 }, { req: [['d_mg', 2]] }),
@@ -176,7 +178,7 @@ const CATS = {
   melee: '近戰', pistol: '手槍', crossbow: '十字弓', smg: '衝鋒槍', shotgun: '散彈槍', rifle: '步槍', sniper: '狙擊槍', lmg: '輕機槍',
 };
 const TOWERS = {
-  trap: '陷阱', machineGun: '機槍塔', flameTower: '火焰塔', emTower: '電磁塔',
+  trap: '尖刺陷阱', electricFence: '電網', machineGun: '機槍塔', flameTower: '火焰塔', emTower: '電磁塔',
 };
 const LABELS = {
   atkPct: (v) => `攻擊 +${pct(v)}`, critAdd: (v) => `暴擊率 +${pct(v)}`, critDmgAdd: (v) => `暴擊傷害 +${pct(v)}`,

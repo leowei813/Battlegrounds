@@ -29,10 +29,16 @@ export const DEFENSES = {
     stats: (lv) => ({ wallBonus: 120 * lv, slow: 0.25, range: 26, damage: 0, fireRate: 0 }),
   },
   trap: {
-    name: '陷阱', icon: '🪤', color: 0x795548, requires: null,
-    desc: '對經過的殭屍造成持續傷害並緩速。',
+    name: '尖刺陷阱', icon: '🪤', color: 0x795548, requires: null,
+    desc: '圍牆外的尖刺坑，對接近圍牆的殭屍造成持續傷害並緩速。',
     cost: (lv) => mat('trap', ['mech', 'struct'], { wood: 30, metal: 25 }, lv),
     stats: (lv) => ({ damage: 4 + lv * 3, fireRate: 2, range: 22, slow: 0.35, aoe: true }),
+  },
+  electricFence: {
+    name: '電網', icon: '⚡', color: 0xffca28, requires: 'd_fence', power: true,
+    desc: '通電的圍網，持續電擊貼近圍牆的所有殭屍並短暫麻痺。需要據點的發電機運轉（有燃料）才會作用。',
+    cost: (lv) => mat('electricFence', ['elec', 'struct'], { metal: 100, fuel: 25 }, lv),
+    stats: (lv) => ({ damage: 6 + lv * 4, fireRate: 1, range: 14, stun: 0.3, aoe: true }),
   },
   machineGun: {
     name: '機槍塔', icon: '🔫', color: 0x607d8b, requires: 'd_mg',
