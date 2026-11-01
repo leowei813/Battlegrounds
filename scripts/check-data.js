@@ -2342,6 +2342,61 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   }
 }
 
+// ---- 58. v8.53：協防也參與 NPC 掠奪與玩家突襲的防守 ----
+{
+  const { WorldSync: WS3, cleanPlayer: cp3 } = await import('../src/multiplayer/WorldSync.js');
+  const mk = (name, lon) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon });
+    gx.state.map.pois = fillPois([], 25, lon);
+    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    setHour(gx, 10);
+    return gx;
+  };
+  const pres = (gx, id) => cp3({ id, ...JSON.parse(JSON.stringify(WS3.prototype.presence.call({ game: gx }))) });
+  const H = mk('H', 121);
+  const V = mk('V', 121.004);
+  H.state.relations.players.V = { status: 'friend', name: 'V' };
+  V.state.relations.players.H = { status: 'friend', name: 'H' };
+  // V 被 NPC 掠奪隊盯上
+  const free = V.state.map.pois.filter((p) => !V.shelter.baseAtPoi(p.id));
+  const n = V.npcs.spawnAt(free[1], 'x', Date.now(), true);
+  V.npcs.launchRaid(n, Date.now());
+  assert(n.trip?.kind === 'raid', 'NPC 發動掠奪');
+  H.world.others = [pres(V, 'V')];
+  const ca = H.assist.canAssist('V');
+  assert(ca.ok, `白天有 NPC 前來攻打時也能派隊協防（${ca.reason || ''}）`);
+  const helper = H.survivors.leader();
+  const st = H.assist.start('V', [helper.id]);
+  assert(st.ok, `派隊協防（${st.reason || ''}）`);
+  const sh = st.exp.travelMs + 1000;
+  st.exp.startAt -= sh; st.exp.endAt -= sh;
+  const ph = pres(H, 'H');
+  assert(ph.assist.units.length === 1 && ph.assist.units[0].atk > 0, '公開協防隊員的戰鬥數值');
+  V.world.others = [ph];
+  assert(V.assist.allyUnits().length === 1, '被攻打方取得協防隊員');
+  // 圍牆已破：直接與守軍交戰
+  V.shelter.primary().wallHp = 0;
+  V.npcs.resolveIncoming(n, n.trip, Date.now());
+  const log = V.state.defenseLog[0];
+  assert(log && log.note.includes('友好協防') && log.note.includes('H'), `防守紀錄寫入協防（${log?.note}）`);
+  const ra = V.shelter.primary().raidAssist;
+  assert(ra && ra.list.H && ra.list.H.units.length === 1, '記錄協防隊員的戰果與傷勢');
+  H.world.others = [pres(V, 'V')];
+  H.assist.update();
+  assert(H.state.log.some((l) => l.msg.includes('戰報：抵禦')), '協防方收到防守戰報');
+  // 玩家突襲：攻擊方會遇到對方的協防隊
+  const C = mk('C', 121.008);
+  C.world.others = [pres(V, 'V'), ph];
+  assert(C.assist.defendersOf('V').length === 1, '突襲時對方的友好協防隊員也會迎戰');
+  let sent = null;
+  C.territory.send = async (_to, type, data) => { if (type === 'attack') sent = data; return true; };
+  const rep = C.territory.resolvePvp({ poiId: 'pvp:V#0', memberIds: [C.survivors.leader().id], endAt: Date.now(), travelEvents: [], cargo: 40 });
+  assert(rep.events.some((e) => e.includes('協防隊員')) && sent?.helpers?.H, `突襲結算包含協防隊員並回報給對方（${rep.events.slice(-2).join(' / ')}）`);
+  V.territory.handleEvents([{ from: 'C', fromName: 'C', type: 'attack', data: sent }]);
+  assert(V.state.defenseLog[0].note.includes('友好協防'), `被突襲方的防守紀錄寫入協防（${V.state.defenseLog[0].note}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

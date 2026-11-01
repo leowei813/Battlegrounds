@@ -144,7 +144,10 @@ export class CombatSystem {
    * @param {{firstStrikeBonus?:number}} opts
    */
   simulate(survivors, enemies, opts = {}) {
-    const team = survivors.map((sv) => this.unitFromSurvivor(sv));
+    // allies：友好玩家的協防隊員（不是自己的倖存者，戰後由對方自行套用傷勢）
+    const team = [...survivors.map((sv) => this.unitFromSurvivor(sv)), ...(opts.allies || []).map((a) => ({
+      ...a, side: 'team', skills: {}, cd: randFloat(0, 0.3), healCd: 0, firstHit: true, lifeSteal: 0,
+    }))];
     const foes = enemies.map((e) => ({ ...e, side: 'enemy', hp: e.maxHp, cd: randFloat(0.3, 1), skills: {} }));
     const log = [];
     const push = (t, msg, type = '') => { if (log.length < 140) log.push({ t: +t.toFixed(1), msg, type }); };
@@ -182,6 +185,7 @@ export class CombatSystem {
       if (target.hp <= 0) {
         push(t, `☠️ ${target.name} 倒下`, target.side === 'enemy' ? 'kill' : 'down');
         if (target.side === 'enemy') kills.push(target);
+        atkUnit.kills = (atkUnit.kills || 0) + 1;
       }
       // 戰士橫掃
       if (atkUnit.skills.cleaveChance && chance(atkUnit.skills.cleaveChance)) {
@@ -234,7 +238,10 @@ export class CombatSystem {
       duration: +t.toFixed(1),
       log,
       kills,
-      team: team.map((u) => ({ id: u.id, name: u.name, hp: Math.max(0, Math.round(u.hp)), maxHp: u.maxHp, down: u.hp <= 0 })),
+      team: team.map((u) => ({
+        id: u.id, name: u.name, hp: Math.max(0, Math.round(u.hp)), maxHp: u.maxHp, down: u.hp <= 0, kills: u.kills || 0, ally: u.ally,
+      })),
+      foes: foes.map((u) => ({ id: u.id, ally: u.ally, down: u.hp <= 0, hp: Math.max(0, Math.round(u.hp)), kills: u.kills || 0 })),
       enemies: foes.map((f) => ({ name: f.name, icon: f.icon, hp: Math.max(0, Math.round(f.hp)), maxHp: f.maxHp })),
       xp: kills.reduce((s, k) => s + k.xp, 0),
       coins: kills.reduce((s, k) => s + k.coins, 0),
