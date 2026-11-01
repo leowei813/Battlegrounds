@@ -2,7 +2,9 @@ import { RESOURCE_KEYS } from '../config/constants.js';
 import {
   storageCap, FARM_FOOD, LUMBER_WOOD, WORKBENCH,
 } from '../config/facilities.js';
-import { JOBS, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE } from '../config/survivors.js';
+import {
+  JOBS, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE, foodLevelMul,
+} from '../config/survivors.js';
 import { isSupply } from '../config/supplies.js';
 
 /**
@@ -68,7 +70,9 @@ export class ResourceSystem {
     gross.food *= 1 + foodPct;
 
     const perHead = offline ? FOOD_PER_SURVIVOR_HOUR_OFFLINE : FOOD_PER_SURVIVOR_HOUR;
-    upkeep.food += st.survivors.length * perHead * Math.max(0.5, 1 - (rb.foodUpkeepReduce || 0));
+    // 每人依等級吃得不同：等級越高消耗越多
+    const heads = st.survivors.reduce((s, sv) => s + foodLevelMul(sv.level), 0);
+    upkeep.food += heads * perHead * Math.max(0.5, 1 - (rb.foodUpkeepReduce || 0));
 
     const keys = [...new Set([...RESOURCE_KEYS, ...Object.keys(gross), ...Object.keys(upkeep)])].filter((k) => gross[k] || upkeep[k] || RESOURCE_KEYS.includes(k));
     const plain = (o) => Object.fromEntries(keys.map((k) => [k, o[k]]));

@@ -170,3 +170,6 @@ export const recruitCost = (count) => ({ coins: 60 + count * 45, food: 40 + coun
 export const FOOD_PER_SURVIVOR_HOUR = 5;
 /** 離線期間（以及分頁在背景超過 1 分鐘）每人每小時的食物消耗 */
 export const FOOD_PER_SURVIVOR_HOUR_OFFLINE = 2;
+/** 等級越高吃得越多：每高 1 級食物消耗 +3%（Lv10 約 ×1.27、Lv50 約 ×2.47） */
+export const FOOD_LEVEL_STEP = 0.03;
+export const foodLevelMul = (level = 1) => 1 + Math.max(0, level - 1) * FOOD_LEVEL_STEP;
