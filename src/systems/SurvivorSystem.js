@@ -648,6 +648,21 @@ export class SurvivorSystem {
     return { ok: true, n };
   }
 
+  /** 丟棄背包裡的消耗品（指定數量，Infinity 為全部）；在外面也可以丟 */
+  discardBag(id, key, amount) {
+    const sv = this.get(id);
+    if (!sv) return { ok: false, reason: '找不到倖存者' };
+    const bag = this.bagOf(sv);
+    const have = Math.floor(bag[key] || 0);
+    const n = Math.min(have, Math.max(0, Math.floor(amount === Infinity ? have : Number(amount) || 0)));
+    if (n <= 0) return { ok: false, reason: have ? '請輸入要丟棄的數量' : '背包裡沒有這項物品' };
+    bag[key] -= n;
+    if (bag[key] <= 0) delete bag[key];
+    const name = SUPPLIES[key]?.name || RESOURCES[key]?.name || key;
+    this.game.log(`🗑️ ${sv.name} 丟棄了 ${name}×${n}`, 'info');
+    return { ok: true, msg: `丟棄 ${name}×${n}` };
+  }
+
   // ---------------- 自動補給 ----------------
 
   /** 自動補給設定：每次回到避難所時，把背包裡的這些物品補到指定數量 */
