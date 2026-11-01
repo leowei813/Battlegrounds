@@ -314,6 +314,7 @@ export class BaseSiege {
       const def = DEFENSES[d.type];
       const st = def.stats(d.level);
       if (!st.fireRate) return;
+      if (def.power && !this.powered()) return; // 電網：發電機沒運轉就不會作用
       const key = d.slot;
       const cd = (this.cooldowns.get(key) ?? 0) - dt;
       if (cd > 0) {
@@ -322,7 +323,7 @@ export class BaseSiege {
       }
       const pos = this.slotPos(d.slot);
       // 攻打據點的殭屍都在防禦設施的火力範圍內（陷阱只作用在圍牆附近）
-      const range = d.type === 'trap' ? WORLD.WALL_R + st.range : WORLD.SPAWN_R;
+      const range = d.type === 'trap' || d.type === 'electricFence' ? WORLD.WALL_R + st.range : WORLD.SPAWN_R;
       const inRange = this.zombies.filter((z) => z.hp > 0 && Math.hypot(z.x, z.y) <= range);
       if (!inRange.length) {
         this.cooldowns.set(key, 0);
@@ -382,6 +383,15 @@ export class BaseSiege {
         inRange.forEach((z) => this.damage(z, base / st.fireRate));
         this.pushFx({ type: 'trap', x: pos.x, y: pos.y, r: st.range });
         break;
+      case 'electricFence': {
+        const nowS = performance.now() / 1000;
+        inRange.forEach((z) => {
+          this.damage(z, base);
+          z.stunUntil = Math.max(z.stunUntil || 0, nowS + st.stun);
+          this.pushFx({ type: 'shot', kind: 'em', x1: z.x * 0.9, y1: z.y * 0.9, x2: z.x, y2: z.y });
+        });
+        break;
+      }
       case 'machineGun':
         this.damage(target, base);
         this.pushFx({ type: 'shot', kind: 'mg', x1: pos.x, y1: pos.y, x2: target.x, y2: target.y });
@@ -585,6 +595,11 @@ export class BaseSiege {
    * 防禦總 DPS（離線估算與 UI 顯示）
    * @param {{apparent?:boolean}} [opts] apparent：從外面觀察到的強度（NPC 判斷是否繞路用，不知道彈藥存量）
    */
+  /** 電網是否有電：據點有發電機且發電機有燃料運轉 */
+  powered() {
+    return !!this.base && (this.base.facilities.generator?.level || 0) > 0 && this.game.resources.generatorActive();
+  }
+
   defenseDps({ apparent = false } = {}) {
     const sh = this.game.shelter;
     const base = this.base;
@@ -593,6 +608,7 @@ export class BaseSiege {
     let dps = 0;
     base.defenses.forEach((d) => {
       if (!d.type || d.level < 1) return;
+      if (DEFENSES[d.type].power && !this.powered()) return;
       const st = DEFENSES[d.type].stats(d.level);
       if (d.type === 'watchPost') {
         const sv = this.game.survivors.get(d.garrisonId);
