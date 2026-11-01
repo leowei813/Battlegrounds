@@ -455,7 +455,7 @@ export class NpcSystem {
     const allies = isHome ? g.assist.allyUnits() : [];
     const helpDps = helpers.reduce((s, h) => s + (h.dps || 0), 0);
     const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps() * (1 + g.research.bonus('raidDefensePct')) + helpDps);
-    base.wallHp = as.wallLeft;
+    base.wallHp = Math.max(0, as.wallLeft);
     const enemies = as.alive;
     const defenders = this.defenders(base);
     const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));

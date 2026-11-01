@@ -331,6 +331,8 @@ export class ShelterSystem {
     const base = this.resolve(b);
     if (!base) return wallMaxHp(1);
     if (base.wallHp == null) base.wallHp = this.wallMax(base);
+    // 圍牆耐久最低為 0（修正舊資料的負數）
+    if (base.wallHp < 0) base.wallHp = 0;
     return Math.min(base.wallHp, this.wallMax(base));
   }
 

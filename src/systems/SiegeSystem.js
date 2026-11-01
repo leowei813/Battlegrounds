@@ -324,7 +324,7 @@ export class BaseSiege {
         if (z.atkCd <= 0) {
           z.atkCd = 1 / z.atkSpeed;
           const dmg = z.atk * WALL_DMG_MUL * (1 - reduction);
-          base.wallHp = sh.wallHp(base) - dmg;
+          base.wallHp = Math.max(0, sh.wallHp(base) - dmg);
           if (sh.wallHp(base) <= 0) breached = true; // 圍牆被打破：還要打贏據點裡的人員才算攻破
           this.pushFx({ type: 'wallHit', x: z.x, y: z.y, dmg: Math.round(dmg) });
         }

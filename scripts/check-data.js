@@ -1348,6 +1348,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   Object.assign(sl.zombies[0], { x: 0, y: 40 });
   for (let i = 0; i < 100 && sl.zombies.length; i += 1) sl.update(0.1);
   assert(!sl.quiet() && !(gl.state.defenseLog || []).some((e) => !e.success), '圍牆被打破後人員打贏，防線沒有被攻破');
+  assert(base.wallHp === 0 && gl.shelter.wallHp(base) === 0, `圍牆耐久最低為 0，不會變成負數（${base.wallHp}）`);
   // 沒有人可以應戰時才被攻破
   gl.state.survivors.forEach((sv) => { sv.severe = true; });
   base.wallHp = 0;
