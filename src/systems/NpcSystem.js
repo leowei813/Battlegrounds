@@ -441,11 +441,11 @@ export class NpcSystem {
     const res = g.state.resources;
     const stolen = {};
     RESOURCE_KEYS.forEach((k) => {
-      stolen[k] = Math.floor(res[k] * NPC_CONFIG.raidStealPct);
+      stolen[k] = Math.floor(g.shelter.exposed(k) * NPC_CONFIG.raidStealPct); // 地窖裡的搶不走
       res[k] -= stolen[k];
       n.resources[k] = (n.resources[k] || 0) + stolen[k];
     });
-    const coins = Math.floor(g.state.player.coins * 0.1);
+    const coins = Math.floor(g.shelter.exposed('coins') * 0.1);
     g.state.player.coins -= coins;
     n.coins += coins;
     g.state.stats.battlesLost += 1;

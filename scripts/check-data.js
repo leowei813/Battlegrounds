@@ -101,7 +101,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 16, 'state is serializable');
+assert(save.version === 17, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -155,7 +155,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -399,7 +399,10 @@ assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[
   base.defenses.forEach((d) => Object.assign(d, { type: 'trap', level: 1 }));
   const siege = gv.siege.of(base.id);
   let destroyed = 0;
+  const cellarLv = base.facilities.cellar.level;
+  base.facilities.cellar.level = 0;
   siege.breach();
+  base.facilities.cellar.level = cellarLv;
   assert(Math.round(gv.state.resources.wood) === 500, `突破損失 50% 資源（木材 1000 → ${Math.round(gv.state.resources.wood)}）`);
   setHour(gv, 22);
   assert(siege.quiet() && !siege.active() && base.quietUntil > Date.now(), '防線被突破後當晚不再有屍潮');
@@ -1894,6 +1897,37 @@ assert(migrated.version === 16 && migrated.bases.length === 1 && migrated.bases[
   assert(gw.threats().some((t) => t.includes(n.name)), '掠奪隊前來時出現威脅提示');
   n.trip = null;
   assert(!gw.threats().length, '沒有威脅時不提示');
+}
+
+// ---- 43. v8.30：地窖 ----
+{
+  const { cellarCap, cellarCoins } = await import('../src/config/facilities.js');
+  const gc = Game.newGame({ playerName: 'K1', classId: 'warrior', lat: 25, lon: 121 });
+  gc.state.map.pois = fillPois([], 25, 121);
+  gc.shelter.establish(gc.state.map.pois[0]);
+  setHour(gc, 10);
+  const base = gc.shelter.primary();
+  base.facilities.cellar.level = 3;
+  const cap = cellarCap(3);
+  assert(cap > 0 && cellarCap(4) > cap && cellarCoins(3) > 0, `地窖升級增加容量（Lv3 ${cap}）`);
+  // 數量沒超過地窖容量：不會被掠奪
+  gc.state.resources.food = cap;
+  gc.state.player.coins = cellarCoins(3);
+  base.wallHp = 0;
+  gc.survivors.leader().status = 'exploring';
+  const n = gc.npcs.spawnAt(gc.state.map.pois.find((p) => !gc.shelter.baseAtPoi(p.id)), 'x', Date.now(), true);
+  n.trip = { kind: 'raid', baseId: base.id, startAt: Date.now() - 1000, travelMs: 0, endAt: Date.now() + 1000 };
+  gc.npcs.resolveIncoming(n, n.trip, Date.now());
+  assert(!gc.state.defenseLog[0].success && gc.state.resources.food === cap && gc.state.player.coins === cellarCoins(3), '地窖容量內的食物與金錢不會被掠奪');
+  // 超過的部分才會被搶
+  gc.state.resources.food = cap + 1000;
+  base.wallHp = 0;
+  gc.npcs.resolveIncoming(n, n.trip, Date.now());
+  assert(gc.state.resources.food < cap + 1000 && gc.state.resources.food >= cap, '只有超過地窖容量的部分會被搶走');
+  // 屍潮突破也一樣
+  gc.state.resources.wood = cap;
+  gc.siege.of(base.id).breach();
+  assert(gc.state.resources.wood === cap, '屍潮突破時地窖裡的物資也不會損失');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
