@@ -67,3 +67,6 @@ export const STARTING_SUPPLIES = {
   coarse: 25, cotton: 20, linen: 10, bandage: 5, gauze: 5, arrow: 20,
 };
 export const STARTING_COINS = 150;
+
+/** 戰鬥（探索、攔截、屍潮等）掉落金錢的倍率 */
+export const COIN_GAIN_MUL = 0.8;

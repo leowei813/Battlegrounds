@@ -21,6 +21,8 @@ export const TRADER = {
   supplyPrice: [0, 3, 8, 20, 50, 120],
   /** 裝備價格 = 出售價 × 倍率 */
   gearMarkup: 4,
+  /** 商人售價倍率（回收價不受影響） */
+  sellMul: 1.5,
   /** 出現的裝備品級權重（越高越少見） */
   gearRarity: {
     poor: 18, common: 34, uncommon: 28, rare: 14, epic: 5, legendary: 1,
@@ -109,15 +111,25 @@ export class TraderSystem {
     return out;
   }
 
-  supplyPrice(key) {
+  /** 基準價（回收價以此計算） */
+  baseSupplyPrice(key) {
     const sp = SUPPLIES[key];
     if (sp.cat === 'med') return Math.round(15 + 300 * (sp.heal || 0.1) ** 1.6);
     if (sp.cat === 'ammo') return Math.max(1, Math.round(TRADER.supplyPrice[sp.tier] / 3));
     return TRADER.supplyPrice[sp.tier];
   }
 
+  /** 商人的售價（基準價 × 售價倍率） */
+  supplyPrice(key) {
+    return Math.max(1, Math.round(this.baseSupplyPrice(key) * TRADER.sellMul));
+  }
+
+  baseGearPrice(item) {
+    return RARITIES[item.rarity].sell * TRADER.gearMarkup * (1 + item.level * 0.08) * tierMul(item.tier || 1);
+  }
+
   gearPrice(item) {
-    return Math.round(RARITIES[item.rarity].sell * TRADER.gearMarkup * (1 + item.level * 0.08) * tierMul(item.tier || 1));
+    return Math.round(this.baseGearPrice(item) * TRADER.sellMul);
   }
 
   /** 回收比例：約為販售價的 1/8，越稀有（階級越高）比例越好（1 階 10% → 5 階 15%） */
@@ -128,14 +140,14 @@ export class TraderSystem {
 
   /** 回收單價（可能有小數，成交時總價取整數）；研究「以物易物」提高回收價 */
   buybackUnit(key) {
-    return this.supplyPrice(key) * this.buybackRate(key) * (1 + this.game.research.bonus('sellPct'));
+    return this.baseSupplyPrice(key) * this.buybackRate(key) * (1 + this.game.research.bonus('sellPct'));
   }
 
   /** 裝備回收價：約為商人賣價的 1/8，品級越高比例越好（劣質 10% → 稀有 15%） */
   gearBuyback(item) {
     const idx = Math.max(0, RARITY_ORDER.indexOf(item.rarity));
     const rate = (0.8 + 0.08 * idx) / 8;
-    return Math.max(1, Math.round(this.gearPrice(item) * rate * (1 + this.game.research.bonus('sellPct'))));
+    return Math.max(1, Math.round(this.baseGearPrice(item) * rate * (1 + this.game.research.bonus('sellPct'))));
   }
 
   /** 把倉庫裡的裝備賣給商人（上鎖、穿戴中的不能賣） */
