@@ -67,8 +67,10 @@ export class TradeSystem {
   canStart(playerId) {
     const g = this.game;
     if (!g.shelter.hasShelter()) return { ok: false, reason: '請先建立避難所' };
+    if (g.shelter.maxLevel('exchange') < 1) return { ok: false, reason: '需要先在避難所建造交易所才能交易' };
     const p = this.player(playerId);
     if (!p) return { ok: false, reason: '找不到這位玩家（可能已離線）' };
+    if (!(p.exchange > 0)) return { ok: false, reason: '對方還沒有交易所，無法交易' };
     if (g.territory.relation(playerId) === 'hostile') return { ok: false, reason: '敵對玩家無法交易' };
     if (this.activeTo(playerId)) return { ok: false, reason: '已經有交易隊前往這位玩家的據點' };
     return { ok: true, player: p };

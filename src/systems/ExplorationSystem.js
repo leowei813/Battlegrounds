@@ -101,7 +101,7 @@ export class ExplorationSystem {
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   poi(id) {
     return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id)
-      || this.game.intercept?.asPoi(id) || this.game.trade?.asPoi(id) || this.huntPoi(id) || null;
+      || this.game.intercept?.asPoi(id) || this.game.trade?.asPoi(id) || this.game.demand?.asPoi(id) || this.huntPoi(id) || null;
   }
 
   /**
@@ -182,7 +182,7 @@ export class ExplorationSystem {
     if (!v.ok) return v;
     if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'intercept' || kind === 'hunt' ? 0 : kind === 'raid' || kind === 'pvp' ? 2 : this.searchMinutes(v.poi);
+    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'deliver' ? 0 : kind === 'raid' || kind === 'pvp' ? 2 : this.searchMinutes(v.poi);
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
@@ -243,6 +243,7 @@ export class ExplorationSystem {
     [...this.list].forEach((exp) => this.checkThreats(exp, now));
     this.game.intercept?.checkArrivals(now);
     this.checkHunts(now);
+    this.game.demand?.checkDeliveries(now);
     this.list.forEach((exp) => this.runCheckpoints(exp, now));
     const out = [];
     const groups = this.game.state.map.zombieGroups;
@@ -445,6 +446,7 @@ export class ExplorationSystem {
 
   updateNow(now, { silent = false } = {}) {
     const reports = [];
+    this.game.demand?.checkDeliveries(now);
     let guard = 0;
     let due = this.list.filter((e) => e.endAt <= now);
     while (due.length && guard < 400) {
@@ -458,6 +460,7 @@ export class ExplorationSystem {
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
         const report = exp.kind === 'trade' && !exp.defeated ? this.game.trade.report(exp)
+          : exp.kind === 'deliver' && !exp.defeated ? this.game.demand.report(exp)
           : exp.recalled ? (exp.kind === 'explore' ? this.finishExplore(exp, { recalled: true }) : this.recalledReport(exp))
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)
@@ -788,7 +791,8 @@ export class ExplorationSystem {
     const complete = cp.done >= cp.total && !cp.stopped && !recalled;
     if (recalled) report.events.push(`↩️ 中途撤回（搜索 ${cp.done}/${cp.total}），帶回已經找到的物資`);
     const gained = {};
-    Object.entries(cp.gained).forEach(([k, v]) => { const n = Math.round(v); if (n > 0) gained[k] = n; });
+    // 取整數時無條件捨去，避免四捨五入後超過運載量
+    Object.entries(cp.gained).forEach(([k, v]) => { const n = Math.floor(v + 1e-9); if (n > 0) gained[k] = n; });
     // 入帳：先放進倉庫，放不下的由隊員裝進自己的背包
     report.resources = this.game.grant(gained);
     const leftovers = Object.fromEntries(Object.entries(gained)

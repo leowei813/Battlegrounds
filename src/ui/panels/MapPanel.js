@@ -15,6 +15,7 @@ import { remainOf } from '../../systems/LootStock.js';
 import { MAX_MARKERS } from '../../systems/MarkerSystem.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { openTradeSetup, openTradeStall } from '../TradeDialog.js';
+import { openDeliver } from '../ExchangeDialog.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { zoneAt, ZONES } from '../../config/zones.js';
 
@@ -254,6 +255,7 @@ export class MapPanel {
     const toMe = g.trade.incoming(now).filter((x) => x.player.id === p.id);
     return `<p>${relTag} 🏛️ 文明度 <b>${p.civ}</b>・據點 ${p.bases.length} 個・外出隊伍 ${trips.length} 支</p>
       <div class="btn-row">${diplo}${btn(myTrade ? '🤝 交易隊已出發' : '🤝 派人交易', 'trade', {}, { cls: 'btn-sm btn-primary', disabled: !tradeCheck.ok, title: tradeCheck.reason || '' })}</div>
+      ${(p.demands || []).length ? `<div class="label">📢 收購中${p.exchange ? `（交易所 Lv${p.exchange}）` : ''}</div>${p.demands.map((d) => `<div class="card row-between"><span>${g.demand.label(d.key)} ×${d.qty}・每個 💰${d.price}</span>${btn('📦 派人交付', 'deliver', { id: d.id }, { cls: 'btn-xs btn-primary', disabled: !g.demand.canDeliver(p.id, d.id).ok, title: g.demand.canDeliver(p.id, d.id).reason || '' })}</div>`).join('')}` : ''}
       ${toMe.map((x) => `<div class="card row-between"><span>🤝 對方的交易隊${x.arrived ? '正在你的據點擺攤' : '正在前來你的據點'}</span>${btn('查看商品', 'openStall', { trip: x.trip.id }, { cls: 'btn-xs btn-primary', disabled: !x.arrived })}</div>`).join('')}
       <div class="pick-list">${p.bases.map((b, i) => `<div class="pick-row"><span>${b.primary ? '⭐' : '🏴'} ${escapeHtml(b.name)}</span><small class="muted">警戒 ${b.alert}m・駐守 ${b.guards} 人</small>
         <span>${btn('📍', 'fly', { i }, { cls: 'btn-xs btn-ghost' })}${rel === 'friend' ? '' : btn('⚔️ 攻擊', 'attackBase', { i }, { cls: 'btn-xs btn-danger' })}</span></div>`).join('')}</div>
@@ -282,6 +284,11 @@ export class MapPanel {
         if (action === 'unfriend' && confirm(`確定解除與「${p.name}」的友好關係？`)) this.ui.result(await t.removeFriend(p.id));
         if (action === 'trade') {
           openTradeSetup(this.ui, p);
+          return;
+        }
+        if (action === 'deliver') {
+          const d = (p.demands || []).find((x) => x.id === data.id);
+          if (d) openDeliver(this.ui, p, d);
           return;
         }
         if (action === 'openStall') {

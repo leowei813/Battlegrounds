@@ -7,7 +7,7 @@ const STALE_MS = 3 * 24 * 60 * 60 * 1000;
 const MAX_BASES = 5;
 const MAX_TRIPS = 10;
 /** 玩家之間的事件（攻擊、友好請求…） */
-const EVENT_TYPES = new Set(['attack', 'friendRequest', 'friendAccept', 'friendRemove', 'intercept', 'plunder', 'tradeBuy', 'tradeEnd', 'tradeRefund']);
+const EVENT_TYPES = new Set(['attack', 'friendRequest', 'friendAccept', 'friendRemove', 'intercept', 'plunder', 'tradeBuy', 'tradeEnd', 'tradeRefund', 'demandSell', 'demandPay', 'demandReturn']);
 const MAX_INBOX = 50;
 
 const num = (v, min, max) => (Number.isFinite(v) && v >= min && v <= max ? v : null);
@@ -66,6 +66,7 @@ export function sanitizePresence(body) {
       level: num(t.level, 1, 60) ?? 1,
       ...(t.defeated ? { defeated: true } : {}),
       ...(t.kind === 'trade' ? { kind: 'trade', targetId: str(t.targetId, 40), stall: sanitizeStall(t.stall) } : {}),
+      ...(t.kind === 'deliver' ? { kind: 'deliver' } : {}),
     };
   }).filter(Boolean);
   return {
@@ -73,6 +74,11 @@ export function sanitizePresence(body) {
     civ: num(body.civ, 0, 1e6) ?? 0,
     bases,
     trips,
+    exchange: num(body.exchange, 0, 20) ?? 0,
+    demands: (Array.isArray(body?.demands) ? body.demands : []).slice(0, 10).map((d) => {
+      const qty = num(d?.qty, 1, 99999);
+      return qty == null || !d?.key ? null : { id: str(d.id, 40), key: str(d.key, 20), qty, price: num(d.price, 0, 100000) ?? 0 };
+    }).filter(Boolean),
   };
 }
 

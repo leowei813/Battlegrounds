@@ -84,6 +84,12 @@ export const FACILITIES = {
     cost: (lv) => mat('dormitory', ['struct'], { wood: 90, metal: 25, cloth: 45 }, lv),
     effectText: (lv) => `可住 ${dormCap(lv)} 人（含領袖）`,
   },
+  exchange: {
+    name: '交易所', icon: '🏪', startLevel: 0,
+    desc: '建好才能和其他玩家交易：派人擺攤、發布收購需求、交付別人的收購。每一級可以同時掛 1 項收購需求。',
+    cost: (lv) => mat('exchange', ['struct', 'elec'], { wood: 110, metal: 50, cloth: 30 }, lv),
+    effectText: (lv) => `可交易，同時掛 ${lv} 項收購需求`,
+  },
   cellar: {
     name: '地窖', icon: '🕳️', startLevel: 0,
     desc: '藏起一小部分食物、木材、燃料與金錢。數量在地窖容量以內的部分不會被掠奪（NPC、玩家、屍潮都搶不走）。',
