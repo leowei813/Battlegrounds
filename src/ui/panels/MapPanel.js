@@ -330,9 +330,9 @@ export class MapPanel {
     });
   }
 
-  /** 可能出現的物資（實際種類與數量要探索時才知道；探索後清空，每天 00:00 重置） */
+  /** 可能出現的物資（實際種類與數量要探索時才知道；探索後清空，每天 06:00、18:00 刷新） */
   stockHtml(poi) {
-    const reset = `每天 00:00 重置（${formatDuration(msToReset())}後）`;
+    const reset = `每天 06:00、18:00 刷新（${formatDuration(msToReset())}後）`;
     const fmt = (res) => Object.entries(res).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} ${v}`).join('、');
     // 上次探索帶不走而殘留的物資：直接顯示剩餘數量
     const left = remainOf(poi, this.game.state.map.remain);

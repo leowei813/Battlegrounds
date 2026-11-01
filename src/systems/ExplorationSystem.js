@@ -686,7 +686,7 @@ export class ExplorationSystem {
     }
     // 有找到東西才顯示
     if (found.length || extra.length) cp.events.push(`🔍 ${tag}找到 ${[...found, ...extra].join('、')}`);
-    if (k === 1 && cp.stock.empty) cp.events.push('🕸️ 這裡已經被搜刮一空（每天 00:00 重置）');
+    if (k === 1 && cp.stock.empty) cp.events.push('🕸️ 這裡已經被搜刮一空（每天 06:00、18:00 刷新）');
 
     // 2. 隨機事件
     const ev = weightedPick({
@@ -790,6 +790,17 @@ export class ExplorationSystem {
     }
     const complete = cp.done >= cp.total && !cp.stopped && !recalled;
     if (recalled) report.events.push(`↩️ 中途撤回（搜索 ${cp.done}/${cp.total}），帶回已經找到的物資`);
+    // 最後再檢查一次運載量（例如戰敗撤退時沒有經過負重判斷）
+    const carry = exp.cargo || this.game.vehicles.personCarry() * members.length;
+    const weightNow = Object.entries(cp.gained).filter(([k]) => isLootKey(k)).reduce((sum, [k, v]) => sum + v * unitWeight(k), 0);
+    if (weightNow > carry) {
+      const ratio = carry / weightNow;
+      Object.keys(cp.gained).filter(isLootKey).forEach((k) => {
+        const keep = cp.gained[k] * ratio;
+        cp.overflow[k] = (cp.overflow[k] || 0) + (cp.gained[k] - keep);
+        cp.gained[k] = keep;
+      });
+    }
     const gained = {};
     // 取整數時無條件捨去，避免四捨五入後超過運載量
     Object.entries(cp.gained).forEach(([k, v]) => { const n = Math.floor(v + 1e-9); if (n > 0) gained[k] = n; });
