@@ -124,9 +124,9 @@ export class SurvivorPanel {
     const cls = CLASSES[sv.classId];
     const s = g.survivors.stats(sv);
     const now = Date.now();
-    const slots = g.survivors.skillSlots(sv);
+    const skillSlots = g.survivors.skillSlots(sv);
     const skills = cls.skills.map((sk, i) => {
-      const locked = i >= slots;
+      const locked = i >= skillSlots;
       const on = !locked && sv.level >= sk.unlock;
       return `<li class="${on ? 'on' : 'off'}"><b>${sk.name}</b>（Lv${sk.unlock}）${sk.desc}${locked ? ' <span class="tag">🔒 品級不足</span>' : ''}</li>`;
     }).join('');
@@ -153,7 +153,7 @@ export class SurvivorPanel {
         <div class="stat-line">${statLine({ hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, critDmg: s.critDmg - 1, dodge: s.dodge })}<span>攻速 ${s.atkSpeed}</span></div>
         ${hurt ? `<div class="heal-box ${sv.severe ? 'warn' : ''}"><div class="row-between">${sv.severe ? '🩸 重傷：無法行動，生命回到 30% 才能脫離' : '🩹 受傷：有診療室或醫生照護時才會慢慢恢復，也可以直接用藥'}${starving ? '<span class="tag tag-red">🍽️ 飢餓中無法治療</span>' : ''}</div>
         ${starving ? '' : `<div class="label">💊 治療：選擇要使用的藥品</div>${this.medsHtml(sv)}`}</div>` : ''}
-        <h4>技能 <small class="muted">（品級可解放 ${slots}/${cls.skills.length} 個）</small></h4><ul class="skill-list">${skills}</ul>
+        <h4>技能 <small class="muted">（品級可解放 ${skillSlots}/${cls.skills.length} 個）</small></h4><ul class="skill-list">${skills}</ul>
         <h4>工作指派 <small class="muted">（閒置在避難所時生效）</small></h4><div class="chips">${jobs}</div>
         ${this.jobsHelp(sv)}
         <h4>裝備</h4><div class="equip-grid">${slots}</div>
