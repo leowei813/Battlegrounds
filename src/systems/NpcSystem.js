@@ -400,57 +400,43 @@ export class NpcSystem {
       g.log(`🏴‍☠️「${n.name}」的掠奪隊見屍潮來襲，撤退了`, 'info');
       return;
     }
-    // 防禦塔先削減掠奪者，剩下的與據點中的倖存者交戰
-    let enemies = this.garrison(n);
+    // 1. 掠奪者要先打破圍牆，期間防禦設施持續射擊
+    const all = this.garrison(n);
+    const raiders = all.length;
     const siege = g.siege.of(base.id);
-    let towerDamage = (siege.defenseDps() * 25 + g.shelter.wallHp(base) * 0.15) * (1 + g.research.bonus('raidDefensePct'));
-    enemies = enemies.filter((e) => {
-      if (towerDamage >= e.maxHp) {
-        towerDamage -= e.maxHp;
-        return false;
-      }
-      return true;
-    });
+    const wallBefore = g.shelter.wallHp(base);
+    const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps() * (1 + g.research.bonus('raidDefensePct')));
+    base.wallHp = as.wallLeft;
+    const enemies = as.alive;
     const defenders = this.defenders(base);
     const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));
-    let victory = !enemies.length;
+    // 2. 圍牆被打破後，與據點中的人員交戰；打贏才能掠奪
+    let victory = !as.breached;
     let result = null;
-    if (!victory && defenders.length) {
+    if (as.breached && defenders.length) {
       result = g.combat.simulate(defenders, enemies, { firstStrikeBonus: base.facilities.watchtower.level * 0.04 });
       g.combat.applyOutcome(defenders, result, now);
       victory = result.victory;
     }
-    const raiders = this.garrison(n).length;
-    const kills = (raiders - enemies.length) + (result?.kills.length || 0);
-    // NPC 的傷亡：被防禦塔或防守人員擊倒的掠奪者（首領不計），需要時間補回
+    const kills = as.killed + (result?.kills.length || 0);
+    // NPC 的傷亡：被防禦設施或防守人員擊倒的掠奪者，需要時間補回
     this.wound(n, Math.min(kills, this.fullCount(n)), now);
     const label = `NPC「${n.name}」（${this.intelView(n).levelShort}）`;
     if (victory) {
-      // 守住也不會毫髮無傷：交火時防守人員受傷、圍牆受損（依掠奪者人數）
-      const scale = Math.min(1, raiders / 5);
-      const hurt = [];
-      defenders.forEach((sv) => {
-        if (sv.severe) return;
-        const max = g.survivors.maxHp(sv);
-        const loss = Math.round(max * randFloat(...NPC_CONFIG.skirmishHp) * (0.5 + scale));
-        const hp = g.survivors.hpOf(sv);
-        if (loss <= 0) return;
-        g.survivors.setHp(sv, Math.max(1, hp - loss));
-        hurt.push(`${sv.name} −${Math.min(loss, hp - 1)}`);
-      });
-      const wallBefore = g.shelter.wallHp(base);
-      base.wallHp = Math.max(0, wallBefore - g.shelter.wallMax(base) * NPC_CONFIG.skirmishWall * raiders);
       const injured = ShelterSystem.newlySevere(severeBefore, defenders);
       g.state.stats.battlesWon += 1;
+      const how = !as.breached
+        ? (enemies.length ? `圍牆撐住了 ${as.sec} 秒，掠奪隊放棄撤退` : '防禦設施在圍牆被打破前擊退了掠奪隊')
+        : `圍牆被打破，防守人員（${defenders.map((d) => d.name).join('、')}）擊退了掠奪隊`;
       g.shelter.recordDefense({
-        base, attacker: label, success: true, kills, injured, wallLost: wallBefore - base.wallHp,
-        note: `${defenders.length ? `防守人員：${defenders.map((d) => d.name).join('、')}` : '防禦塔擊退了掠奪隊'}${hurt.length ? `；受傷：${hurt.join('、')}` : ''}`,
+        base, attacker: label, success: true, kills, injured, wallLost: as.wallLost, note: how,
       });
       g.toast(`🛡️「${base.name}」擊退了「${n.name}」的掠奪隊！`, 'success');
       n.level = Math.max(1, n.level - 1);
       g.bus.emit('npc:raid', { npcId: n.id, baseId: base.id, victory: true });
       return;
     }
+    void raiders;
     // 掠奪成功：搶走資源與部分金錢，圍牆受損
     const res = g.state.resources;
     const stolen = {};
@@ -462,12 +448,10 @@ export class NpcSystem {
     const coins = Math.floor(g.state.player.coins * 0.1);
     g.state.player.coins -= coins;
     n.coins += coins;
-    const wallBefore = g.shelter.wallHp(base);
-    base.wallHp = wallBefore * (1 - NPC_CONFIG.raidWallDamage);
     g.state.stats.battlesLost += 1;
     g.shelter.recordDefense({
       base, attacker: label, success: false, lost: stolen, coins, kills, injured: ShelterSystem.newlySevere(severeBefore, defenders),
-      wallLost: wallBefore - base.wallHp, note: defenders.length ? `防守人員：${defenders.map((d) => d.name).join('、')}` : '沒有人在據點防守',
+      wallLost: as.wallLost, note: `圍牆被打破；${defenders.length ? `防守人員（${defenders.map((d) => d.name).join('、')}）戰敗` : '據點裡沒有人可以防守'}`,
     });
     const total = Object.values(stolen).reduce((s, v) => s + v, 0);
     g.toast(`💀「${n.name}」掠奪了「${base.name}」！搶走 ${total} 單位物資`, 'danger');

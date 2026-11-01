@@ -36,6 +36,8 @@ function cleanPlayer(p) {
       alert: finite(b.alert) ? Math.min(500, Math.max(0, b.alert)) : BASE_SIZES[b.size]?.alert || 80,
       guards: finite(b.guards) ? Math.min(20, Math.max(0, Math.round(b.guards))) : 0,
       guardLevel: finite(b.guardLevel) ? Math.min(60, Math.max(1, Math.round(b.guardLevel))) : 1,
+      wall: finite(b.wall) ? Math.min(1e6, Math.max(0, b.wall)) : 0,
+      dps: finite(b.dps) ? Math.min(1e5, Math.max(0, b.dps)) : 0,
     }));
   if (!bases.length) return null;
   const trips = (Array.isArray(p.trips) ? p.trips : []).slice(0, 10).filter((t) => validPoint(t?.from) && validPoint(t?.to)
@@ -138,6 +140,8 @@ export class WorldSync {
         return {
           lat: b.lat, lon: b.lon, name: b.name, primary: b === primary, size: b.size,
           alert: g.territory.alertRadius(b), guards: gar.count, guardLevel: gar.level,
+          // 攻擊者要先打破圍牆，期間防禦設施會射擊（只公開看得到的強度，不含彈藥存量）
+          wall: Math.round(g.shelter.wallHp(b)), dps: g.siege.of(b.id).defenseDps({ apparent: true }),
         };
       }),
       // 被攔截而撤回的隊伍也會顯示移動，但其他玩家的地圖不顯示時間，也無法再攔截

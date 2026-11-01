@@ -55,6 +55,7 @@ export class TerritorySystem {
       out.push({
         id: `${p.id}#${i}`, kind: 'player', playerId: p.id, name: p.name, baseName: b.name, lat: b.lat, lon: b.lon,
         r: b.alert || BASE_SIZES[b.size]?.alert || 80, relation: this.relation(p.id), guards: b.guards || 0, level: b.guardLevel || 1,
+        wall: b.wall || 0, dps: b.dps || 0,
       });
     }));
     return out;
@@ -110,15 +111,31 @@ export class TerritorySystem {
       return report;
     }
     this.setHostile(poi.playerId, poi.name.split('・')[0]);
-    const zone = this.zones().find((z) => z.id === poi.zoneId) || { guards: exp.pvpGuards || 0, level: exp.pvpLevel || 1, kind: 'player' };
+    const zone = this.zones().find((z) => z.id === poi.zoneId) || { guards: exp.pvpGuards || 0, level: exp.pvpLevel || 1, kind: 'player', wall: 0, dps: 0 };
     let win = true;
-    if (zone.guards > 0) {
-      const result = g.combat.simulate(members, this.defenders(zone));
-      g.combat.applyOutcome(members, result, exp.endAt);
+    // 1. 先打破圍牆：期間對方的防禦設施持續射擊，被擊倒的隊員重傷
+    const attackers = members.map((m) => {
+      const st = g.survivors.stats(m);
+      return { sv: m, maxHp: Math.max(1, g.survivors.hpOf(m)), atk: st.atk };
+    });
+    const as = g.combat.wallAssault(attackers, zone.wall || 0, zone.dps || 0);
+    attackers.forEach((a) => {
+      if (!as.alive.includes(a)) g.survivors.becomeSevere(a.sv, '在突襲中被防禦設施擊倒', exp.endAt);
+      else g.survivors.setHp(a.sv, a.hp);
+    });
+    if (zone.wall > 0) report.events.push(`🧱 攻擊圍牆 ${as.sec} 秒（耐久 −${Math.round(as.wallLost)}）${as.killed ? `，${as.killed} 名隊員被防禦設施擊倒` : ''}`);
+    const fighters = as.alive.map((a) => a.sv);
+    if (zone.wall > 0 && !as.breached) {
+      win = false;
+      report.events.push(fighters.length ? '🧱 圍牆太堅固，久攻不下只好撤退' : '💀 隊員全被防禦設施擊倒');
+    } else if (zone.guards > 0) {
+      // 2. 圍牆被打破後才能和駐守人員交戰，打贏才可掠奪
+      const result = g.combat.simulate(fighters, this.defenders(zone));
+      g.combat.applyOutcome(fighters, result, exp.endAt);
       report.kills += result.kills.length;
       win = result.victory;
-      report.events.push(`⚔️ 對方據點有 ${zone.guards} 名駐守人員迎戰`);
-    } else report.events.push('🏃 對方據點沒有駐守人員');
+      report.events.push(`⚔️ 圍牆被打破！對方據點有 ${zone.guards} 名駐守人員迎戰`);
+    } else report.events.push('🏃 圍牆被打破，對方據點沒有駐守人員');
     if (win) {
       // 搶奪：依運載量取得物資與金錢（對方會損失 10% 資源）
       const carry = exp.cargo || members.length * 40;
@@ -130,7 +147,7 @@ export class TerritorySystem {
     } else {
       report.events.push('💀 突襲失敗，隊伍撤退！');
     }
-    this.send(poi.playerId, 'attack', { base: poi.name.split('・')[1] || '', win, lossPct: win ? PVP_LOSS : 0 });
+    this.send(poi.playerId, 'attack', { base: poi.name.split('・')[1] || '', win, lossPct: win ? PVP_LOSS : 0, wallLost: Math.round(as.wallLost) });
     g.log(`⚔️ 攻擊玩家「${poi.name}」${win ? '成功' : '失敗'}，雙方進入敵對`, win ? 'success' : 'danger');
     return report;
   }
@@ -199,6 +216,10 @@ export class TerritorySystem {
       if (e.type === 'attack') {
         this.setHostile(e.from, name);
         const base = g.state.bases.find((b) => b.name === e.data?.base) || g.shelter.primary();
+        // 圍牆被攻擊的損傷（被打破時歸零）
+        const wallLost = e.data?.win ? Infinity : Math.min(g.shelter.wallMax(base), Math.max(0, Number(e.data?.wallLost) || 0));
+        const wallBefore = g.shelter.wallHp(base);
+        base.wallHp = Math.max(0, wallBefore - wallLost);
         if (e.data?.win) {
           const pct = Math.min(0.3, Math.max(0, Number(e.data.lossPct) || PVP_LOSS));
           const lost = {};
@@ -207,11 +228,11 @@ export class TerritorySystem {
             lost[k] = g.state.resources[k] - after;
             g.state.resources[k] = after;
           });
-          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: false, lost, note: `被搶走 ${Math.round(pct * 100)}% 資源` });
+          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: false, lost, wallLost: wallBefore - base.wallHp, note: `圍牆被打破，被搶走 ${Math.round(pct * 100)}% 資源` });
           g.log(`💀 玩家「${name}」突襲了「${e.data.base || '你的據點'}」，搶走 ${Math.round(pct * 100)}% 資源！雙方進入敵對`, 'danger');
           g.toast(`💀 玩家「${name}」突襲成功，搶走 ${Math.round(pct * 100)}% 資源！`, 'danger');
         } else {
-          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: true, note: '駐守人員擊退了突襲' });
+          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: true, wallLost: wallBefore - base.wallHp, note: base.wallHp > 0 ? '圍牆撐住了，對方久攻不下撤退' : '圍牆被打破，駐守人員擊退了突襲' });
           g.log(`🛡️ 擊退了玩家「${name}」的突襲！雙方進入敵對`, 'success');
           g.toast(`🛡️ 擊退了玩家「${name}」的突襲`, 'success');
         }
