@@ -289,7 +289,8 @@ export class TerritorySystem {
           // 金錢也會被搶（地窖裡的除外）
           const coinsLost = Math.floor(g.shelter.exposed('coins') * pct);
           g.state.player.coins -= coinsLost;
-          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: false, lost, coins: coinsLost, wallLost: wallBefore - base.wallHp, note: [`圍牆被打破，被搶走 ${Math.round(pct * 100)}% 資源與金錢`, assistNote].filter(Boolean).join('。') });
+          const damaged = g.siege.of(base.id).damageBuildings(base);
+          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: false, lost, coins: coinsLost, damaged, wallLost: wallBefore - base.wallHp, note: [`圍牆被打破，被搶走 ${Math.round(pct * 100)}% 資源與金錢`, assistNote].filter(Boolean).join('。') });
           g.log(`💀 玩家「${name}」突襲了「${e.data.base || '你的據點'}」，搶走 ${Math.round(pct * 100)}% 資源！雙方進入敵對`, 'danger');
           g.toast(`💀 玩家「${name}」突襲成功，搶走 ${Math.round(pct * 100)}% 資源！`, 'danger');
         } else {
