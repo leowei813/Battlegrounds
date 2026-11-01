@@ -69,6 +69,7 @@ export class SurvivorPanel {
     return `<div class="panel-inner">
       <h2>👥 倖存者 <small>${st.survivors.length}/${g.survivors.housing()} 人（上限 ${cap.max}）</small></h2>
       <p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 5（${cap.leader}）+ 各據點等級（${cap.bases}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級（${g.shelter.maxLevel('clinic') ? `Lv${g.shelter.maxLevel('clinic')}` : '<b class="neg">尚未建造，不會自然回復</b>'}），主要仍需藥品治療。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），目前食物淨收入 <b class="${net.food < 0 ? 'neg' : 'pos'}">${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時</b>。</p>
+      <div class="grid">${list}</div>
       ${oddsCard}
       ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷，飢餓時無法治療。重傷且持續飢餓滿遊戲內 3 天的隊員會永久死亡（領袖除外）。</div>' : ''}
       ${fullNote}
@@ -80,7 +81,6 @@ export class SurvivorPanel {
       ${pool ? `<h3>🙋 等待加入（探索中遇到，停留 1 小時）</h3><div class="grid">${pool}</div>` : ''}
       <h3>🏕️ 附近的倖存者 <small class="muted">每小時更新（${formatDuration(Math.max(0, st.recruitBoard.refreshAt - Date.now()))}後）・雇用需支付金錢</small></h3>
       <div class="grid">${board || '<p class="muted">目前沒有人。</p>'}</div>
-      <div class="grid">${list}</div>
     </div>`;
   }
 
@@ -158,6 +158,7 @@ export class SurvivorPanel {
         ${this.jobsHelp(sv)}
         <h4>裝備</h4><div class="equip-grid">${slots}</div>
         ${this.bagHtml(sv)}
+        ${this.supplyHtml(sv)}
         ${sv.isLeader ? '' : `<div class="btn-row end">${btn('🚪 驅逐', 'dismiss', {}, { cls: 'btn-ghost btn-sm', disabled: sv.status === 'exploring' })}</div>`}
       </div>`;
   }
@@ -205,6 +206,25 @@ export class SurvivorPanel {
    * 個人背包（資源與負重）；在避難所時右側顯示倉庫，可存入／取出。
    * 倉庫的每種基本物資都是固定格子，只能改變存取數量。
    */
+  /** 自動補給設定：每次回到避難所時自動從倉庫補到指定數量 */
+  supplyHtml(sv) {
+    const g = this.game;
+    const rules = g.survivors.supplyRules(sv);
+    const bag = g.survivors.bagOf(sv);
+    const rows = Object.entries(rules).map(([k, n]) => `<div class="card row-between"><span>${metaOf(k).icon} ${metaOf(k).name}：補到 <b>${n}</b> <small class="muted">（目前 ${Math.floor(bag[k] || 0)}）</small></span>${btn('移除', 'supplyDel', { key: k }, { cls: 'btn-xs btn-ghost' })}</div>`).join('');
+    const keys = [...RESOURCE_KEYS, ...SUPPLY_KEYS];
+    const cur = this.supplyKey && keys.includes(this.supplyKey) ? this.supplyKey : 'bandage';
+    const opts = [
+      `<optgroup label="基礎物資">${RESOURCE_KEYS.map((k) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${metaOf(k).icon} ${metaOf(k).name}</option>`).join('')}</optgroup>`,
+      ...Object.entries(SUPPLY_CATS).map(([cat, c]) => `<optgroup label="${c.name}">${SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === cat).map((k) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${SUPPLIES[k].icon} ${SUPPLIES[k].name}</option>`).join('')}</optgroup>`),
+    ].join('');
+    return `<h4>🔄 自動補給 <small class="muted">（每次回到避難所時，自動從倉庫補到指定數量；受負重限制）</small></h4>
+      ${rows || '<p class="muted">尚未設定。例如設定「繃帶 補到 3」，出門用掉後回來會自動補滿 3 個。</p>'}
+      <div class="trade-row supply-form"><label>物品 <select class="sup-key">${opts}</select></label>
+        <label>補到 <input type="number" class="sup-qty" min="1" max="9999" value="5" inputmode="numeric"></label>
+        ${btn('加入', 'supplyAdd', {}, { cls: 'btn-xs btn-primary' })}</div>`;
+  }
+
   bagHtml(sv) {
     const g = this.game;
     const eq = g.equipment;
@@ -238,7 +258,7 @@ export class SurvivorPanel {
 
   openDetail(id) {
     const g = this.game;
-    this.ui.modal.open({
+    const modal = this.ui.modal.open({
       title: '倖存者資料',
       wide: true,
       body: this.detailBody(id),
@@ -256,6 +276,12 @@ export class SurvivorPanel {
           g.equipment.bagItems(sv).forEach((it) => g.equipment.moveToStore(it.id));
           this.ui.result(r.ok || !g.equipment.bagItems(sv).length ? { ok: true, msg: '已存入倉庫' } : r);
         }
+        if (action === 'supplyAdd') {
+          const f = el.closest('.supply-form');
+          this.supplyKey = f.querySelector('.sup-key').value;
+          this.ui.result(g.survivors.setSupply(id, this.supplyKey, f.querySelector('.sup-qty').value));
+        }
+        if (action === 'supplyDel') this.ui.result(g.survivors.setSupply(id, data.key, 0));
         if (action === 'equipBag') this.ui.result(g.equipment.equip(id, data.item));
         if (action === 'itemToStore') this.ui.result(g.equipment.moveToStore(data.item));
         if (action === 'pickFromStore') {
@@ -276,6 +302,8 @@ export class SurvivorPanel {
         m.update(this.detailBody(id));
       },
     });
+    // 自動補給的物品選擇在畫面重繪時保留
+    modal.el?.addEventListener('change', (e) => { if (e.target.classList?.contains('sup-key')) this.supplyKey = e.target.value; });
   }
 
   /** 從倉庫拿取：消耗品可選數量或全部；裝備一件一格 */

@@ -433,6 +433,9 @@ export class ExplorationSystem {
     exp.memberIds.forEach((id) => {
       const m = this.game.survivors.get(id);
       if (m && m.status === 'exploring') m.status = 'idle';
+      // 回到避難所：依自動補給設定從倉庫補貨
+      const got = m && this.game.survivors.autoResupply(m);
+      if (got) this.game.log(`🔄 ${m.name} 回到避難所，自動補給 ${got}`, 'info');
     });
     this.game.vehicles.release(exp.vehicleIds || []);
   }

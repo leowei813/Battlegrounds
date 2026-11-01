@@ -70,7 +70,8 @@ export function openTeamPicker(ui, opts) {
       const on = selected.has(sv.id);
       return `<button class="pick-row ${on ? 'on' : ''}" data-action="toggle" data-id="${sv.id}" ${ok ? '' : 'disabled'}>
         <span class="check">${on ? '☑' : '☐'}</span>
-        <span>${CLASSES[sv.classId].icon} <b>${escapeHtml(sv.name)}</b> Lv${sv.level}</span>
+        <span>${CLASSES[sv.classId].icon} <b>${escapeHtml(sv.name)}</b> Lv${sv.level}
+          <small class="pick-vitals"><span class="${game.survivors.hpOf(sv) < s.hp * 0.3 ? 'neg' : ''}">❤️ ${Math.floor(game.survivors.hpOf(sv))}/${s.hp}</span>・<span class="${game.survivors.bagLoad(sv) >= game.survivors.bagCap(sv) ? 'neg' : ''}">🎒 ${Math.floor(game.survivors.bagLoad(sv))}/${game.survivors.bagCap(sv)}</span></small></span>
         <span class="muted">戰力 ${s.power}</span>
         ${ok ? '' : survivorStatus(game, sv)}
       </button>`;

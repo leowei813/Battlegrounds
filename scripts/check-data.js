@@ -2133,6 +2133,23 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(Object.values((await import('../src/config/survivors.js')).CLASSES).every((c) => c.skills.length === 6), '每個職業有 6 個技能');
 }
 
+// ---- 51. v8.41：自動補給 ----
+{
+  const ga = Game.newGame({ playerName: 'A1', classId: 'warrior', lat: 25, lon: 121 });
+  ga.state.map.pois = fillPois([], 25, 121);
+  ga.shelter.establish(ga.state.map.pois[0]);
+  setHour(ga, 10);
+  const lead = ga.survivors.leader();
+  ga.state.supplies.bandage = 10;
+  assert(ga.survivors.setSupply(lead.id, 'bandage', 3).ok && lead.bag.bandage === 3 && ga.state.supplies.bandage === 7, '設定自動補給後立即從倉庫補到指定數量');
+  lead.bag.bandage = 1;
+  const poi = ga.state.map.pois.find((p) => !ga.shelter.baseAtPoi(p.id));
+  const ex = ga.exploration.start(poi.id, [lead.id], 5).exp;
+  ga.exploration.update(ex.endAt + 1, { silent: true });
+  assert(lead.bag.bandage === 3, `回到避難所時自動補給（背包繃帶 ${lead.bag.bandage}）`);
+  assert(ga.survivors.setSupply(lead.id, 'bandage', 0).ok && !lead.supply.bandage, '可以移除自動補給');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

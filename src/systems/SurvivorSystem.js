@@ -3,7 +3,7 @@ import {
   CLASSES, CLASS_KEYS, JOBS, SURVIVOR_NAMES, MAX_SURVIVOR_LEVEL, xpToNext, recruitCost,
   SURVIVOR_RARITY, survivorRarityTable, hireFee, RECRUIT_BOARD_SIZE, RECRUIT_BOARD_MS, RECRUIT_STAY_MS, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
 } from '../config/survivors.js';
-import { DAY_REAL_MS } from '../config/constants.js';
+import { DAY_REAL_MS, RESOURCES, RESOURCE_KEYS } from '../config/constants.js';
 import { SLOT_KEYS, RARITIES, STACK_MAX } from '../config/equipment.js';
 import {
   SUPPLIES, isSupply, unitWeight, suppliesOf,
@@ -646,6 +646,44 @@ export class SurvivorSystem {
     if (isSupply(key) && res[key] <= 0) delete res[key];
     bag[key] = (bag[key] || 0) + n;
     return { ok: true, n };
+  }
+
+  // ---------------- 自動補給 ----------------
+
+  /** 自動補給設定：每次回到避難所時，把背包裡的這些物品補到指定數量 */
+  supplyRules(sv) {
+    sv.supply = sv.supply || {};
+    return sv.supply;
+  }
+
+  setSupply(id, key, qty) {
+    const sv = this.get(id);
+    if (!sv) return { ok: false, reason: '找不到倖存者' };
+    if (!(RESOURCE_KEYS.includes(key) || isSupply(key))) return { ok: false, reason: '請選擇要補給的物品' };
+    const rules = this.supplyRules(sv);
+    const n = Math.max(0, Math.min(9999, Math.floor(Number(qty) || 0)));
+    if (!n) {
+      delete rules[key];
+      return { ok: true, msg: '已移除自動補給' };
+    }
+    if (!(key in rules) && Object.keys(rules).length >= 8) return { ok: false, reason: '最多設定 8 項自動補給' };
+    rules[key] = n;
+    const r = this.autoResupply(sv);
+    return { ok: true, msg: `已設定：回到避難所時自動補到 ${n} 個${r ? `（已補給 ${r}）` : ''}` };
+  }
+
+  /** 依設定從倉庫補給到背包（受負重與格子限制）；回傳補給說明 */
+  autoResupply(sv) {
+    if (!sv || !this.atShelter(sv)) return '';
+    const bag = this.bagOf(sv);
+    const got = [];
+    Object.entries(this.supplyRules(sv)).forEach(([k, want]) => {
+      const need = want - Math.floor(bag[k] || 0);
+      if (need <= 0) return;
+      const r = this.withdraw(sv.id, k, need);
+      if (r.ok && r.n > 0) got.push(`${SUPPLIES[k]?.name || RESOURCES[k]?.name || k}×${r.n}`);
+    });
+    return got.join('、');
   }
 
   /** 全部存入倉庫 */
