@@ -408,11 +408,13 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(siege.quiet() && !siege.active() && base.quietUntil > Date.now(), '防線被突破後當晚不再有屍潮');
   assert(!siege.quiet(base.quietUntil + 1), '天亮後恢復');
   destroyed = base.defenses.filter((d) => !d.type).length;
+  const facBefore = JSON.stringify(Object.fromEntries(Object.entries(base.facilities).map(([k, f]) => [k, f.level])));
   for (let i = 0; i < 60 && !destroyed; i += 1) {
     siege.breach();
     destroyed = base.defenses.filter((d) => !d.type).length;
   }
-  assert(destroyed > 0, `突破後 1 級建築可能被拆毀（${destroyed} 棟）`);
+  assert(destroyed > 0, `防守失敗時防禦設施可能被摧毀（${destroyed} 棟）`);
+  assert(JSON.stringify(Object.fromEntries(Object.entries(base.facilities).map(([k, f]) => [k, f.level]))) === facBefore, '防守失敗不會損毀一般設施');
   assert(base.facilities.wall.level >= 1, '圍牆最低保留 1 級');
 }
 {

@@ -31,8 +31,8 @@ const MELEE_REACH_POST = 14;
 const WALL_DMG_MUL = 0.3;
 /** 圍牆被打破後，每隔幾秒與衝進來的殭屍交戰一次 */
 const GATE_FIGHT_EVERY = 3;
-/** 防線被攻破時有機率損毀建築（最多 2 棟） */
-const BREACH_DAMAGE = { chance: 0.5, max: 2 };
+/** 防守失敗時摧毀 1 棟防禦設施的機率 */
+const BREACH_DAMAGE = { chance: 0.35 };
 
 /**
  * 單一據點的屍潮防守模擬。純邏輯，以「世界座標」運作（中心 0,0）。
@@ -662,32 +662,15 @@ export class BaseSiege {
    * 突破後建築損毀：每棟已建造的設施/防禦建築有機率降 1 級，1 級的會被拆除。
    * @returns {string[]} 損毀描述
    */
+  /** 防守失敗：有機率摧毀 1 棟防禦設施（一般設施不受影響） */
   damageBuildings(base) {
     const out = [];
-    if (!chance(BREACH_DAMAGE.chance)) return out;
-    // 有機率損毀 1～2 棟建築（設施或防禦建築），每棟降 1 級
-    const pool = [
-      ...Object.entries(base.facilities).filter(([id, f]) => f.level >= 1 && !(id === 'wall' && f.level <= 1)).map(([id, f]) => ({ kind: 'fac', id, f })),
-      ...base.defenses.filter((d) => d.type && d.level >= 1).map((d) => ({ kind: 'def', d })),
-    ];
-    const n = Math.min(pool.length, 1 + (chance(0.4) ? 1 : 0), BREACH_DAMAGE.max);
-    for (let i = 0; i < n; i += 1) {
-      const t = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
-      if (t.kind === 'fac') {
-        t.f.level -= 1;
-        out.push(t.f.level === 0 ? `${FACILITIES[t.id].name}被摧毀` : `${FACILITIES[t.id].name}損毀，降為 Lv${t.f.level}`);
-      } else {
-        const name = DEFENSES[t.d.type].name;
-        if (t.d.level <= 1) {
-          Object.assign(t.d, { type: null, level: 0, garrisonId: null });
-          out.push(`${name}被拆毀`);
-        } else {
-          t.d.level -= 1;
-          out.push(`${name}損毀，降為 Lv${t.d.level}`);
-        }
-      }
-    }
-    if (out.length) this.game.civilization.invalidate();
+    const list = base.defenses.filter((d) => d.type && d.level >= 1);
+    if (!list.length || !chance(BREACH_DAMAGE.chance)) return out;
+    const d = pick(list);
+    out.push(`${DEFENSES[d.type].name}（Lv${d.level}）被摧毀`);
+    Object.assign(d, { type: null, level: 0, garrisonId: null });
+    this.game.civilization.invalidate();
     return out;
   }
 

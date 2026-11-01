@@ -503,8 +503,9 @@ export class NpcSystem {
     g.state.player.coins -= coins;
     n.coins += coins;
     g.state.stats.battlesLost += 1;
+    const damaged = siege.damageBuildings(base);
     g.shelter.recordDefense({
-      base, attacker: label, success: false, lost: stolen, coins, kills, injured: ShelterSystem.newlySevere(severeBefore, defenders),
+      base, attacker: label, success: false, lost: stolen, coins, kills, damaged, injured: ShelterSystem.newlySevere(severeBefore, defenders),
       wallLost: as.wallLost, note: [`圍牆被打破；${defenders.length || allies.length ? `防守人員（${[...defenders.map((d) => d.name), ...allies.map((a) => a.name)].join('、')}）戰敗` : '據點裡沒有人可以防守'}`, assistNote].filter(Boolean).join('。'),
     });
     const total = Object.values(stolen).reduce((s, v) => s + v, 0);
