@@ -712,7 +712,7 @@ export class SiegeSystem {
     const kills = Math.floor(this.game.state.bases.reduce((s, b) => s + this.of(b.id).estimateOfflineKills(seconds), 0)
       * (1 + this.game.research.bonus('offlineDefPct')));
     if (!kills) return { kills: 0, coins: 0 };
-    const coins = kills * 2;
+    const coins = Math.round(kills * 2 * COIN_GAIN_MUL); // 與戰鬥金錢一樣套用調降
     const parts = Math.floor(kills / 60);
     this.game.state.stats.kills += kills;
     this.game.state.stats.siegeKills += kills;
