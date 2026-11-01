@@ -239,13 +239,13 @@ export class SurvivorPanel {
       ...Object.keys(bag).filter((k) => bag[k] > 0).flatMap((k) => Array.from({ length: Math.ceil(bag[k] / STACK_MAX) }, (_, i) => [k, Math.min(STACK_MAX, bag[k] - i * STACK_MAX)])).map(([k, qty]) => `
         <div class="slot-cell stack">
           <div class="slot-main"><span class="slot-icon">${metaOf(k).icon}</span><b>${metaOf(k).name}</b><span class="slot-qty">×${Math.floor(qty)}</span></div>
-          ${home ? `<div class="slot-ctrl"><input type="number" min="1" step="1" value="${Math.floor(bag[k])}" inputmode="numeric" aria-label="數量">
-            ${btn('存入倉庫', 'bagIn', { key: k }, { cls: 'btn-xs' })}${btn('全部', 'bagInAll', { key: k }, { cls: 'btn-xs btn-ghost' })}</div>` : ''}
+          <div class="slot-ctrl"><input type="number" min="1" step="1" value="${Math.floor(bag[k])}" inputmode="numeric" aria-label="數量">
+            ${home ? `${btn('存入倉庫', 'bagIn', { key: k }, { cls: 'btn-xs' })}${btn('全部', 'bagInAll', { key: k }, { cls: 'btn-xs btn-ghost' })}` : ''}${btn('🗑️ 丟棄', 'bagDrop', { key: k }, { cls: 'btn-xs btn-danger' })}</div>
         </div>`),
       ...eq.bagItems(sv).map((it) => `
         <div class="slot-cell item" style="--rc:${RARITIES[it.rarity].color}">
           <div class="slot-main"><span class="slot-icon">${ITEM_MODELS[it.model]?.icon || ITEM_TYPES[it.type]?.icon || '❔'}</span><b>${escapeHtml(it.name)}</b><small class="muted">戰力 ${it.power}・⚖️${itemWeight(it)}</small></div>
-          <div class="slot-ctrl">${btn('裝備', 'equipBag', { item: it.id }, { cls: 'btn-xs btn-primary' })}${home ? btn('存入倉庫', 'itemToStore', { item: it.id }, { cls: 'btn-xs' }) : ''}</div>
+          <div class="slot-ctrl">${btn('裝備', 'equipBag', { item: it.id }, { cls: 'btn-xs btn-primary' })}${home ? btn('存入倉庫', 'itemToStore', { item: it.id }, { cls: 'btn-xs' }) : ''}${btn('🗑️ 丟棄', 'bagDropItem', { item: it.id }, { cls: 'btn-xs btn-danger', disabled: it.locked })}</div>
         </div>`),
     ];
     while (cells.length < slots) cells.push('<div class="slot-cell empty">空</div>');
@@ -275,6 +275,15 @@ export class SurvivorPanel {
           const r = g.survivors.depositAll(id);
           g.equipment.bagItems(sv).forEach((it) => g.equipment.moveToStore(it.id));
           this.ui.result(r.ok || !g.equipment.bagItems(sv).length ? { ok: true, msg: '已存入倉庫' } : r);
+        }
+        if (action === 'bagDrop') {
+          const n = Math.max(1, Math.floor(+el.closest('.slot-cell').querySelector('input').value || 1));
+          const name = metaOf(data.key).name;
+          if (confirm(`確定丟棄 ${name}×${n}？丟棄後無法復原。`)) this.ui.result(g.survivors.discardBag(id, data.key, n));
+        }
+        if (action === 'bagDropItem') {
+          const it = g.equipment.getItem(data.item);
+          if (it && confirm(`確定丟棄「${it.name}」？丟棄後無法復原。`)) this.ui.result(g.equipment.discardItem(data.item));
         }
         if (action === 'supplyAdd') {
           const f = el.closest('.supply-form');

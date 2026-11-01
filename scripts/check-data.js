@@ -2148,6 +2148,9 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   ga.exploration.update(ex.endAt + 1, { silent: true });
   assert(lead.bag.bandage === 3, `回到避難所時自動補給（背包繃帶 ${lead.bag.bandage}）`);
   assert(ga.survivors.setSupply(lead.id, 'bandage', 0).ok && !lead.supply.bandage, '可以移除自動補給');
+  lead.bag.nail = 10;
+  assert(ga.survivors.discardBag(lead.id, 'nail', 4).ok && lead.bag.nail === 6, '背包物品可以指定數量丟棄');
+  assert(ga.survivors.discardBag(lead.id, 'nail', Infinity).ok && !lead.bag.nail, '背包物品可以全部丟棄');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
