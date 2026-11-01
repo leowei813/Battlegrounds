@@ -1,7 +1,7 @@
 import { BASE_SIZES } from '../config/civilization.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
 import { planRoute, crossings } from '../map/routing.js';
-import { uid, chance, randFloat } from '../utils/math.js';
+import { uid, chance, randFloat, haversine } from '../utils/math.js';
 
 /** NPC 據點的警戒範圍（公尺） */
 export const npcAlert = (n) => 60 + n.level;
@@ -38,6 +38,26 @@ export class TerritorySystem {
       || (g.shelter.isPrimary(base) && s.job === 'guard' && !g.survivors.isGarrisoned(s.id))));
     const level = list.length ? Math.round(list.reduce((s, v) => s + v.level, 0) / list.length) : 1;
     return { list, count: list.length, level };
+  }
+
+  /**
+   * 正在前來攻打這個據點的隊伍（NPC 掠奪隊、其他玩家的突襲隊），公開給友好玩家看。
+   * @returns {{by:string, kind:'npc'|'player', at:number}[]}
+   */
+  incomingRaids(base, now = Date.now()) {
+    const g = this.game;
+    const out = [];
+    (g.state.npcs?.list || []).forEach((n) => {
+      const t = n.trip;
+      if (t?.kind === 'raid' && t.baseId === base.id && !t.resolved && !t.hidden && now < t.startAt + t.travelMs) {
+        out.push({ by: `NPC「${n.name}」`, kind: 'npc', at: t.startAt + t.travelMs });
+      }
+    });
+    (g.world?.others || []).forEach((p) => (p.trips || []).forEach((t) => {
+      if (t.kind || t.defeated || now >= t.startAt + (t.travelMs || 0)) return;
+      if (haversine(base.lat, base.lon, t.to.lat, t.to.lon) < 40) out.push({ by: `玩家「${p.name}」`, kind: 'player', at: t.startAt + (t.travelMs || 0) });
+    }));
+    return out.sort((a, b) => a.at - b.at).slice(0, 5);
   }
 
   /** 與其他玩家的關係：neutral | hostile | friend（NPC 一律 hostile） */

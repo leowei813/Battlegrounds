@@ -50,6 +50,17 @@ export class AssistSystem {
     return out;
   }
 
+  /** 友好玩家正被 NPC 或玩家攻打的據點（還在路上的隊伍） */
+  friendRaids(now = Date.now()) {
+    const g = this.game;
+    const out = [];
+    (g.world?.others || []).forEach((p) => {
+      if (g.territory.relation(p.id) !== 'friend') return;
+      p.bases.forEach((b) => (b.raids || []).forEach((r) => { if (r.at > now) out.push({ player: p, base: b, raid: r }); }));
+    });
+    return out;
+  }
+
   /** 兩個據點的警戒範圍是否相接 */
   inRange(myBase, other) {
     if (!myBase || !other) return false;
@@ -134,6 +145,14 @@ export class AssistSystem {
       const near = this.inRange(g.shelter.primary(), base);
       g.toast(`🧟 友好玩家「${player.name}」的據點正遭到屍潮攻擊${near ? '，可以派人協防' : ''}`, 'danger');
       g.log(`🧟 友好玩家「${player.name}」的「${base.name}」正遭到屍潮攻擊（第 ${base.siege.wave}/${base.siege.maxWaves} 波）`, 'danger');
+    });
+    this.friendRaids(now).forEach(({ player, base, raid }) => {
+      const key = `raid|${player.id}|${raid.by}|${Math.round(raid.at / 60000)}`;
+      if (this.notified.has(key)) return;
+      this.notified.set(key, true);
+      const min = Math.max(1, Math.round((raid.at - now) / 60000));
+      g.toast(`⚔️ ${raid.by}正前往攻打友好玩家「${player.name}」的「${base.name}」（約 ${min} 分鐘後抵達）`, 'danger');
+      g.log(`⚔️ ${raid.by}正前往攻打友好玩家「${player.name}」的「${base.name}」（約 ${min} 分鐘後抵達）`, 'danger');
     });
     this.incoming(now).forEach((h) => {
       const key = `${h.id}|${night}`;

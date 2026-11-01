@@ -1,4 +1,4 @@
-import { COIN_GAIN_MUL } from '../config/constants.js';
+import { COIN_GAIN_MUL, RAID_TRAVEL } from '../config/constants.js';
 import { RECRUIT_STAY_MS } from '../config/survivors.js';
 import {
   MAX_TEAM_SIZE, MAX_EXPEDITIONS, OFFLINE_CAP_MS, RESOURCES,
@@ -130,7 +130,10 @@ export class ExplorationSystem {
     const speed = this.game.time.exploreSpeedMul(at) * (1 + scout + this.game.research.bonus('exploreSpeed'));
     const teamMul = 1 + 0.1 * Math.max(0, members.length - 1);
     // 載具只加快路程，不影響搜索時間
-    const travelMs = Math.round(((distanceM / 1000) * MIN_PER_KM_ONE_WAY / (speed * trip.speed)) * 60000);
+    // 突襲玩家避難所：路程大幅拉長（防守方有時間準備），載具仍然加速
+    let walkMin = (distanceM / 1000) * MIN_PER_KM_ONE_WAY;
+    if (poi?.pvp) walkMin = Math.max(walkMin * RAID_TRAVEL.playerMul, RAID_TRAVEL.minMin);
+    const travelMs = Math.round((walkMin / (speed * trip.speed)) * 60000);
     const searchMs = Math.round((durationMin / (speed * teamMul)) * 60000);
     return {
       from, path, distanceM, travelMs, searchMs, totalMs: travelMs * 2 + searchMs, trip,

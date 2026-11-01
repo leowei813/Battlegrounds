@@ -61,6 +61,8 @@ function cleanPlayer(p) {
       wall: finite(b.wall) ? Math.min(1e6, Math.max(0, b.wall)) : 0,
       dps: finite(b.dps) ? Math.min(1e5, Math.max(0, b.dps)) : 0,
       siege: cleanSiege(b.siege),
+      raids: (Array.isArray(b.raids) ? b.raids : []).slice(0, 5).filter((r) => r && finite(r.at))
+        .map((r) => ({ by: String(r.by || '不明隊伍').slice(0, 30), kind: r.kind === 'npc' ? 'npc' : 'player', at: r.at })),
     }));
   if (!bases.length) return null;
   const trips = (Array.isArray(p.trips) ? p.trips : []).slice(0, 10).filter((t) => validPoint(t?.from) && validPoint(t?.to)
@@ -176,7 +178,8 @@ export class WorldSync {
   /** 是否需要加快同步 */
   urgent() {
     const g = this.game;
-    return !!g.assist?.state || g.threats().length > 0 || (g.assist?.friendSieges().length || 0) > 0;
+    return !!g.assist?.state || g.threats().length > 0 || (g.assist?.friendSieges().length || 0) > 0
+      || (g.assist?.friendRaids().length || 0) > 0;
   }
 
   /** 盡快同步一次（例如剛出發協防） */
@@ -204,6 +207,8 @@ export class WorldSync {
           wall: Math.round(g.shelter.wallHp(b)), dps: g.siege.of(b.id).defenseDps({ apparent: true }),
           // 正在被屍潮攻擊：友好玩家可以看到狀況並前來協防
           siege: siegeStatus(g, b),
+          // 正在前來攻打的隊伍（友好玩家可以看到）
+          raids: g.territory.incomingRaids(b),
         };
       }),
       // 被攔截而撤回的隊伍也會顯示移動，但其他玩家的地圖不顯示時間，也無法再攔截

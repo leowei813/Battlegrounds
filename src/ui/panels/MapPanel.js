@@ -265,8 +265,13 @@ export class MapPanel {
     ? `<span class="tag tag-green">🛡️ 你的 ${g.assist.helpers(now).length} 名防禦駐守協防中（到天亮）</span>${btn('召回協防', 'stopAssist', {}, { cls: 'btn-xs btn-ghost' })}`
     : btn('🛡️ 派防禦駐守協防', 'assist', {}, { cls: 'btn-xs btn-primary', disabled: !canAssist.ok, title: canAssist.reason || '' })}</div>
         ${!assistingHere && !canAssist.ok ? `<small class="muted block">${escapeHtml(canAssist.reason)}</small>` : ''}` : ''}</div>`).join('');
+    const raidHtml = rel === 'friend' ? p.bases.map((b) => {
+      const list = (b.raids || []).filter((r) => r.at > now);
+      return list.length ? `<div class="card siege-card"><b>⚔️ 「${escapeHtml(b.name)}」正被攻打</b>
+        ${list.map((r) => `<small class="block">${r.kind === 'npc' ? '🏴‍☠️' : '👤'} ${escapeHtml(r.by)}・約 ${formatDuration(r.at - now)}後抵達</small>`).join('')}</div>` : '';
+    }).join('') : '';
     return `<p>${relTag} 🏛️ 文明度 <b>${p.civ}</b>・據點 ${p.bases.length} 個・外出隊伍 ${trips.length} 支</p>
-      ${siegeHtml}
+      ${raidHtml}${siegeHtml}
       <div class="btn-row">${diplo}${btn(myTrade ? '🤝 交易隊已出發' : '🤝 派人交易', 'trade', {}, { cls: 'btn-sm btn-primary', disabled: !tradeCheck.ok, title: tradeCheck.reason || '' })}</div>
       ${(p.demands || []).length ? `<div class="label">📢 收購中${p.exchange ? `（交易所 Lv${p.exchange}）` : ''}</div>${p.demands.map((d) => `<div class="card row-between"><span>${g.demand.label(d.key)} ×${d.qty}・每個 💰${d.price}</span>${btn('📦 派人交付', 'deliver', { id: d.id }, { cls: 'btn-xs btn-primary', disabled: !g.demand.canDeliver(p.id, d.id).ok, title: g.demand.canDeliver(p.id, d.id).reason || '' })}</div>`).join('')}` : ''}
       ${toMe.map((x) => `<div class="card row-between"><span>🤝 對方的交易隊${x.arrived ? '正在你的據點擺攤' : '正在前來你的據點'}</span>${btn('查看商品', 'openStall', { trip: x.trip.id }, { cls: 'btn-xs btn-primary', disabled: !x.arrived })}</div>`).join('')}

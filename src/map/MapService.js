@@ -207,6 +207,16 @@ export class MapService {
           .bindTooltip(`🧟 ${escapeHtml(p.name)} 正遭到屍潮攻擊：第 ${s.wave}/${s.maxWaves} 波・剩 ${s.left} 隻・圍牆 ${s.wallPct}%${s.helpers ? `・🛡️ ${s.helpers} 位協防中` : ''}（點擊查看）`, { direction: 'top' })
           .addTo(this.layers.others);
       }
+      // 友好玩家正被 NPC 或玩家攻打：顯示 ⚔️ 圖示
+      const raids = rel === 'friend' ? (b.raids || []).filter((r) => r.at > Date.now()) : [];
+      if (raids.length) {
+        L.marker([b.lat, b.lon], {
+          icon: L.divIcon({ className: 'siege-badge raid-badge', html: '<span>⚔️</span>', iconSize: [26, 26], iconAnchor: [d / 2 + 20, -d / 2 + 6] }),
+          zIndexOffset: 950,
+        }).on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
+          .bindTooltip(`⚔️ ${escapeHtml(p.name)} 的據點正被攻打：${raids.map((r) => `${escapeHtml(r.by)}（約 ${Math.max(1, Math.round((r.at - Date.now()) / 60000))} 分鐘後抵達）`).join('、')}`, { direction: 'top' })
+          .addTo(this.layers.others);
+      }
       // 有收購需求：主要據點旁顯示 📢 圖示，點擊查看
       if (b.primary && p.demands?.length) {
         L.marker([b.lat, b.lon], {
