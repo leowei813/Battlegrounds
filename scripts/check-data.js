@@ -658,7 +658,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
 
   // 招募品級機率
   const so0 = survivorRarityTable(0);
-  const so10 = survivorRarityTable(10);
+  const so10 = survivorRarityTable(15);
   assert(so0.legendary === 0 && Math.abs(so0.epic - 0.1) < 1e-9, '倖存者初始稀有 0%、罕見 0.1%');
   assert(Math.abs(so10.legendary - 0.2) < 1e-9 && Math.abs(Object.values(so10).reduce((a2, b2) => a2 + b2, 0) - 100) < 1e-9, '招募技術滿級稀有 0.2%');
   gr.survivors.updateBoard(Date.now());
@@ -687,7 +687,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   const avg = (a2) => a2.reduce((x, y) => x + y, 0) / a2.length;
   assert(avg(lowDrops) < avg(highDrops) && lowDrops.filter((t) => t >= 9).length < 8, `越強的型號越難取得（低等平均 T${avg(lowDrops).toFixed(1)}、高等平均 T${avg(highDrops).toFixed(1)}）`);
   // 製作
-  assert(craftRarityTable(0).legendary === 0 && Math.abs(craftRarityTable(0).epic - 0.1) < 1e-9 && Math.abs(craftRarityTable(10).legendary - 0.2) < 1e-9, '製作初始稀有 0%、罕見 0.1%，滿級稀有 0.2%');
+  assert(craftRarityTable(0).legendary === 0 && Math.abs(craftRarityTable(0).epic - 0.1) < 1e-9 && Math.abs(craftRarityTable(15).legendary - 0.2) < 1e-9, '製作初始稀有 0%、罕見 0.1%，滿級稀有 0.2%');
   const eq = gr.equipment;
   assert(eq.canCraftModel('knuckles').ok && eq.workbench() === 0, '簡易製作不需要工作台');
   assert(!eq.canCraftModel('bat').ok, '其他裝備需要工作台');
@@ -2030,6 +2030,23 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
     for (let i = 0; i < 200; i += 1) if (gz.zombies.makeGroup(by.safe[i % by.safe.length], TP.midnight, Date.now()).enemyId === 'nightStalker') stalkers += 1;
     assert(stalkers === 0, '安全區不會出現夜行者');
   }
+}
+
+// ---- 46. v8.35：最高 15 級、研究與建造時長、升級經驗 ----
+{
+  const { researchTime: rt, RESEARCH: RS, MAX_RESEARCH_LEVEL } = await import('../src/config/research.js');
+  const { facilityBuildTime, FACILITY_MAX_LEVEL } = await import('../src/config/facilities.js');
+  const { DEFENSE_MAX_LEVEL, defenseBuildTime } = await import('../src/config/defenses.js');
+  const { xpToNext: xp } = await import('../src/config/survivors.js');
+  assert(MAX_RESEARCH_LEVEL === 15 && FACILITY_MAX_LEVEL === 15 && DEFENSE_MAX_LEVEL === 15, '研究、設施、防禦最高 15 級');
+  const day = 86400;
+  const longest = Math.max(...Object.keys(RS).map((id) => rt(id, 15)));
+  assert(Math.abs(longest / day - 30) < 1.5, `最難的研究 Lv15 約 30 天（${(longest / day).toFixed(1)} 天）`);
+  assert(Object.keys(RS).every((id) => [1, 2, 3, 4, 5, 6].every((l) => rt(id, l) <= day)) && [1, 2, 3, 4, 5, 6].every((l) => facilityBuildTime(l) <= day && defenseBuildTime(l) <= day), '前 6 級的研究與建造都不超過 1 天');
+  const gaps = Array.from({ length: 14 }, (_, i) => facilityBuildTime(i + 2) - facilityBuildTime(i + 1));
+  assert(gaps.every((v, i) => i === 0 || v >= gaps[i - 1]), '等級越高，每級增加的時長越多');
+  const ratio = (l) => xp(l + 1) / xp(l);
+  assert(xp(30) / xp(29) > 1 && xp(40) - xp(39) > xp(20) - xp(19) && ratio(40) > 1, '倖存者等級越高升級越困難');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

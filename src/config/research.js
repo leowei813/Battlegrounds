@@ -1,7 +1,8 @@
+import { MAX_LEVEL, timeCurve, costCurve } from './leveling.js';
 import { materialize } from './supplies.js';
 
 /**
- * 研究樹：10 個分支、78 項科技，每項都有等級（大多最高 10 級）。
+ * 研究樹：10 個分支、78 項科技，每項都有等級（大多最高 15 級）。
  *
  *  - tier       1～4，決定需要的研究中心等級（tier n 需 Lv n×2−1）；第 L 級另需研究中心 Lv L 以上
  *  - effects    每一級提供的數值（等級越高效果越大，累加）
@@ -23,7 +24,7 @@ export const RESEARCH_BRANCHES = {
   expansion: { name: '擴張科技', icon: '🏴' },
 };
 
-export const MAX_RESEARCH_LEVEL = 10;
+export const MAX_RESEARCH_LEVEL = MAX_LEVEL;
 
 /** 各分支的研究材料（第 1 級基準量 = 數值 × 分階倍率） */
 const BRANCH_COST = {
@@ -153,20 +154,21 @@ export const labLevelFor = (id, level) => Math.max(requiredLabLevel(RESEARCH[id]
 /** 研究到第 level 級的費用 */
 export function researchCost(id, level) {
   const def = RESEARCH[id];
-  const amount = TIER_AMOUNT[def.tier] * def.costMul * 1.6 ** (level - 1);
+  const amount = TIER_AMOUNT[def.tier] * def.costMul * costCurve(level, 1.6);
   // 金屬／布料／藥品換算成具體零件與布料：研究階級越高、等級越高，需要越高階的材料（數量成長較慢）
-  const matAmount = TIER_AMOUNT[def.tier] * def.costMul * 1.25 ** (level - 1);
+  const matAmount = TIER_AMOUNT[def.tier] * def.costMul * costCurve(level, 1.25);
   const abstract = (k) => ['metal', 'cloth', 'medicine'].includes(k);
   const raw = Object.fromEntries(Object.entries(BRANCH_COST[def.branch]).map(([k, m]) => [k, Math.round((abstract(k) ? matAmount : amount) * m)]));
-  const tier = Math.min(5, Math.max(1, def.tier - 1 + Math.ceil(level / 4)));
+  const tier = Math.min(5, Math.max(1, def.tier - 1 + Math.ceil(level / 5)));
   const cost = materialize(raw, { tier, tags: BRANCH_TAGS[def.branch] || ['mech'], key: id });
-  const parts = Math.round(TIER_PARTS[def.tier] * 1.4 ** (level - 1));
+  const parts = Math.round(TIER_PARTS[def.tier] * costCurve(level, 1.4));
   if (parts) cost.parts = parts;
   return cost;
 }
 
 /** 研究到第 level 級的基本時間（秒） */
-export const researchTime = (id, level) => Math.round(TIER_TIME[RESEARCH[id].tier] * 1.4 ** (level - 1));
+/** 研究秒數：前 6 級每級 ×1.5（第 4 階 Lv6 約 2.5 小時），之後每級 ×1.873；第 4 階 Lv15 約 30 天 */
+export const researchTime = (id, level) => Math.round(TIER_TIME[RESEARCH[id].tier] * timeCurve(level, 1.5, 1.873));
 
 /** 效果說明 */
 const pct = (v) => `${+(v * 100).toFixed(1)}%`;

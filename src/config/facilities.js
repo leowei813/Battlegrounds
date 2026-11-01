@@ -1,4 +1,5 @@
 import { materialize, tierFromLevel } from './supplies.js';
+import { MAX_LEVEL, timeCurve, costCurve } from './leveling.js';
 
 /**
  * 避難所設施。
@@ -7,9 +8,9 @@ import { materialize, tierFromLevel } from './supplies.js';
  */
 /** 升級成本隨等級快速成長（每級 ×1.8），高等級需要大量探索物資 */
 const scale = (base, level, growth = 1.8) =>
-  Object.fromEntries(Object.entries(base).map(([k, v]) => [k, Math.round(v * growth ** (level - 1))]));
+  Object.fromEntries(Object.entries(base).map(([k, v]) => [k, Math.round(v * costCurve(level, growth))]));
 
-export const FACILITY_MAX_LEVEL = 10;
+export const FACILITY_MAX_LEVEL = MAX_LEVEL;
 
 /**
  * 升級費用：木材、燃料等依等級快速成長；抽象的金屬／布料／藥品換算成具體零件與布料，
@@ -18,7 +19,7 @@ export const FACILITY_MAX_LEVEL = 10;
 const MAT_KEYS = ['metal', 'cloth', 'medicine'];
 const mat = (key, tags, base, lv) => {
   const plain = scale(Object.fromEntries(Object.entries(base).filter(([k]) => !MAT_KEYS.includes(k))), lv);
-  const abstract = Object.fromEntries(Object.entries(base).filter(([k]) => MAT_KEYS.includes(k)).map(([k, v]) => [k, v * 1.3 ** (lv - 1)]));
+  const abstract = Object.fromEntries(Object.entries(base).filter(([k]) => MAT_KEYS.includes(k)).map(([k, v]) => [k, v * costCurve(lv, 1.3)]));
   return materialize({ ...plain, ...abstract }, { tier: tierFromLevel(lv, FACILITY_MAX_LEVEL), tags, key });
 };
 
@@ -122,7 +123,8 @@ export const FACILITIES = {
 };
 
 /** 施工秒數 */
-export const facilityBuildTime = (lv) => Math.round(20 * 1.75 ** (lv - 1));
+/** 施工秒數：Lv1 40 秒、Lv6 約 7 分、Lv10 約 3 小時、Lv15 約 7 天 */
+export const facilityBuildTime = (lv) => Math.round(40 * timeCurve(lv, 1.6, 2.245));
 
 export const wallMaxHp = (lv) => 400 + lv * 350 + lv * lv * 40;
 export const storageCap = (lv) => 600 + lv * 700 + lv * lv * 120;
