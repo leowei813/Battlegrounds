@@ -694,7 +694,7 @@ export class ExplorationSystem {
 
     // 2. 隨機事件
     const ev = weightedPick({
-      none: 46, zombies: 28 * phase.zombieMul * ctx.zoneMul, survivor: 5 * (1 + this.game.research.bonus('survivorFindPct')), special: 10, elite: (3 + danger * phase.danger) * ctx.zoneMul,
+      none: 46, zombies: 28 * phase.zombieMul * ctx.zoneMul, survivor: 5 * (1 + this.game.research.bonus('survivorFindPct')), special: 10, elite: ctx.zone.danger < 0 ? 0 : (3 + danger * phase.danger) * ctx.zoneMul, // 安全區沒有精英怪
     });
     if (ev === 'survivor') {
       const cand = this.game.survivors.makeCandidate(randInt(1, Math.max(1, level - 1)));
