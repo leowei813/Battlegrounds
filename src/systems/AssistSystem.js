@@ -112,7 +112,8 @@ export class AssistSystem {
   }
 
   /** 派隊伍前往友好玩家的據點協防到天亮 */
-  start(playerId, memberIds, { vehicleIds = [], avoidHostile = false } = {}) {
+  start(playerId, memberIds, { vehicleIds = [] } = {}) {
+    // 協防隊一律繞開敵對（NPC、敵對玩家）的警戒範圍，避免半路被擊退而到不了
     const g = this.game;
     const c = this.canAssist(playerId);
     if (!c.ok) return c;
@@ -120,7 +121,7 @@ export class AssistSystem {
     const target = { playerId, name: c.player.name, baseName: c.base.name, lat: c.base.lat, lon: c.base.lon };
     this.cache.set(id, target);
     const now = Date.now();
-    const st = g.exploration.start(id, memberIds, 0, false, now, { kind: 'assist', vehicleIds, avoidHostile });
+    const st = g.exploration.start(id, memberIds, 0, false, now, { kind: 'assist', vehicleIds, avoidHostile: true });
     if (!st.ok) return st;
     const exp = st.exp;
     exp.assistTarget = target;

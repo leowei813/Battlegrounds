@@ -125,6 +125,7 @@ export class ShelterPanel {
           <div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div>
           <div><small>來襲殭屍</small><b>${siege.zombies.length}</b></div>
           <div class="wide"><small>屍潮波次</small><b>${this.waveText(siege)}</b></div>
+          ${this.assistText(sh)}
         </div>
         ${queue ? `<h4>施工佇列</h4>${queue}` : ''}
         ${this.renderCivilization(sh)}
@@ -139,6 +140,18 @@ export class ShelterPanel {
     };
     return `<div class="drawer-top">${head}${ui.drawerCollapsed ? '' : tabs2}</div>
       <div class="drawer-body">${sections[tab]}</div>`;
+  }
+
+  /** 友好玩家的協防（避難所）：誰在協防、火力與今晚累計戰果 */
+  assistText(base) {
+    const g = this.game;
+    if (!g.shelter.isPrimary(base)) return '';
+    const list = g.assist.incoming();
+    const log = base.assistLog?.list || {};
+    if (!list.length && !Object.keys(log).length) return '';
+    const names = list.map((h) => `${escapeHtml(h.name)}${h.kind === 'cover' ? '（防禦設施）' : `（${h.count} 人）`} 每秒 ${h.dps}`).join('、');
+    const done = Object.values(log).map((x) => `${escapeHtml(x.name)} 傷害 ${x.dmg}・擊殺 ${x.kills}`).join('、');
+    return `<div class="wide"><small>🛡️ 友好協防</small><b>${names || '目前沒有'}</b>${done ? `<small class="muted block">今晚累計：${done}</small>` : ''}</div>`;
   }
 
   /** 據點遭襲紀錄：防禦成功或失敗、損失資源、毀損建築、受重傷的人 */
