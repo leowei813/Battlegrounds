@@ -408,7 +408,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(siege.quiet() && !siege.active() && base.quietUntil > Date.now(), '防線被突破後當晚不再有屍潮');
   assert(!siege.quiet(base.quietUntil + 1), '天亮後恢復');
   destroyed = base.defenses.filter((d) => !d.type).length;
-  for (let i = 0; i < 5 && !destroyed; i += 1) {
+  for (let i = 0; i < 60 && !destroyed; i += 1) {
     siege.breach();
     destroyed = base.defenses.filter((d) => !d.type).length;
   }
@@ -1135,7 +1135,11 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   sk.spawn('walker');
   sk.zombies[0].x = 0;
   sk.zombies[0].y = 40;
+  // 據點裡沒有人可以迎戰：圍牆一破就被攻破
+  const healthy = gk.state.survivors.filter((sv) => !sv.severe);
+  healthy.forEach((sv) => { sv.severe = true; });
   for (let i = 0; i < 100 && !sk.quiet(); i += 1) sk.update(0.1);
+  healthy.forEach((sv) => { sv.severe = false; });
   assert(sk.quiet() && gk.shelter.wallHp(gk.shelter.primary()) === 0, '避難所被打壞後圍牆耐久歸零');
   for (let i = 0; i < 50; i += 1) sk.update(0.1);
   assert(gk.state.stats.breaches === 1 && gk.shelter.wallHp(gk.shelter.primary()) === 0, '圍牆不會自動恢復，需修理');
@@ -1337,10 +1341,20 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   sl.update(0.1);
   gl.state.resources.food = 1000;
   base.wallHp = 1;
+  // 圍牆被打破後，據點裡的人員會先迎戰：打贏就不算攻破
+  sl.spawn('walker');
+  Object.assign(sl.zombies[0], { x: 0, y: 40 });
+  for (let i = 0; i < 100 && sl.zombies.length; i += 1) sl.update(0.1);
+  assert(!sl.quiet() && !(gl.state.defenseLog || []).some((e) => !e.success), '圍牆被打破後人員打贏，防線沒有被攻破');
+  // 沒有人可以應戰時才被攻破
+  gl.state.survivors.forEach((sv) => { sv.severe = true; });
+  base.wallHp = 0;
   sl.spawn('walker');
   Object.assign(sl.zombies[0], { x: 0, y: 40 });
   for (let i = 0; i < 100 && !sl.quiet(); i += 1) sl.update(0.1);
+  gl.state.survivors.forEach((sv) => { sv.severe = false; });
   const fail = gl.state.defenseLog[0];
+  assert((fail?.damaged || []).length <= 2, `被攻破時最多損毀 2 棟建築（${(fail?.damaged || []).length}）`);
   assert(fail && !fail.success && fail.attacker === '屍潮' && fail.lost.food === 500, `屍潮突破時記錄防禦失敗與損失（${JSON.stringify(fail)}）`);
   // 撐過一夜 → 防禦成功
   const gl2 = Game.newGame({ playerName: 'L2', classId: 'warrior', lat: 25, lon: 121 });

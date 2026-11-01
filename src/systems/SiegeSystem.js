@@ -2,7 +2,7 @@ import { DEFENSES } from '../config/defenses.js';
 import { ENEMIES, BOSSES } from '../config/enemies.js';
 import { RESOURCE_KEYS, COIN_GAIN_MUL } from '../config/constants.js';
 import {
-  SIEGE_SCALING, BREACH_LOSS, BREACH_BUILDING_DAMAGE_CHANCE, BASE_SIZES,
+  SIEGE_SCALING, BREACH_LOSS, BASE_SIZES,
 } from '../config/civilization.js';
 import { zoneAt } from '../config/zones.js';
 import { SUPPLIES, AMMO_FOR, ammoPerShot } from '../config/supplies.js';
@@ -29,6 +29,10 @@ const MELEE_REACH = WORLD.WALL_R + 8;
 const MELEE_REACH_POST = 14;
 /** 殭屍對圍牆的傷害係數（放置遊戲節奏：讓防線有時間反應） */
 const WALL_DMG_MUL = 0.3;
+/** 圍牆被打破後，每隔幾秒與衝進來的殭屍交戰一次 */
+const GATE_FIGHT_EVERY = 3;
+/** 防線被攻破時有機率損毀建築（最多 2 棟） */
+const BREACH_DAMAGE = { chance: 0.5, max: 2 };
 
 /**
  * 單一據點的屍潮防守模擬。純邏輯，以「世界座標」運作（中心 0,0）。
@@ -52,6 +56,7 @@ export class BaseSiege {
     this.nightKills = 0;
     this.nightWallStart = 0;
     this.breachedTonight = false;
+    this.gateLogged = false;
   }
 
   /** 今晚的編號（夜晚跨過午夜，以入夜那天計） */
@@ -88,6 +93,7 @@ export class BaseSiege {
     this.nightKills = 0;
     this.nightWallStart = this.game.shelter.wallHp(this.base);
     this.breachedTonight = false;
+    this.gateLogged = false;
   }
 
   /** 天亮：今晚有屍潮來襲且沒有被突破 → 記錄防禦成功 */
@@ -319,7 +325,7 @@ export class BaseSiege {
           z.atkCd = 1 / z.atkSpeed;
           const dmg = z.atk * WALL_DMG_MUL * (1 - reduction);
           base.wallHp = sh.wallHp(base) - dmg;
-          if (sh.wallHp(base) <= 0) breached = true;
+          if (sh.wallHp(base) <= 0) breached = true; // 圍牆被打破：還要打贏據點裡的人員才算攻破
           this.pushFx({ type: 'wallHit', x: z.x, y: z.y, dmg: Math.round(dmg) });
         }
       }
@@ -393,7 +399,16 @@ export class BaseSiege {
     this.collectDead();
     if (!active) this.zombies = this.zombies.filter((z) => !z.retreated);
 
-    if (breached) this.breach();
+    // 圍牆已破：衝到牆邊的殭屍與據點裡的人員交戰，人員戰敗才算防線被攻破
+    this.gateCd = (this.gateCd ?? 0) - dt;
+    if (active && sh.wallHp(base) <= 0 && this.gateCd <= 0) {
+      const atGate = this.zombies.filter((z) => z.hp > 0 && Math.hypot(z.x, z.y) <= WORLD.WALL_R + 3);
+      if (atGate.length) {
+        this.gateCd = GATE_FIGHT_EVERY;
+        this.gateFight(atGate.slice(0, 8));
+      }
+    }
+    void breached;
   }
 
   /** 防禦駐守的倖存者住在主要據點，只防衛主要據點 */
@@ -569,7 +584,48 @@ export class BaseSiege {
     recipients.forEach((sv) => this.game.survivors.gainXp(sv, (xp * 0.5) / recipients.length));
   }
 
-  breach() {
+  /**
+   * 圍牆被打破：衝到牆邊的殭屍與據點裡的人員（含友好協防隊）交戰。
+   * 人員打贏就擋下這批殭屍；沒有人可以應戰或戰敗才算防線被攻破。
+   */
+  gateFight(zombies) {
+    const g = this.game;
+    const base = this.base;
+    const defenders = g.npcs.defenders(base);
+    const allies = g.shelter.isPrimary(base) ? (g.assist?.allyUnits() || []) : [];
+    if (!defenders.length && !allies.length) {
+      this.breach('圍牆被打破，據點裡沒有人可以應戰');
+      return;
+    }
+    const foes = zombies.map((z) => {
+      const e = g.combat.createEnemy(z.enemyId, this.zombieLevel());
+      return { ...e, id: `z${z.id}`, maxHp: Math.max(1, Math.round(z.hp)), atk: z.atk, xp: 0, coins: 0, partsChance: 0 };
+    });
+    const result = g.combat.simulate(defenders, foes, { allies });
+    // 套用人員傷勢（殭屍的擊殺獎勵由屍潮結算，不重複給）
+    defenders.forEach((sv) => {
+      const u = result.team.find((x) => x.id === sv.id);
+      if (!u) return;
+      if (u.down) g.survivors.becomeSevere(sv, '在據點內迎戰屍潮', Date.now());
+      else g.survivors.setHp(sv, u.hp);
+    });
+    result.foes.forEach((f) => {
+      const z = zombies.find((x) => `z${x.id}` === f.id);
+      if (z) z.hp = f.down ? 0 : Math.min(z.hp, f.hp);
+    });
+    zombies.forEach((z) => { if (z.hp <= 0) this.pushFx({ type: 'shot', kind: 'melee', x1: 0, y1: 0, x2: z.x, y2: z.y }); });
+    if (!result.victory) {
+      this.breach(`圍牆被打破，據點裡的人員（${defenders.map((d) => d.name).join('、') || '協防隊'}）迎戰失敗`);
+      return;
+    }
+    if (!this.gateLogged) {
+      this.gateLogged = true;
+      g.log(`🧱 「${base.name}」圍牆被打破！據點裡的人員正在迎戰衝進來的殭屍`, 'danger');
+      g.toast(`🧱 「${base.name}」圍牆被打破，人員正在迎戰！請盡快修繕圍牆`, 'danger');
+    }
+  }
+
+  breach(note = '防線被突破，圍牆耐久歸零') {
     const sh = this.game.shelter;
     const base = this.base;
     const rate = sh.isPrimary(base) ? BREACH_LOSS.primary : BREACH_LOSS.outpost;
@@ -593,7 +649,7 @@ export class BaseSiege {
     this.breachedTonight = true;
     sh.recordDefense({
       base, attacker: '屍潮', success: false, lost, damaged, kills: this.nightKills, waves: this.wave,
-      wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note: ['防線被突破，圍牆耐久歸零', this.assistNote('breached')].filter(Boolean).join('。'),
+      wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note: [note, this.assistNote('breached')].filter(Boolean).join('。'),
     });
     const dmgText = damaged.length ? `，${damaged.length} 棟建築損毀` : '';
     damaged.forEach((d) => this.game.log(`🏚️ ${base.name}：${d}`, 'danger'));
@@ -608,23 +664,29 @@ export class BaseSiege {
    */
   damageBuildings(base) {
     const out = [];
-    Object.entries(base.facilities).forEach(([id, f]) => {
-      if (f.level < 1 || !chance(BREACH_BUILDING_DAMAGE_CHANCE)) return;
-      if (id === 'wall' && f.level <= 1) return; // 圍牆最低保留 1 級
-      f.level -= 1;
-      out.push(f.level === 0 ? `${FACILITIES[id].name}被摧毀` : `${FACILITIES[id].name}損毀，降為 Lv${f.level}`);
-    });
-    base.defenses.forEach((d) => {
-      if (!d.type || d.level < 1 || !chance(BREACH_BUILDING_DAMAGE_CHANCE)) return;
-      const name = DEFENSES[d.type].name;
-      if (d.level <= 1) {
-        Object.assign(d, { type: null, level: 0, garrisonId: null });
-        out.push(`${name}被拆毀`);
+    if (!chance(BREACH_DAMAGE.chance)) return out;
+    // 有機率損毀 1～2 棟建築（設施或防禦建築），每棟降 1 級
+    const pool = [
+      ...Object.entries(base.facilities).filter(([id, f]) => f.level >= 1 && !(id === 'wall' && f.level <= 1)).map(([id, f]) => ({ kind: 'fac', id, f })),
+      ...base.defenses.filter((d) => d.type && d.level >= 1).map((d) => ({ kind: 'def', d })),
+    ];
+    const n = Math.min(pool.length, 1 + (chance(0.4) ? 1 : 0), BREACH_DAMAGE.max);
+    for (let i = 0; i < n; i += 1) {
+      const t = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+      if (t.kind === 'fac') {
+        t.f.level -= 1;
+        out.push(t.f.level === 0 ? `${FACILITIES[t.id].name}被摧毀` : `${FACILITIES[t.id].name}損毀，降為 Lv${t.f.level}`);
       } else {
-        d.level -= 1;
-        out.push(`${name}損毀，降為 Lv${d.level}`);
+        const name = DEFENSES[t.d.type].name;
+        if (t.d.level <= 1) {
+          Object.assign(t.d, { type: null, level: 0, garrisonId: null });
+          out.push(`${name}被拆毀`);
+        } else {
+          t.d.level -= 1;
+          out.push(`${name}損毀，降為 Lv${t.d.level}`);
+        }
       }
-    });
+    }
     if (out.length) this.game.civilization.invalidate();
     return out;
   }
