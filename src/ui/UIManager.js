@@ -255,7 +255,7 @@ export class UIManager {
       <div class="hud-left">
         <div class="clock phase-${g.time.phaseId()}" title="${phase.desc}">
           <span class="phase-icon">${phase.icon}</span>
-          <div><b>第 ${g.time.day()} 天 ${g.time.clockText()}</b><small>${phase.name}・${phase.desc}</small></div>
+          <div><b>${g.time.dateText()} ${g.time.clockText()}</b><small>${phase.name}・生存第 ${g.time.survivalDay()} 天</small></div>
         </div>
         <div class="hud-badges">
         ${this.cloudBadge()}

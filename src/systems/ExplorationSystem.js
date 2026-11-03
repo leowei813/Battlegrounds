@@ -198,6 +198,37 @@ export class ExplorationSystem {
     return { ok: true, poi, members };
   }
 
+  /** 每支臨時小隊的探索佇列上限：基本 2 個，研究「行動規劃」每級 +1（最多 5 個） */
+  queueLimit() {
+    return Math.min(5, 2 + Math.floor(this.game.research.bonus('queueSlots')));
+  }
+
+  /** 可以加入佇列的臨時小隊（探索中、沒有召回或撤退） */
+  squads() {
+    return this.list.filter((e) => e.kind === 'explore' && !e.recalled && !e.defeated);
+  }
+
+  /** 把地點加入臨時小隊的探索佇列 */
+  enqueue(expId, poiId) {
+    const exp = this.list.find((e) => e.id === expId);
+    if (!exp || exp.kind !== 'explore' || exp.recalled || exp.defeated) return { ok: false, reason: '這支小隊無法加入佇列' };
+    const poi = this.poi(poiId);
+    if (!poi || !POI_TYPES[poi.type] || poi.npc || poi.pvp) return { ok: false, reason: '只能加入一般建築的探索' };
+    exp.queue = exp.queue || [];
+    if (exp.queue.length >= this.queueLimit()) return { ok: false, reason: `探索佇列已滿（${this.queueLimit()} 個，研究「行動規劃」可增加）` };
+    if (exp.poiId === poiId || exp.queue.includes(poiId)) return { ok: false, reason: '這個地點已經在佇列中' };
+    exp.queue.push(poiId);
+    return { ok: true, msg: `已加入探索佇列（${exp.queue.length}/${this.queueLimit()}）：${poi.name}` };
+  }
+
+  /** 從佇列移除 */
+  dequeue(expId, index) {
+    const exp = this.list.find((e) => e.id === expId);
+    if (!exp?.queue?.[index]) return { ok: false, reason: '找不到這個地點' };
+    exp.queue.splice(index, 1);
+    return { ok: true, msg: '已從佇列移除' };
+  }
+
   /** 自動探索可以換到其他地點的次數：基本 1 次，研究「巡迴搜索」每級 +1，最多 5 次 */
   autoHopLimit() {
     return Math.min(AUTO_HOP_MAX, 1 + Math.floor(this.game.research.bonus('autoHops')));
@@ -559,6 +590,22 @@ export class ExplorationSystem {
           const m = this.game.survivors.get(id);
           return m && !m.severe;
         });
+        // 臨時小隊的探索佇列：完成後自動前往佇列中的下一個地點
+        if (exp.kind === 'explore' && !exp.defeated && !exp.recalled && (exp.queue || []).length && healthy && now - exp.endAt < OFFLINE_CAP_MS) {
+          const queue = [...exp.queue];
+          let started = null;
+          while (queue.length && !started) {
+            const poiId = queue.shift();
+            const r = this.start(poiId, exp.memberIds, exp.durationMin, exp.auto, exp.endAt, { vehicleIds: exp.vehicleIds || [] });
+            if (r.ok) started = r.exp;
+            else report.events.push(`⏭️ 佇列中的地點無法前往：${r.reason}`);
+          }
+          if (started) {
+            started.queue = queue;
+            report.events.push(`➡️ 依探索佇列前往下一個地點「${this.poi(started.poiId)?.name || ''}」${queue.length ? `（佇列還有 ${queue.length} 個）` : ''}`);
+            return;
+          }
+        }
         if (exp.kind === 'explore' && !exp.defeated && !exp.recalled && exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
           const next = this.autoNext(exp, exp.endAt);
           if (!next.ok) report.events.push(`⏹️ 自動探索停止：${next.reason}`);

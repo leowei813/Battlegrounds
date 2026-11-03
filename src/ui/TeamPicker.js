@@ -59,13 +59,17 @@ export function openTeamPicker(ui, opts) {
   const selected = new Set(available.slice(0, Math.min(2, MAX_TEAM_SIZE)).map((s) => s.id));
   const cars = new Set();
   let avoidHostile = false;
+  // 臨時小隊：已派出探索的隊伍，可把這個地點加入它的探索佇列（與勾選個別人員互斥）
+  let squadId = null;
+  const squads = opts.squads ? game.exploration.squads() : [];
   let duration = EXPLORE_DURATIONS[1];
   let auto = false;
   const autoUnlocked = game.research.hasUnlock('autoExplore');
 
   const render = () => {
-    const rows = game.state.survivors.map((sv) => {
-      const ok = game.survivors.isAvailable(sv);
+    const inSquad = new Set(squads.flatMap((e) => e.memberIds));
+    const rows = game.state.survivors.filter((sv) => !opts.squads || !inSquad.has(sv.id)).map((sv) => {
+      const ok = game.survivors.isAvailable(sv) && !squadId;
       const s = game.survivors.stats(sv);
       const on = selected.has(sv.id);
       return `<button class="pick-row ${on ? 'on' : ''}" data-action="toggle" data-id="${sv.id}" ${ok ? '' : 'disabled'}>
@@ -85,9 +89,19 @@ export function openTeamPicker(ui, opts) {
          <label class="toggle ${autoUnlocked ? '' : 'disabled'}"><input type="checkbox" data-role="auto" ${auto ? 'checked' : ''} ${autoUnlocked ? '' : 'disabled'}> 🔁 自動探索（完成後自動再出發）${autoUnlocked ? '' : '<small>（需研究「斥候訓練」）</small>'}</label>
          ${autoUnlocked ? `<small class="muted block">這裡還有物資就再來一次；搜空後自動換到附近還有物資的地點（危險度不高於這裡），最多換 ${game.exploration.autoHopLimit()} 次（研究「巡迴搜索」可增加，最多 5 次）。隊員重傷或戰敗時停止。</small>` : ''}`
       : '';
+    const squadRows = squads.map((e) => {
+      const names = e.memberIds.map((id) => game.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
+      const full = (e.queue || []).length >= game.exploration.queueLimit();
+      const on = squadId === e.id;
+      return `<button class="pick-row squad ${on ? 'on' : ''}" data-action="squad" data-id="${e.id}" ${full || selected.size ? 'disabled' : ''}>
+        <span class="check">${on ? '☑' : '☐'}</span>
+        <span>🧭 <b>臨時小隊</b>：${names}<small class="muted block">正在探索「${escapeHtml(game.exploration.poi(e.poiId)?.name || '')}」・佇列 ${(e.queue || []).length}/${game.exploration.queueLimit()}${full ? '（已滿）' : ''}</small></span>
+      </button>`;
+    }).join('');
     return `${opts.intro}
       <div class="label">選擇隊員（最多 ${MAX_TEAM_SIZE} 人）・隊伍戰力 <b>${power}</b></div>
-      <div class="pick-list">${rows || '<p class="muted">沒有倖存者</p>'}</div>
+      <div class="pick-list">${rows || '<p class="muted">沒有可派出的倖存者</p>'}</div>
+      ${squads.length ? `<div class="label">🧭 臨時小隊 <small class="muted">（選擇後這個地點會加入該小隊的探索佇列，完成目前探索後自動前往；與勾選個別人員互斥）</small></div><div class="pick-list">${squadRows}</div>` : ''}
       ${vehicles}
       ${opts.routeOption ? '<small class="muted block">🛡️ 路線會自動繞開 NPC、敵對與中立玩家據點的警戒範圍；友好玩家的範圍可以直接通過。</small>' : ''}
       ${timeHtml(game, opts.trip, ids, vids, avoidHostile)}
@@ -100,15 +114,19 @@ export function openTeamPicker(ui, opts) {
     body: render(),
     onAction(action, data, m, el) {
       if (action === 'toggle') {
+        if (squadId) return;
         if (selected.has(data.id)) selected.delete(data.id);
         else if (selected.size < MAX_TEAM_SIZE) selected.add(data.id);
+      } else if (action === 'squad') {
+        if (selected.size) return;
+        squadId = squadId === data.id ? null : data.id;
       } else if (action === 'car') {
         if (cars.has(data.id)) cars.delete(data.id);
         else cars.add(data.id);
       } else if (action === 'dur') {
         duration = +data.d;
       } else if (action === 'confirm') {
-        const res = opts.onConfirm([...selected], duration, auto, [...cars], { avoidHostile });
+        const res = opts.onConfirm(squadId ? [] : [...selected], duration, auto, [...cars], { avoidHostile, squadId });
         if (res?.ok !== false) m.close();
         return;
       }

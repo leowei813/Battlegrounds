@@ -15,11 +15,14 @@ import { FACILITIES, LUMBER_WOOD } from '../src/config/facilities.js';
 import {
   RARITIES, RARITY_ORDER, SLOT_KEYS, ITEM_TYPES, ITEM_MODELS,
 } from '../src/config/equipment.js';
-import { DAY_REAL_MS, START_HOUR, SAVE_VERSION as SAVE_VERSION_NOW } from '../src/config/constants.js';
+import {
+  DAY_REAL_MS, SAVE_VERSION as SAVE_VERSION_NOW, WORLD_EPOCH_MS, WORLD_START,
+} from '../src/config/constants.js';
 
 /** 把遊戲時鐘調到指定時刻（建檔時間往前推） */
 const setHour = (game, hour) => {
-  game.state.createdAt = Date.now() - (((hour - START_HOUR + 24) % 24) / 24) * DAY_REAL_MS;
+  // v9 世界時間：調整 worldShift 讓目前時刻變成 hour
+  game.state.worldShift = (((hour - WORLD_START.hour + 24) % 24) / 24) * DAY_REAL_MS - (Date.now() - WORLD_EPOCH_MS);
 };
 import { SaveManager } from '../src/core/SaveManager.js';
 import { WORLD as WORLDC } from '../src/systems/SiegeSystem.js';
@@ -1316,7 +1319,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(outside === 0, `製作出的裝備數值都在顯示的範圍內（超出 ${outside}）`);
 }
 
-// ---- 23. v8.5：遊戲一天 = 現實 1 小時，舊存檔維持目前天數與時刻 ----
+// ---- 23. v8.5：遊戲一天 = 現實 1 小時，舊存檔維持生存天數（v9 起時刻改為世界時間） ----
 {
   assert(DAY_REAL_MS === 3600000, '遊戲一天為現實 1 小時');
   const gt = Game.newGame({ playerName: 'T', classId: 'warrior', lat: 25, lon: 121 });
@@ -1325,7 +1328,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   old.version = 12;
   const mig = SaveManager.migrate(old);
   const gm = new Game(mig);
-  assert(gm.time.day() === 6 && Math.abs(gm.time.hour() - 20) < 0.1, `舊存檔換算後天數與時刻不變（第 ${gm.time.day()} 天 ${gm.time.hour().toFixed(1)} 時）`);
+  assert(gm.time.survivalDay() === 6, `舊存檔換算後生存天數不變（第 ${gm.time.survivalDay()} 天）`);
 }
 
 // ---- 24. v8.7：據點遭襲紀錄 ----
@@ -2512,6 +2515,35 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const hp0 = ga2.survivors.hpOf(lead);
   for (let i = 0; i < 40; i += 1) sx.step(0.1);
   assert(ga2.survivors.hpOf(lead) < hp0 || lead.severe, '近戰防守屍潮時會被殭屍反擊受傷');
+}
+
+// ---- 63. v9 臨時小隊探索佇列 ----
+{
+  const gq3 = Game.newGame({ playerName: 'QQ', classId: 'scout', lat: 25, lon: 121 });
+  gq3.state.map.pois = fillPois([], 25, 121);
+  gq3.shelter.establish(gq3.state.map.pois[0]);
+  setHour(gq3, 10);
+  const ex = gq3.exploration;
+  const pois = gq3.state.map.pois.filter((p) => !gq3.shelter.baseAtPoi(p.id) && p.type === 'residential').slice(0, 5);
+  const st = ex.start(pois[0].id, [gq3.survivors.leader().id], 5);
+  assert(st.ok && ex.squads().length === 1, '派出後成為臨時小隊');
+  assert(ex.queueLimit() === 2, '探索佇列基本 2 個');
+  assert(ex.enqueue(st.exp.id, pois[1].id).ok && ex.enqueue(st.exp.id, pois[2].id).ok && !ex.enqueue(st.exp.id, pois[3].id).ok, '佇列滿了不能再加入');
+  const [rep] = ex.update(st.exp.endAt + 1, { silent: true });
+  const next = gq3.state.expeditions[0];
+  assert(rep && next && next.poiId === pois[1].id && next.queue.length === 1, `完成後自動前往佇列中的下一個地點（${rep?.events.slice(-1)}）`);
+  const { labLevelFor: llf } = await import('../src/config/research.js');
+  assert(llf('s_queue', 1) === 4 && llf('s_queue', 3) === 10, '佇列科技依研究中心等級解鎖（最後一級需要 Lv10）');
+}
+
+// ---- 64. v9 世界時間 ----
+{
+  const w1 = Game.newGame({ playerName: 'W1', classId: 'warrior', lat: 25, lon: 121 });
+  const w2 = Game.newGame({ playerName: 'W2', classId: 'warrior', lat: 30, lon: 100 });
+  w2.state.createdAt = Date.now() - 5 * DAY_REAL_MS;
+  assert(w1.time.hour() === w2.time.hour() && w1.time.dateText() === w2.time.dateText(), '所有玩家共用同一個世界時間與日期');
+  assert(w1.time.dateText(WORLD_EPOCH_MS) === '2050/1/1' && Math.abs(w1.time.hour(WORLD_EPOCH_MS) - 6) < 1e-6, '世界時間從 2050/1/1 06:00 起算');
+  assert(w1.time.survivalDay() === 1 && w2.time.survivalDay() === 6, '生存天數從自己開局算起');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

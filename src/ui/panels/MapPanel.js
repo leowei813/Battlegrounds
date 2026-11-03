@@ -540,6 +540,7 @@ export class MapPanel {
       <p class="muted">👥 ${names || `${ex.memberIds.length} 人`}</p>
       <p class="muted">⏱ 剩 ${formatDuration(p ? p.remainingMs : Math.max(0, ex.endAt - now))}</p>
       ${this.ui.panels.explore.checkpointHtml(ex)}
+      ${(ex.queue || []).length ? `<div class="label">🧭 探索佇列（${ex.queue.length}/${g.exploration.queueLimit()}）</div>${ex.queue.map((pid, i) => `<div class="row-between"><span>${i + 1}. ${escapeHtml(g.exploration.poi(pid)?.name || '地點')}</span>${btn('移除', 'dequeue', { i }, { cls: 'btn-xs btn-ghost' })}</div>`).join('')}` : ''}
       ${ex.kind === 'trade' && ex.trade ? `<p>🤝 擺攤商品：${ex.trade.goods.map((x) => `${escapeHtml(g.trade.goodName(x))} ${x.sold}/${x.qty}`).join('、')}・已收入 💰${ex.trade.earned || 0}</p>` : ''}
       ${canRecall ? `<p class="muted">${ex.kind === 'trade' ? '召回後倖存者會結束交易、走回避難所，沒賣完的商品會帶回家。' : '召回後隊伍會從目前位置走回避難所（需要移動時間），只會帶回已經到過的檢核點找到的物資。'}</p>` : ''}
       <div class="btn-row">${canRecall ? btn('↩️ 召回', 'recall', {}, { cls: 'btn-danger' }) : ''}${btn('📋 探索頁', 'explore', {}, { cls: 'btn-ghost' })}</div>`;
@@ -548,7 +549,12 @@ export class MapPanel {
       title: '🚶 我的探索隊',
       body: body(),
       live: body,
-      onAction: (action, _data, m) => {
+      onAction: (action, data, m) => {
+        if (action === 'dequeue') {
+          this.ui.result(g.exploration.dequeue(expId, +data.i));
+          m.update(body());
+          return;
+        }
         m.close();
         if (action === 'recall') {
           const r = this.ui.result(g.exploration.recall(expId));
@@ -749,8 +755,15 @@ export class MapPanel {
       distanceM: g.shelter.primary() ? haversine(g.shelter.primary().lat, g.shelter.primary().lon, poi.lat, poi.lon) : 0,
       trip: { poi, searchMin: g.exploration.searchMinutes(poi) },
       routeOption: true,
+      squads: true,
       confirmLabel: '出發！',
       onConfirm: (ids, dur, auto, vids, opts) => {
+        // 選了臨時小隊：加入它的探索佇列
+        if (opts.squadId) {
+          const q = this.ui.result(g.exploration.enqueue(opts.squadId, poi.id));
+          if (q.ok) this.renderMap(true);
+          return q;
+        }
         const r = this.ui.result(g.exploration.start(poi.id, ids, dur, auto, Date.now(), { vehicleIds: vids, ...opts }));
         if (r.ok) this.renderMap(true);
         return r;
