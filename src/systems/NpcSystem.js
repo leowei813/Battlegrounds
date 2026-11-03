@@ -196,8 +196,9 @@ export class NpcSystem {
       if (fn(d) === false) return { fail: 'skip' };
       return { data: d };
     }, cellBox(...n.cell.split(':').map(Number), NPC_CONFIG.cellKm)).then((r) => {
-      if (r.ok) {
-        // 套用伺服器上合併後的結果（包含別人同時造成的變化）
+      if (r.ok || ['stale', 'skip'].includes(r.reason)) {
+        // 套用伺服器上合併後的結果（包含別人同時造成的變化）；
+        // 別人已經結算過（skip）時也要改回伺服器的值，避免本機重複扣等級、傷亡與物資
         n.sharedVer = null;
         this.applySharedTo(n);
       } else if (r.reason && !['stale', 'skip'].includes(r.reason) && this.pending.length < 30) this.pending.push(run);
@@ -370,6 +371,9 @@ export class NpcSystem {
 
   updateNow(now = Date.now()) {
     if (!this.game.state.map.pois.length || !this.game.shelter.hasShelter()) return;
+    // 連線中：等第一次讀到共用 NPC 資料再顯示與結算（否則會先顯示沒扣掉等級損失的較高等級，同步後又變低）
+    const sh = this.game.shared;
+    if (sh?.online && !sh.backend && !sh.listedAt?.npc) return;
     const st = this.state;
     if (now >= (st.nextSpawnAt || 0)) {
       // 第一次（或重新掃描後）一次補齊，不逐一記錄

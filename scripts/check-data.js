@@ -1507,15 +1507,31 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   setHour(A, 10);
   setHour(B, 10);
   const t0 = Date.now();
+  // 連線到伺服器時：先讀到共用 NPC 資料才會顯示（避免先顯示沒扣等級損失的較高等級）
+  {
+    const gw = Game.newGame({ playerName: 'W', classId: 'warrior', lat: 25.02, lon: 121.02 });
+    gw.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gw.shelter.establish(gw.state.map.pois[0]);
+    gw.world = { myId: 'W', identity: () => ({ id: 'W', token: 't' }), provider: { objPut: store.objPut.bind(store), objList: store.objList.bind(store), objListMany: store.objListMany.bind(store) } };
+    gw.npcs.update(t0);
+    assert(gw.npcs.list.length === 0, '連線中尚未讀到共用 NPC 資料前不顯示 NPC');
+    await gw.shared.poll();
+    gw.npcs.update(t0);
+    assert(gw.npcs.list.length > 0, '讀到共用資料後才顯示 NPC');
+  }
+  await A.shared.poll();
+  await B.shared.poll();
   A.npcs.update(t0);
   B.npcs.update(t0);
   const ids = (gx) => gx.npcs.list.filter((n) => n.sid).map((n) => `${n.id}@${n.lat.toFixed(5)},${n.lon.toFixed(5)}:${n.level}:${n.name}`).sort().join('|');
   assert(A.npcs.list.length > 0 && ids(A) === ids(B), `兩位玩家看到相同的 NPC 據點（位置、名稱、等級）（${A.npcs.list.length} 個）`);
   // 其他玩家的據點警戒範圍內不會有 NPC
-  const nA = A.npcs.list[0];
+  const nA = A.npcs.list.find((n) => A.npcs.fullCount(n) >= 5) || A.npcs.list[0];
   const C = mk('C', 0);
   C.world.others = [{ id: 'X', bases: [{ lat: nA.lat, lon: nA.lon, alert: 120 }], trips: [] }];
+  await C.shared.poll();
   C.npcs.update(t0);
+  assert(C.npcs.list.length > 0, '同步後會顯示 NPC 據點');
   assert(!C.npcs.list.some((n) => n.id === nA.id), '任何玩家的警戒範圍內不會出現 NPC 據點（避免與玩家重疊）');
   // A 讓 NPC 受傷、等級下降；B 同步後相同
   A.npcs.wound(nA, 2, t0);
@@ -3207,6 +3223,42 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const prices = Object.keys(AR).map((k) => bm.supplyPrice(k));
   assert(Math.max(...prices) <= 6 && Math.min(...prices) >= 4, `彈藥售價不再依階級大幅提高（${prices.join('/')}）`);
   assert(bm.supplyPrice('ammo308') < 85 && SP.ammo308.cat === 'ammo', '.308 狙擊彈不再是高價');
+}
+
+// ---- 75. 同一晚多位玩家都結算 NPC 抵禦屍群：不重複扣等級 ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const store = new MemoryObjects();
+  const pois = fillPois([], 25.3, 121.3);
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.3, lon: 121.3 });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    gx.npcs.fillCells(Date.now(), { silent: true });
+    return gx;
+  };
+  const A = mk('A');
+  const B = mk('B');
+  let night = null;
+  let nA = null;
+  for (let k = 0; k < 300 && !night; k += 1) {
+    nA = A.npcs.list[k % A.npcs.list.length];
+    const save = JSON.parse(JSON.stringify(nA));
+    const before = nA.levelLoss || 0;
+    A.npcs.nightSiege(nA, `t${k}`, Date.now());
+    await new Promise((r) => setTimeout(r, 2));
+    if ((nA.levelLoss || 0) > before && A.npcs.list.includes(nA)) night = `t${k}`;
+    else Object.assign(nA, save);
+  }
+  assert(!!night, '找到 NPC 被屍群突破而降級的夜晚');
+  const nB = B.npcs.list.find((x) => x.ident === nA.ident);
+  // B 還沒同步到 A 的結算就自己也結算了同一晚
+  B.npcs.nightSiege(nB, night, Date.now());
+  await new Promise((r) => setTimeout(r, 20));
+  const server = store.map.get(`npc:${nA.sid}`)?.data?.levelLoss;
+  assert(nB.levelLoss === server && nA.levelLoss === server, `別人已經結算過的夜晚不會在本機重複扣等級（A ${nA.levelLoss}／B ${nB.levelLoss}／伺服器 ${server}）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
