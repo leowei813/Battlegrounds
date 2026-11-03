@@ -74,7 +74,7 @@ export class SurvivorPanel {
         <small class="muted block">研究「招募技術」可提高高品級機率：目前 Lv${tech}/15${tech < 15 ? '，升到下一級後：' : '（已滿級）'}</small>
         ${nextOdds ? `<div class="odds dim">${nextOdds}</div>` : ''}
       </div>
-      <details class="civ-more"><summary>人數上限與食物說明</summary><p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 3（${cap.leader}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），等級越高吃得越多（每高 1 級 +${Math.round(FOOD_LEVEL_STEP * 100)}%），目前食物淨收入 ${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時。</p></details>`;
+      <details class="civ-more" data-keep="cap" ${this.keepOpen?.cap ? 'open' : ''}><summary>人數上限與食物說明</summary><p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 3（${cap.leader}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），等級越高吃得越多（每高 1 級 +${Math.round(FOOD_LEVEL_STEP * 100)}%），目前食物淨收入 ${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時。</p></details>`;
   }
 
   /** 列表中每位倖存者的狀態分類 */
@@ -228,6 +228,11 @@ export class SurvivorPanel {
     el.addEventListener('input', (e) => {
       if (e.target.classList?.contains('bag-qty')) this.bagQty = Number(e.target.value) || 1;
     });
+    // 畫面每秒更新，記住說明是否展開，避免剛展開就被重畫關閉
+    el.addEventListener('toggle', (e) => {
+      const key = e.target?.dataset?.keep;
+      if (key) this.keepOpen = { ...(this.keepOpen || {}), [key]: e.target.open };
+    }, true);
     el.addEventListener('change', (e) => {
       if (this.ui.tab !== 'survivors') return;
       if (e.target.classList?.contains('lo-auto')) {
@@ -256,7 +261,7 @@ export class SurvivorPanel {
     }).join('');
     const cur = JOBS[sv.job] || JOBS.idle;
     return `<div class="job-now">${cur.icon} <b>${cur.name}</b>：${cur.desc || ''}</div>
-      <details class="job-help"><summary>ℹ️ 所有工作說明（含這位倖存者的每小時產出）</summary><ul class="skill-list">${rows}</ul></details>`;
+      <details class="job-help" data-keep="jobs" ${this.keepOpen?.jobs ? 'open' : ''}><summary>ℹ️ 所有工作說明（含這位倖存者的每小時產出）</summary><ul class="skill-list">${rows}</ul></details>`;
   }
 
   /** 右側（手機版為全頁）的倖存者詳情：概要／裝備／背包／技能 */
@@ -346,7 +351,7 @@ export class SurvivorPanel {
       const amt = Math.round(g.survivors.healAmount(sv, m.key));
       const where = [m.bag ? `身上 ${m.bag}` : '', m.store && g.survivors.atShelter(sv) ? `倉庫 ${m.store}` : ''].filter(Boolean).join('・');
       return `<button class="med-btn" data-action="heal" data-key="${m.key}">
-        <span class="med-icon">${m.icon}</span><span class="grow"><b>${m.name}</b><small class="muted block">回復 ${Math.round(m.heal * 100)}%（+${amt}${amt > lost ? `，會溢出 ${amt - Math.round(lost)}` : ''}）・${where}</small></span></button>`;
+        <span class="med-icon">${m.icon}</span><span class="grow"><b>${m.name}</b><small class="muted block">回復 ${Math.round(m.heal * 100)}%（+${amt}${amt > lost ? `，<b class="overflow">⚠️ 會溢出 ${amt - Math.round(lost)}</b>` : ''}）・${where}</small></span></button>`;
     }).join('')}</div>`;
   }
 
