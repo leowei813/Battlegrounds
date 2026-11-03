@@ -294,6 +294,20 @@ export class MapService {
         L.polyline(ex.path ? ex.path.map((q) => [q.lat, q.lon]) : [[from.lat, from.lon], [p.lat, p.lon]], {
           color: '#ffd54f', weight: 3, dashArray: '4 8', className: 'route-line',
         }).addTo(this.layers.routes);
+        // 探索佇列：從目前的目的地依序連到佇列中的每個地點，並標上順序
+        const queued = (ex.queue || []).map((id) => this.game.exploration.poi(id)).filter(Boolean);
+        if (!queued.length) return;
+        const pts = [p, ...queued];
+        L.polyline(pts.map((q) => [q.lat, q.lon]), {
+          color: '#8fc3ff', weight: 3, opacity: 0.9, dashArray: '2 7', interactive: false,
+        }).addTo(this.layers.routes);
+        queued.forEach((q, i) => {
+          L.marker([q.lat, q.lon], {
+            icon: this.icon(`<div class="queue-pin">${i + 1}</div>`, 'queue-icon', 22),
+            interactive: false,
+            zIndexOffset: 700,
+          }).addTo(this.layers.routes);
+        });
       });
     }
   }

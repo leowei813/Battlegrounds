@@ -910,8 +910,8 @@ export class ExplorationSystem {
       });
       cp.overweight = true;
       if (!last) {
-        cp.events.push(`🎒 ${tag}背包裝滿了（運載量 ${ctx.carry}），停止探索直接回家`);
-        this.stopSearch(exp, at);
+        cp.events.push(`🎒 ${tag}背包裝滿了（運載量 ${ctx.carry}），停止探索直接回家${exp.auto ? '（卸貨後自動回來繼續搜索）' : ''}`);
+        this.stopSearch(exp, at, { keepAuto: true });
         return;
       }
       cp.events.push(`🎒 帶不動了！運載量 ${ctx.carry}，留下約 ${Math.round(weight - ctx.carry)} 重量的物資在建築裡（今天內可以再來拿，載具可以載更多）`);
@@ -919,13 +919,14 @@ export class ExplorationSystem {
   }
 
   /** 提早結束搜索：從檢核點直接回家 */
-  stopSearch(exp, at) {
+  stopSearch(exp, at, { keepAuto = false } = {}) {
     const cp = exp.cp;
     cp.stopped = true;
     const searched = Math.max(0, at - exp.startAt - (exp.travelMs || 0));
     exp.searchMs = searched;
     exp.endAt = exp.startAt + (exp.travelMs || 0) * 2 + searched;
-    exp.auto = false;
+    // 戰敗撤退：停止自動探索；只是背包裝滿：回家卸貨後繼續（同一地點還有物資就再來）
+    if (!keepAuto) exp.auto = false;
   }
 
   /** 探索結束（完成、提早回家或中途召回）：把檢核點取得的物資帶回家 */

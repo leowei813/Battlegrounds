@@ -56,15 +56,18 @@ function timeHtml(game, trip, ids, vids, avoidHostile) {
 export function openTeamPicker(ui, opts) {
   const { game } = ui;
   const available = game.state.survivors.filter((s) => game.survivors.isAvailable(s));
-  const selected = new Set(available.slice(0, Math.min(2, MAX_TEAM_SIZE)).map((s) => s.id));
+  // 不預設勾選任何人（由玩家自己選擇）
+  const selected = new Set();
+  void available;
   const cars = new Set();
   let avoidHostile = false;
   // 臨時小隊：已派出探索的隊伍，可把這個地點加入它的探索佇列（與勾選個別人員互斥）
   let squadId = null;
   const squads = opts.squads ? game.exploration.squads() : [];
   let duration = EXPLORE_DURATIONS[1];
-  let auto = false;
   const autoUnlocked = game.research.hasUnlock('autoExplore');
+  // 自動探索：解鎖後預設勾選
+  let auto = autoUnlocked;
 
   const render = () => {
     const inSquad = new Set(squads.flatMap((e) => e.memberIds));
