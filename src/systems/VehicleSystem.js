@@ -104,6 +104,7 @@ export class VehicleSystem {
   repair(id) {
     const v = this.get(id);
     if (!v) return { ok: false, reason: '找不到載具' };
+    if (v.status === 'reserved') return { ok: false, reason: '已指定給臨時小隊，無法維修' };
     if (v.status === 'out') return { ok: false, reason: '載具出勤中' };
     if (v.durability >= this.maxDurability(v)) return { ok: false, reason: '不需要維修' };
     if (!payCost(this.game.state, this.repairCostOf(v))) return { ok: false, reason: '資源不足' };

@@ -62,7 +62,7 @@ export const DEFENSES = {
   },
   watchPost: {
     name: '瞭望塔', icon: '🛖', color: 0xa1887f, requires: null,
-    desc: '可派倖存者駐守，以其攻擊力狙擊殭屍。',
+    desc: '可派倖存者駐守，以其攻擊力射擊來襲的殭屍、NPC 掠奪隊與突襲的玩家。',
     cost: (lv) => mat('watchPost', ['struct', 'mech'], { wood: 70, metal: 30 }, lv),
     stats: (lv) => ({ damage: 0, fireRate: 0.8, range: 85 + lv * 3, garrison: true, garrisonMul: 0.8 + lv * 0.15 }),
   },

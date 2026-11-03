@@ -1,6 +1,6 @@
 import { formatDuration } from '../../utils/math.js';
 import {
-  CLASSES, JOBS, xpToNext, survivorRarityTable, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE, FOOD_LEVEL_STEP,
+  CLASSES, JOBS, QUALITY_KEYS, QUALITY_NAMES, xpToNext, survivorRarityTable, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE, FOOD_LEVEL_STEP,
 } from '../../config/survivors.js';
 import { RESOURCE_KEYS } from '../../config/constants.js';
 import { SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, unitWeight } from '../../config/supplies.js';
@@ -23,6 +23,27 @@ export class SurvivorPanel {
     this.game = ui.game;
   }
 
+  /** 素質標籤：100% 以金色顯示 */
+  qTag(q, label = '素質') {
+    return `<span class="sv-q ${q >= 100 ? 'max' : ''}">${label} ${q}%</span>`;
+  }
+
+  /** 能力卡：每項能力的數值與素質（首領不顯示素質） */
+  abilityRows(sv, s) {
+    const g = this.game;
+    const fmt = {
+      hp: () => s.hp, atk: () => s.atk, def: () => s.def,
+      crit: () => `${(s.crit * 100).toFixed(1)}%`, dodge: () => `${(s.dodge * 100).toFixed(1)}%`, atkSpeed: () => s.atkSpeed,
+    };
+    return `<div class="ab-rows">${QUALITY_KEYS.map((k) => {
+      const q = g.survivors.qualityOf(sv, k);
+      const per = ['hp', 'atk', 'def'].includes(k) ? `每級 +${g.survivors.growthPerLevel(sv, k).toFixed(1)}` : '';
+      return `<div class="ab-row ${sv.isLeader ? 'leader' : ''}"><span class="muted">${QUALITY_NAMES[k]}</span><b>${fmt[k]()}</b>
+        ${sv.isLeader ? `<small class="muted">${per}</small>` : `<span class="ab-bar ${q >= 100 ? 'max' : q >= 70 ? 'hi' : q >= 40 ? 'mid' : ''}"><i style="width:${q}%"></i></span>
+        <span class="ab-q ${q >= 100 ? 'max' : ''}">素質 ${q}% <small class="muted">${per}</small></span>`}</div>`;
+    }).join('')}</div>`;
+  }
+
   /** 候選人卡片（招募三選一與探索遭遇共用） */
   candidateCard(c, actions) {
     const g = this.game;
@@ -33,6 +54,7 @@ export class SurvivorPanel {
       <div class="sv-head"><span class="sv-icon">${cls.icon}</span>
         <div class="sv-title"><b>${escapeHtml(c.name)}</b><small>${rarityTag(c.rarity)} ${cls.name} Lv${c.level}・成長 ×${g.survivors.growthMul(c)}</small></div></div>
       <div class="stat-line">${statLine({ hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, dodge: s.dodge })}</div>
+      <div class="sv-qs">${QUALITY_KEYS.map((k) => this.qTag(g.survivors.qualityOf(c, k), QUALITY_NAMES[k])).join('')}</div>
       <small class="muted">可解放技能 ${g.survivors.skillSlots(c)}/${cls.skills.length}・${cls.skills[0].name}：${cls.skills[0].desc}</small>
       <div class="btn-row">${actions}</div>
     </div>`;
@@ -98,7 +120,7 @@ export class SurvivorPanel {
     const load = Math.floor(g.survivors.bagLoad(sv));
     const r = sv.isLeader ? '#ffd54f' : (RARITIES[sv.rarity] || RARITIES.common).color;
     return `<button class="sv-mini ${this.selId === sv.id ? 'on' : ''}" data-action="selSv" data-id="${sv.id}" style="--rc:${r}">
-      <span class="sv-mini-top"><b>${cls.icon} ${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b>${tag}</span>
+      <span class="sv-mini-top"><b>${cls.icon} ${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b>${sv.isLeader ? '' : `${rarityTag(sv.rarity)}${this.qTag(g.survivors.avgQuality(sv))}`}<i class="sv-mini-sp"></i>${tag}</span>
       <small class="muted">${cls.name} Lv${sv.level}・戰力 ${s.power}</small>
       <span class="sv-mini-hp"><i style="width:${Math.round(Math.max(0, Math.min(1, hp)) * 100)}%" class="${hp < 0.3 ? 'low' : ''}"></i></span>
       <small class="muted sv-mini-job">${job}</small>
@@ -286,7 +308,7 @@ export class SurvivorPanel {
         ${btn('‹', 'svBack', {}, { cls: 'btn-sm sv-back', title: '返回列表' })}
         <span class="sv-icon big" style="--cc:${cls.color}">${cls.icon}</span>
         <div class="grow"><b class="sv-name">${escapeHtml(sv.name)}${sv.isLeader ? ' <small class="tag tag-amber">👑 領袖</small>' : ''}</b>
-          <small class="muted block">${sv.isLeader ? '' : rarityTag(sv.rarity)} ${cls.name} Lv${sv.level}・戰力 ${s.power}・成長 ×${g.survivors.growthMul(sv)}</small></div>
+          <small class="muted block">${sv.isLeader ? '' : rarityTag(sv.rarity)} ${cls.name} Lv${sv.level}・戰力 ${s.power}・成長 ×${g.survivors.growthMul(sv)}${sv.isLeader ? '' : `・平均素質 ${g.survivors.avgQuality(sv)}%`}</small></div>
         ${survivorStatus(g, sv)}
         ${hurt ? btn('💊 治療', 'healOpen', {}, { cls: 'btn-sm', disabled: starving, title: starving ? '飢餓中無法治療' : '' }) : ''}
         ${sv.status === 'idle' ? btn('⚡ 快速換裝', 'quickEquip', {}, { cls: 'btn-sm btn-primary', title: '從倉庫與在家隊員的背包，每個部位換上戰力最高的裝備' }) : ''}
@@ -302,7 +324,7 @@ export class SurvivorPanel {
       return `<button class="chip ${sv.job === jid ? 'active' : ''}" data-action="job" data-job="${jid}" title="${escapeHtml(j.desc || '')}">${j.icon} ${j.name}${bonus ? ` ×${bonus}` : ''}</button>`;
     }).join('');
     const jobsCard = `<section class="sh-card"><h3>工作指派 <small class="muted">（閒置在避難所時生效）</small></h3><div class="chips">${jobs}</div>${this.jobsHelp(sv)}</section>`;
-    const statsCard = `<section class="sh-card"><h3>能力</h3><div class="stat-line">${statLine({ hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, critDmg: s.critDmg - 1, dodge: s.dodge })}<span>攻速 ${s.atkSpeed}</span></div>
+    const statsCard = `<section class="sh-card"><h3>能力 <small class="muted">${sv.isLeader ? '' : '素質越高，基礎能力與每次升級的成長越多'}</small></h3>${this.abilityRows(sv, s)}<small class="muted">暴傷 +${Math.round((s.critDmg - 1) * 100)}%${s.lifeSteal ? `・吸血 ${(s.lifeSteal * 100).toFixed(1)}%` : ''}${sv.isLeader ? '' : '・素質 100% 以金色顯示，招募時決定、之後不會改變'}</small>
       ${hurt ? `<div class="heal-box ${sv.severe ? 'warn' : ''}"><div class="row-between">${sv.severe ? '🩸 重傷：無法行動，生命回到 30% 才能脫離' : '🩹 受傷：有診療室或醫生照護時才會慢慢恢復，也可以直接用藥'}${starving ? '<span class="tag tag-red">🍽️ 飢餓中無法治療</span>' : ''}</div>
       ${starving ? '' : `<div class="label">💊 治療：選擇要使用的藥品</div>${this.medsHtml(sv)}`}</div>` : ''}</section>`;
     const gearCard = `<section class="sh-card"><h3>裝備</h3>${this.gearGrid(sv)}${this.supplyHtml(sv)}</section>`;

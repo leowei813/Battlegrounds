@@ -1,6 +1,6 @@
 import { dormCap, clinicRegen } from '../config/facilities.js';
 import {
-  CLASSES, CLASS_KEYS, JOBS, SURVIVOR_NAMES, MAX_SURVIVOR_LEVEL, xpToNext, recruitCost,
+  CLASSES, CLASS_KEYS, QUALITY_KEYS, qualityMul, JOBS, SURVIVOR_NAMES, MAX_SURVIVOR_LEVEL, xpToNext, recruitCost,
   SURVIVOR_RARITY, survivorRarityTable, hireFee, RECRUIT_BOARD_SIZE, RECRUIT_BOARD_MS, RECRUIT_STAY_MS, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
 } from '../config/survivors.js';
 import { DAY_REAL_MS, RESOURCES, RESOURCE_KEYS } from '../config/constants.js';
@@ -124,20 +124,40 @@ export class SurvivorSystem {
    * 能力值。
    * @param {'auto'|'ranged'|'melee'} [mode] 使用哪一把武器（另一把不計入）；auto 依彈藥自動判斷
    */
+  /** 能力素質 0～100（首領與沒有素質資料的一律 100） */
+  qualityOf(sv, key) {
+    if (sv.isLeader) return 100;
+    const q = sv.quality?.[key];
+    return Number.isFinite(q) ? Math.max(0, Math.min(100, q)) : 100;
+  }
+
+  /** 平均素質（六項） */
+  avgQuality(sv) {
+    return Math.round(QUALITY_KEYS.reduce((t, k) => t + this.qualityOf(sv, k), 0) / QUALITY_KEYS.length);
+  }
+
+  /** 每升一級的成長（含品級與素質） */
+  growthPerLevel(sv, key) {
+    const cls = CLASSES[sv.classId];
+    return (cls.growth[key] || 0) * this.growthMul(sv) * qualityMul(key, this.qualityOf(sv, key));
+  }
+
   stats(sv, mode = 'auto') {
     const use = mode === 'auto' ? this.weaponMode(sv) : mode;
     const cls = CLASSES[sv.classId];
     // 品級越高，每級提升的能力越多
     const lv = (sv.level - 1) * this.growthMul(sv);
     const bm = this.rarityDef(sv).base; // 品級越高，基礎能力越好
+    // 能力素質：基礎與每級成長都依素質放大或縮小（首領一律 100%）
+    const qm = (k) => qualityMul(k, this.qualityOf(sv, k));
     const s = {
-      hp: cls.base.hp * bm + cls.growth.hp * lv,
-      atk: cls.base.atk * bm + cls.growth.atk * lv,
-      def: cls.base.def * bm + cls.growth.def * lv,
-      crit: cls.base.crit,
+      hp: (cls.base.hp * bm + cls.growth.hp * lv) * qm('hp'),
+      atk: (cls.base.atk * bm + cls.growth.atk * lv) * qm('atk'),
+      def: (cls.base.def * bm + cls.growth.def * lv) * qm('def'),
+      crit: cls.base.crit * qm('crit'),
       critDmg: cls.base.critDmg,
-      dodge: cls.base.dodge,
-      atkSpeed: cls.base.atkSpeed,
+      dodge: cls.base.dodge * qm('dodge'),
+      atkSpeed: cls.base.atkSpeed * qm('atkSpeed'),
       lootBonus: 0,
       lifeSteal: 0,
       exploreSpeed: 0,

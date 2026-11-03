@@ -97,6 +97,21 @@ export const SURVIVOR_NAMES = [
 export const MAX_SURVIVOR_LEVEL = 50;
 
 /**
+ * 倖存者能力素質（每項 0～100%，招募時隨機、之後不變；首領一律 100%）。
+ * 生命／攻擊／防禦／暴擊／閃避：0% ×0.85、50% ×1.00、100% ×1.15；攻速：×0.90～×1.10。
+ * 生命／攻擊／防禦的每級成長也套用同一個素質。
+ */
+export const QUALITY_KEYS = ['hp', 'atk', 'def', 'crit', 'dodge', 'atkSpeed'];
+export const QUALITY_NAMES = { hp: '生命', atk: '攻擊', def: '防禦', crit: '暴擊', dodge: '閃避', atkSpeed: '攻速' };
+export const qualityMul = (key, q = 100) => {
+  const t = Math.max(0, Math.min(100, Number.isFinite(q) ? q : 100)) / 100;
+  return key === 'atkSpeed' ? 0.9 + 0.2 * t : 0.85 + 0.3 * t;
+};
+/** 隨機素質：越接近 100% 越少見（100% 約 0.6%） */
+export const rollQuality = (rnd = Math.random) => Math.min(100, Math.floor(101 * rnd() ** 1.6));
+export const rollQualities = (rnd = Math.random) => Object.fromEntries(QUALITY_KEYS.map((k) => [k, rollQuality(rnd)]));
+
+/**
  * 倖存者品級（與裝備相同的 6 階與顏色）：品級越高，每次升級提升的能力越多。
  * growth 為等級成長倍率；weight 為招募/遭遇時出現的權重。
  */

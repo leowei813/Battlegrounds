@@ -174,8 +174,8 @@ export class InventoryPanel {
         <div class="row-between">${Object.keys(cost).length ? `<div class="costs">${costHtml(g.state, cost)}</div>` : '<span></span>'}
           <span>${btn('🔧 維修', 'repair', { id: v.id }, {
     cls: 'btn-xs btn-primary',
-    disabled: !Object.keys(cost).length || v.status === 'out' || !affordable(g.state, cost),
-    title: !Object.keys(cost).length ? '耐久已滿' : v.status === 'out' ? '出勤中不能維修' : !affordable(g.state, cost) ? '材料不足' : '',
+    disabled: !Object.keys(cost).length || v.status !== 'idle' || !affordable(g.state, cost),
+    title: !Object.keys(cost).length ? '耐久已滿' : v.status === 'reserved' ? '已指定給臨時小隊，無法維修' : v.status !== 'idle' ? '出勤中不能維修' : !affordable(g.state, cost) ? '材料不足' : '',
   })}${btn('拆解', 'scrap', { id: v.id }, { cls: 'btn-xs btn-ghost', disabled: v.status !== 'idle' })}</span></div>
       </div>`;
     }).join('');
