@@ -832,8 +832,14 @@ export class MapPanel {
       onConfirm: (ids, dur, auto, vids, opts) => {
         // 選了臨時小隊：加入它的探索佇列
         if (opts.squadId) {
+          // 指定載具：先檢查（可以時才加入佇列），加入佇列成功後再套用
+          const check = g.exploration.assignVehicles(opts.squadId, vids, { dry: true });
+          if (!check.ok) return this.ui.result(check);
           const q = this.ui.result(g.exploration.enqueue(opts.squadId, poi.id));
-          if (q.ok) this.renderMap(true);
+          if (q.ok) {
+            if (vids.length) this.ui.result(g.exploration.assignVehicles(opts.squadId, vids));
+            this.renderMap(true);
+          }
           return q;
         }
         const r = this.ui.result(g.exploration.start(poi.id, ids, dur, auto, Date.now(), { vehicleIds: vids, ...opts }));

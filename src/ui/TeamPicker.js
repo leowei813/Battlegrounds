@@ -5,25 +5,33 @@ import { formatDuration } from '../utils/math.js';
 import { survivorStatus } from './components.js';
 import { VEHICLES } from '../config/vehicles.js';
 
-/** 載具選擇：座位、速度、運載量、耗油 */
-function vehicleHtml(game, cars, members, distanceM) {
+/** 載具選擇：座位、速度、運載量、耗油。選了臨時小隊時以小隊成員與目前使用中的載具判定 */
+function vehicleHtml(game, cars, members, distanceM, squad = null) {
   const vs = game.vehicles;
   if (!game.state.vehicles.length) return `<p class="muted">🚗 沒有載具（可在「製作」頁製作，或探索時找到）・隊伍運載量 ${vs.tripStats(members, []).cargo}（背包可增加）</p>`;
+  const current = squad ? (squad.vehicleIds || []) : [];
+  const locked = squad && (squad.nextVehicleIds || []).length > 0;
   const rows = game.state.vehicles.map((v) => {
     const def = VEHICLES[v.type];
-    const ok = vs.isAvailable(v);
-    const on = cars.has(v.id);
+    const mine = current.includes(v.id) || (squad && (squad.nextVehicleIds || []).includes(v.id));
+    const ok = vs.isAvailable(v) && !locked;
+    const on = cars.has(v.id) || mine;
+    const why = mine ? (current.includes(v.id) ? '・小隊使用中' : '・已指定給這支小隊')
+      : v.status === 'reserved' ? '・已指定給其他小隊' : v.status === 'out' ? '・出勤中' : vs.isBroken(v) ? '・損壞' : '';
     return `<button class="pick-row ${on ? 'on' : ''}" data-action="car" data-id="${v.id}" ${ok ? '' : 'disabled'}>
       <span class="check">${on ? '☑' : '☐'}</span><span>${def.icon} <b>${def.name}</b></span>
-      <span class="muted">🪑${def.seats}・×${def.speed}・📦${def.cargo}・耐久 ${v.durability}/${def.durability}${ok ? '' : v.status === 'out' ? '・出勤中' : '・損壞'}</span>
+      <span class="muted">🪑${def.seats}・×${def.speed}・📦${def.cargo}・耐久 ${v.durability}/${def.durability}${why}</span>
     </button>`;
   }).join('');
-  const st = vs.tripStats(members, [...cars].map((id) => vs.get(id)), distanceM);
-  const warn = cars.size > members.length ? '<span class="neg">每台載具至少需要一名駕駛</span>'
-    : cars.size && !st.seated ? '<span class="neg">座位不足，全隊仍以步行速度移動</span>' : '';
+  const all = [...new Set([...current, ...(squad?.nextVehicleIds || []), ...cars])].map((id) => vs.get(id)).filter(Boolean);
+  const st = vs.tripStats(members, all, distanceM);
+  const warn = all.length > members.length ? `<span class="neg">每台載具至少需要一名駕駛（${squad ? '小隊' : '隊伍'} ${members.length} 人，載具 ${all.length} 台）</span>`
+    : all.length && !st.seated ? '<span class="neg">座位不足，全隊仍以步行速度移動</span>' : '';
   const fuelWarn = st.fuel > game.state.resources.fuel ? '<span class="neg">（燃料不足）</span>' : '';
+  const note = !squad ? '' : locked ? '<small class="block muted">🔒 這支小隊已指定載具，回到避難所後下一次出門時生效，無法取消或變更。</small>'
+    : '<small class="block muted">選擇的載具會在小隊回到避難所後、下一次出門時自動生效；確認後無法取消或變更，期間其他人不能選用，也不能拆解。</small>';
   return `<div class="label">載具（選填）</div><div class="pick-list">${rows}</div>
-    <p class="muted">速度 ×${st.speed}・運載量 <b>${st.cargo}</b>・耗油 ${st.fuel}${fuelWarn} ${warn}</p>`;
+    <p class="muted">速度 ×${st.speed}・運載量 <b>${st.cargo}</b>・耗油 ${st.fuel}${fuelWarn} ${warn}</p>${note}`;
 }
 
 /**
@@ -83,10 +91,12 @@ export function openTeamPicker(ui, opts) {
         ${ok ? '' : survivorStatus(game, sv)}
       </button>`;
     }).join('');
-    const ids = [...selected];
-    const vids = [...cars];
-    const power = ids.reduce((sum, id) => sum + game.survivors.stats(game.survivors.get(id)).power, 0);
-    const vehicles = opts.vehicles ? vehicleHtml(game, cars, ids.map((id) => game.survivors.get(id)), opts.distanceM || 0) : '';
+    const squad = squadId ? squads.find((e) => e.id === squadId) : null;
+    // 選了臨時小隊：以小隊成員與小隊的載具判定（時間、座位、駕駛人數）
+    const ids = squad ? [...squad.memberIds] : [...selected];
+    const vids = squad ? [...new Set([...(squad.vehicleIds || []), ...(squad.nextVehicleIds || []), ...cars])] : [...cars];
+    const power = ids.reduce((sum, id) => sum + (game.survivors.get(id) ? game.survivors.stats(game.survivors.get(id)).power : 0), 0);
+    const vehicles = opts.vehicles ? vehicleHtml(game, cars, ids.map((id) => game.survivors.get(id)).filter(Boolean), opts.distanceM || 0, squad) : '';
     const durs = opts.withDuration
       ? `${opts.fixedDuration ? '' : `<div class="label">探索時長</div><div class="chips">${EXPLORE_DURATIONS.map((d) => `<button class="chip ${d === duration ? 'active' : ''}" data-action="dur" data-d="${d}">${d} 分鐘</button>`).join('')}</div>`}
          <label class="toggle ${autoUnlocked ? '' : 'disabled'}"><input type="checkbox" data-role="auto" ${auto ? 'checked' : ''} ${autoUnlocked ? '' : 'disabled'}> 🔁 自動探索（完成後自動再出發）${autoUnlocked ? '' : '<small>（需研究「斥候訓練」）</small>'}</label>
@@ -123,12 +133,14 @@ export function openTeamPicker(ui, opts) {
       } else if (action === 'squad') {
         if (selected.size) return;
         squadId = squadId === data.id ? null : data.id;
+        cars.clear();
       } else if (action === 'car') {
         if (cars.has(data.id)) cars.delete(data.id);
         else cars.add(data.id);
       } else if (action === 'dur') {
         duration = +data.d;
       } else if (action === 'confirm') {
+        if (squadId && cars.size && !confirm('指定的載具會在小隊回到避難所後、下一次出門時生效。確認後無法取消或變更，期間其他人不能選用，也不能拆解。確定要指定嗎？')) return;
         const res = opts.onConfirm(squadId ? [] : [...selected], duration, auto, [...cars], { avoidHostile, squadId });
         if (res?.ok !== false) m.close();
         return;

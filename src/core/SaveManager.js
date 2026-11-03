@@ -342,6 +342,15 @@ export class SaveManager {
       data.map.markers = data.map.markers || [];
       data.map.remain = data.map.remain || {};
     }
+    // 指定給臨時小隊的載具：小隊已不存在時歸還車庫
+    (data.vehicles || []).forEach((v) => {
+      if (v.status !== 'reserved') return;
+      const exp = (data.expeditions || []).find((e) => e.id === v.reservedFor);
+      if (!exp || !(exp.nextVehicleIds || []).includes(v.id)) {
+        v.status = 'idle';
+        delete v.reservedFor;
+      }
+    });
     data.version = SAVE_VERSION;
     return data;
   }

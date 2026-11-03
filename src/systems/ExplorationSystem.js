@@ -537,6 +537,33 @@ export class ExplorationSystem {
       if (got) this.game.log(`🔄 ${m.name} 回到避難所，自動補給 ${got}`, 'info');
     });
     this.game.vehicles.release(exp.vehicleIds || []);
+    // 指定給這支小隊的載具：先回到可出車狀態（接著再出門時一起出車；小隊結束則歸還車庫）
+    this.game.vehicles.unreserve(exp.nextVehicleIds || []);
+  }
+
+  /** 小隊下一次出門使用的載具：目前的載具 + 指定的載具 */
+  nextVehicles(exp) {
+    return [...new Set([...(exp.vehicleIds || []), ...(exp.nextVehicleIds || [])])];
+  }
+
+  /**
+   * 指定載具給臨時小隊：回到避難所後、下一次出門時自動生效。確認後不可取消或變更，其他人也不能選用、拆解。
+   * @param {{dry?:boolean}} [opts] dry = 只檢查不套用
+   */
+  assignVehicles(expId, vehicleIds, { dry = false } = {}) {
+    const exp = this.list.find((e) => e.id === expId);
+    if (!exp || exp.kind !== 'explore' || exp.recalled || exp.defeated) return { ok: false, reason: '這支小隊無法指定載具' };
+    if (!vehicleIds.length) return { ok: true };
+    if ((exp.nextVehicleIds || []).length) return { ok: false, reason: '這支小隊已經指定過載具，無法變更' };
+    const vs = this.game.vehicles;
+    const list = vehicleIds.map((id) => vs.get(id));
+    if (list.some((v) => !v || !vs.isAvailable(v))) return { ok: false, reason: '有載具無法使用（出勤中、已被指定或損壞）' };
+    const total = new Set([...(exp.vehicleIds || []), ...vehicleIds]).size;
+    if (total > exp.memberIds.length) return { ok: false, reason: `每台載具至少需要一名駕駛（小隊 ${exp.memberIds.length} 人，載具共 ${total} 台）` };
+    if (dry) return { ok: true };
+    exp.nextVehicleIds = [...vehicleIds];
+    vs.reserve(vehicleIds, exp.id);
+    return { ok: true, msg: `已指定載具：${list.map((v) => vs.def(v).name).join('、')}（回到避難所後下一次出門時生效）` };
   }
 
   /**
@@ -593,7 +620,7 @@ export class ExplorationSystem {
         // 自動探索：同一個地點的物資拿光才前往下一個地點
         const poiNow = this.poi(exp.poiId);
         if (autoOn && this.hasStock(poiNow, exp.endAt)) {
-          const r = this.start(exp.poiId, exp.memberIds, exp.durationMin, true, exp.endAt, { vehicleIds: exp.vehicleIds || [], avoidHostile: exp.avoidHostile });
+          const r = this.start(exp.poiId, exp.memberIds, exp.durationMin, true, exp.endAt, { vehicleIds: this.nextVehicles(exp), avoidHostile: exp.avoidHostile });
           if (r.ok) {
             r.exp.queue = queue;
             report.events.push(`🔁 「${poiNow?.name || ''}」還有物資，自動再搜索一次`);
@@ -605,7 +632,7 @@ export class ExplorationSystem {
         let started = null;
         while (queue.length && !started) {
           const poiId = queue.shift();
-          const r = this.start(poiId, exp.memberIds, exp.durationMin, exp.auto, exp.endAt, { vehicleIds: exp.vehicleIds || [] });
+          const r = this.start(poiId, exp.memberIds, exp.durationMin, exp.auto, exp.endAt, { vehicleIds: this.nextVehicles(exp) });
           if (r.ok) started = r.exp;
           else report.events.push(`⏭️ 佇列中的地點無法前往：${r.reason}`);
         }
