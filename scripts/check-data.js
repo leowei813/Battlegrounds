@@ -1555,6 +1555,45 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!S2.npcs.list.some((n) => n.sid === ns.sid), '單機時共用狀態存在存檔中');
 }
 
+// ---- 25d. v9：夜晚殭屍群與 Boss 所有玩家共用、擊倒同步（含對方離線） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const store = new MemoryObjects();
+  const pois = fillPois([], 25.05, 121.05);
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.05, lon: 121.05 });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    setHour(gx, 22);
+    return gx;
+  };
+  const A = mk('A');
+  const B = mk('B');
+  A.zombies.refresh();
+  B.zombies.refresh();
+  const sig = (gx) => gx.state.map.zombieGroups.map((z) => `${z.id}:${z.enemyId}:${z.count}:${z.level}:${z.lat.toFixed(5)}`).sort().join('|');
+  assert(A.state.map.zombieGroups.length > 0 && sig(A) === sig(B), `兩位玩家看到相同的夜晚殭屍群（${A.state.map.zombieGroups.length} 群）`);
+  const gr = A.state.map.zombieGroups[0];
+  await A.zombies.killGroup(gr, 'A');
+  assert(!A.state.map.zombieGroups.some((z) => z.id === gr.id), '擊倒後從自己的地圖消失');
+  // B 一直沒上線；之後上線同步：該殭屍群消失
+  await B.shared.poll();
+  assert(!B.state.map.zombieGroups.some((z) => z.id === gr.id), '其他玩家（包含剛上線的）同步後也看不到被擊倒的殭屍群');
+  const g2 = A.state.map.zombieGroups.find((z) => z.count >= 2);
+  if (g2) {
+    await A.zombies.hurtGroup(g2, 1);
+    await B.shared.poll();
+    assert(B.state.map.zombieGroups.find((z) => z.id === g2.id).count === g2.count, '殭屍群的傷亡（剩餘數量）同步');
+  }
+  // 新玩家當晚才開啟遊戲：同樣看不到被擊倒的
+  const C = mk('C');
+  await C.shared.poll();
+  C.zombies.refresh();
+  assert(!C.state.map.zombieGroups.some((z) => z.id === gr.id), '當晚才開啟遊戲的玩家也看不到已被擊倒的殭屍群');
+}
+
 // ---- 25b. v9：共用物件伺服器（版本號先到先得） ----
 {
   const os = await import('node:os');

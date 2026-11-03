@@ -449,7 +449,7 @@ export class ExplorationSystem {
     const where = this.progress(exp, now)?.phase === 'returning' ? '返程途中' : '前往途中';
     if (result.victory) {
       this.game.state.stats.battlesWon += 1;
-      this.game.state.map.zombieGroups = this.game.state.map.zombieGroups.filter((x) => x.id !== g.id);
+      this.game.zombies.killGroup(g, this.game.state.player.name);
       exp.travelEvents.push(`⚔️ ${where}遭遇${label}，擊退！（擊殺 ${result.kills.length}，💰${Math.round(result.coins * COIN_GAIN_MUL)}）`);
       this.game.toast(`⚔️ 前往「${poi?.name}」的隊伍${where}遭遇殭屍，成功擊退`, 'success');
       this.game.log(`⚔️ 探索隊${where}擊退${this.game.zombies.groupLabel(g)}`, 'success');
@@ -457,7 +457,7 @@ export class ExplorationSystem {
       return { exp, group: g, result, aborted: false };
     }
     this.game.state.stats.battlesLost += 1;
-    g.count = Math.max(1, g.count - result.kills.length);
+    this.game.zombies.hurtGroup(g, result.kills.length);
     exp.travelEvents.push(`💀 ${where}遭遇${label}，戰敗撤退`);
     this.game.toast(`💀 前往「${poi?.name}」的隊伍${where}遭到襲擊，被迫撤退！`, 'danger');
     this.game.log(`💀 探索隊${where}遭${this.game.zombies.groupLabel(g)}襲擊，撤退`, 'danger');

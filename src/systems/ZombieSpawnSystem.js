@@ -9,6 +9,19 @@ import {
   withSeed,
   chance, pick, randInt, uid, weightedPick, haversine, offsetLatLon, randFloat,
 } from '../utils/math.js';
+import { seeded, cellOf, cellBox, cellsAround } from '../multiplayer/worldGrid.js';
+
+/**
+ * 夜晚地圖殭屍群：依「格子＋夜晚編號」決定（所有玩家看到相同的殭屍群、精英與 Boss），
+ * 被擊倒或打傷的狀態寫入共用物件 zk:<夜晚>:<大格子>，大家同步。
+ */
+export const SHARED_ZOMBIES = {
+  cellKm: 0.6,
+  /** 共用紀錄的大格子（公里） */
+  groupKm: 3,
+  /** 顯示避難所周圍多遠的殭屍群（公里） */
+  radiusKm: 2.2,
+};
 
 /**
  * 地圖殭屍生成：依區域危險度、日夜時段定時刷新殭屍群，
@@ -17,6 +30,8 @@ import {
 export class ZombieSpawnSystem {
   constructor(game) {
     this.game = game;
+    game.shared?.watch('zk', SHARED_ZOMBIES.radiusKm + SHARED_ZOMBIES.groupKm);
+    game.bus?.on?.('shared:changed', () => this.applyShared());
   }
 
   get groups() {
@@ -57,22 +72,132 @@ export class ZombieSpawnSystem {
       }
       return;
     }
-    // 每晚只在入夜時生成一次：午夜（00:00）、轉回夜晚（02:00）或定時檢查都不會補充，擊殺的殭屍群當晚不再出現
+    // 每晚只在入夜時生成一次（所有玩家相同）：擊倒的殭屍群當晚不再出現
     const night = this.game.time.nightKey(now);
-    if (map.zombieNight === night) return;
+    if (map.zombieNight === night) {
+      this.applyShared();
+      return;
+    }
     if (!map.pois.length) return;
     map.zombieNight = night;
-    map.zombieGroups = [];
-    const target = Math.round(ZOMBIE_MAX_GROUPS * Math.min(1, 0.45 * phase.zombieMul));
-    const candidates = map.pois.filter((p) => !this.game.shelter.baseAtPoi(p.id));
-    let guard = 0;
-    while (map.zombieGroups.length < target && candidates.length && guard < 200) {
-      guard += 1;
-      const poi = weightedPick(candidates.map((p) => ({ p, weight: POI_TYPES[p.type].danger })))?.p;
-      if (!poi) break;
-      map.zombieGroups.push(this.makeGroup(poi, phase, now));
-    }
+    map.zombieGroups = this.sharedGroups(night);
+    this.applyShared();
     this.game.bus.emit('map:changed');
+  }
+
+  /** 決定性產生某一晚避難所附近的殭屍群 */
+  sharedGroups(night) {
+    const map = this.game.state.map;
+    const c = this.game.shelter.primary() || map.center;
+    if (!c) return [];
+    const Z = SHARED_ZOMBIES;
+    // 只在有建築的格子（避免出現在海上、山區）；最近的建築作為掉落物的參考
+    const near = new Map();
+    map.pois.forEach((p) => {
+      const k = cellOf(p.lat, p.lon, Z.cellKm).key;
+      if (!near.has(k)) near.set(k, p);
+    });
+    const out = [];
+    cellsAround(c.lat, c.lon, Z.cellKm, Z.radiusKm).forEach(({ i, j, key }) => {
+      const poi = near.get(key);
+      if (!poi) return;
+      const box = cellBox(i, j, Z.cellKm);
+      if (haversine(c.lat, c.lon, box.lat, box.lon) > Z.radiusKm * 1000) return;
+      seeded(`zg:${night}:${key}`, () => {
+        const zone = zoneAt(box.lat, box.lon);
+        const d = Math.max(0, zone.danger);
+        const p = Math.min(0.9, 0.32 + 0.14 * d);
+        const n = (chance(p) ? 1 : 0) + (chance(p * 0.45) ? 1 : 0);
+        for (let k = 0; k < n; k += 1) {
+          const lat = box.lat0 + box.dLat * randFloat(0.05, 0.95);
+          const lon = box.lon0 + box.dLon * randFloat(0.05, 0.95);
+          let enemyId = weightedPick({
+            walker: 6, infected: 4, berserker: 1 + d, mutant: d * 0.7,
+          });
+          const stalker = zone.danger >= 1 ? 0.18 : zone.danger === 0 ? 0.04 : 0;
+          if (chance(stalker)) enemyId = 'nightStalker';
+          const boss = zone.danger >= 1 && chance(0.03 + d * 0.01);
+          if (boss) enemyId = pick(Object.keys(BOSSES).sort());
+          const count = boss ? 1 : Math.max(1, Math.round(randInt(1, 2 + d + 1) * this.encounterMul(lat, lon)));
+          const cap = 3 + 3 * (Math.max(-1, zone.danger) + 1) + 2;
+          const level = Math.max(1, Math.min(cap, Math.round((2 + d) * 1.5) + randInt(0, 2) + d * 2));
+          out.push({
+            id: `zg_${night}_${key.replace(':', '_')}_${k}`,
+            cell: key,
+            poiId: poi.id,
+            lat,
+            lon,
+            enemyId,
+            count,
+            level: Math.round(level * (boss ? 1.2 : 1)),
+            elite: !boss && zone.danger >= 0 && chance(0.05 * (2 + d)),
+            boss,
+            night,
+          });
+        }
+      });
+    });
+    return out.slice(0, ZOMBIE_MAX_GROUPS);
+  }
+
+  /** 共用紀錄的編號（每晚、每個大格子一筆） */
+  recordId(gr) {
+    const lat = gr.lat;
+    const lon = gr.lon;
+    return `${gr.night}:${cellOf(lat, lon, SHARED_ZOMBIES.groupKm).key}`;
+  }
+
+  /** 套用其他玩家的擊倒與傷亡紀錄 */
+  applyShared() {
+    const map = this.game.state.map;
+    if (!map?.zombieGroups?.length) return;
+    let changed = false;
+    map.zombieGroups = map.zombieGroups.filter((gr) => {
+      if (gr.night == null) return true;
+      const d = this.game.shared?.get('zk', this.recordId(gr));
+      if (!d) return true;
+      if (d.k?.[gr.id]) {
+        changed = true;
+        return false;
+      }
+      const left = d.c?.[gr.id];
+      if (left != null && left < gr.count) {
+        gr.count = Math.max(1, left);
+        changed = true;
+      }
+      return true;
+    });
+    if (changed) this.game.bus.emit('map:changed');
+  }
+
+  /** 殭屍群被擊倒：從地圖移除並通知所有玩家 */
+  killGroup(gr, by = '') {
+    const map = this.game.state.map;
+    map.zombieGroups = map.zombieGroups.filter((x) => x.id !== gr.id);
+    if (gr.night == null) return null;
+    const rec = this.recordId(gr);
+    return this.game.shared?.update('zk', rec, (d) => {
+      const data = d || { k: {}, c: {} };
+      data.k = data.k || {};
+      if (data.k[gr.id]) return { fail: 'done' };
+      data.k[gr.id] = by || 1;
+      if (data.c) delete data.c[gr.id];
+      return { data };
+    }, { lat: gr.lat, lon: gr.lon });
+  }
+
+  /** 殭屍群被打傷（攻擊失敗）：剩餘數量同步 */
+  hurtGroup(gr, kills) {
+    gr.count = Math.max(1, gr.count - kills);
+    if (gr.night == null || kills <= 0) return null;
+    const left = gr.count;
+    return this.game.shared?.update('zk', this.recordId(gr), (d) => {
+      const data = d || { k: {}, c: {} };
+      data.c = data.c || {};
+      if (data.k?.[gr.id]) return { fail: 'done' };
+      data.c[gr.id] = Math.min(data.c[gr.id] ?? left, left);
+      return { data };
+    }, { lat: gr.lat, lon: gr.lon });
   }
 
   /**
@@ -176,7 +301,7 @@ export class ZombieSpawnSystem {
     const loot = { items: [] };
     if (result.victory) {
       this.game.state.stats.battlesWon += 1;
-      this.game.state.map.zombieGroups = this.groups.filter((x) => x.id !== groupId);
+      this.killGroup(g, this.game.state.player.name);
       const poi = this.game.state.map.pois.find((p) => p.id === g.poiId);
       const dropChance = (g.boss ? 1 : 0.12 * g.count) * (g.elite ? 2 : 1);
       if (chance(Math.min(1, dropChance))) {
@@ -209,7 +334,7 @@ export class ZombieSpawnSystem {
       loot.resources = this.game.grant(mats);
     } else {
       this.game.state.stats.battlesLost += 1;
-      g.count = Math.max(1, g.count - result.kills.length);
+      this.hurtGroup(g, result.kills.length);
     }
     return { ok: true, result, loot, group: g };
   }
