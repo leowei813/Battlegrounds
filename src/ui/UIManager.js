@@ -22,9 +22,8 @@ import { showChangelog } from './ChangelogView.js';
 const TABS = [
   { id: 'map', icon: '🗺️', name: '地圖' },
   { id: 'shelter', icon: '🏠', name: '避難所' },
-  { id: 'explore', icon: '🧭', name: '探索' },
   { id: 'survivors', icon: '👥', name: '倖存者' },
-  { id: 'inventory', icon: '🛠️', name: '製作', more: true },
+  { id: 'inventory', icon: '🛠️', name: '製作' },
   { id: 'research', icon: '🔬', name: '研究', more: true },
   { id: 'quests', icon: '📜', name: '任務', more: true },
   { id: 'settings', icon: '⚙️', name: '設定', more: true },
@@ -353,7 +352,6 @@ export class UIManager {
     const counts = {
       quests: g.quests.claimableCount(),
       survivors: g.state.recruitPool.length,
-      explore: g.state.expeditions.length,
     };
     counts.more = MORE_TABS.reduce((s, id) => s + (counts[id] || 0), 0);
     this.nav.querySelectorAll('[data-badge]').forEach((el) => {
