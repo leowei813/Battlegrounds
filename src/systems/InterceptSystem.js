@@ -151,7 +151,7 @@ export class InterceptSystem {
       } else {
         g.state.stats.battlesLost += 1;
         const lost = this.defeatLoss(members);
-        Object.entries(lost.resources).forEach(([k, v]) => { n.resources[k] = (n.resources[k] || 0) + v; });
+        g.npcs.addResources(n, lost.resources);
         out.events.push(`💀 攔截失敗！${this.lossText(lost)}`);
         g.log(`💀 攔截「${t.owner}」的隊伍失敗`, 'danger');
       }

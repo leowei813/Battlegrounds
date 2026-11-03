@@ -228,6 +228,7 @@ export class Game {
     this.npcs.update(now);
     this.assist.update(now);
     this.market.update(now);
+    this.shared.tick(now);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();

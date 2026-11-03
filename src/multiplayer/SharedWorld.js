@@ -11,8 +11,23 @@ export const OBJ_KEEP_MS = 14 * 24 * 3600 * 1000;
 
 /** 本機記憶體版本的共用物件（與伺服器相同的語意，供單機與測試使用；多個遊戲可共用同一個實例模擬多人） */
 export class MemoryObjects {
-  constructor() {
-    this.map = new Map();
+  /** @param {() => Record<string, object>} [holder] 保存位置（例如存檔中的物件表；沒有則只在記憶體） */
+  constructor(holder = null) {
+    const mem = {};
+    this.holder = holder || (() => mem);
+  }
+
+  get map() {
+    const h = this.holder();
+    const now = Date.now();
+    return {
+      get: (k) => h[k],
+      set: (k, v) => { h[k] = v; },
+      values: () => Object.entries(h).filter(([k, o]) => {
+        if (o?.updatedAt && now - o.updatedAt > OBJ_KEEP_MS) { delete h[k]; return false; }
+        return true;
+      }).map(([, o]) => o),
+    };
   }
 
   async objList(kind, lat, lon, km) {
@@ -37,7 +52,12 @@ export class SharedWorld {
   constructor(game) {
     this.game = game;
     this.cache = new Map();
-    this.local = new MemoryObjects();
+    // 單機（沒有伺服器）時存在存檔中，重新開啟也保留
+    this.local = new MemoryObjects(() => {
+      const st = game.state;
+      st.sharedLocal = st.sharedLocal || {};
+      return st.sharedLocal;
+    });
     /** 測試或單機時可指定共用的後端 */
     this.backend = null;
     /** 定期同步的種類：kind -> { km, global } */
@@ -101,6 +121,13 @@ export class SharedWorld {
     });
     this.listedAt[kind] = now;
     return this.all(kind);
+  }
+
+  /** 沒有伺服器時：每 30 秒從本機資料同步一次（有伺服器時由 WorldSync 負責） */
+  tick(now = Date.now()) {
+    if (this.online || now - (this.localPollAt || 0) < 30000) return;
+    this.localPollAt = now;
+    this.poll();
   }
 
   /** 同步所有定期同步的種類（WorldSync 每次同步時呼叫） */

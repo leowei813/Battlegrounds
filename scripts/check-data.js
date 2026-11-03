@@ -576,11 +576,10 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const perCell = {};
   gn.npcs.list.forEach((n) => { perCell[n.cell] = (perCell[n.cell] || 0) + 1; });
   assert(gn.npcs.list.length >= 2 && Object.values(perCell).every((c) => c <= 2) && Object.values(perCell).some((c) => c === 2), `每平方公里約 2 個 NPC 據點（共 ${gn.npcs.list.length} 個、${Object.keys(perCell).length} 格）`);
-  const npc = gn.npcs.list[0];
+  const npc = gn.npcs.list.find((n) => n.level < 30) || gn.npcs.list[0];
   const lv = npc.level;
-  npc.nextLevelAt = t0;
-  gn.npcs.update(t0 + 1000);
-  assert(npc.level === lv + 1, 'NPC 據點會升級');
+  const { SHARED_NPC } = await import('../src/systems/NpcSystem.js');
+  assert(gn.npcs.sharedLevel(npc, t0 + SHARED_NPC.levelMs) === gn.npcs.sharedLevel(npc, t0) + 1 && lv >= 1, 'NPC 據點會隨時間升級');
   npc.trip = null;
   npc.nextExploreAt = t0;
   npc.nextRaidAt = t0 + 1e9;
@@ -593,6 +592,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 掠奪：玩家沒有防禦且無人在家 → 被搶
   gn.state.survivors.forEach((s) => { s.status = 'exploring'; });
   Object.keys(gn.state.resources).forEach((k) => { gn.state.resources[k] = 1000; });
+  npc.baseLevel += 30 - npc.level;
   npc.level = 30;
   npc.trip = null;
   npc.wounded = 0;
@@ -1473,6 +1473,86 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const c2 = gt.state.player.coins;
   const gp = gt.blackMarket.gearBuyback(gi);
   assert(gp > 0 && gt.blackMarket.sellItem(gi.id).ok && gt.state.player.coins === c2 + gp && !gt.equipment.getItem(gi.id), `裝備可以賣到黑市（💰${gp}）`);
+}
+
+// ---- 25c. v9：NPC 據點所有玩家共用、狀態同步（含對方離線） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const store = new MemoryObjects();
+  const pois = fillPois([], 25.02, 121.02);
+  const mk = (name, idx) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.02, lon: 121.02 });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shelter.establish(gx.state.map.pois[idx]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    return gx;
+  };
+  const A = mk('A', 0);
+  const B = mk('B', 0);
+  setHour(A, 10);
+  setHour(B, 10);
+  const t0 = Date.now();
+  A.npcs.update(t0);
+  B.npcs.update(t0);
+  const ids = (gx) => gx.npcs.list.filter((n) => n.sid).map((n) => `${n.id}@${n.lat.toFixed(5)},${n.lon.toFixed(5)}:${n.level}:${n.name}`).sort().join('|');
+  assert(A.npcs.list.length > 0 && ids(A) === ids(B), `兩位玩家看到相同的 NPC 據點（位置、名稱、等級）（${A.npcs.list.length} 個）`);
+  // 其他玩家的據點警戒範圍內不會有 NPC
+  const nA = A.npcs.list[0];
+  const C = mk('C', 0);
+  C.world.others = [{ id: 'X', bases: [{ lat: nA.lat, lon: nA.lon, alert: 120 }], trips: [] }];
+  C.npcs.update(t0);
+  assert(!C.npcs.list.some((n) => n.id === nA.id), '任何玩家的警戒範圍內不會出現 NPC 據點（避免與玩家重疊）');
+  // A 讓 NPC 受傷、等級下降；B 同步後相同
+  A.npcs.wound(nA, 2, t0);
+  A.npcs.levelDown(nA);
+  await new Promise((r) => setTimeout(r, 5));
+  await B.shared.poll();
+  const nB = B.npcs.get(nA.id);
+  assert(nB && nB.wounded === 2 && nB.level === nA.level, `NPC 的傷亡與等級同步給其他玩家（${nB?.wounded} / ${nB?.level} vs ${nA.level}）`);
+  // 兩人同時造成傷亡：累加，不會互相覆蓋
+  await Promise.all([A.npcs.wound(nA, 1, t0), B.npcs.wound(nB, 1, t0)]);
+  await A.shared.poll();
+  await B.shared.poll();
+  assert(A.npcs.get(nA.id).wounded === 4 && B.npcs.get(nA.id).wounded === 4, `兩位玩家同時造成的傷亡會累加（${A.npcs.get(nA.id).wounded}/${B.npcs.get(nA.id).wounded}/${JSON.stringify(A.shared.get('npc', nA.sid))}）`);
+  // B 離線（不執行）；A 摧毀 NPC；B 之後上線：該 NPC 已消失
+  A.npcs.destroy(A.npcs.get(nA.id), t0);
+  await new Promise((r) => setTimeout(r, 5));
+  assert(!A.npcs.get(nA.id), '摧毀後從自己的地圖消失');
+  const B2 = Game.fromSave ? null : null;
+  void B2;
+  await B.shared.poll();
+  assert(!B.npcs.get(nA.id), '離線的玩家上線同步後，被別人摧毀的 NPC 也消失');
+  B.npcs.update(t0 + 1000);
+  assert(!B.npcs.list.some((n) => n.sid === nA.sid), '重生時間前同一格不會重新出現');
+  // 重生後出現新的勢力（兩人相同）
+  const later = t0 + 2 * 3600000;
+  A.npcs.update(later);
+  B.npcs.update(later);
+  assert(ids(A) === ids(B), '重生後兩位玩家看到的仍然相同');
+  // 夜晚屍群：結果相同且只結算一次
+  const n2 = A.npcs.list.find((n) => n.sid);
+  const n2b = B.npcs.get(n2.id);
+  const night = A.time.nightKey(later);
+  A.npcs.nightSiege(n2, night, later);
+  B.npcs.nightSiege(n2b, night, later);
+  assert(n2.lastSiege.result === n2b.lastSiege.result, '同一晚 NPC 抵禦屍群的結果所有玩家相同');
+  await new Promise((r) => setTimeout(r, 5));
+  await A.shared.poll();
+  const d = A.shared.get('npc', n2.sid);
+  assert(d.siegeNight === night, '屍群結果寫入共用資料（每晚只結算一次）');
+  // 單機（沒有伺服器）：摧毀的 NPC 重新開啟後仍然消失
+  const S = Game.newGame({ playerName: 'S', classId: 'warrior', lat: 25.02, lon: 121.02 });
+  S.state.map.pois = JSON.parse(JSON.stringify(pois));
+  S.shelter.establish(S.state.map.pois[0]);
+  S.npcs.update(t0);
+  const ns = S.npcs.list.find((n) => n.sid);
+  S.npcs.destroy(ns, t0);
+  await new Promise((r) => setTimeout(r, 5));
+  const S2 = new Game(JSON.parse(JSON.stringify(S.state)));
+  await S2.shared.poll();
+  S2.npcs.update(t0 + 1000);
+  assert(!S2.npcs.list.some((n) => n.sid === ns.sid), '單機時共用狀態存在存檔中');
 }
 
 // ---- 25b. v9：共用物件伺服器（版本號先到先得） ----
@@ -2504,6 +2584,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   setHour(gq3, 10);
   const ex = gq3.exploration;
   const pois = gq3.state.map.pois.filter((p) => !gq3.shelter.baseAtPoi(p.id) && p.type === 'residential').slice(0, 5);
+  gq3.survivors.leader().level = 40; // 避免途中戰鬥失敗影響佇列測試
   const st = ex.start(pois[0].id, [gq3.survivors.leader().id], 5);
   assert(st.ok && ex.squads().length === 1, '派出後成為臨時小隊');
   assert(ex.queueLimit() === 2, '探索佇列基本 2 個');

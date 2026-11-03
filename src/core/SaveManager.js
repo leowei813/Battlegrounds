@@ -283,6 +283,8 @@ export class SaveManager {
       // v9：武器欄拆成遠程與近戰；新增彈藥欄與藥品欄
       // 流浪商人改為全體共用的黑市
       delete data.trader;
+      // NPC 據點改為所有玩家共用（重新產生）
+      data.npcs = { list: [], nextSpawnAt: 0 };
       // 移除派人交易與派人交付：收購保留的金錢退還，交易／交付中的倖存者帶著背包裡的物品直接回到避難所
       (data.demands?.list || []).forEach((d) => {
         const left = Math.max(0, (d.qty || 0) - (d.filled || 0));

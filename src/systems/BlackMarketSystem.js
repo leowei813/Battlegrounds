@@ -1,5 +1,5 @@
 import {
-  withSeed, chance, pick, weightedPick, randFloat, randInt, uid,
+  withOwnSeed, chance, pick, weightedPick, randFloat, randInt, uid,
 } from '../utils/math.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import {
@@ -73,8 +73,7 @@ export class BlackMarketSystem {
     const id = `${slot}:${gen}`;
     if (this.goodsCache.has(id)) return this.goodsCache.get(id);
     const g = this.game;
-    const holder = { s: seedOf(`jdqs-bm:${id}`) };
-    const good = withSeed(holder, 's', () => {
+    const good = withOwnSeed(seedOf(`jdqs-bm:${id}`), () => {
       const rarity = weightedPick(BLACK_MARKET.rarity);
       if (chance(BLACK_MARKET.gearShare)) {
         const item = g.equipment.generate({
