@@ -594,6 +594,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   Object.keys(gn.state.resources).forEach((k) => { gn.state.resources[k] = 1000; });
   npc.baseLevel += 30 - npc.level;
   npc.level = 30;
+  // 放在據點附近：掠奪隊白天就會抵達（太遠會在入夜後才到而撤退）
+  npc.lat = gn.shelter.primary().lat + 0.004;
+  npc.lon = gn.shelter.primary().lon;
   npc.trip = null;
   npc.wounded = 0;
   npc.nextRaidAt = t0;
@@ -1637,6 +1640,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const n3 = rw3.items.length + Object.values(rw3.mats).length;
   assert(n1 >= 2 && n1 <= 4 && rw3.items.every((it) => ['uncommon', 'rare', 'epic', 'legendary'].includes(it.rarity)), `消滅獎勵數量與品級（1 人 ${n1} 種）`);
   void n3;
+  // 不會與玩家據點重疊：在據點位置上的重度感染據點會移到格子內其他位置
+  const s0 = A.infected.list()[0];
+  const C2 = mk('C2');
+  C2.world.others = [{ id: 'X', bases: [{ lat: s0.lat, lon: s0.lon, alert: 90 }], trips: [] }];
+  const moved = C2.infected.list().find((x) => x.id === s0.id);
+  const allZones = C2.infected.playerZones();
+  assert(!moved || (haversine(moved.lat, moved.lon, s0.lat, s0.lon) > 90 + 120), '重度感染據點會避開其他玩家的據點與警戒範圍');
+  assert(C2.infected.list().every((x) => allZones.every((z) => haversine(z.lat, z.lon, x.lat, x.lon) > z.r)), '所有重度感染據點都不在玩家據點範圍內');
   // 偵查等級可得知更多情報
   assert(!A.infected.intelView(s).boss, '偵查 0 級不知道首領');
   A.state.research.levels = { ...(A.state.research.levels || {}), s_recon: 6 };
@@ -1728,6 +1739,40 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   await B.shared.poll();
   await B.rally.step(B.rally.trips()[0], Date.now());
   assert(!B.rally.trips().length && B.survivors.leader().status === 'idle', '集結取消後參加者的隊員留在避難所');
+}
+
+// ---- 25g. v9.0.1：帶不走的物資留在建築裡，重複探索不會越變越多 ----
+{
+  const gf = Game.newGame({ playerName: 'F', classId: 'warrior', lat: 25, lon: 121 });
+  gf.state.map.pois = fillPois([], 25, 121);
+  gf.shelter.establish(gf.state.map.pois[0]);
+  setHour(gf, 10);
+  gf.survivors.leader().level = 60;
+  const forest = gf.state.map.pois.find((p) => p.type === 'forest' && !gf.shelter.baseAtPoi(p.id));
+  const ex = gf.exploration;
+  const orig = ex.exploreContext.bind(ex);
+  ex.exploreContext = (e) => { const c = orig(e); if (c) c.lootMul = 3; return c; };
+  let maxLeft = 0;
+  const firstLeft = [];
+  for (let i = 0; i < 12; i += 1) {
+    const r = ex.start(forest.id, [gf.survivors.leader().id], 5);
+    if (!r.ok) break;
+    const reps = ex.update(r.exp.endAt + 1, { silent: true });
+    const left = Object.values(gf.state.map.remain?.[forest.id]?.res || {}).reduce((a, b) => a + b, 0);
+    if (i === 0) firstLeft.push(left);
+    maxLeft = Math.max(maxLeft, left);
+    const ev = reps.flatMap((x) => x.events).join(' ');
+    const m = /留下約 (\d+) 重量/.exec(ev);
+    assert(!m || Number(m[1]) < 5000, `重複探索時留下的數量合理（第 ${i + 1} 次：${m?.[1]}）`);
+    assert(!/[0-9]\.[0-9]+ 個物資/.test(ev), `倉庫已滿的提示是整數（${ev.match(/倉庫已滿[^，]*/)?.[0] || '無'}）`);
+    gf.survivors.leader().severe = false;
+    gf.survivors.setHp(gf.survivors.leader(), 1e6);
+  }
+  assert(maxLeft <= (firstLeft[0] || 0) + 1, `加成不會重複套用在留下的物資上（第一次 ${firstLeft[0]}、最多 ${maxLeft}）`);
+  const { remainOf } = await import('../src/systems/LootStock.js');
+  const fake = { [forest.id]: { day: gf.state.map.remain?.[forest.id]?.day ?? '', res: { wood: 2417840409538 } } };
+  const got = remainOf(forest, fake, Date.now());
+  assert(!got || got.wood <= 2000, '舊存檔中異常的殘留數量會被限制');
 }
 
 // ---- 25b. v9：共用物件伺服器（版本號先到先得） ----
@@ -2759,7 +2804,10 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   setHour(gq3, 10);
   const ex = gq3.exploration;
   const pois = gq3.state.map.pois.filter((p) => !gq3.shelter.baseAtPoi(p.id) && p.type === 'residential').slice(0, 5);
-  gq3.survivors.leader().level = 40; // 避免途中戰鬥失敗影響佇列測試
+  gq3.survivors.leader().level = 40;
+  // 這裡只測佇列：途中戰鬥一律獲勝（避免隨機戰敗提早結束探索）
+  const simQ = gq3.combat.simulate.bind(gq3.combat);
+  gq3.combat.simulate = (sv, _en, o) => simQ(sv, [], o);
   const st = ex.start(pois[0].id, [gq3.survivors.leader().id], 5);
   assert(st.ok && ex.squads().length === 1, '派出後成為臨時小隊');
   assert(ex.queueLimit() === 2, '探索佇列基本 2 個');
@@ -2776,7 +2824,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const w1 = Game.newGame({ playerName: 'W1', classId: 'warrior', lat: 25, lon: 121 });
   const w2 = Game.newGame({ playerName: 'W2', classId: 'warrior', lat: 30, lon: 100 });
   w2.state.createdAt = Date.now() - 5 * DAY_REAL_MS;
-  assert(w1.time.hour() === w2.time.hour() && w1.time.dateText() === w2.time.dateText(), '所有玩家共用同一個世界時間與日期');
+  const tw = Date.now();
+  assert(w1.time.hour(tw) === w2.time.hour(tw) && w1.time.dateText(tw) === w2.time.dateText(tw), '所有玩家共用同一個世界時間與日期');
   assert(w1.time.dateText(WORLD_EPOCH_MS) === '2050/1/1' && Math.abs(w1.time.hour(WORLD_EPOCH_MS) - 6) < 1e-6, '世界時間從 2050/1/1 06:00 起算');
   assert(w1.time.survivalDay() === 1 && w2.time.survivalDay() === 6, '生存天數從自己開局算起');
 }

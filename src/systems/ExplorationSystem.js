@@ -805,9 +805,11 @@ export class ExplorationSystem {
       const share = cp.stock.partial || last ? left : Math.min(left, (cp.stock.resources[key] / cp.total) * randFloat(0.8, 1.25));
       if (share < 1) return;
       cp.remaining[key] = left - share;
-      let v = share * ctx.lootMul;
-      if (key === 'food') v *= 1 + ctx.forage;
-      cp.gained[key] = (cp.gained[key] || 0) + v;
+      const mul = ctx.lootMul * (key === 'food' ? 1 + ctx.forage : 1);
+      // 記下加成倍率：帶不走的部分換回原始數量留在建築裡，下次再來才不會重複加成
+      cp.mul = cp.mul || {};
+      cp.mul[key] = mul;
+      cp.gained[key] = (cp.gained[key] || 0) + share * mul;
       found.push(nameOf(key));
     });
     // 探索取得自動補給設定的彈藥或藥品：直接補進隊員的彈藥欄／藥品欄
@@ -965,7 +967,7 @@ export class ExplorationSystem {
     // 入帳：先放進倉庫，放不下的由隊員裝進自己的背包
     report.resources = this.game.grant(gained);
     const leftovers = Object.fromEntries(Object.entries(gained)
-      .filter(([k]) => isLootKey(k)).map(([k, v]) => [k, v - (report.resources[k] || 0)]).filter(([, v]) => v > 0));
+      .filter(([k]) => isLootKey(k)).map(([k, v]) => [k, Math.floor(v - (report.resources[k] || 0) + 1e-9)]).filter(([, v]) => v > 0));
     if (Object.keys(leftovers).length) {
       const lost = this.game.survivors.stash(members, leftovers);
       const kept = Object.values(leftovers).reduce((sum, v) => sum + v, 0) - lost;
@@ -986,7 +988,7 @@ export class ExplorationSystem {
     // 建築的剩餘物資：完整探索完只剩帶不走的（會顯示數量）；沒探索完的剩餘物資留在建築裡，但不知道有多少
     const arriveAt = exp.startAt + (exp.travelMs || 0);
     poi.lootedDay = dayKey(arriveAt);
-    const overflow = Object.fromEntries(Object.entries(cp.overflow).map(([k, v]) => [k, Math.floor(v)]).filter(([, v]) => v > 0));
+    const overflow = Object.fromEntries(Object.entries(cp.overflow).map(([k, v]) => [k, Math.floor(v / Math.max(1, cp.mul?.[k] || 1))]).filter(([, v]) => v > 0));
     if (complete) this.setRemain(poi, overflow, arriveAt);
     else {
       const rest = { ...overflow };

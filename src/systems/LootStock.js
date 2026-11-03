@@ -54,10 +54,15 @@ export function isLooted(poi, at = Date.now()) {
   return poi.lootedDay === dayKey(at);
 }
 
+/** 單一物資殘留數量上限 */
+const REMAIN_MAX = 2000;
+
 /** 建築內殘留的物資（上次探索帶不走而留下的），只在當天有效 */
 export function remainOf(poi, remainMap, at = Date.now()) {
   const r = remainMap?.[poi.id];
-  return r && r.day === dayKey(at) && Object.keys(r.res || {}).length ? r.res : null;
+  if (!(r && r.day === dayKey(at) && Object.keys(r.res || {}).length)) return null;
+  // 舊版重複加成造成的異常數量：限制在合理範圍
+  return Object.fromEntries(Object.entries(r.res).map(([k, v]) => [k, Math.min(REMAIN_MAX, Math.max(0, Math.floor(v) || 0))]));
 }
 
 /** 基礎建設材料的出現機率倍率 */
