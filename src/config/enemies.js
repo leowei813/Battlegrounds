@@ -55,8 +55,19 @@ export const ELITE_MUL = { hp: 2.4, atk: 1.6, def: 1.5, xp: 3, coins: 3 };
 
 /** 殭屍對倖存者的攻擊強度倍率（探索、地圖殭屍群、破牆後交戰） */
 export const ZOMBIE_VS_SURVIVOR = { atk: 1.3 };
+/** 防禦減傷：受到的傷害 = 攻擊 × 100 ÷（100 + 防禦 × defFactor） */
+export const COMBAT_TUNING = { defFactor: 0.5 };
+export const defReduce = (def) => 100 / (100 + Math.max(0, def) * COMBAT_TUNING.defFactor);
 /** 夜晚的危險度：基本倍率，區域每高一級再增加 */
 export const NIGHT_MUL = { hp: 1.2, atk: 1.25, perDanger: 0.12 };
+/**
+ * 建築內的殭屍依區域危險度加強（不分日夜）：額外等級與生命／攻擊倍率。
+ * 區域危險度：-1 安全、0 一般、1 警戒、2 危險、3 致死
+ */
+export const BUILDING_ZONE = {
+  extraLevel: { 1: 6, 2: 15, 3: 28 },
+  statMul: { 1: 1.4, 2: 1.8, 3: 2.4 },
+};
 /** 夜晚地圖上的殭屍群：一般、精英、Boss 的額外強度 */
 export const MAP_GROUP_MUL = {
   normal: { hp: 1.3, atk: 1.3 },

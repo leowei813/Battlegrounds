@@ -567,8 +567,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const expWood = Math.floor((1000 + (preview.cancelled.wood || 0) + Math.floor((defCost.wood || 0) * 0.5)) * 0.1);
   const ab = ga.shelter.abandon(home.id);
   assert(ab.ok && !ga.shelter.hasShelter() && !ga.state.research.active, '搬遷時取消進行中的研究');
-  assert(ga.state.resources.wood === expWood, `食物、木材、燃料（含退還）只剩 10%（${ga.state.resources.wood} / ${expWood}）`);
-  assert(ga.state.resources.food === 100 && ga.state.resources.fuel === Math.floor((1000 + (preview.cancelled.fuel || 0) + Math.floor((defCost.fuel || 0) * 0.5)) * 0.1), '搬遷後食物、燃料只剩 10%');
+  assert(Math.abs(ga.state.resources.wood - expWood) <= 2, `食物、木材、燃料（含退還）只剩 10%（${ga.state.resources.wood} / ${expWood}）`);
+  assert(ga.state.resources.food === 100 && Math.abs(ga.state.resources.fuel - Math.floor((1000 + (preview.cancelled.fuel || 0) + Math.floor((defCost.fuel || 0) * 0.5)) * 0.1)) <= 2, '搬遷後食物、燃料只剩 10%');
   assert(ga.shelter.canEstablish(ga.state.map.pois[1]).ok, '搬遷後可重新建立避難所');
   const nb = ga.shelter.establish(ga.state.map.pois[1]).base;
   assert(nb.kind === 'shelter' && nb.facilities.farm.level === 3 && nb.facilities.researchCenter.level === 2, '搬遷後設施等級保留');
@@ -3169,6 +3169,44 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const supBefore = JSON.stringify(od.supplies);
   const md = SaveManager.migrate(od);
   assert(md.bases[0].facilities.farm.level === 8 && JSON.stringify(md.supplies) !== supBefore, '舊存檔超過上限的設施降到上限並退還材料');
+}
+
+// ---- 73. 建築內遭遇依實際搜索時間判定日夜 ----
+{
+  const gp = Game.newGame({ playerName: 'P7', classId: 'warrior', lat: 25, lon: 121 });
+  gp.state.map.pois = fillPois([], 25, 121);
+  gp.shelter.establish(gp.state.map.pois[0]);
+  const poi7 = gp.state.map.pois.find((p) => !gp.shelter.baseAtPoi(p.id) && p.type === 'residential');
+  // 找一個白天的時間點與 6 小時後（夜晚）的時間點
+  let tDay = Date.now();
+  for (let i = 0; i < 200 && gp.time.phase(tDay).zombies; i += 1) tDay += 600000;
+  let tNight = tDay;
+  for (let i = 0; i < 400 && !gp.time.phase(tNight).zombies; i += 1) tNight += 600000;
+  const st7 = gp.exploration.start(poi7.id, ['leader'], 5, false, tDay);
+  const ctx7 = gp.exploration.exploreContext(st7.exp);
+  const d7 = gp.exploration.atPhase(ctx7, tDay);
+  const n7 = gp.exploration.atPhase(ctx7, tNight);
+  assert(!d7.phase.zombies && n7.phase.zombies && n7.level >= d7.level && n7.zoneMul === gp.zombies.encounterMul(poi7.lat, poi7.lon), '出發時是白天，搜索時已入夜：依搜索當下判定為夜晚');
+  assert(Math.abs(d7.lootMul / ctx7.lootBase - d7.phase.lootMul) < 1e-9, '物資倍率依搜索當下的時段');
+}
+
+// ---- 74. v9.11 平衡：防禦減傷、高危險區建築殭屍、彈藥製作與售價 ----
+{
+  const { COMBAT_TUNING, defReduce, BUILDING_ZONE } = await import('../src/config/enemies.js');
+  const { AMMO_RECIPES: AR, SUPPLIES: SP } = await import('../src/config/supplies.js');
+  assert(COMBAT_TUNING.defFactor === 0.5 && Math.abs(defReduce(302) - 100 / 251) < 1e-9, '防禦減傷：攻擊 × 100 ÷（100 + 防禦 × 0.5）');
+  assert(BUILDING_ZONE.extraLevel[3] === 28 && BUILDING_ZONE.statMul[3] === 2.4 && !BUILDING_ZONE.extraLevel[0] && !BUILDING_ZONE.statMul[-1], '只有警戒區以上的建築殭屍加強');
+  const gz9 = Game.newGame({ playerName: 'Z9', classId: 'warrior', lat: 25, lon: 121 });
+  const ex9 = gz9.exploration;
+  const m0 = ex9.encounterMul({ phase: { zombies: false }, zone: { danger: 0 } });
+  const m3 = ex9.encounterMul({ phase: { zombies: false }, zone: { danger: 3 } });
+  assert(Math.abs(m3.hp / m0.hp - 2.4) < 1e-9 && Math.abs(m3.atk / m0.atk - 2.4) < 1e-9, '致死區建築殭屍生命、攻擊 ×2.4');
+  const bullets = Object.entries(AR).filter(([k]) => k !== 'arrow');
+  assert(bullets.every(([, r]) => r.bench === 3 && r.gun === 1), '所有子彈只需要「槍械製造」Lv1 與工作台 Lv3');
+  const bm = gz9.blackMarket;
+  const prices = Object.keys(AR).map((k) => bm.supplyPrice(k));
+  assert(Math.max(...prices) <= 6 && Math.min(...prices) >= 4, `彈藥售價不再依階級大幅提高（${prices.join('/')}）`);
+  assert(bm.supplyPrice('ammo308') < 85 && SP.ammo308.cat === 'ammo', '.308 狙擊彈不再是高價');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

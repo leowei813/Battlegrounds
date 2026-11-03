@@ -1,7 +1,7 @@
 import { COIN_GAIN_MUL } from '../config/constants.js';
 import { ITEM_MODELS } from '../config/equipment.js';
 import { SUPPLIES } from '../config/supplies.js';
-import { ALL_ENEMIES, ELITE_MUL } from '../config/enemies.js';
+import { ALL_ENEMIES, ELITE_MUL, defReduce } from '../config/enemies.js';
 import { chance, randFloat, pick, uid } from '../utils/math.js';
 
 const STEP = 0.1; // 秒
@@ -172,7 +172,7 @@ export class CombatSystem {
       const crit = (atkUnit.firstHit && atkUnit.skills.firstStrikeCrit) || chance(atkUnit.crit);
       atkUnit.firstHit = false;
       const raw = atk * randFloat(0.9, 1.1) * (crit ? atkUnit.critDmg : 1);
-      const dmg = Math.max(1, Math.round(raw * (100 / (100 + target.def * 2))));
+      const dmg = Math.max(1, Math.round(raw * defReduce(target.def)));
       target.hp -= dmg;
       // 傷害統計
       atkUnit.dealt = (atkUnit.dealt || 0) + dmg;
@@ -294,7 +294,7 @@ export class CombatSystem {
       const usesRanged = st.weaponMode === 'ranged';
       if (usesRanged && (!ranged || !chance(0.35))) return;
       const hits = usesRanged ? 1 + Math.floor(sec / 30) : Math.max(1, Math.round(sec / 8));
-      const dmg = hits * avgAtk * (usesRanged ? 0.6 : 0.5) * (100 / (100 + st.def * 2));
+      const dmg = hits * avgAtk * (usesRanged ? 0.6 : 0.5) * defReduce(st.def);
       if (dmg <= 0) return;
       svs.damage(sv, dmg, reason);
       hurt.push(sv.name);
