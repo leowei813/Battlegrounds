@@ -3190,6 +3190,25 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(Math.abs(d7.lootMul / ctx7.lootBase - d7.phase.lootMul) < 1e-9, '物資倍率依搜索當下的時段');
 }
 
+// ---- 74. v9.11 平衡：防禦減傷、高危險區建築殭屍、彈藥製作與售價 ----
+{
+  const { COMBAT_TUNING, defReduce, BUILDING_ZONE } = await import('../src/config/enemies.js');
+  const { AMMO_RECIPES: AR, SUPPLIES: SP } = await import('../src/config/supplies.js');
+  assert(COMBAT_TUNING.defFactor === 0.5 && Math.abs(defReduce(302) - 100 / 251) < 1e-9, '防禦減傷：攻擊 × 100 ÷（100 + 防禦 × 0.5）');
+  assert(BUILDING_ZONE.extraLevel[3] === 28 && BUILDING_ZONE.statMul[3] === 2.4 && !BUILDING_ZONE.extraLevel[0] && !BUILDING_ZONE.statMul[-1], '只有警戒區以上的建築殭屍加強');
+  const gz9 = Game.newGame({ playerName: 'Z9', classId: 'warrior', lat: 25, lon: 121 });
+  const ex9 = gz9.exploration;
+  const m0 = ex9.encounterMul({ phase: { zombies: false }, zone: { danger: 0 } });
+  const m3 = ex9.encounterMul({ phase: { zombies: false }, zone: { danger: 3 } });
+  assert(Math.abs(m3.hp / m0.hp - 2.4) < 1e-9 && Math.abs(m3.atk / m0.atk - 2.4) < 1e-9, '致死區建築殭屍生命、攻擊 ×2.4');
+  const bullets = Object.entries(AR).filter(([k]) => k !== 'arrow');
+  assert(bullets.every(([, r]) => r.bench === 3 && r.gun === 1), '所有子彈只需要「槍械製造」Lv1 與工作台 Lv3');
+  const bm = gz9.blackMarket;
+  const prices = Object.keys(AR).map((k) => bm.supplyPrice(k));
+  assert(Math.max(...prices) <= 6 && Math.min(...prices) >= 4, `彈藥售價不再依階級大幅提高（${prices.join('/')}）`);
+  assert(bm.supplyPrice('ammo308') < 85 && SP.ammo308.cat === 'ammo', '.308 狙擊彈不再是高價');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

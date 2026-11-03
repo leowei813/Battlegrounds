@@ -117,12 +117,17 @@ export const AMMO_PACK_FIGHTS = 4;
 /** 彈藥製作（工作台）：一次產出 batch 個 */
 export const AMMO_RECIPES = {
   arrow: { bench: 0, batch: 10, cost: { wood: 6, nail: 2 } },
-  ammo9: { bench: 2, batch: 20, cost: { scrap: 2, spring: 1, fuel: 2 }, gun: 1 },
-  shell12: { bench: 3, batch: 10, cost: { scrap: 3, plastic: 1, fuel: 3 }, gun: 3 },
-  ammo556: { bench: 4, batch: 20, cost: { scrap: 3, firingPin: 1, fuel: 4 }, gun: 4 },
-  ammo762: { bench: 5, batch: 20, cost: { scrap: 4, firingPin: 1, fuel: 5 }, gun: 6 },
-  ammo308: { bench: 6, batch: 10, cost: { steelPipe: 1, firingPin: 1, fuel: 5 }, gun: 6 },
+  // 子彈：研究「槍械製造」Lv1、工作台 Lv3 即可製作全部種類
+  ammo9: { bench: 3, batch: 20, cost: { scrap: 2, spring: 1, fuel: 2 }, gun: 1 },
+  shell12: { bench: 3, batch: 10, cost: { scrap: 3, plastic: 1, fuel: 3 }, gun: 1 },
+  ammo556: { bench: 3, batch: 20, cost: { scrap: 3, firingPin: 1, fuel: 4 }, gun: 1 },
+  ammo762: { bench: 3, batch: 20, cost: { scrap: 4, firingPin: 1, fuel: 5 }, gun: 1 },
+  ammo308: { bench: 3, batch: 10, cost: { steelPipe: 1, firingPin: 1, fuel: 5 }, gun: 1 },
 };
+
+/** 彈藥的基準價（不再依階級大幅提高）：黑市售價 = 基準價 × AMMO_SELL_MUL */
+export const AMMO_PRICE = { arrow: 2, ammo9: 2, ammo556: 2, ammo762: 2, shell12: 3, ammo308: 3 };
+export const AMMO_SELL_MUL = 2;
 
 /** 治療藥品的出現權重（回復量越高越稀有） */
 export const medWeight = (k) => {

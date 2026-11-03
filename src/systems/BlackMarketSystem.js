@@ -1,7 +1,7 @@
 import {
   withOwnSeed, chance, pick, weightedPick, randFloat, randInt, uid,
 } from '../utils/math.js';
-import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
+import { SUPPLIES, SUPPLY_KEYS, AMMO_PRICE, AMMO_SELL_MUL } from '../config/supplies.js';
 import {
   RARITIES, RARITY_ORDER, ITEM_TYPES, tierMul,
 } from '../config/equipment.js';
@@ -153,13 +153,14 @@ export class BlackMarketSystem {
   baseSupplyPrice(key) {
     const sp = SUPPLIES[key];
     if (sp.cat === 'med') return Math.round(15 + 300 * (sp.heal || 0.1) ** 1.6);
-    if (sp.cat === 'ammo') return Math.max(1, Math.round(TRADER.supplyPrice[sp.tier] / 3));
+    if (sp.cat === 'ammo') return AMMO_PRICE[key] || 2;
     return TRADER.supplyPrice[sp.tier];
   }
 
   /** 商人的售價（基準價 × 售價倍率） */
   supplyPrice(key) {
     const tier = SUPPLIES[key]?.tier || 1;
+    if (SUPPLIES[key]?.cat === 'ammo') return Math.max(1, Math.round(this.baseSupplyPrice(key) * AMMO_SELL_MUL));
     return Math.max(1, Math.round(this.baseSupplyPrice(key) * (TRADER.supplySellMul[tier] || TRADER.sellMul)));
   }
 
@@ -173,7 +174,7 @@ export class BlackMarketSystem {
 
   /** 回收比例：約為販售價的 1/8，越稀有（階級越高）比例越好（1 階 10% → 5 階 15%） */
   buybackRate(key) {
-    const tier = SUPPLIES[key]?.tier || 1;
+    const tier = SUPPLIES[key]?.cat === 'ammo' ? 1 : SUPPLIES[key]?.tier || 1;
     return (0.8 + 0.1 * (tier - 1)) / 8;
   }
 

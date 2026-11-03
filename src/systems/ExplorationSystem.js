@@ -21,7 +21,7 @@ import {
   chance, pick, randInt, uid, weightedPick, haversine, randFloat, lerp,
 } from '../utils/math.js';
 import {
-  ALL_ENEMIES, ZOMBIE_VS_SURVIVOR, NIGHT_MUL, mulOf,
+  ALL_ENEMIES, ZOMBIE_VS_SURVIVOR, NIGHT_MUL, BUILDING_ZONE, mulOf,
 } from '../config/enemies.js';
 import {
   stockOf, dayKey, pickSupply, remainOf,
@@ -425,7 +425,9 @@ export class ExplorationSystem {
       hp: NIGHT_MUL.hp + NIGHT_MUL.perDanger * Math.max(0, ctx.zone.danger || 0),
       atk: NIGHT_MUL.atk + NIGHT_MUL.perDanger * Math.max(0, ctx.zone.danger || 0),
     } : null;
-    return mulOf(ZOMBIE_VS_SURVIVOR, night);
+    // 高危險區的建築內殭屍更強（不分日夜）
+    const zm = BUILDING_ZONE.statMul[Math.min(3, ctx.zone?.danger || 0)] || 1;
+    return mulOf(ZOMBIE_VS_SURVIVOR, night, { hp: zm, atk: zm });
   }
 
   /** 途中遭遇戰：勝利則消滅殭屍群繼續前進，失敗則全隊撤退、探索結束 */
@@ -777,7 +779,7 @@ export class ExplorationSystem {
       zone: zoneAt(poi.lat, poi.lon),
       danger: this.game.zombies.areaDanger(poi),
       // 夜晚遭遇的殭屍依區域安全程度調整等級（午夜較強，但安全區有上限）
-      level: this.game.zombies.nightLevel(poi, phase),
+      level: this.game.zombies.buildingLevel(poi, phase),
       zoneMul: phase.zombies ? this.game.zombies.encounterMul(poi.lat, poi.lon) : 1,
       phase,
       // 不含日夜的物資倍率（日夜依每段搜索的實際時間另外套用，見 atPhase）
@@ -829,7 +831,7 @@ export class ExplorationSystem {
     return {
       ...ctx,
       phase,
-      level: this.game.zombies.nightLevel(poi, phase),
+      level: this.game.zombies.buildingLevel(poi, phase),
       zoneMul: phase.zombies ? this.game.zombies.encounterMul(poi.lat, poi.lon) : 1,
       lootMul: phase.lootMul * ctx.lootBase,
     };
