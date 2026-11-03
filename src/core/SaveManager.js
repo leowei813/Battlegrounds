@@ -279,6 +279,10 @@ export class SaveManager {
         if (b.facilities && !b.facilities.clinic) b.facilities.clinic = { level: b.kind === 'outpost' ? 0 : 1 };
       });
     }
+    if (v < 20) {
+      // v9.6：全服聊天（封鎖名單、已讀位置）
+      if (!data.chat || typeof data.chat !== 'object') data.chat = { blocked: [], seenId: 0 };
+    }
     if (v < 19) {
       // v9.2：移除「巡迴搜索」研究（自動探索不再換地點）；進行中的研究退回待研究
       if (data.research?.levels) delete data.research.levels.s_route;

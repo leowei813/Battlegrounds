@@ -290,3 +290,90 @@ grant execute on function public.jdqs_obj_list(text, double precision, double pr
 revoke all on function public.jdqs_obj_list_many(text[], double precision[], double precision, double precision) from public;
 grant execute on function public.jdqs_obj_list_many(text[], double precision[], double precision, double precision) to anon, authenticated;
 grant execute on function public.jdqs_obj_put(text, text, text, text, double precision, double precision, jsonb, integer) to anon, authenticated;
+
+-- ============================================================
+-- 全服聊天（v9.6.0）：單一頻道、所有玩家可見、只保留最近 200 則
+-- 每位玩家每 5 秒最多 1 則、每則最多 120 字；被 3 位玩家檢舉的訊息自動隱藏
+-- 已經建立過的專案只要再執行一次本檔即可（皆為 if not exists / or replace）
+-- ============================================================
+create table if not exists public.jdqs_chat (
+  id        bigserial primary key,
+  from_id   text not null,
+  from_name text not null,
+  civ       integer not null default 0,
+  text      text not null,
+  at        bigint not null,
+  reports   integer not null default 0
+);
+create index if not exists jdqs_chat_from on public.jdqs_chat (from_id, id desc);
+alter table public.jdqs_chat enable row level security;
+revoke all on public.jdqs_chat from anon, authenticated;
+
+create table if not exists public.jdqs_chat_reports (
+  msg_id  bigint not null,
+  from_id text not null,
+  primary key (msg_id, from_id)
+);
+alter table public.jdqs_chat_reports enable row level security;
+revoke all on public.jdqs_chat_reports from anon, authenticated;
+
+-- 讀取 p_after 之後的訊息（最多 200 則），以及被檢舉隱藏的訊息編號
+create or replace function public.jdqs_chat_list(p_after bigint)
+returns json language sql security definer set search_path = public as $$
+  select json_build_object('status', 'ok',
+    'messages', coalesce((select json_agg(json_build_object(
+        'id', m.id, 'from', m.from_id, 'name', m.from_name, 'civ', m.civ, 'text', m.text, 'at', m.at) order by m.id)
+      from (select * from public.jdqs_chat where id > coalesce(p_after, 0) and reports < 3 order by id desc limit 200) m), '[]'::json),
+    'hidden', coalesce((select json_agg(id) from public.jdqs_chat where reports >= 3), '[]'::json));
+$$;
+
+create or replace function public.jdqs_chat_send(p_from text, p_token text, p_text text)
+returns json language plpgsql security definer set search_path = public as $$
+declare s public.jdqs_world;
+declare last_at bigint;
+declare new_id bigint;
+declare t text := btrim(regexp_replace(coalesce(p_text, ''), '\s+', ' ', 'g'));
+declare now_ms bigint := (extract(epoch from clock_timestamp()) * 1000)::bigint;
+begin
+  select * into s from public.jdqs_world where id = p_from;
+  if not found or s.token_hash <> p_token then return json_build_object('status', 'forbidden'); end if;
+  if char_length(t) < 1 or char_length(t) > 120 then return json_build_object('status', 'invalid'); end if;
+  -- 同一位玩家同時送出時依序處理，避免繞過冷卻
+  perform pg_advisory_xact_lock(hashtext('jdqs_chat:' || p_from));
+  select at into last_at from public.jdqs_chat where from_id = p_from order by id desc limit 1;
+  if last_at is not null and now_ms - last_at < 5000 then
+    return json_build_object('status', 'slow', 'waitMs', 5000 - (now_ms - last_at));
+  end if;
+  insert into public.jdqs_chat (from_id, from_name, civ, text, at)
+    values (p_from, left(coalesce(s.payload->>'name', '倖存者'), 24),
+      coalesce(nullif(s.payload->>'civ', '')::numeric, 0)::integer, t, now_ms)
+    returning id into new_id;
+  -- 只保留最近 200 則
+  delete from public.jdqs_chat where id <= new_id - 200;
+  delete from public.jdqs_chat_reports where msg_id <= new_id - 200;
+  return json_build_object('status', 'ok', 'msg', json_build_object(
+    'id', new_id, 'from', p_from, 'name', left(coalesce(s.payload->>'name', '倖存者'), 24),
+    'civ', coalesce(nullif(s.payload->>'civ', '')::numeric, 0)::integer, 'text', t, 'at', now_ms));
+end $$;
+
+-- 檢舉：同一人對同一則只算一次，不能檢舉自己
+create or replace function public.jdqs_chat_report(p_from text, p_token text, p_id bigint)
+returns json language plpgsql security definer set search_path = public as $$
+declare s public.jdqs_world;
+begin
+  select * into s from public.jdqs_world where id = p_from;
+  if not found or s.token_hash <> p_token then return json_build_object('status', 'forbidden'); end if;
+  if not exists (select 1 from public.jdqs_chat where id = p_id and from_id <> p_from) then
+    return json_build_object('status', 'ok');
+  end if;
+  insert into public.jdqs_chat_reports (msg_id, from_id) values (p_id, p_from) on conflict do nothing;
+  if found then update public.jdqs_chat set reports = reports + 1 where id = p_id; end if;
+  return json_build_object('status', 'ok');
+end $$;
+
+revoke all on function public.jdqs_chat_list(bigint) from public;
+revoke all on function public.jdqs_chat_send(text, text, text) from public;
+revoke all on function public.jdqs_chat_report(text, text, bigint) from public;
+grant execute on function public.jdqs_chat_list(bigint) to anon, authenticated;
+grant execute on function public.jdqs_chat_send(text, text, text) to anon, authenticated;
+grant execute on function public.jdqs_chat_report(text, text, bigint) to anon, authenticated;

@@ -33,6 +33,7 @@ import { MarketSystem } from '../systems/MarketSystem.js';
 import { InfectedSystem } from '../systems/InfectedSystem.js';
 import { RallySystem } from '../systems/RallySystem.js';
 import { AssistSystem } from '../systems/AssistSystem.js';
+import { ChatSystem } from '../multiplayer/Chat.js';
 
 /**
  * 遊戲核心（Facade）：持有狀態與所有系統，負責主迴圈、離線結算與存檔。
@@ -46,6 +47,7 @@ export class Game {
     this.started = false;
 
     this.shared = new SharedWorld(this);
+    this.chat = new ChatSystem(this);
     this.time = new TimeSystem(this);
     this.research = new ResearchSystem(this);
     this.resources = new ResourceSystem(this);
@@ -233,6 +235,7 @@ export class Game {
     this.assist.update(now);
     this.market.update(now);
     this.shared.tick(now);
+    if (!silent) this.chat.tick(now);
     this.rally.update(now);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);

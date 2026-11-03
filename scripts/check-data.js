@@ -2885,6 +2885,106 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(w1.time.survivalDay() === 1 && w2.time.survivalDay() === 6, '生存天數從自己開局算起');
 }
 
+// ---- 65. v9.6 全服聊天（單一頻道、冷卻、過濾、封鎖、檢舉、伺服器） ----
+{
+  const { MemoryChat, cleanChat, CHAT_MAX_LEN, CHAT_KEEP } = await import('../src/multiplayer/Chat.js');
+  const mkc = (name, id) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon: 121 });
+    gx.state.map.pois = fillPois([], 25, 121);
+    gx.world = { myId: id };
+    return gx;
+  };
+  const ca = mkc('阿傑', 'a'.repeat(32));
+  const cb = mkc('小雨', 'b'.repeat(32));
+  const cc = mkc('Kevin', 'c'.repeat(32));
+  assert(!ca.chat.online && ca.chat.blockReason() === '離線中，無法使用聊天', '沒有伺服器時聊天顯示離線');
+  const room = new MemoryChat();
+  [ca, cb, cc].forEach((x) => { x.chat.backend = room; });
+  assert(ca.chat.blockReason() === '建立避難所後才能發言' && !(await ca.chat.send('嗨')).ok, '沒有避難所不能發言');
+  [ca, cb, cc].forEach((x) => x.shelter.establish(x.state.map.pois[0]));
+  assert((await ca.chat.send('  信義區有人要一起打嗎？  ')).ok, '建立避難所後可以發言');
+  const slow = await ca.chat.send('再一則');
+  assert(!slow.ok && /秒後再試/.test(slow.reason), '每 5 秒最多 1 則');
+  ca.chat.lastSentAt = 0;
+  const srv = await room.chatSend('a'.repeat(32), 't', '繞過前端');
+  assert(srv.status === 'slow', '伺服器端也限制發言頻率');
+  await cb.chat.poll();
+  assert(cb.chat.messages.length === 1 && cb.chat.messages[0].text === '信義區有人要一起打嗎？' && cb.chat.messages[0].name === '阿傑', '其他玩家都看得到訊息（去除前後空白）');
+  assert(cb.chat.unread() === 1 && ca.chat.unread() === 0, '別人的訊息算未讀，自己的不算');
+  cb.chat.setOpen(true);
+  assert(cb.chat.unread() === 0 && cb.state.chat.seenId === cb.chat.lastId, '打開聊天後標為已讀並記在存檔');
+  cb.chat.setOpen(false);
+  const mine = ca.chat.visible()[0];
+  assert(mine.mine && !cb.chat.visible()[0].mine, '自己的訊息標示為自己的（靠右顯示）');
+  // 過濾
+  assert(cleanChat('加我 line: abc123 或打 0912-345-678') === '加我 line: *** 或打 ***', '遮蔽 LINE ID 與手機號碼');
+  assert(cleanChat('看 https://evil.example/x 跟 www.abc.com 跟 foo.tw') === '看 *** 跟 *** 跟 ***', '遮蔽網址');
+  assert(cleanChat('我出 500 木材換 3000 金錢') === '我出 500 木材換 3000 金錢', '一般數字不會被誤判為電話');
+  assert(cleanChat('幹你娘 fuck') === '＊＊＊ ＊＊＊＊', '過濾髒話');
+  assert([...cleanChat('長'.repeat(300))].length === CHAT_MAX_LEN, `每則最多 ${CHAT_MAX_LEN} 字`);
+  assert(cleanChat('a\n\n\tb​ c') === 'a b c', '去除換行、控制字元與零寬字元');
+  // 封鎖：只對自己有效
+  await cc.chat.poll();
+  assert(cc.chat.block('a'.repeat(32), '阿傑') && cc.chat.visible().length === 0 && cc.chat.unread() === 0, '封鎖後看不到他的訊息也不算未讀');
+  assert(cb.chat.visible().length === 1, '封鎖只對自己有效');
+  assert(!cc.chat.block('c'.repeat(32), 'me'), '不能封鎖自己');
+  const saved = SaveManager.migrate(JSON.parse(JSON.stringify(cc.state)));
+  assert(saved.chat.blocked.length === 1, '封鎖名單存在存檔中');
+  assert(cc.chat.unblock('a'.repeat(32)) && cc.chat.visible().length === 1, '可以解除封鎖');
+  // 檢舉：3 人檢舉後自動隱藏；同一人只算一次；不能檢舉自己
+  const dd = mkc('D', 'd'.repeat(32));
+  dd.chat.backend = room;
+  dd.shelter.establish(dd.state.map.pois[0]);
+  await dd.chat.poll();
+  const msgId = ca.chat.messages[0].id;
+  assert(!(await ca.chat.report(msgId)).ok, '不能檢舉自己的訊息');
+  await cb.chat.report(msgId);
+  await cb.chat.report(msgId);
+  await cc.chat.report(msgId);
+  await dd.chat.poll();
+  assert(dd.chat.messages.length === 1, '同一人重複檢舉只算一次（2 人檢舉還不會隱藏）');
+  await dd.chat.report(msgId);
+  await cb.chat.poll();
+  assert(cb.chat.messages.length === 0, '被 3 位玩家檢舉的訊息自動對所有人隱藏');
+  // 只保留最近 200 則
+  for (let i = 0; i < CHAT_KEEP + 20; i += 1) {
+    room.list.push({ id: room.nextId, from: 'x', name: 'x', civ: 0, text: `#${i}`, at: Date.now() - 60000, reports: 0 });
+    room.nextId += 1;
+  }
+  await cb.chat.poll();
+  assert(cb.chat.messages.length === CHAT_KEEP && cb.chat.messages[CHAT_KEEP - 1].text === `#${CHAT_KEEP + 19}`, '只保留最近 200 則');
+  // 舊存檔遷移
+  const old = JSON.parse(JSON.stringify(ca.state));
+  delete old.chat;
+  old.version = 19;
+  assert(SaveManager.migrate(old).chat?.blocked?.length === 0, '舊存檔遷移後有空的封鎖名單');
+
+  // 自架伺服器：驗證身分、冷卻、長度、檢舉與保存
+  const { WorldStore } = await import('../server/WorldStore.js');
+  const fsm = await import('node:fs');
+  const pathm = await import('node:path');
+  const os = await import('node:os');
+  const cdir = fsm.mkdtempSync(pathm.join(os.tmpdir(), 'jdqs-chat-'));
+  const wsc = new WorldStore(cdir);
+  const pid = 'e'.repeat(32);
+  const ptk = 'f'.repeat(64);
+  wsc.players.set(pid, { id: pid, tokenHash: ptk, name: '伺服器玩家', civ: 42, bases: [], trips: [], updatedAt: Date.now() });
+  wsc.players.set('9'.repeat(32), { id: '9'.repeat(32), tokenHash: '8'.repeat(64), name: 'X', civ: 1, bases: [], trips: [], updatedAt: Date.now() });
+  assert(wsc.chatSend(pid, '0'.repeat(64), 'hi').status === 'forbidden', '伺服器驗證發言者身分');
+  assert(wsc.chatSend(pid, ptk, '   ').status === 'invalid' && wsc.chatSend(pid, ptk, 'x'.repeat(121)).status === 'invalid', '伺服器拒絕空白與超過 120 字的訊息');
+  const r1 = wsc.chatSend(pid, ptk, '大家好');
+  assert(r1.status === 'ok' && r1.msg.name === '伺服器玩家' && r1.msg.civ === 42, '伺服器以公開資料的名字與文明值發言');
+  assert(wsc.chatSend(pid, ptk, '再一則').status === 'slow', '伺服器限制每 5 秒 1 則');
+  assert(wsc.chatList(0).messages.length === 1 && wsc.chatList(r1.msg.id).messages.length === 0, '伺服器只回傳新的訊息');
+  wsc.chatReport(pid, ptk, r1.msg.id);
+  assert(wsc.chatData().list[0].reports === 0, '伺服器不接受檢舉自己');
+  wsc.chatReport('9'.repeat(32), '8'.repeat(64), r1.msg.id);
+  wsc.chatReport('9'.repeat(32), '8'.repeat(64), r1.msg.id);
+  assert(wsc.chatData().list[0].reports === 1, '伺服器同一人檢舉只算一次');
+  clearTimeout(wsc.chatTimer);
+  fsm.rmSync(cdir, { recursive: true, force: true });
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

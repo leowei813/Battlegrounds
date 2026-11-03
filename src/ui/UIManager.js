@@ -18,6 +18,7 @@ import { CLOUD_EVT } from '../cloud/CloudSync.js';
 import { WORLD_EVT } from '../multiplayer/WorldSync.js';
 import { APP_VERSION } from '../config/version.js';
 import { showChangelog } from './ChangelogView.js';
+import { ChatView } from './ChatView.js';
 
 const TABS = [
   { id: 'map', icon: '🗺️', name: '地圖' },
@@ -171,6 +172,8 @@ export class UIManager {
       this.phaser.registry.set('viewBaseId', this.viewBase()?.id || null);
     });
     this.phaser.registry.set('viewBaseId', this.viewBase()?.id || null);
+    this.chatView = new ChatView(this);
+    this.chatView.mount(document.querySelector('#stage'));
     this.panels.map.init();
     this.switchTab(this.game.shelter.hasShelter() ? 'shelter' : 'map');
   }
@@ -199,6 +202,7 @@ export class UIManager {
   switchTab(id) {
     if (!this.panels[id]) return;
     if (this.tab === 'map' && id !== 'map') this.panels.map.onHide();
+    if (id !== 'map' && this.chatView?.isOpen) this.chatView.close(); // 聊天只在地圖分頁開啟
     this.tab = id;
     this.lastHtml = '';
     this.panelEl.scrollTop = 0;

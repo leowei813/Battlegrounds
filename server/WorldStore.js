@@ -106,6 +106,11 @@ export function sanitizePresence(body) {
  * 多人世界：記錄公開分享的玩家據點與探索隊伍。
  * 記憶體保存，並在變更後延遲寫入 DATA_DIR/world.json。
  */
+const CHAT_MAX_LEN = 120;
+const CHAT_COOLDOWN_MS = 5000;
+const CHAT_KEEP = 200;
+const CHAT_HIDE_REPORTS = 3;
+
 export class WorldStore {
   constructor(dir) {
     this.file = path.join(dir, 'world.json');
@@ -249,6 +254,78 @@ export class WorldStore {
     this.objs().set(key, obj);
     this.persistObjectsSoon();
     return { status: 'ok', obj };
+  }
+
+  // ================= 全服聊天（單一頻道、保留最近 200 則） =================
+
+  chatFile() {
+    return path.join(path.dirname(this.file), 'chat.json');
+  }
+
+  chatData() {
+    if (!this.chat) {
+      this.chat = { list: [], nextId: 1, reports: {} };
+      try {
+        Object.assign(this.chat, JSON.parse(fs.readFileSync(this.chatFile(), 'utf8')));
+      } catch { /* 沒有檔案 */ }
+    }
+    return this.chat;
+  }
+
+  persistChatSoon() {
+    clearTimeout(this.chatTimer);
+    this.chatTimer = setTimeout(() => {
+      const tmp = `${this.chatFile()}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(this.chatData()));
+      fs.renameSync(tmp, this.chatFile());
+    }, 2000);
+  }
+
+  /** after 之後的訊息（不含被檢舉隱藏的），以及被隱藏的訊息編號 */
+  chatList(after = 0) {
+    const c = this.chatData();
+    const shown = c.list.filter((m) => (m.reports || 0) < CHAT_HIDE_REPORTS);
+    return {
+      messages: shown.filter((m) => m.id > after).slice(-CHAT_KEEP).map(({ reports, ...m }) => m),
+      hidden: c.list.filter((m) => (m.reports || 0) >= CHAT_HIDE_REPORTS).map((m) => m.id),
+    };
+  }
+
+  /** @returns {{status:'ok'|'slow'|'forbidden'|'invalid', msg?:object, waitMs?:number}} */
+  chatSend(fromId, token, text) {
+    const p = this.players.get(fromId);
+    if (!p || !WorldStore.matches(p, token)) return { status: 'forbidden' };
+    const t = String(text ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!t || [...t].length > CHAT_MAX_LEN) return { status: 'invalid' };
+    const c = this.chatData();
+    const now = Date.now();
+    const last = [...c.list].reverse().find((m) => m.from === fromId);
+    if (last && now - last.at < CHAT_COOLDOWN_MS) return { status: 'slow', waitMs: CHAT_COOLDOWN_MS - (now - last.at) };
+    const msg = { id: c.nextId, from: fromId, name: p.name || '倖存者', civ: p.civ || 0, text: t, at: now };
+    c.nextId += 1;
+    c.list.push({ ...msg, reports: 0 });
+    if (c.list.length > CHAT_KEEP) {
+      const drop = c.list.splice(0, c.list.length - CHAT_KEEP);
+      drop.forEach((m) => { delete c.reports[m.id]; });
+    }
+    this.persistChatSoon();
+    return { status: 'ok', msg };
+  }
+
+  /** 檢舉訊息：同一人對同一則只算一次，不能檢舉自己 */
+  chatReport(fromId, token, id) {
+    const p = this.players.get(fromId);
+    if (!p || !WorldStore.matches(p, token)) return { status: 'forbidden' };
+    const c = this.chatData();
+    const m = c.list.find((x) => x.id === Number(id));
+    if (!m || m.from === fromId) return { status: 'ok' };
+    const by = c.reports[m.id] || (c.reports[m.id] = []);
+    if (!by.includes(fromId)) {
+      by.push(fromId);
+      m.reports = by.length;
+      this.persistChatSoon();
+    }
+    return { status: 'ok' };
   }
 
   /** 任一據點在範圍內的玩家（不含自己、不含過期資料） */
