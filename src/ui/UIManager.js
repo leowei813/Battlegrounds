@@ -104,7 +104,15 @@ export class UIManager {
 
     // 記錄左右捲動與觸控狀態（見 refresh）
     this.panelEl.addEventListener('scroll', (e) => {
-      if (e.target !== this.panelEl && e.target.scrollLeft !== undefined && e.target.matches?.(H_SCROLL)) this.hScrollAt = Date.now();
+      if (e.target === this.panelEl || !e.target.matches?.(H_SCROLL)) return;
+      this.hScrollAt = Date.now();
+      // 記下每一列最後的位置（依分頁與第幾列）：重畫後一律以此還原，不受慣性滑動中讀值的影響
+      const list = [...this.panelEl.querySelectorAll(H_SCROLL)];
+      const i = list.indexOf(e.target);
+      if (i >= 0) {
+        this.hScrollPos = this.hScrollPos || {};
+        (this.hScrollPos[this.tab] = this.hScrollPos[this.tab] || [])[i] = e.target.scrollLeft;
+      }
     }, { capture: true, passive: true });
     this.panelEl.addEventListener('touchstart', (e) => {
       if (!e.target.closest?.(H_SCROLL)) return;
@@ -290,11 +298,15 @@ export class UIManager {
     const top = this.panelEl.scrollTop;
     // 保留可左右捲動的分頁列、標籤列的位置（面板每秒重新繪製）
     const keep = [...this.panelEl.querySelectorAll(H_SCROLL)].map((el) => el.scrollLeft);
+    const saved = this.hScrollTab === this.tab ? (this.hScrollPos?.[this.tab] || []) : [];
     this.panelEl.innerHTML = html;
     this.panelEl.scrollTop = top;
     if (this.hScrollTab === this.tab) {
-      this.panelEl.querySelectorAll(H_SCROLL).forEach((el, i) => { if (keep[i]) el.scrollLeft = keep[i]; });
-    }
+      this.panelEl.querySelectorAll(H_SCROLL).forEach((el, i) => {
+        const x = saved[i] ?? keep[i];
+        if (x) el.scrollLeft = x;
+      });
+    } else if (this.hScrollPos) delete this.hScrollPos[this.tab];
     this.hScrollTab = this.tab;
     panel.afterRender?.(this.panelEl);
   }
