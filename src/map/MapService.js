@@ -40,7 +40,8 @@ export class MapService {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
     }).addTo(this.map);
-    this.zoneLayer = new ZoneLayer().addTo(this.map);
+    // v9：不再整片塗區域底色，區域顏色改畫在建築圖示的底色上
+    this.zoneLayer = new ZoneLayer();
     this.layers.range = L.layerGroup().addTo(this.map);
     this.poiLayer = new PoiCanvasLayer((poiId) => bus.emit(EVT.OPEN_POI, { poiId })).addTo(this.map);
     this.layers.routes = L.layerGroup().addTo(this.map);

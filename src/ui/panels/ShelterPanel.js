@@ -66,8 +66,8 @@ export class ShelterPanel {
     const st = g.state;
     const sh = this.ui.viewBase();
     const ui = this.ui;
-    const head = `<div class="drawer-head"><b data-action="toggleDrawer">${sh && g.shelter.isPrimary(sh) ? '⭐' : '🏴'} ${escapeHtml(sh?.name || '避難所')}</b>
-      <span class="drawer-ctrl">${ui.drawerCollapsed ? '' : `<button class="btn btn-xs btn-ghost mobile-only" data-action="drawerFull">${ui.drawerFull ? '⤓ 縮小' : '⤢ 全螢幕'}</button>`}<button class="btn btn-xs btn-ghost" data-action="toggleDrawer">${ui.drawerCollapsed ? '▲ 展開' : '▼ 收合'}</button></span></div>`;
+    const head = `<div class="drawer-head"><b>${sh && g.shelter.isPrimary(sh) ? '⭐' : '🏴'} ${escapeHtml(sh?.name || '避難所')}</b>
+      </div>`;
     if (!sh) {
       return `${head}<div class="empty">尚未建立避難所。<br>${btn('🗺️ 前往地圖選擇建築', 'gotoMap', {}, { cls: 'btn-primary' })}</div>`;
     }

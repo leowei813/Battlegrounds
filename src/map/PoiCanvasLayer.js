@@ -1,3 +1,4 @@
+import { zoneAt } from '../config/zones.js';
 import L from 'leaflet';
 import { POI_TYPES } from '../config/poiTypes.js';
 import { dayKey } from '../systems/LootStock.js';
@@ -18,6 +19,18 @@ const sizeOf = (poi) => {
  * 縮放顯示：≤16 色點、17 小圖示、≥18 完整圖示（建築密集時避免重疊）。
  * 圖示大小依「可建立的據點規模」略有差異（小 < 中 < 大 < 巨），完整圖示再標上規模字樣。
  */
+/** 區域顏色轉成圖示底色（較深、半透明，讓圖示清楚） */
+const zoneFillCache = new Map();
+function zoneFill(zone) {
+  if (zoneFillCache.has(zone.id)) return zoneFillCache.get(zone.id);
+  const hex = zone.color.replace('#', '');
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const mix = (c) => Math.round(c * 0.55 + 17 * 0.45);
+  const v = `rgba(${mix(r)},${mix(g)},${mix(b)},0.92)`;
+  zoneFillCache.set(zone.id, v);
+  return v;
+}
+
 export const PoiCanvasLayer = L.Layer.extend({
   /** @param {(poiId:string)=>void} onClick */
   initialize(onClick) {
@@ -60,11 +73,12 @@ export const PoiCanvasLayer = L.Layer.extend({
 
   radius() {
     const z = this.map.getZoom();
-    if (z <= 14) return 2;
-    if (z === 15) return 3.5;
-    if (z === 16) return 5;
-    if (z === 17) return 9;
-    return 12;
+    // 圖示略為放大，方便辨識
+    if (z <= 14) return 2.5;
+    if (z === 15) return 4.2;
+    if (z === 16) return 6.2;
+    if (z === 17) return 10.5;
+    return 14;
   },
 
   redraw() {
@@ -103,7 +117,9 @@ export const PoiCanvasLayer = L.Layer.extend({
       ctx.globalAlpha = poi.lootedDay === today && !left ? 0.3 : 1;
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, rr, 0, Math.PI * 2);
-      ctx.fillStyle = icons ? 'rgba(17,17,17,0.82)' : def.color;
+      // 底色：建築所在區域的顏色（安全區綠 → 深淵區黑），外框為建築類型的顏色
+      const zc = zoneAt(poi.lat, poi.lon);
+      ctx.fillStyle = icons ? zoneFill(zc) : def.color;
       ctx.fill();
       if (icons) {
         ctx.lineWidth = 2;

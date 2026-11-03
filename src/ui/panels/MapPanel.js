@@ -202,6 +202,7 @@ export class MapPanel {
         ${btn(`📌${this.game.markers.list.length ? `<small>${this.game.markers.list.length}</small>` : ''}`, 'markers', {}, { cls: 'btn-icon', title: `標記的地點（最多 ${MAX_MARKERS} 個）` })}
       </div>
       ${this.siegeBanner()}
+      ${this.feedHtml()}
       ${this.scanning ? `<div class="scan-progress">📡 掃描建築中 ${this.scanProgress || ''}</div>` : ''}
       ${this.worldChip()}
       ${this.gpsChip()}
@@ -421,6 +422,41 @@ export class MapPanel {
     return `<div class="muted">📦 可能出現：${list}（實際所得於探索時隨機）・${reset}</div>`;
   }
 
+  /**
+   * 地圖左上角資訊欄：威脅接近（誰、多久後抵達）、好友求援（點擊增援）、探索佇列（點擊查看／召回）。
+   */
+  feedHtml() {
+    const g = this.game;
+    const now = Date.now();
+    const rows = [];
+    g.threatDetails(now).filter((t) => t.kind !== 'siege').forEach((t) => {
+      rows.push(`<button class="feed-chip danger" data-action="gotoShelter">⚠️ ${escapeHtml(t.text)}${t.at ? `・約 ${formatDuration(t.at - now)}後抵達` : ''}</button>`);
+    });
+    // 好友遭受攻擊：點擊直接進入增援指派
+    const seen = new Set();
+    [...g.assist.friendSieges().map((x) => ({ p: x.player, text: `遭屍潮攻擊（第 ${x.base.siege.wave}/${x.base.siege.maxWaves} 波）` })),
+      ...g.assist.friendRaids(now).map((x) => ({ p: x.player, text: `遭 ${x.raid.by} 攻打・約 ${formatDuration(x.raid.at - now)}後抵達` }))].forEach(({ p, text }) => {
+      const key = `${p.id}|${text}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const sent = g.assist.trips().some((e) => e.assistTarget?.playerId === p.id);
+      rows.push(`<button class="feed-chip friend" data-action="feedAssist" data-id="${p.id}">🆘 好友「${escapeHtml(p.name)}」${text}${sent ? '・🛡️ 已派隊' : '・點擊增援'}</button>`);
+    });
+    // 探索佇列：類型、距離、剩餘時間
+    const sh = g.shelter.primary();
+    g.state.expeditions.forEach((ex) => {
+      const poi = g.exploration.poi(ex.poiId);
+      const p = g.exploration.progress(ex, now);
+      const type = poi ? (POI_TYPES[poi.type]?.icon || poi.icon || '📍') : '📍';
+      const dist = sh && poi ? haversine(sh.lat, sh.lon, poi.lat, poi.lon) : 0;
+      const km = dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`;
+      const status = ex.defeated ? '🏳️ 撤回' : ex.recalled ? '↩️ 召回中' : p ? EXP_PHASES[p.phase].icon : '';
+      const queued = (ex.queue || []).length ? `・佇列 ${ex.queue.length}` : '';
+      rows.push(`<button class="feed-chip team" data-action="feedTeam" data-id="${ex.id}">${type} ${escapeHtml(poi?.name || '探索')}・${km}・${status} ${formatDuration(p ? p.remainingMs : Math.max(0, ex.endAt - now))}${queued}</button>`);
+    });
+    return rows.length ? `<div class="map-feed">${rows.join('')}</div>` : '';
+  }
+
   /** 各據點即時屍潮摘要；點擊可飛到該據點 */
   siegeBanner() {
     const g = this.game;
@@ -450,6 +486,14 @@ export class MapPanel {
     }
     if (action === 'gpsFocus' && this.game.gps.pos) this.service.focus(this.game.gps.pos.lat, this.game.gps.pos.lon, 18);
     if (action === 'worldSettings') this.ui.switchTab('settings');
+    if (action === 'feedTeam') this.openOwnTeam(data.id);
+    if (action === 'feedAssist') {
+      const p = this.game.world?.others.find((x) => x.id === data.id);
+      if (p) {
+        if (this.game.assist.trips().some((e) => e.assistTarget?.playerId === p.id)) this.openPlayer(p.id);
+        else this.openAssist(p);
+      }
+    }
     if (action === 'openStall') openTradeStall(this.ui, data.player, data.trip);
     if (action === 'flyTo') {
       const b = this.game.shelter.base(data.id);

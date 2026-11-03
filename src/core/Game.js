@@ -96,6 +96,32 @@ export class Game {
    * 或屍潮正在攻擊據點。
    * @returns {string[]} 威脅說明（空陣列代表安全）
    */
+  /**
+   * 威脅明細：誰正在攻過來、預計多久抵達（地圖左上角顯示）。
+   * @returns {{text:string, at:number|null, kind:string}[]}
+   */
+  threatDetails(now = Date.now()) {
+    const out = [];
+    const bases = this.state.bases;
+    if (!bases.length) return out;
+    (this.state.npcs?.list || []).forEach((n) => {
+      const t = n.trip;
+      if (t?.kind === 'raid' && !t.resolved && !t.hidden && now < t.startAt + t.travelMs && bases.some((b) => b.id === t.baseId)) {
+        out.push({ text: `NPC「${n.name}」掠奪隊 → ${t.target || '據點'}`, at: t.startAt + t.travelMs, kind: 'npc' });
+      }
+    });
+    (this.world?.others || []).forEach((p) => (p.trips || []).forEach((t) => {
+      if (this.territory.relation(p.id) === 'friend') return;
+      if (t.kind || t.defeated || now >= t.startAt + (t.travelMs || 0)) return;
+      if (bases.some((b) => haversine(b.lat, b.lon, t.to.lat, t.to.lon) < 40)) out.push({ text: `玩家「${p.name}」的隊伍`, at: t.startAt + (t.travelMs || 0), kind: 'player' });
+    }));
+    bases.forEach((b) => {
+      const w = this.siege.of(b.id).waveInfo?.();
+      if (w?.active && w.attacking) out.push({ text: `屍潮（${b.name}）第 ${w.wave}/${w.maxWaves} 波・剩 ${w.left} 隻`, at: null, kind: 'siege' });
+    });
+    return out.sort((a, b) => (a.at || 0) - (b.at || 0));
+  }
+
   threats(now = Date.now()) {
     const out = [];
     const bases = this.state.bases;
