@@ -25,6 +25,7 @@ const setHour = (game, hour) => {
   game.state.worldShift = (((hour - WORLD_START.hour + 24) % 24) / 24) * DAY_REAL_MS - (Date.now() - WORLD_EPOCH_MS);
 };
 import { SaveManager } from '../src/core/SaveManager.js';
+import { VEHICLES as VEHICLES_CFG } from '../src/config/vehicles.js';
 import { WORLD as WORLDC } from '../src/systems/SiegeSystem.js';
 import { STAT_KEYS } from '../src/core/GameState.js';
 import { PRIMARY_DANGER_COEF } from '../src/config/civilization.js';
@@ -2990,6 +2991,50 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { riskAmountMul } = await import('../src/systems/LootStock.js');
   assert(riskAmountMul(0) === 0.45 && riskAmountMul(8) === 0.9 && riskAmountMul(20) === 0.9 && riskAmountMul(-1) === 0.45, '風險倍率介於 0.45～0.9');
   assert(riskAmountMul(2) < riskAmountMul(4) && riskAmountMul(4) < riskAmountMul(6), '風險越高保留越多物資');
+}
+
+// ---- 67. v9.8.1 臨時小隊指定載具 ----
+{
+  const gv2 = Game.newGame({ playerName: 'VV', classId: 'scout', lat: 25, lon: 121 });
+  gv2.state.map.pois = fillPois([], 25, 121);
+  gv2.shelter.establish(gv2.state.map.pois[0]);
+  setHour(gv2, 10);
+  const ex = gv2.exploration;
+  const vs = gv2.vehicles;
+  const pois = gv2.state.map.pois.filter((p) => !gv2.shelter.baseAtPoi(p.id) && p.type === 'residential').slice(0, 3);
+  gv2.survivors.leader().level = 40;
+  const simV = gv2.combat.simulate.bind(gv2.combat);
+  gv2.combat.simulate = (sv, _en, o) => simV(sv, [], o);
+  gv2.state.resources.fuel = 9999;
+  const types = Object.keys(VEHICLES_CFG);
+  const car1 = vs.create(types[0]); vs.add(car1);
+  const car2 = vs.create(types[1]); vs.add(car2);
+  const st = ex.start(pois[0].id, [gv2.survivors.leader().id], 5);
+  assert(st.ok, '派出一人小隊');
+  const two = ex.assignVehicles(st.exp.id, [car1.id, car2.id], { dry: true });
+  assert(!two.ok && /駕駛/.test(two.reason), '小隊 1 人不能指定 2 台載具（依小隊人數判定）');
+  assert(ex.assignVehicles(st.exp.id, [car1.id], { dry: true }).ok && vs.isAvailable(car1), '試算不會佔用載具');
+  assert(ex.enqueue(st.exp.id, pois[1].id).ok && ex.assignVehicles(st.exp.id, [car1.id]).ok, '小隊 1 人可以指定 1 台載具');
+  assert(car1.status === 'reserved' && !vs.isAvailable(car1), '指定後其他人不能選用');
+  assert(!vs.scrap(car1.id).ok, '指定的載具不能拆解');
+  assert(!ex.assignVehicles(st.exp.id, [car2.id]).ok, '指定後不能變更');
+  const other = ex.start(pois[2].id, [], 5, false, Date.now(), { vehicleIds: [car1.id] });
+  assert(!other.ok, '其他隊伍不能使用已指定的載具');
+  ex.update(st.exp.endAt + 1, { silent: true });
+  const next = gv2.state.expeditions[0];
+  assert(next && next.poiId === pois[1].id && (next.vehicleIds || []).includes(car1.id) && car1.status === 'out', '回到避難所後下一次出門自動帶上指定的載具');
+  assert(!(next.nextVehicleIds || []).length, '生效後清除指定');
+  ex.update(next.endAt + 1, { silent: true });
+  assert(!gv2.state.expeditions.length && car1.status === 'idle', '小隊結束後載具回到車庫');
+  // 小隊沒有再出門：指定的載具歸還
+  const st2 = ex.start(pois[2].id, [gv2.survivors.leader().id], 5);
+  assert(st2.ok && ex.assignVehicles(st2.exp.id, [car2.id]).ok && car2.status === 'reserved', '再次指定');
+  ex.update(st2.exp.endAt + 1, { silent: true });
+  assert(car2.status === 'idle', '小隊沒有再出門時，指定的載具歸還車庫');
+  // 存檔中殘留的指定（小隊已不存在）會歸還
+  const d2 = JSON.parse(JSON.stringify(gv2.state));
+  d2.vehicles[0].status = 'reserved'; d2.vehicles[0].reservedFor = 'gone';
+  assert(SaveManager.migrate(d2).vehicles[0].status === 'idle', '讀檔時歸還失效的指定');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

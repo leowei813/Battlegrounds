@@ -85,6 +85,7 @@ export class VehicleSystem {
   scrap(id) {
     const v = this.get(id);
     if (!v) return { ok: false, reason: '找不到載具' };
+    if (v.status === 'reserved') return { ok: false, reason: '已指定給臨時小隊，無法拆解' };
     if (v.status !== 'idle') return { ok: false, reason: '載具出勤中' };
     this.game.state.vehicles = this.list.filter((x) => x.id !== id);
     const n = Math.round(this.def(v).durability * 0.06);
@@ -103,7 +104,7 @@ export class VehicleSystem {
   repair(id) {
     const v = this.get(id);
     if (!v) return { ok: false, reason: '找不到載具' };
-    if (v.status !== 'idle') return { ok: false, reason: '載具出勤中' };
+    if (v.status === 'out') return { ok: false, reason: '載具出勤中' };
     if (v.durability >= this.maxDurability(v)) return { ok: false, reason: '不需要維修' };
     if (!payCost(this.game.state, this.repairCostOf(v))) return { ok: false, reason: '資源不足' };
     v.durability = this.maxDurability(v);
@@ -188,6 +189,24 @@ export class VehicleSystem {
     });
     if (vehicleIds.length) this.game.bus.emit('vehicles:changed');
     return out;
+  }
+
+  /** 指定給臨時小隊：下一次出門時一起出車；期間其他人不能選用，也不能拆解 */
+  reserve(vehicleIds, expId) {
+    vehicleIds.forEach((id) => {
+      const v = this.get(id);
+      if (v) Object.assign(v, { status: 'reserved', reservedFor: expId });
+    });
+    if (vehicleIds.length) this.game.bus.emit('vehicles:changed');
+  }
+
+  /** 取消指定（小隊出門前、或小隊結束時） */
+  unreserve(vehicleIds) {
+    vehicleIds.forEach((id) => {
+      const v = this.get(id);
+      if (v && v.status === 'reserved') v.status = 'idle';
+      if (v) delete v.reservedFor;
+    });
   }
 
   /** 撤退或召回：載具回到車庫（不計磨損以外的損失） */

@@ -168,14 +168,14 @@ export class InventoryPanel {
       const ratio = v.durability / max;
       const cost = vs.repairCostOf(v);
       return `<div class="card vehicle-card ${vs.isBroken(v) ? 'broken' : ''}">
-        <div class="row-between"><b>${def.icon} ${def.name}</b><span class="tag ${v.status === 'out' ? 'tag-blue' : vs.isBroken(v) ? 'tag-red' : ''}">${v.status === 'out' ? '出勤中' : vs.isBroken(v) ? '🔧 損壞' : '可出車'}</span></div>
+        <div class="row-between"><b>${def.icon} ${def.name}</b><span class="tag ${v.status === 'out' ? 'tag-blue' : v.status === 'reserved' ? 'tag-amber' : vs.isBroken(v) ? 'tag-red' : ''}">${v.status === 'out' ? '出勤中' : v.status === 'reserved' ? '🔒 已指定給臨時小隊' : vs.isBroken(v) ? '🔧 損壞' : '可出車'}</span></div>
         <small class="muted block">🪑 ${def.seats} 座・🏎️ 速度 ×${def.speed}・📦 運載 ${def.cargo}・⛽ ${def.fuelPerKm ? `${def.fuelPerKm}/公里` : '不耗油'}</small>
         ${progressBar(ratio, ratio < 0.3 ? 'danger' : '', `耐久 ${v.durability}/${max}`)}
         <div class="row-between">${Object.keys(cost).length ? `<div class="costs">${costHtml(g.state, cost)}</div>` : '<span></span>'}
           <span>${btn('🔧 維修', 'repair', { id: v.id }, {
     cls: 'btn-xs btn-primary',
-    disabled: !Object.keys(cost).length || v.status !== 'idle' || !affordable(g.state, cost),
-    title: !Object.keys(cost).length ? '耐久已滿' : v.status !== 'idle' ? '出勤中不能維修' : !affordable(g.state, cost) ? '材料不足' : '',
+    disabled: !Object.keys(cost).length || v.status === 'out' || !affordable(g.state, cost),
+    title: !Object.keys(cost).length ? '耐久已滿' : v.status === 'out' ? '出勤中不能維修' : !affordable(g.state, cost) ? '材料不足' : '',
   })}${btn('拆解', 'scrap', { id: v.id }, { cls: 'btn-xs btn-ghost', disabled: v.status !== 'idle' })}</span></div>
       </div>`;
     }).join('');
