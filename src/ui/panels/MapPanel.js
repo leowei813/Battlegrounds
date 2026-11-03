@@ -179,7 +179,7 @@ export class MapPanel {
       <p>守軍：${v.roster || unknown}</p>
       ${v.decay != null ? `<p class="muted">未清除時每小時回復 ${v.decay}% 感染</p>` : ''}
       ${v.power != null ? `<p class="muted">⚔️ 守軍總戰力約 ${v.power}（建議多人集結）</p>` : ''}
-      <p class="muted">Boss、精英與大量殭屍盤據，一支隊伍很難單獨清除：每場戰鬥打到全員倒下或淨化 100%，淨化度會累積（所有倖存者共用）。淨化 100% 時消滅據點，依最後一場的參戰人數發放獎勵（1 人 3～4 種高階物品，每多 1 人上下限 +2，最低優良品級）。被消滅後在下一個中午 12:00 重新出現（約 ${formatDuration(g.infected.nextRefresh(now) - now)} 後）。</p>
+      <p class="muted">每場戰鬥打到全員倒下或淨化 100%，淨化度會累積（所有倖存者共用）。淨化 100% 時消滅據點。</p>
       <div class="btn-row">${btn('☣️ 派隊淨化', 'attackInf', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${btn('📡 發起集結', 'rallyInf', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' })}</div>`;
   }
 
