@@ -117,10 +117,16 @@ export const PoiCanvasLayer = L.Layer.extend({
       ctx.globalAlpha = poi.lootedDay === today && !left ? 0.3 : 1;
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, rr, 0, Math.PI * 2);
-      // 底色：建築所在區域的顏色（安全區綠 → 深淵區黑），外框為建築類型的顏色
+      // 底色：建築所在區域的顏色（安全區綠 → 深淵區黑），外框為建築類型的顏色；縮小時的圓點也用區域顏色
       const zc = zoneAt(poi.lat, poi.lon);
-      ctx.fillStyle = icons ? zoneFill(zc) : def.color;
+      ctx.fillStyle = icons ? zoneFill(zc) : zc.color;
       ctx.fill();
+      if (!icons) {
+        // 細外框：深色區域（致死、深淵）在地圖上也看得清楚
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.stroke();
+      }
       if (icons) {
         ctx.lineWidth = 2;
         ctx.strokeStyle = def.color;

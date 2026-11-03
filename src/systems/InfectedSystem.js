@@ -28,6 +28,10 @@ export const INFECTED = {
   /** 守軍強度倍率 */
   mul: { hp: 2.6, atk: 1.9 },
   bossMul: { hp: 4, atk: 2.2 },
+  /** 與玩家據點警戒範圍至少保持的距離（公尺） */
+  clearM: 120,
+  /** 每格嘗試的候選位置數 */
+  spots: 6,
   /** 圖示大小（比巨型據點略大） */
   pin: 48,
 };
@@ -52,12 +56,32 @@ export class InfectedSystem {
     return now + (left / 24) * DAY_REAL_MS;
   }
 
-  /** 某一格的據點（固定位置與強度） */
-  siteAt(i, j, key) {
+  /** 玩家據點（自己與附近其他玩家）：重度感染據點不會出現在據點與警戒範圍上 */
+  playerZones() {
+    const g = this.game;
+    const r = (alert) => (alert || 80) + INFECTED.clearM;
+    return [
+      ...g.state.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: r(g.territory.alertRadius(b)) })),
+      ...(g.world?.others || []).flatMap((p) => (p.bases || []).map((b) => ({ lat: b.lat, lon: b.lon, r: r(b.alert) }))),
+    ];
+  }
+
+  /**
+   * 某一格的據點（固定強度）。位置依序嘗試格子內的幾個候選點（所有玩家順序相同），
+   * 跳過與玩家據點重疊的位置；全部重疊時這一格沒有據點。
+   */
+  siteAt(i, j, key, zones = this.playerZones()) {
     const box = cellBox(i, j, INFECTED.cellKm);
+    const spots = Array.from({ length: INFECTED.spots }, (_, k) => seeded(`inf:${key}${k ? `:${k}` : ''}`, () => ({
+      lat: box.lat0 + box.dLat * randFloat(0.15, 0.85),
+      lon: box.lon0 + box.dLon * randFloat(0.15, 0.85),
+    })));
+    const spot = spots.find((p) => !zones.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r));
+    if (!spot) return null;
     return seeded(`inf:${key}`, () => {
-      const lat = box.lat0 + box.dLat * randFloat(0.15, 0.85);
-      const lon = box.lon0 + box.dLon * randFloat(0.15, 0.85);
+      randFloat(0, 1);
+      randFloat(0, 1);
+      const { lat, lon } = spot;
       const zone = zoneAt(lat, lon);
       const d = Math.max(0, zone.danger);
       return {
@@ -74,10 +98,11 @@ export class InfectedSystem {
     if (!c || !g.state.map?.pois?.length) return [];
     const cells = new Set(g.state.map.pois.map((p) => cellOf(p.lat, p.lon, INFECTED.cellKm).key));
     const day = this.siteDay(now);
+    const zones = this.playerZones();
     return cellsAround(c.lat, c.lon, INFECTED.cellKm, INFECTED.km)
       .filter(({ key }) => cells.has(key))
-      .map(({ i, j, key }) => this.siteAt(i, j, key))
-      .filter((s) => haversine(c.lat, c.lon, s.lat, s.lon) <= INFECTED.km * 1000)
+      .map(({ i, j, key }) => this.siteAt(i, j, key, zones))
+      .filter((s) => s && haversine(c.lat, c.lon, s.lat, s.lon) <= INFECTED.km * 1000)
       .map((s) => ({ ...s, day, purity: this.purity(s, now), cleared: this.cleared(s, now) }))
       .filter((s) => !s.cleared);
   }
@@ -92,7 +117,7 @@ export class InfectedSystem {
     if (!m) return null;
     const key = `${m[1]}:${m[2]}`;
     const s = this.siteAt(Number(m[1]), Number(m[2]), key);
-    if (this.cleared(s, now)) return null;
+    if (!s || this.cleared(s, now)) return null;
     return { ...s, day: this.siteDay(now), purity: this.purity(s, now), cleared: false };
   }
 
