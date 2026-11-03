@@ -44,6 +44,23 @@ export class SurvivorPanel {
     }).join('')}</div>`;
   }
 
+  /** 候選人的能力格：每格同時顯示數值與素質（素質條＋百分比，100% 金色） */
+  abilityGrid(sv, s) {
+    const g = this.game;
+    const val = {
+      hp: s.hp, atk: s.atk, def: s.def, crit: `${(s.crit * 100).toFixed(1)}%`, dodge: `${(s.dodge * 100).toFixed(1)}%`, atkSpeed: s.atkSpeed,
+    };
+    const avg = g.survivors.avgQuality(sv);
+    const cls = (q) => (q >= 100 ? 'max' : q >= 70 ? 'hi' : q >= 40 ? 'mid' : 'lo');
+    return `<div class="ab-grid-head"><span>能力</span><span class="ab-avg ${cls(avg)}">平均素質 <b>${avg}%</b></span></div>
+      <div class="ab-grid">${QUALITY_KEYS.map((k) => {
+        const q = g.survivors.qualityOf(sv, k);
+        return `<div class="ab-cell ${cls(q)}"><small>${QUALITY_NAMES[k]}</small><b>${val[k]}</b>
+          <span class="ab-bar ${q >= 100 ? 'max' : q >= 70 ? 'hi' : q >= 40 ? 'mid' : ''}"><i style="width:${q}%"></i></span><small class="ab-cq">素質 ${q}%</small></div>`;
+      }).join('')}</div>
+      <small class="muted ab-legend">素質 0～100%：越高能力與升級成長越好（招募後不會改變）</small>`;
+  }
+
   /** 候選人卡片（招募三選一與探索遭遇共用） */
   candidateCard(c, actions) {
     const g = this.game;
@@ -53,8 +70,7 @@ export class SurvivorPanel {
     return `<div class="card recruit sv-card r-${c.rarity}" style="--rc:${r.color};--cc:${cls.color}">
       <div class="sv-head"><span class="sv-icon">${cls.icon}</span>
         <div class="sv-title"><b>${escapeHtml(c.name)}</b><small>${rarityTag(c.rarity)} ${cls.name} Lv${c.level}・成長 ×${g.survivors.growthMul(c)}</small></div></div>
-      <div class="stat-line">${statLine({ hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, dodge: s.dodge })}</div>
-      <div class="sv-qs">${QUALITY_KEYS.map((k) => this.qTag(g.survivors.qualityOf(c, k), QUALITY_NAMES[k])).join('')}</div>
+      ${this.abilityGrid(c, s)}
       <small class="muted">可解放技能 ${g.survivors.skillSlots(c)}/${cls.skills.length}・${cls.skills[0].name}：${cls.skills[0].desc}</small>
       <div class="btn-row">${actions}</div>
     </div>`;
