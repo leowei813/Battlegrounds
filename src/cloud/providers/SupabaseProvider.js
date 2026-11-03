@@ -131,6 +131,21 @@ export class SupabaseProvider {
     return body;
   }
 
+  /** 全服聊天：讀取 after 之後的訊息與被檢舉隱藏的訊息編號 */
+  async chatList(after = 0) {
+    const body = await this.rpc('jdqs_chat_list', { p_after: Number(after) || 0 });
+    return { messages: body.messages || [], hidden: body.hidden || [] };
+  }
+
+  /** 全服聊天：送出訊息；回傳 { status: 'ok'|'slow', msg?, waitMs? } */
+  async chatSend(fromId, token, text) {
+    return this.rpc('jdqs_chat_send', { p_from: fromId, p_token: token, p_text: text });
+  }
+
+  async chatReport(fromId, token, id) {
+    return this.rpc('jdqs_chat_report', { p_from: fromId, p_token: token, p_id: Number(id) });
+  }
+
   /** 讀取並清空自己的事件信箱 */
   async worldInbox(id, token) {
     const body = await this.rpc('jdqs_world_inbox', { p_id: id, p_token: token });

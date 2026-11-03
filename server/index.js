@@ -23,6 +23,9 @@
  *   GET    /api/world/nearby?lat=&lon=&km=&exclude=   附近玩家（km 最大 20）
  *   POST   /api/world/players/:id/events   送出事件 { from, type, data }（Bearer = 寄件者 token）
  *   GET    /api/world/players/:id/events   讀取並清空自己的事件信箱
+ *   GET    /api/world/chat?after=       全服聊天（最近 200 則與被隱藏的編號）
+ *   POST   /api/world/chat              ← { from, text }（Bearer = 玩家 token；每 5 秒 1 則）
+ *   POST   /api/world/chat/:id/report   ← { from }（檢舉，3 人檢舉後隱藏）
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -163,6 +166,25 @@ async function handleWorld(req, res, url) {
     const r = world.objPut(String(body?.from || ''), token, om[1], decodeURIComponent(om[2]), body);
     const code = { ok: 200, conflict: 409, forbidden: 403, invalid: 400 }[r.status];
     return json(res, code, r);
+  }
+  // 全服聊天
+  if (url.pathname === '/api/world/chat' && req.method === 'GET') {
+    return json(res, 200, world.chatList(Math.max(0, Number(url.searchParams.get('after')) || 0)));
+  }
+  if (url.pathname === '/api/world/chat' && req.method === 'POST') {
+    const token = bearer(req);
+    if (!token) return json(res, 401, { error: 'unauthorized' });
+    const body = await readBody(req);
+    const r = world.chatSend(String(body?.from || ''), token, body?.text);
+    return json(res, { ok: 200, slow: 429, forbidden: 403, invalid: 400 }[r.status], r);
+  }
+  const cr = /^\/api\/world\/chat\/(\d+)\/report$/.exec(url.pathname);
+  if (cr && req.method === 'POST') {
+    const token = bearer(req);
+    if (!token) return json(res, 401, { error: 'unauthorized' });
+    const body = await readBody(req);
+    const r = world.chatReport(String(body?.from || ''), token, cr[1]);
+    return json(res, r.status === 'ok' ? 200 : 403, r);
   }
   const ev = /^\/api\/world\/players\/([^/]+)\/events$/.exec(url.pathname);
   if (ev && ID_RE.test(ev[1])) {

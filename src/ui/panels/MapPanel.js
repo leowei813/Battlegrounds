@@ -299,6 +299,7 @@ export class MapPanel {
       <div class="map-tools">
         ${btn('🏰', 'gotoShelter', {}, { cls: 'btn-icon', disabled: !has, title: '回到避難所' })}
         ${btn(`💬${unreadCount(this.game) ? `<small class="unread">${unreadCount(this.game)}</small>` : ''}`, 'messages', {}, { cls: 'btn-icon', title: '消息：探索報告與避難所紀錄' })}
+        ${btn(`🗨️${this.game.chat.unread() ? `<small class="unread">${Math.min(99, this.game.chat.unread())}</small>` : ''}`, 'chat', {}, { cls: `btn-icon ${this.ui.chatView?.isOpen ? 'on' : ''}`, title: '全服聊天：所有玩家都看得到' })}
         ${btn(this.scanning ? '⏳' : '🔄', 'rescan', {}, { cls: 'btn-icon', disabled: this.scanning, title: '重新掃描附近建築' })}
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
         ${btn('☣️', 'zoneMode', {}, { cls: `btn-icon ${this.service.zoneMode?.() === 'off' ? '' : 'on'}`, title: '危險度圖層：淡／關閉' })}
@@ -554,6 +555,7 @@ export class MapPanel {
     if (action === 'gotoShelter' && sh) this.service.focus(sh.lat, sh.lon);
     if (action === 'markers') this.openMarkers();
     if (action === 'messages') openMessages(this.ui);
+    if (action === 'chat') this.ui.chatView.toggle();
     if (action === 'legend') this.showLegend();
     if (action === 'zoneMode') {
       this.ui.toastEl.show(`☣️ 危險度圖層：${this.service.cycleZoneMode()}`, 'info');

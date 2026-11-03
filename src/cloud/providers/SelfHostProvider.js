@@ -115,6 +115,33 @@ export class SelfHostProvider {
     return this.check(status, body);
   }
 
+  /** 全服聊天：讀取 after 之後的訊息與被檢舉隱藏的訊息編號 */
+  async chatList(after = 0) {
+    const { status, body } = await fetchJson(this.url(`/world/chat?after=${Number(after) || 0}`));
+    const b = this.check(status, body);
+    return { messages: b.messages || [], hidden: b.hidden || [] };
+  }
+
+  /** 全服聊天：送出訊息；回傳 { status: 'ok'|'slow', msg?, waitMs? } */
+  async chatSend(fromId, token, text) {
+    const { status, body } = await fetchJson(this.url('/world/chat'), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: fromId, text }),
+    });
+    if (status === 429 && body?.status === 'slow') return body;
+    return this.check(status, body);
+  }
+
+  async chatReport(fromId, token, id) {
+    const { status, body } = await fetchJson(this.url(`/world/chat/${Number(id)}/report`), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: fromId }),
+    });
+    return this.check(status, body);
+  }
+
   /** 讀取並清空自己的事件信箱 */
   async worldInbox(id, token) {
     const { status, body } = await fetchJson(this.url(`/world/players/${id}/events`), { headers: { Authorization: `Bearer ${token}` } });

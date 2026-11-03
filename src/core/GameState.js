@@ -107,6 +107,7 @@ export function createInitialState({ playerName, classId, lat, lon }) {
       remain: {}, // 建築內殘留的物資 { poiId: { day, res } }
     },
     bases: [], // 據點列表（見 createBase）
+    chat: { blocked: [], seenId: 0 }, // 全服聊天：封鎖名單與已讀位置
     primaryBaseId: null, // 主要據點
 
     resources: { ...STARTING_RESOURCES },

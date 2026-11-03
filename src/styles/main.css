@@ -833,3 +833,48 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 @media (max-width: 899px) {
   .craft-layout, .craft-layout .sh-main { max-width: 100vw; overflow-x: hidden; }
 }
+
+/* ---------- 全服聊天（v9.6.0）：網頁版右側面板、手機版全螢幕 ---------- */
+.chat-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: 400px; max-width: 100%; z-index: 15; display: flex; flex-direction: column; background: #151812; border-left: 1px solid var(--line); box-shadow: -8px 0 24px #0006; }
+.chat-head { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.chat-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chat-title b { font-size: 16px; }
+.chat-title small { color: var(--muted); font-size: 12px; }
+.chat-head .btn-icon { width: 36px; height: 36px; font-size: 16px; border-radius: 8px; }
+.chat-back { display: none !important; }
+.chat-list { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px; display: flex; flex-direction: column; gap: 10px; overscroll-behavior: contain; }
+.chat-day { align-self: center; font-size: 12px; color: var(--muted); }
+.chat-empty { margin: auto; text-align: center; padding: 20px; line-height: 1.8; }
+.chat-msg { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; max-width: 85%; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.chat-msg.mine { align-self: flex-end; align-items: flex-end; }
+.chat-meta { font-size: 12px; display: flex; align-items: center; gap: 4px; }
+.chat-meta b { color: var(--blue); }
+.chat-msg.mine .chat-meta b { color: var(--accent); }
+.chat-meta span { color: var(--muted); }
+.chat-more { border: 0; background: none; color: var(--muted); font: inherit; font-size: 14px; padding: 0 6px; cursor: pointer; opacity: .35; }
+.chat-msg:hover .chat-more, .chat-more:focus-visible { opacity: 1; }
+.chat-bubble { padding: 8px 12px; border-radius: 4px 12px 12px 12px; background: var(--card); border: 1px solid var(--line); line-height: 1.5; word-break: break-word; white-space: pre-wrap; -webkit-user-select: text; user-select: text; }
+.chat-msg.mine .chat-bubble { border-radius: 12px 4px 12px 12px; background: #2a2212; border-color: #5a4614; }
+.chat-new { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); padding: 5px 14px; border-radius: 14px; border: 1px solid #5a4614; background: #2a2212; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+.chat-form { flex: 0 0 auto; padding: 8px 12px 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.chat-row { display: flex; gap: 8px; }
+.chat-input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg2); color: var(--text); font: inherit; font-size: 16px; }
+.chat-input:disabled { opacity: .6; }
+.chat-send { min-width: 72px; min-height: 44px; }
+.chat-hint { display: flex; gap: 8px; font-size: 12px; color: var(--muted); }
+.chat-hint .chat-tip { flex: 1; }
+.chat-sheet { position: absolute; inset: 0; background: #0009; display: flex; flex-direction: column; justify-content: flex-end; z-index: 2; }
+.chat-sheet-box { background: var(--bg2); border-top: 1px solid var(--line); border-radius: 14px 14px 0 0; padding: 14px; display: flex; flex-direction: column; gap: 8px; max-height: 70%; overflow-y: auto; }
+.chat-sheet-box .btn { min-height: 46px; justify-content: flex-start; }
+.chat-sheet-box > .btn:last-child { justify-content: center; }
+.chat-blocked { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.chat-blocked span { flex: 1; }
+@media (min-width: 900px) {
+  body.chat-open .map-tools { right: 412px; }
+}
+@media (max-width: 899px) {
+  .chat-drawer { width: auto; left: 0; border-left: 0; box-shadow: none; }
+  .chat-back { display: inline-flex !important; }
+  .chat-x { display: none !important; }
+  .chat-more { opacity: .6; }
+}
