@@ -310,8 +310,8 @@ export class SurvivorPanel {
     const skillsCard = `<section class="sh-card"><h3>技能 <small class="muted">（品級可解放 ${skillSlots}/${cls.skills.length} 個）</small></h3><ul class="skill-list">${skills}</ul></section>`;
     const foot = sv.isLeader ? '' : `<div class="btn-row end">${btn('🚪 驅逐', 'dismiss', {}, { cls: 'btn-ghost btn-sm', disabled: sv.status === 'exploring' })}</div>`;
     const body = {
-      // 網頁版的概要同時顯示工作、裝備與背包（手機版只顯示工作與能力）
-      overview: `<div class="sv-ov"><div class="sv-ov-col">${jobsCard}<div class="sv-ov-wide">${gearCard}</div>${statsCard}</div><div class="sv-ov-col sv-ov-wide">${bagCard}</div></div>${foot}`,
+      // 概要：工作指派與能力（裝備、背包在各自的分頁）
+      overview: `<div class="sv-ov"><div class="sv-ov-col">${jobsCard}</div><div class="sv-ov-col">${statsCard}</div></div>${foot}`,
       gear: gearCard,
       bag: bagCard,
       skills: skillsCard,

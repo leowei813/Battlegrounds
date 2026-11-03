@@ -622,7 +622,7 @@ export class MapPanel {
       ${this.ui.panels.explore.checkpointHtml(ex)}
       ${(ex.queue || []).length ? `<div class="label">🧭 探索佇列（${ex.queue.length}/${g.exploration.queueLimit()}）</div>${ex.queue.map((pid, i) => `<div class="row-between"><span>${i + 1}. ${escapeHtml(g.exploration.poi(pid)?.name || '地點')}</span>${btn('移除', 'dequeue', { i }, { cls: 'btn-xs btn-ghost' })}</div>`).join('')}` : ''}
       ${canRecall ? `<p class="muted">${'召回後隊伍會從目前位置走回避難所（需要移動時間），只會帶回已經到過的檢核點找到的物資。'}</p>` : ''}
-      <div class="btn-row">${canRecall ? btn('↩️ 召回', 'recall', {}, { cls: 'btn-danger' }) : ''}${btn('📋 探索頁', 'explore', {}, { cls: 'btn-ghost' })}</div>`;
+      <div class="btn-row">${canRecall ? btn('↩️ 召回', 'recall', {}, { cls: 'btn-danger' }) : ''}</div>`;
     };
     this.ui.modal.open({
       title: '🚶 我的探索隊',
@@ -638,7 +638,7 @@ export class MapPanel {
         if (action === 'recall') {
           const r = this.ui.result(g.exploration.recall(expId));
           if (r.ok) this.renderMap(true);
-        } else if (action === 'explore') this.ui.switchTab('explore');
+        }
       },
     });
   }
