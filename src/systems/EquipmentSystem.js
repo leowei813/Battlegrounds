@@ -317,7 +317,7 @@ export class EquipmentSystem {
 
   /** 背包已用格數：每件裝備 1 格，每種消耗品（堆疊）1 格 */
   bagSlotsUsed(sv) {
-    const stacks = Object.values(sv.bag || {}).reduce((s, v) => s + (v > 0 ? Math.ceil(v / STACK_MAX) : 0), 0);
+    const stacks = Object.values(this.game.survivors.bagOf(sv)).reduce((s, v) => s + (v >= 1 ? Math.ceil(Math.floor(v) / STACK_MAX) : 0), 0);
     return this.bagItems(sv).length + stacks;
   }
 

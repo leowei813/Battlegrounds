@@ -244,7 +244,7 @@ export class SurvivorPanel {
     // 背包格子：每件裝備一格；同種類消耗品堆疊在一格
     const cells = [
       // 每格最多堆疊 999，超過時分成多格顯示
-      ...Object.keys(bag).filter((k) => bag[k] > 0).flatMap((k) => Array.from({ length: Math.ceil(bag[k] / STACK_MAX) }, (_, i) => [k, Math.min(STACK_MAX, bag[k] - i * STACK_MAX)])).map(([k, qty]) => `
+      ...Object.keys(bag).filter((k) => bag[k] >= 1).flatMap((k) => Array.from({ length: Math.ceil(Math.floor(bag[k]) / STACK_MAX) }, (_, i) => [k, Math.min(STACK_MAX, Math.floor(bag[k]) - i * STACK_MAX)])).map(([k, qty]) => `
         <div class="slot-cell stack">
           <div class="slot-main"><span class="slot-icon">${metaOf(k).icon}</span><b>${metaOf(k).name}</b><span class="slot-qty">×${Math.floor(qty)}</span></div>
           <div class="slot-ctrl"><input type="number" min="1" step="1" value="${Math.floor(bag[k])}" inputmode="numeric" aria-label="數量">
