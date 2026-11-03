@@ -170,7 +170,7 @@ export class ZombieSpawnSystem {
 
     const enemies = Array.from({ length: g.count }, () => this.game.combat.createEnemy(g.enemyId, g.level, g.elite, this.groupMul(g)));
     const firstStrike = this.game.shelter.primary().facilities.watchtower.level * 0.04;
-    const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: firstStrike });
+    const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: firstStrike, title: `🧟 攻擊 ${this.groupLabel(g)}` });
     this.game.combat.applyOutcome(members, result, at);
 
     const loot = { items: [] };

@@ -128,7 +128,7 @@ export class InterceptSystem {
         return;
       }
       const enemies = Array.from({ length: this.npcTeamSize(n) }, () => g.combat.createEnemy('raider', n.level));
-      const result = g.combat.simulate(members, enemies);
+      const result = g.combat.simulate(members, enemies, { title: '⚔️ 攔截野外隊伍' });
       g.combat.applyOutcome(members, result, at);
       exp.travelKills = (exp.travelKills || 0) + result.kills.length;
       exp.travelXp = (exp.travelXp || 0) + result.xp;
@@ -165,7 +165,7 @@ export class InterceptSystem {
       return;
     }
     const enemies = Array.from({ length: Math.max(1, Math.min(6, t.members)) }, () => g.combat.createEnemy('raider', t.level));
-    const result = g.combat.simulate(members, enemies);
+    const result = g.combat.simulate(members, enemies, { title: '⚔️ 攔截野外隊伍' });
     g.combat.applyOutcome(members, result, at);
     exp.travelKills = (exp.travelKills || 0) + result.kills.length;
     exp.travelXp = (exp.travelXp || 0) + result.xp;

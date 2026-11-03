@@ -347,7 +347,7 @@ export class NpcSystem {
       const guards = base ? g.territory.garrison(base).list : [];
       if (!guards.length) continue;
       const enemies = Array.from({ length: Math.min(4, 2 + Math.floor(n.level / 8)) }, () => g.combat.createEnemy('raider', n.level));
-      const result = g.combat.simulate(guards, enemies);
+      const result = g.combat.simulate(guards, enemies, { title: `🏴‍☠️ 攔截 NPC「${n.name}」的隊伍` });
       g.combat.applyOutcome(guards, result, now);
       if (result.victory) {
         g.log(`🛡️「${base.name}」的駐守人員擊退了路過的「${n.name}」隊伍`, 'success');
@@ -471,7 +471,7 @@ export class NpcSystem {
     let victory = !as.breached;
     let result = null;
     if (as.breached && (defenders.length || allies.length)) {
-      result = g.combat.simulate(defenders, enemies, { firstStrikeBonus: base.facilities.watchtower.level * 0.04, allies });
+      result = g.combat.simulate(defenders, enemies, { firstStrikeBonus: base.facilities.watchtower.level * 0.04, allies, title: `🛡️ 防守 NPC「${n.name}」的掠奪` });
       g.combat.applyOutcome(defenders, result, now);
       victory = result.victory;
     }
@@ -565,7 +565,7 @@ export class NpcSystem {
       return report;
     }
     // 2. 破牆後與守軍交戰
-    const result = g.combat.simulate(fighters, enemies);
+    const result = g.combat.simulate(fighters, enemies, { title: `⚔️ 攻打 NPC「${n.name}」（Lv${n.level}）` });
     g.combat.applyOutcome(fighters, result, exp.endAt);
     report.kills += result.kills.length;
     report.xp += result.xp;

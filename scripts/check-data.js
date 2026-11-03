@@ -2470,6 +2470,26 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(m.survivors[0].equipment.melee === kn.id && !m.survivors[0].equipment.weapon && m.survivors[0].loadout, 'v9 遷移：原本拿在武器欄的近戰武器移到近戰欄');
 }
 
+// ---- 61. v9 快速換裝 ----
+{
+  const gq2 = Game.newGame({ playerName: 'Q', classId: 'warrior', lat: 25, lon: 121 });
+  gq2.state.map.pois = fillPois([], 25, 121);
+  gq2.shelter.establish(gq2.state.map.pois[0]);
+  const lead = gq2.survivors.leader();
+  const weak = gq2.equipment.generate({ level: 3, model: 'knife', rarity: 'poor' });
+  const strong = gq2.equipment.generate({ level: 10, model: 'knife', rarity: 'epic' });
+  const gun = gq2.equipment.generate({ level: 10, model: 'ak47', rarity: 'epic' });
+  [weak, strong, gun].forEach((it) => gq2.equipment.addItem(it, 't'));
+  gq2.equipment.equip(lead.id, weak.id);
+  delete gq2.state.supplies.ammo556;
+  lead.bag = {};
+  const r = gq2.equipment.quickEquip(lead.id);
+  assert(r.ok && lead.equipment.melee === strong.id && !lead.equipment.weapon, `快速換裝換上戰力最高的近戰武器，沒有彈藥的槍不換（${r.msg}）`);
+  gq2.state.supplies.ammo556 = 50;
+  gq2.equipment.quickEquip(lead.id);
+  assert(lead.equipment.weapon === gun.id, '有彈藥時換上遠程武器');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

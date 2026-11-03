@@ -1,5 +1,5 @@
 import {
-  RARITIES, RARITY_ORDER, ITEM_TYPES, AFFIXES, RARITY_PREFIX, SLOT_KEYS, rarityIndex,
+  RARITIES, RARITY_ORDER, ITEM_TYPES, AFFIXES, RARITY_PREFIX, SLOT_KEYS, SLOTS, rarityIndex,
   ITEM_MODELS, tierMul, benchFor, craftRarityTable,
   BAG_BASE_SLOTS, STORE_BASE_SLOTS, STORE_SLOTS_PER_LEVEL, STACK_MAX, itemSize, itemWeight,
 } from '../config/equipment.js';
@@ -8,7 +8,7 @@ import {
   weightedPick, pick, randFloat, uid, clamp, chance,
 } from '../utils/math.js';
 import { canAfford, payCost, grant } from './costUtils.js';
-import { SUPPLIES, AMMO_RECIPES } from '../config/supplies.js';
+import { SUPPLIES, AMMO_RECIPES, AMMO_FOR } from '../config/supplies.js';
 
 /** 防護裝備依強度使用的板材與布料（索引為型號強度 1～10） */
 const PLATE = [null, null, null, 'ironWire', 'ironPlate', 'ironPlate', 'steelPlate', 'steelPlate', 'alloyPlate', 'alloyPlate', 'titanium'];
@@ -425,6 +425,35 @@ export class EquipmentSystem {
       old.loc = loc;
     }
     return { ok: true };
+  }
+
+  /**
+   * 快速換裝：從倉庫與待在避難所的倖存者背包中，每個部位換上戰力最高的裝備。
+   * 不會拿走別人身上已經穿戴的裝備；遠程武器只換有彈藥庫存的。
+   * @returns {{ok:boolean, changed:string[], msg?:string, reason?:string}}
+   */
+  quickEquip(survivorId) {
+    const g = this.game;
+    const sv = g.survivors.get(survivorId);
+    if (!sv) return { ok: false, reason: '找不到倖存者' };
+    if (sv.status !== 'idle') return { ok: false, reason: '已派出的倖存者無法更換裝備' };
+    const homeIds = new Set(g.state.survivors.filter((s) => g.survivors.atShelter(s)).map((s) => s.id));
+    const changed = [];
+    SLOT_KEYS.forEach((slot) => {
+      const cur = this.getItem(sv.equipment[slot]);
+      const pool = this.items.filter((i) => i.slot === slot && !this.equippedBy(i.id)
+        && ((i.loc || 'store') === 'store' || homeIds.has(i.loc)));
+      const usable = slot === 'weapon'
+        ? pool.filter((i) => { const need = AMMO_FOR[i.type]; return need && g.survivors.ammoAvailable(sv, need.ammo) >= need.perFight; })
+        : pool;
+      const best = usable.sort((a, b) => b.power - a.power)[0];
+      if (!best || best.power <= (cur?.power || 0)) return;
+      const r = this.equip(sv.id, best.id);
+      if (r.ok) changed.push(`${SLOTS[slot].name}：${best.name}`);
+    });
+    return changed.length
+      ? { ok: true, changed, msg: `快速換裝：${changed.join('、')}` }
+      : { ok: true, changed, msg: '目前已經是戰力最高的裝備' };
   }
 
   /** 卸下：放回倉庫，倉庫滿了放進自己的背包 */

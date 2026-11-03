@@ -144,7 +144,7 @@ export class CombatSystem {
     }))];
     const foes = enemies.map((e) => ({ ...e, side: 'enemy', hp: e.maxHp, cd: randFloat(0.3, 1), skills: {} }));
     const log = [];
-    const push = (t, msg, type = '') => { if (log.length < 140) log.push({ t: +t.toFixed(1), msg, type }); };
+    const push = (t, msg, type = '') => { if (log.length < 400) log.push({ t: +t.toFixed(1), msg, type }); };
 
     // 先手：探照燈加成讓隊伍首輪攻擊提前
     if (chance(opts.firstStrikeBonus || 0)) {
@@ -171,6 +171,11 @@ export class CombatSystem {
       const raw = atk * randFloat(0.9, 1.1) * (crit ? atkUnit.critDmg : 1);
       const dmg = Math.max(1, Math.round(raw * (100 / (100 + target.def * 2))));
       target.hp -= dmg;
+      // 傷害統計
+      atkUnit.dealt = (atkUnit.dealt || 0) + dmg;
+      target.taken = (target.taken || 0) + dmg;
+      if (crit) atkUnit.crits = (atkUnit.crits || 0) + 1;
+      atkUnit.hits = (atkUnit.hits || 0) + 1;
       push(t, `${atkUnit.name} ${crit ? '💥暴擊' : '攻擊'} ${target.name} -${dmg}`, atkUnit.side === 'team' ? (crit ? 'crit' : 'hit') : 'hurt');
       if (atkUnit.lifeSteal) {
         const heal = Math.round(dmg * atkUnit.lifeSteal);
@@ -233,6 +238,8 @@ export class CombatSystem {
 
     const victory = alive(foes).length === 0 && alive(team).length > 0;
     push(t, victory ? '🏆 戰鬥勝利！' : '💀 戰鬥失敗，隊伍撤退…', victory ? 'win' : 'lose');
+    // 記錄這場戰鬥的詳細資料（逐筆傷害、暴擊與每人傷害統計），在「消息 → 戰鬥紀錄」查看
+    if (opts.record !== false && survivors.length) this.record(opts.title, victory, t, log, team, foes);
 
     return {
       victory,
@@ -257,6 +264,22 @@ export class CombatSystem {
    * 生命歸零的隊員重傷並扣除經驗（可能降級），且不獲得本場經驗。
    * 由探索與地圖戰鬥共用。
    */
+  /** 保存最近的戰鬥詳細（最多 10 場，每場最多 120 筆紀錄） */
+  record(title, victory, duration, log, team, foes) {
+    const st = this.game.state;
+    const unit = (u) => ({
+      name: u.name, side: u.side, dealt: Math.round(u.dealt || 0), taken: Math.round(u.taken || 0), crits: u.crits || 0, hits: u.hits || 0,
+      kills: u.kills || 0, down: u.hp <= 0, weapon: u.weapon || '', meds: u.medsUsed || 0,
+    });
+    const entry = {
+      id: uid('bt'), at: Date.now(), title: String(title || '戰鬥').slice(0, 40), victory, duration: +duration.toFixed(1),
+      team: team.map(unit), foes: foes.map(unit),
+      log: (log.length > 120 ? [...log.slice(0, 100), { t: -1, msg: `…（中間省略 ${log.length - 120} 筆）`, type: 'info' }, ...log.slice(-20)] : log),
+    };
+    st.battles = [entry, ...(st.battles || [])].slice(0, 10);
+    this.lastBattleId = entry.id;
+  }
+
   /** 扣掉戰鬥中用掉的藥品欄藥品 */
   consumeMeds(sv, u) {
     if (!u?.medsUsed) return;

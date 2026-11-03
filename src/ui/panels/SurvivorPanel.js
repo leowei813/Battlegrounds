@@ -8,7 +8,7 @@ import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { LOADOUT_MAX } from '../../systems/SurvivorSystem.js';
 import {
-  btn, costHtml, survivorCard, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf,
+  btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf,
 } from '../components.js';
 import {
   RARITIES, ITEM_MODELS, ITEM_TYPES, itemWeight, STACK_MAX,
@@ -157,7 +157,7 @@ export class SurvivorPanel {
         <h4>技能 <small class="muted">（品級可解放 ${skillSlots}/${cls.skills.length} 個）</small></h4><ul class="skill-list">${skills}</ul>
         <h4>工作指派 <small class="muted">（閒置在避難所時生效）</small></h4><div class="chips">${jobs}</div>
         ${this.jobsHelp(sv)}
-        <h4>裝備</h4><div class="equip-grid">${slots}</div>
+        <div class="row-between"><h4>裝備</h4>${sv.status === 'idle' ? btn('⚡ 快速換裝', 'quickEquip', {}, { cls: 'btn-sm btn-primary', title: '從倉庫與在家隊員的背包，每個部位換上戰力最高的裝備（不拿別人身上的；遠程武器只換有彈藥的）' }) : ''}</div><div class="equip-grid">${slots}</div>
         ${this.bagHtml(sv)}
         ${this.supplyHtml(sv)}
         ${sv.isLeader ? '' : `<div class="btn-row end">${btn('🚪 驅逐', 'dismiss', {}, { cls: 'btn-ghost btn-sm', disabled: sv.status === 'exploring' })}</div>`}
@@ -311,6 +311,7 @@ export class SurvivorPanel {
         if (action === 'job') this.ui.result(g.survivors.setJob(id, data.job));
         if (action === 'heal') this.ui.result(g.survivors.heal(id, data.key || null));
         if (action === 'unequip') this.ui.result(g.equipment.unequip(id, data.slot));
+        if (action === 'quickEquip') this.ui.result(g.equipment.quickEquip(id));
         if (action === 'dismiss') {
           if (this.confirmDismiss(id)) m.close();
           return;
@@ -398,11 +399,10 @@ export class SurvivorPanel {
         ? items.map((it) => {
           const owner = g.equipment.equippedBy(it.id);
           const carrier = !owner && it.loc && it.loc !== 'store' ? g.survivors.get(it.loc) : null;
-          const diff = it.power - (cur?.power || 0);
           return itemCard(it, {
             equippedBy: owner,
             carrier,
-            actions: `${btn('裝備', 'equip', { id: it.id }, { cls: 'btn-sm btn-primary' })}<span class="${diff >= 0 ? 'pos' : 'neg'}">戰力 ${diff >= 0 ? '▲' : '▼'}${Math.abs(diff)}</span>`,
+            actions: `${btn('裝備', 'equip', { id: it.id }, { cls: 'btn-sm btn-primary' })}${compareHtml(g, it, cur)}`,
           });
         }).join('')
         : '<p class="muted">沒有可以裝備的物品。</p>';

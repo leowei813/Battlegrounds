@@ -178,7 +178,7 @@ export class TerritorySystem {
       report.events.push(fighters.length ? '🧱 圍牆太堅固，久攻不下只好撤退' : '💀 隊員全被防禦設施擊倒');
     } else if (zone.guards > 0 || allyFoes.length) {
       // 2. 圍牆被打破後才能和駐守人員（與對方的友好協防隊）交戰，打贏才可掠奪
-      const result = g.combat.simulate(fighters, [...(zone.guards > 0 ? this.defenders(zone) : []), ...allyFoes]);
+      const result = g.combat.simulate(fighters, [...(zone.guards > 0 ? this.defenders(zone) : []), ...allyFoes], { title: `⚔️ 突襲「${poi.name}」` });
       g.combat.applyOutcome(fighters, result, exp.endAt);
       report.kills += result.kills.length;
       win = result.victory;

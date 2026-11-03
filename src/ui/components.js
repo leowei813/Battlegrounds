@@ -77,6 +77,27 @@ export function statLine(stats) {
     .join('');
 }
 
+/**
+ * 與目前裝備比較：列出所有能力（含附加詞條）的差異，較好▲綠、較差▼紅。
+ * @param {object} game
+ * @param {object} item 候選裝備
+ * @param {object|null} cur 目前的裝備
+ */
+export function compareHtml(game, item, cur) {
+  const a = game.equipment.itemStats(item);
+  const b = cur ? game.equipment.itemStats(cur) : {};
+  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => STAT_FMT[k]);
+  const rows = keys.map((k) => {
+    const d = (a[k] || 0) - (b[k] || 0);
+    if (Math.abs(d) < 1e-9) return '';
+    const [name, f] = STAT_FMT[k];
+    const good = k === 'weight' ? d < 0 : d > 0;
+    return `<span class="${good ? 'pos' : 'neg'}">${name} ${d > 0 ? '▲' : '▼'}${f(Math.abs(d))}</span>`;
+  }).filter(Boolean);
+  const pd = (item.power || 0) - (cur?.power || 0);
+  return `<div class="compare"><b class="${pd >= 0 ? 'pos' : 'neg'}">戰力 ${pd >= 0 ? '▲' : '▼'}${Math.abs(pd)}</b>${rows.join('') || '<span class="muted">能力相同</span>'}</div>`;
+}
+
 /** 能力範圍（最小值～最大值） */
 export function statRangeLine(range) {
   return Object.entries(range)

@@ -359,7 +359,7 @@ export class ExplorationSystem {
         continue;
       }
       const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
-      const result = this.game.combat.simulate(members, this.game.territory.defenders(th));
+      const result = this.game.combat.simulate(members, this.game.territory.defenders(th), { title: `⚔️ 經過「${th.name}」的警戒範圍` });
       this.game.combat.applyOutcome(members, result, now);
       exp.travelKills += result.kills.length;
       exp.travelXp += result.xp;
@@ -411,7 +411,7 @@ export class ExplorationSystem {
   ambush(exp, g, members, now) {
     const poi = this.poi(exp.poiId);
     const enemies = Array.from({ length: g.count }, () => this.game.combat.createEnemy(g.enemyId, g.level, g.elite, this.game.zombies.groupMul(g)));
-    const result = this.game.combat.simulate(members, enemies);
+    const result = this.game.combat.simulate(members, enemies, { title: `🧟 途中遭遇 ${this.game.zombies.groupLabel(g)}` });
     this.game.combat.applyOutcome(members, result, now);
     const label = `${ALL_ENEMIES[g.enemyId].icon} ${this.game.zombies.groupLabel(g)}`;
     exp.travelKills += result.kills.length;
@@ -831,7 +831,7 @@ export class ExplorationSystem {
         cp.events.push(`🧟 ${tag}遭遇 ${n} 隻殭屍`);
       }
       const fs = this.game.shelter.primary().facilities.watchtower.level * 0.04;
-      const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs });
+      const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs, title: `🔍 ${ctx.poi.name}：${enemies[0]?.name || '殭屍'}${enemies.length > 1 ? ` ×${enemies.length}` : ''}` });
       this.game.combat.applyOutcome(members, result, at);
       cp.kills += result.kills.length;
       cp.xp += result.xp;
