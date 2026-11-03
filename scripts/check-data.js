@@ -2985,6 +2985,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   fsm.rmSync(cdir, { recursive: true, force: true });
 }
 
+// ---- 66. v9.7 物資數量依風險調降 ----
+{
+  const { riskAmountMul } = await import('../src/systems/LootStock.js');
+  assert(riskAmountMul(0) === 0.45 && riskAmountMul(8) === 0.9 && riskAmountMul(20) === 0.9 && riskAmountMul(-1) === 0.45, '風險倍率介於 0.45～0.9');
+  assert(riskAmountMul(2) < riskAmountMul(4) && riskAmountMul(4) < riskAmountMul(6), '風險越高保留越多物資');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
