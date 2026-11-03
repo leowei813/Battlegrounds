@@ -29,6 +29,8 @@ const MELEE_REACH = WORLD.WALL_R + 8;
 const MELEE_REACH_POST = 14;
 /** 殭屍對圍牆的傷害係數（放置遊戲節奏：讓防線有時間反應） */
 const WALL_DMG_MUL = 0.25;
+/** 近戰防守時被殭屍反擊的傷害倍率 */
+const MELEE_COUNTER = 0.35;
 /** 圍牆被打破後，每隔幾秒與衝進來的殭屍交戰一次 */
 const GATE_FIGHT_EVERY = 3;
 /** 防守失敗時 1 棟防禦設施損毀（降 1 級）的機率 */
@@ -373,6 +375,11 @@ export class BaseSiege {
         const crit = chance(stats.crit);
         this.damage(t, atk.value * 0.6 * this.guardMul() * (crit ? stats.critDmg : 1), crit);
         this.pushFx({ type: 'shot', kind: atk.ranged ? 'guard' : 'melee', x1: 0, y1: 0, x2: t.x, y2: t.y });
+        // 近戰防守的人會被貼在牆邊的殭屍反擊受傷（即使圍牆還在）
+        if (!atk.ranged && t.hp > 0) {
+          const hurt = Math.max(1, t.atk * MELEE_COUNTER * (100 / (100 + stats.def * 2)) * (chance(stats.dodge) ? 0 : 1));
+          if (hurt > 0) this.game.survivors.damage(sv, hurt, '近戰防守屍潮時受傷');
+        }
       });
     }
 

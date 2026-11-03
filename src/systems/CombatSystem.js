@@ -72,6 +72,7 @@ export class CombatSystem {
       xp: Math.round(def.xp * (1 + 0.25 * l)),
       coins: Math.round(def.coins * (1 + 0.2 * l)),
       partsChance: def.partsChance,
+      ranged: !!def.ranged,
     };
     if (elite) {
       e.maxHp = Math.round(e.maxHp * ELITE_MUL.hp);
@@ -264,6 +265,33 @@ export class CombatSystem {
    * 生命歸零的隊員重傷並扣除經驗（可能降級），且不獲得本場經驗。
    * 由探索與地圖戰鬥共用。
    */
+  /**
+   * 守城期間防守人員的傷勢：近戰防守的人一定會被攻擊者打到；
+   * 攻擊方有遠程武器時，使用遠程武器的防守人員也有機率中彈。
+   * @param {object[]} defenders 倖存者
+   * @param {object[]} attackers 攻擊者（含 atk、ranged）
+   * @param {number} sec 攻城秒數
+   * @returns {string[]} 受傷的人
+   */
+  wallDefenseHurt(defenders, attackers, sec, reason = '守城時受傷') {
+    const svs = this.game.survivors;
+    if (!attackers.length || !sec) return [];
+    const avgAtk = attackers.reduce((s, a) => s + (a.atk || 0), 0) / attackers.length;
+    const ranged = attackers.some((a) => a.ranged);
+    const hurt = [];
+    defenders.forEach((sv) => {
+      const st = svs.stats(sv);
+      const usesRanged = st.weaponMode === 'ranged';
+      if (usesRanged && (!ranged || !chance(0.35))) return;
+      const hits = usesRanged ? 1 + Math.floor(sec / 30) : Math.max(1, Math.round(sec / 8));
+      const dmg = hits * avgAtk * (usesRanged ? 0.6 : 0.5) * (100 / (100 + st.def * 2));
+      if (dmg <= 0) return;
+      svs.damage(sv, dmg, reason);
+      hurt.push(sv.name);
+    });
+    return hurt;
+  }
+
   /** 保存最近的戰鬥詳細（最多 10 場，每場最多 120 筆紀錄） */
   record(title, victory, duration, log, team, foes) {
     const st = this.game.state;

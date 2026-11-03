@@ -462,11 +462,14 @@ export class NpcSystem {
     const helpers = isHome ? g.assist.incoming().filter((h) => h.kind === 'team') : [];
     const allies = isHome ? g.assist.allyUnits() : [];
     const helpDps = helpers.reduce((s, h) => s + (h.dps || 0), 0);
+    const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));
     const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps() * (1 + g.research.bonus('raidDefensePct')) + helpDps);
     base.wallHp = Math.max(0, as.wallLeft);
+    // 守城時：近戰防守的人會受傷，對方有遠程武器時遠程防守的人也可能中彈
+    const wallGuards = [...siege.guards().map((x) => x.sv), ...base.defenses.map((d) => g.survivors.get(d.garrisonId)).filter(Boolean)];
+    g.combat.wallDefenseHurt([...new Set(wallGuards)], all, as.sec, '守城對抗 NPC 掠奪時受傷');
     const enemies = as.alive;
     const defenders = this.defenders(base);
-    const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));
     // 2. 圍牆被打破後，與據點中的人員交戰；打贏才能掠奪
     let victory = !as.breached;
     let result = null;

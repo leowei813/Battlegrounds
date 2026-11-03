@@ -523,8 +523,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const plainMs = gw.exploration.plan(poiFar, [gw.survivors.leader()], 15).travelMs;
   const carMs = gw.exploration.plan(poiFar, [gw.survivors.leader()], 15, Date.now(), [bike]).travelMs;
   assert(carMs < plainMs, '騎腳踏車縮短路程時間');
+  Object.assign(gw.survivors.leader(), { severe: false, hp: null, status: 'idle' }); // 前面的屍潮近戰防守可能受傷
   const r = gw.exploration.start(poiFar.id, ['leader'], 15, false, Date.now(), { vehicleIds: [bike.id] });
-  assert(r.ok && bike.status === 'out', '帶載具出發');
+  assert(r.ok && bike.status === 'out', `帶載具出發（${r.reason || ''}・${JSON.stringify({ sev: gw.survivors.leader().severe, st: gw.survivors.leader().status })}）`);
   const dur0 = bike.durability;
   gw.exploration.update(Date.now() + 3 * 3600e3, { silent: true });
   assert(bike.status === 'idle' && bike.durability < dur0, `返回後載具磨損（${dur0} → ${bike.durability}）`);
@@ -2488,6 +2489,29 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gq2.state.supplies.ammo556 = 50;
   gq2.equipment.quickEquip(lead.id);
   assert(lead.equipment.weapon === gun.id, '有彈藥時換上遠程武器');
+}
+
+// ---- 62. v9 警戒模式 ----
+{
+  const ga2 = Game.newGame({ playerName: 'AL', classId: 'warrior', lat: 25, lon: 121 });
+  ga2.state.map.pois = fillPois([], 25, 121);
+  ga2.shelter.establish(ga2.state.map.pois[0]);
+  const lead = ga2.survivors.leader();
+  ga2.survivors.setJob(lead.id, 'scavenge');
+  ga2.shelter.setAlert(true);
+  assert(lead.job === 'guard' && ga2.shelter.alert, '警戒時全員改為防禦駐守');
+  ga2.shelter.setAlert(false);
+  assert(lead.job === 'scavenge' && !ga2.shelter.alert, '解除警戒後恢復原本的工作');
+  // 近戰防守屍潮會受傷
+  setHour(ga2, 23);
+  const sx = ga2.siege.of();
+  lead.job = 'guard';
+  sx.update(0.1);
+  sx.spawn('walker');
+  Object.assign(sx.zombies[0], { x: 0, y: 40, hp: 1e6, maxHp: 1e6 });
+  const hp0 = ga2.survivors.hpOf(lead);
+  for (let i = 0; i < 40; i += 1) sx.step(0.1);
+  assert(ga2.survivors.hpOf(lead) < hp0 || lead.severe, '近戰防守屍潮時會被殭屍反擊受傷');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

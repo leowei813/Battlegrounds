@@ -72,12 +72,12 @@ export const RAIDERS = {
   raider: {
     name: '掠奪者', icon: '🥷', color: 0x6d4c41, tier: 2,
     hp: 190, atk: 30, def: 14, crit: 0.12, dodge: 0.12, atkSpeed: 1.1, speed: 12,
-    xp: 18, coins: 4, partsChance: 0.08,
+    xp: 18, coins: 4, partsChance: 0.08, ranged: true,
   },
   raiderChief: {
     name: '掠奪者首領', icon: '🦹', color: 0x4e342e, tier: 4,
     hp: 760, atk: 58, def: 30, crit: 0.18, dodge: 0.12, atkSpeed: 1.1, speed: 10,
-    xp: 90, coins: 15, partsChance: 0.5,
+    xp: 90, coins: 15, partsChance: 0.5, ranged: true,
   },
 };
 Object.assign(ALL_ENEMIES, RAIDERS);

@@ -15,7 +15,7 @@ import {
 /** 避難所面板的分頁 */
 const SHELTER_TABS = ['overview', 'facilities', 'defense', 'storage', 'garage', 'exchange'];
 /** 避難所面板本身處理的操作（其餘在倉庫、車庫分頁時交給倉庫面板） */
-const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon', 'cancelBuild'];
+const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon', 'cancelBuild', 'toggleAlert'];
 
 export class ShelterPanel {
   constructor(ui) {
@@ -117,6 +117,7 @@ export class ShelterPanel {
     const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('storage', `🗄️ 倉庫 ${storeN}`)}${tabBtn('garage', `🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`)}${tabBtn('exchange', `🏪 交易所${g.demand.list.length ? ` ${g.demand.list.length}` : ''}`)}</div>`;
     const sections = {
       overview: `
+        <div class="card row-between ${g.shelter.alert ? 'alert-on' : ''}"><span>${g.shelter.alert ? '🚨 <b>警戒中</b>：全部倖存者暫時為防禦駐守' : '🟢 正常：倖存者依指派的工作行動'}</span>${btn(g.shelter.alert ? '✅ 解除警戒' : '🚨 切換警戒', 'toggleAlert', {}, { cls: `btn-sm ${g.shelter.alert ? '' : 'btn-danger'}` })}</div>
         <div class="label">避難所 ${g.shelter.hasShelter() ? 1 : 0}/1・前哨站 ${g.shelter.outposts().length}/${g.shelter.outpostLimit()} <small>（研究「擴張科技」最多 ${MAX_OUTPOSTS} 座，在地圖點選建築建立）</small></div>
         ${g.shelter.hasShelter() ? '' : `<div class="card warn">🏚️ 目前沒有避難所，無法生產與探索。${btn('🗺️ 到地圖選擇新的避難所', 'gotoMap', {}, { cls: 'btn-sm btn-primary' })}</div>`}
         <div class="chips">${tabs}</div>
@@ -191,6 +192,7 @@ export class ShelterPanel {
     if (action === 'slot') this.openSlot(+data.slot);
     if (action === 'viewBase') this.ui.setViewBase(data.id);
     if (action === 'abandon') openAbandonDialog(this.ui, base);
+    if (action === 'toggleAlert') this.ui.result(g.shelter.setAlert(!g.shelter.alert));
     const tab = this.ui.shelterTab;
     const root = this.ui.panelEl;
     if (tab === 'exchange' && exchangeAction(this.ui, action, data, root)) {

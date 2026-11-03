@@ -469,6 +469,33 @@ export class ShelterSystem {
     return { ok: true, msg: `${DEFENSES[type].name} ${target === 1 ? '建造' : '升級'}中` };
   }
 
+  // ---------- 警戒模式 ----------
+
+  /** 警戒中：全部倖存者暫時改為防禦駐守 */
+  get alert() {
+    return !!this.game.state.alert?.on;
+  }
+
+  /**
+   * 切換警戒／正常。警戒時所有倖存者的工作暫時變為「防禦駐守」，切回正常時恢復原本的工作。
+   */
+  setAlert(on) {
+    const st = this.game.state;
+    if (on === this.alert) return { ok: true, msg: on ? '已經在警戒中' : '已經是正常狀態' };
+    if (on) {
+      const prev = {};
+      st.survivors.forEach((sv) => { prev[sv.id] = sv.job; sv.job = 'guard'; });
+      st.alert = { on: true, prev, at: Date.now() };
+      this.game.log('🚨 進入警戒：全部倖存者暫時改為防禦駐守', 'danger');
+      return { ok: true, msg: '🚨 警戒中：全部倖存者改為防禦駐守' };
+    }
+    const prev = st.alert?.prev || {};
+    st.survivors.forEach((sv) => { if (prev[sv.id]) sv.job = prev[sv.id]; });
+    st.alert = { on: false };
+    this.game.log('✅ 解除警戒：倖存者恢復原本的工作', 'info');
+    return { ok: true, msg: '已解除警戒，恢復原本的工作' };
+  }
+
   /**
    * 取消施工：依完成度退還材料（完成度越高退得越少，最多退 90%）。
    * @returns {{ok:boolean, refund?:object, msg?:string, reason?:string}}

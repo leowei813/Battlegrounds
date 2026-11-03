@@ -420,6 +420,11 @@ export class SurvivorSystem {
   }
 
   setJob(id, job) {
+    // 警戒中指派工作：記住新的工作，解除警戒時恢復成這個工作
+    if (this.game.shelter.alert && this.game.state.alert?.prev) {
+      this.game.state.alert.prev[id] = job;
+      if (job !== 'guard') return { ok: false, reason: '警戒中全員防禦駐守；這個工作會在解除警戒後生效' };
+    }
     const sv = this.get(id);
     if (!sv || !JOBS[job]) return { ok: false, reason: '無效指令' };
     if (sv.status === 'exploring') return { ok: false, reason: '探索中' };
