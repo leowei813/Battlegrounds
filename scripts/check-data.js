@@ -15,7 +15,7 @@ import { FACILITIES, LUMBER_WOOD } from '../src/config/facilities.js';
 import {
   RARITIES, RARITY_ORDER, SLOT_KEYS, ITEM_TYPES, ITEM_MODELS,
 } from '../src/config/equipment.js';
-import { DAY_REAL_MS, START_HOUR } from '../src/config/constants.js';
+import { DAY_REAL_MS, START_HOUR, SAVE_VERSION as SAVE_VERSION_NOW } from '../src/config/constants.js';
 
 /** 把遊戲時鐘調到指定時刻（建檔時間往前推） */
 const setHour = (game, hour) => {
@@ -101,7 +101,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 17, 'state is serializable');
+assert(save.version === SAVE_VERSION_NOW, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -155,7 +155,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -243,7 +243,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
 {
   const ge = Game.newGame({ playerName: 'Gear', classId: 'warrior', lat: 0, lon: 0 });
   const eq = ge.equipment;
-  assert(Object.keys(ITEM_TYPES).length >= 15 && SLOT_KEYS.length === 8, `裝備類型 ${Object.keys(ITEM_TYPES).length} 種、裝備欄 ${SLOT_KEYS.length} 個`);
+  assert(Object.keys(ITEM_TYPES).length >= 15 && SLOT_KEYS.length === 9, `裝備類型 ${Object.keys(ITEM_TYPES).length} 種、裝備欄 ${SLOT_KEYS.length} 個`);
   // 每個品級範圍首尾相接、不重疊
   RARITY_ORDER.slice(1).forEach((r, i) => {
     assert(RARITIES[r].min >= RARITIES[RARITY_ORDER[i]].max, `${RARITIES[r].name}最低倍率 ≥ ${RARITIES[RARITY_ORDER[i]].name}最高倍率`);
@@ -925,7 +925,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   gi.shelter.primary().facilities.itemStore.level = 3;
   gi.state.research.levels.i_shelves = 2;
   gi.research.invalidate();
-  assert(eq.storeCap() === STORE_BASE_SLOTS + 20 + 10, '升級物品倉庫與研究可增加物品格子');
+  assert(eq.storeCap() === STORE_BASE_SLOTS + 26 + 14, '升級物品倉庫與研究可增加物品格子');
   gi.shelter.primary().facilities.itemStore.level = 1;
   gi.state.research.levels.i_shelves = 0;
   gi.research.invalidate();
@@ -986,7 +986,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   home.facilities.warehouse.level = 3;
   assert(gq.resources.storageCap() > cap0 && gq.equipment.storeCap() === slots0, '消耗品倉庫只提高消耗品上限');
   home.facilities.itemStore.level = 3;
-  assert(gq.equipment.storeCap() === slots0 + 20, '物品倉庫提高物品格子');
+  assert(gq.equipment.storeCap() === slots0 + 26, '物品倉庫提高物品格子');
   assert(gq.shelter.sizeInfo(home).total <= 20, '據點建築總數上限仍為 20');
   // 堆疊上限 999
   const lead = gq.survivors.leader();
@@ -1089,7 +1089,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   gk.equipment.equip(lead.id, pistol.id);
   delete gk.state.supplies.ammo9;
   lead.bag = {};
-  const full = gk.survivors.stats(lead).atk;
+  const full = gk.survivors.stats(lead, 'ranged').atk;
   const noAmmo = gk.combat.unitFromSurvivor(lead).atk;
   assert(noAmmo < full, `沒有彈藥時無法使用槍械（攻擊 ${full} → ${Math.round(noAmmo)}）`);
   lead.bag = { ammo9: 10 };
@@ -1104,7 +1104,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   lead.bag = {};
   const far = gk.state.map.pois.find((p) => p.type === 'residential' && !gk.shelter.baseAtPoi(p.id));
   const ex = gk.exploration.start(far.id, [lead.id], 5);
-  assert(ex.ok && lead.bag.ammo9 === sup.AMMO_FOR.pistol.perFight * sup.AMMO_PACK_FIGHTS, '出發時自動從倉庫補充彈藥');
+  assert(ex.ok && lead.loadout.ammo?.qty === sup.AMMO_FOR.pistol.perFight * sup.AMMO_PACK_FIGHTS, '出發時自動把彈藥裝進彈藥欄');
   gk.exploration.recall(ex.exp.id);
   gk.exploration.update(Date.now() + 5000, { silent: true });
 
@@ -1248,7 +1248,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   const sd = gd.siege.of();
   gd.state.supplies.ammo556 = 3;
   assert(sd.canShoot(lead), '據點庫存有彈藥時可以遠程射擊');
-  const full = gd.survivors.stats(lead);
+  const full = gd.survivors.stats(lead, 'ranged');
   const a1 = sd.attackPower(lead, full);
   assert(a1.ranged && a1.value === full.atk && gd.state.supplies.ammo556 === 2, '防守射擊消耗據點庫存的彈藥');
   gd.state.supplies.ammo556 = 0;
@@ -2157,14 +2157,36 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   ga.shelter.establish(ga.state.map.pois[0]);
   setHour(ga, 10);
   const lead = ga.survivors.leader();
-  ga.state.supplies.bandage = 10;
-  assert(ga.survivors.setSupply(lead.id, 'bandage', 3).ok && lead.bag.bandage === 3 && ga.state.supplies.bandage === 7, '設定自動補給後立即從倉庫補到指定數量');
-  lead.bag.bandage = 1;
+  ga.state.supplies.bandage = 30;
+  assert(ga.survivors.setSupply(lead.id, 'med', 'bandage').ok && lead.loadout.med.qty === 10 && ga.state.supplies.bandage === 20, 'v9：設定自動補給後藥品欄立即補滿（最多 10）');
+  assert(!ga.survivors.setSupply(lead.id, 'med', 'nail').ok, '藥品欄只能設定藥品');
+  lead.loadout.med.qty = 4;
   const poi = ga.state.map.pois.find((p) => !ga.shelter.baseAtPoi(p.id));
   const ex = ga.exploration.start(poi.id, [lead.id], 5).exp;
   ga.exploration.update(ex.endAt + 1, { silent: true });
-  assert(lead.bag.bandage === 3, `回到避難所時自動補給（背包繃帶 ${lead.bag.bandage}）`);
-  assert(ga.survivors.setSupply(lead.id, 'bandage', 0).ok && !lead.supply.bandage, '可以移除自動補給');
+  assert(lead.loadout.med.qty === 10, `回到避難所時自動補滿藥品欄（${lead.loadout.med.qty}）`);
+  assert(ga.survivors.setSupply(lead.id, 'med', null).ok && !lead.supply.med, '可以取消自動補給');
+  // 彈藥欄：最多 100，戰鬥優先用遠程，沒彈藥改用近戰
+  const gun = ga.equipment.generate({ level: 5, model: 'm1911', rarity: 'common' });
+  const knife = ga.equipment.generate({ level: 5, model: 'knife', rarity: 'common' });
+  [gun, knife].forEach((it) => { ga.equipment.addItem(it, 't'); ga.equipment.equip(lead.id, it.id); });
+  assert(lead.equipment.weapon === gun.id && lead.equipment.melee === knife.id, '遠程武器與近戰武器分開兩欄');
+  ga.state.supplies.ammo9 = 300;
+  assert(ga.survivors.loadSlot(lead.id, 'ammo', 'ammo9').ok && lead.loadout.ammo.qty === 100, '彈藥欄最多 100');
+  const u1 = ga.combat.unitFromSurvivor(lead);
+  assert(u1.weapon === 'ranged' && lead.loadout.ammo.qty === 94, '有彈藥時優先使用遠程武器並消耗彈藥欄');
+  lead.loadout.ammo = null;
+  delete ga.state.supplies.ammo9;
+  const u2 = ga.combat.unitFromSurvivor(lead);
+  assert(u2.weapon === 'melee', '沒有彈藥時自動改用近戰武器');
+  // 戰鬥中自動用藥
+  ga.state.supplies.bandage = 10;
+  lead.loadout.med = null;
+  ga.survivors.loadSlot(lead.id, 'med', 'bandage', 5);
+  ga.survivors.setHp(lead, 1);
+  const r = ga.combat.simulate([lead], [ga.combat.createEnemy('walker', 1)]);
+  ga.combat.applyOutcome([lead], r);
+  assert(r.log.some((l) => l.msg.includes('💊')) && lead.loadout.med.qty < 5, '生命過低時自動使用藥品欄的藥');
   lead.bag.nail = 10;
   assert(ga.survivors.discardBag(lead.id, 'nail', 4).ok && lead.bag.nail === 6, '背包物品可以指定數量丟棄');
   assert(ga.survivors.discardBag(lead.id, 'nail', Infinity).ok && !lead.bag.nail, '背包物品可以全部丟棄');
@@ -2431,6 +2453,21 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
     if (rep.success) wins += 1;
   }
   assert(wins <= 1, `Lv10＋三名 Lv8 打 Lv21 NPC 據點不再輕鬆獲勝（8 場勝 ${wins}）`);
+}
+
+// ---- 60. v9 存檔遷移：近戰武器移到近戰欄、彈藥藥品欄 ----
+{
+  const go = Game.newGame({ playerName: 'O', classId: 'warrior', lat: 25, lon: 121 });
+  const kn = go.equipment.generate({ level: 3, model: 'knife', rarity: 'common' });
+  go.equipment.addItem(kn, 't');
+  const old = JSON.parse(JSON.stringify(go.state));
+  old.version = 17;
+  old.survivors[0].equipment = { ...old.survivors[0].equipment, weapon: kn.id };
+  delete old.survivors[0].equipment.melee;
+  delete old.survivors[0].loadout;
+  old.inventory.items.find((i) => i.id === kn.id).slot = 'weapon';
+  const m = SaveManager.migrate(old);
+  assert(m.survivors[0].equipment.melee === kn.id && !m.survivors[0].equipment.weapon && m.survivors[0].loadout, 'v9 遷移：原本拿在武器欄的近戰武器移到近戰欄');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

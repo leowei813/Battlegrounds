@@ -279,6 +279,21 @@ export class SaveManager {
         if (b.facilities && !b.facilities.clinic) b.facilities.clinic = { level: b.kind === 'outpost' ? 0 : 1 };
       });
     }
+    if (v < 18) {
+      // v9：武器欄拆成遠程與近戰；新增彈藥欄與藥品欄
+      const items = data.inventory?.items || [];
+      (data.survivors || []).forEach((sv) => {
+        sv.equipment = sv.equipment || {};
+        if (!('melee' in sv.equipment)) sv.equipment.melee = null;
+        const w = items.find((i) => i.id === sv.equipment.weapon);
+        if (w && w.type === 'melee') {
+          sv.equipment.melee = w.id;
+          sv.equipment.weapon = null;
+        }
+        sv.loadout = sv.loadout || { ammo: null, med: null };
+      });
+      items.forEach((i) => { if (i.type === 'melee') i.slot = 'melee'; });
+    }
     // 新增的設施（例如地窖）：舊據點補上 Lv0
     (data.bases || []).forEach((b) => {
       if (!b.facilities) return;

@@ -109,7 +109,7 @@ export const RESEARCH = {
   // ---- 工業 ----
   i_work: r('industry', 1, '工作台效率', '工作台資源產量提升', { workbenchPct: 0.05 }),
   i_storage: r('industry', 1, '消耗品倉儲', '消耗品倉庫的上限提升', { storagePct: 0.05 }),
-  i_shelves: r('industry', 1, '物品倉儲', '物品倉庫的格子增加', { storeSlots: 5 }),
+  i_shelves: r('industry', 1, '物品倉儲', '物品倉庫的格子增加', { storeSlots: 7 }),
   i_salvage: r('industry', 1, '拆解回收', '拆解裝備獲得的材料提升', { dismantlePct: 0.08 }),
   i_trade: r('industry', 1, '以物易物', '賣給流浪商人獲得的金錢提升', { sellPct: 0.05 }),
   i_gen: r('industry', 2, '發電效率', '發電機的生產加成提升', { generatorPct: 0.05 }, { req: [['i_work', 2]] }),

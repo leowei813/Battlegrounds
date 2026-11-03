@@ -126,6 +126,8 @@ export class Game {
    * @returns {object|null} 離線報告
    */
   start() {
+    // 裝備戰力公式可能更新（例如計入詞條）：每次啟動重新計算
+    this.equipment.items.forEach((it) => { it.power = this.equipment.itemPower(it); });
     this.thinMap();
     this.markers.ensure();
     const report = this.processOffline();

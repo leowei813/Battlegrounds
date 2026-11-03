@@ -1,4 +1,5 @@
 import { ASSIST_TRAVEL_MUL } from './AssistSystem.js';
+import { LOADOUT_MAX } from './SurvivorSystem.js';
 
 /** 再次探索同一地點：剩餘搜索時間的下限比例、回去拿帶不走物資的時間（分鐘） */
 const REVISIT = { minFrac: 0.2, pickupMin: 0.3 };
@@ -282,15 +283,19 @@ export class ExplorationSystem {
   /** 出發前：使用槍械／弓弩的隊員自動從倉庫補充彈藥（約 4 場戰鬥的量） */
   packAmmo(members) {
     const notes = [];
+    const svs = this.game.survivors;
     members.forEach((m) => {
-      const weapon = this.game.equipment.getItem(m.equipment?.weapon);
-      const need = weapon && AMMO_FOR[weapon.type];
+      svs.autoResupply(m);
+      const need = svs.ammoNeed(m);
       if (!need) return;
-      const want = need.perFight * AMMO_PACK_FIGHTS - (m.bag?.[need.ammo] || 0);
-      if (want > 0 && (this.game.state.supplies?.[need.ammo] || 0) > 0) this.game.survivors.withdraw(m.id, need.ammo, want);
-      if ((m.bag?.[need.ammo] || 0) < need.perFight) notes.push(`${m.name}沒有${SUPPLIES[need.ammo].name}`);
+      // 沒設定自動補給：出發時把對應彈藥裝進彈藥欄（約 4 場戰鬥）
+      const lo = svs.loadout(m);
+      const have = lo.ammo?.key === need.ammo ? lo.ammo.qty : 0;
+      const want = Math.min(LOADOUT_MAX.ammo, need.perFight * AMMO_PACK_FIGHTS) - have;
+      if (want > 0 && (!lo.ammo || lo.ammo.key === need.ammo) && (this.game.state.supplies?.[need.ammo] || 0) > 0) svs.loadSlot(m.id, 'ammo', need.ammo, want);
+      if (svs.ammoAvailable(m, need.ammo) - (svs.atShelter(m) ? Math.floor(this.game.state.supplies?.[need.ammo] || 0) : 0) < need.perFight) notes.push(`${m.name}沒有${SUPPLIES[need.ammo].name}`);
     });
-    return notes.length ? `（⚠️ ${notes.join('、')}，無法使用武器）` : '';
+    return notes.length ? `（⚠️ ${notes.join('、')}，會改用近戰武器）` : '';
   }
 
   /**
@@ -759,6 +764,20 @@ export class ExplorationSystem {
       if (key === 'food') v *= 1 + ctx.forage;
       cp.gained[key] = (cp.gained[key] || 0) + v;
       found.push(nameOf(key));
+    });
+    // 探索取得自動補給設定的彈藥或藥品：直接補進隊員的彈藥欄／藥品欄
+    ctx.members.forEach((m) => {
+      const rules = this.game.survivors.supplyRules(m);
+      ['ammo', 'med'].forEach((kind) => {
+        const key = rules[kind];
+        if (!key || !(cp.gained[key] >= 1)) return;
+        const lo = this.game.survivors.loadout(m);
+        if (lo[kind] && lo[kind].key !== key) return;
+        const n = Math.min(Math.floor(cp.gained[key]), LOADOUT_MAX[kind] - (lo[kind]?.qty || 0));
+        if (n <= 0) return;
+        cp.gained[key] -= n;
+        lo[kind] = { key, qty: (lo[kind]?.qty || 0) + n };
+      });
     });
     const share = (1 + 0.25 * (cp.total - 1)) / cp.total; // 大建築總機率略高
     const extra = [];

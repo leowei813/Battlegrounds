@@ -132,8 +132,8 @@ export const facilityBuildTime = (lv) => Math.round(40 * timeCurve(lv, 1.6, 2.52
 export const wallMaxHp = (lv) => 400 + lv * 350 + lv * lv * 40;
 /** 消耗品上限：Lv6 以後成長加快，配合高等級的升級費用 */
 export const storageCap = (lv) => 600 + lv * 700 + lv * lv * 120 + (lv > 6 ? 1500 * (lv - 6) ** 2 : 0);
-/** 物品倉庫格子：Lv1 30 格，每升一級 +10 */
-export const itemStoreSlots = (lv) => 30 + Math.max(0, lv - 1) * 10;
+/** 物品倉庫格子：Lv1 30 格，每升一級 +13（裝備與材料共用） */
+export const itemStoreSlots = (lv) => 30 + Math.max(0, lv - 1) * 13;
 export const housingCap = (lv) => 3 + lv * 2;
 /** 地窖容量：每種基礎物資（食物、木材、燃料）可藏的數量；金錢另計 */
 export const cellarCap = (lv) => (lv > 0 ? 60 * lv + 15 * lv * lv : 0);

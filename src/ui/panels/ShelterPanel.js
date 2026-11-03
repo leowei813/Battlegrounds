@@ -112,7 +112,7 @@ export class ShelterPanel {
     const z = g.shelter.sizeInfo(sh);
     const tab = SHELTER_TABS.includes(ui.shelterTab) ? ui.shelterTab : 'overview';
     const inv = ui.panels.inventory;
-    const storeN = g.equipment.storeItems().length;
+    const storeN = `${g.equipment.storeUsed()}/${g.equipment.storeCap()}`;
     const tabBtn = (id, label) => `<button class="seg-btn ${tab === id ? 'active' : ''}" data-action="shelterTab" data-t="${id}">${label}</button>`;
     const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('storage', `🗄️ 倉庫 ${storeN}`)}${tabBtn('garage', `🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`)}${tabBtn('exchange', `🏪 交易所${g.demand.list.length ? ` ${g.demand.list.length}` : ''}`)}</div>`;
     const sections = {
@@ -135,7 +135,7 @@ export class ShelterPanel {
       defense: `<p class="muted">${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築。點空地建造，點已建造的防禦建築升級或派人駐守（也可以直接點上方場景中的槽位）。</p>
         <div class="slot-grid">${defenses}</div>
         <div class="stat-grid"><div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div><div><small>屍潮波次</small><b>${this.waveText(siege)}</b></div></div>`,
-      storage: tab === 'storage' ? `<h4>🗄️ 物品倉庫（裝備 ${storeN} 件）</h4>${inv.renderItems()}` : '',
+      storage: tab === 'storage' ? `<h4>🗄️ 物品倉庫（${storeN} 格）</h4>${inv.renderItems()}` : '',
       garage: tab === 'garage' ? inv.renderGarage() : '',
       exchange: tab === 'exchange' ? exchangeBody(ui, this.exForm || {}) : '',
     };

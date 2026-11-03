@@ -17,7 +17,8 @@ export const RARITY_ORDER = Object.keys(RARITIES);
 export const rarityIndex = (r) => RARITY_ORDER.indexOf(r);
 
 export const SLOTS = {
-  weapon: { name: '武器', icon: '🔫' },
+  weapon: { name: '遠程武器', icon: '🔫' },
+  melee: { name: '近戰武器', icon: '🪓' },
   helmet: { size: 2, weight: 2, name: '頭盔', icon: '⛑️' },
   armor: { size: 3, weight: 5, name: '衣服', icon: '🦺' },
   legs: { size: 2, weight: 3, name: '護腿', icon: '👖' },
@@ -39,7 +40,7 @@ export const emptyEquipment = () => Object.fromEntries(SLOT_KEYS.map((k) => [k, 
  */
 export const ITEM_TYPES = {
   // ---- 武器 ----
-  melee: { size: 1, weight: 2, name: '近戰武器', slot: 'weapon', icon: '🪓', base: { atk: 11, atkSpeed: 0.1, crit: 0.08, lifeSteal: 0.03 }, perLevel: { atk: 1.9 } },
+  melee: { size: 1, weight: 2, name: '近戰武器', slot: 'melee', icon: '🪓', base: { atk: 11, atkSpeed: 0.1, crit: 0.08, lifeSteal: 0.03 }, perLevel: { atk: 1.9 } },
   crossbow: { size: 2, weight: 4, name: '弓弩', slot: 'weapon', icon: '🏹', gun: 2, base: { atk: 18, atkSpeed: -0.2, crit: 0.12, critDmg: 0.2 }, perLevel: { atk: 2.8 } },
   pistol: { size: 1, weight: 2, name: '手槍', slot: 'weapon', icon: '🔫', gun: 1, base: { atk: 9, atkSpeed: 0.25, crit: 0.05 }, perLevel: { atk: 1.6 } },
   smg: { size: 2, weight: 4, name: '衝鋒槍', slot: 'weapon', icon: '🔫', gun: 3, base: { atk: 8, atkSpeed: 0.55, crit: 0.04 }, perLevel: { atk: 1.5 } },
@@ -245,7 +246,7 @@ export const BAG_BASE_SLOTS = 10;
 /** 消耗品每格堆疊上限 */
 export const STACK_MAX = 999;
 export const STORE_BASE_SLOTS = 30;
-export const STORE_SLOTS_PER_LEVEL = 10;
+export const STORE_SLOTS_PER_LEVEL = 13;
 
 /** 物品佔用的格子數與重量 */
 export const itemSize = () => 1;
