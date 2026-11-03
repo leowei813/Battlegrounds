@@ -118,7 +118,6 @@ export const RESEARCH = {
   i_fast: r('industry', 2, '快速施工', '建造與升級時間縮短', { buildTimeReduce: 0.03 }),
   // ---- 生存 ----
   s_scout: r('survival', 1, '斥候訓練', '探索速度提升，解鎖「自動探索」', { exploreSpeed: 0.02 }, { unlock: ['autoExplore'] }),
-  s_route: r('survival', 2, '巡迴搜索', '自動探索把地點搜空後，可以多換一次附近的地點繼續探索（基本 1 次，最多 5 次）', { autoHops: 1 }, { max: 4, req: [['s_scout', 1]] }),
   s_queue: r('survival', 2, '行動規劃', '每支臨時小隊的探索佇列 +1 個地點（基本 2 個，最多 5 個）；Lv1 需要研究中心 Lv4、Lv2 需要 Lv7、Lv3 需要 Lv10', { queueSlots: 1 }, { max: 3, labReq: [4, 7, 10] }),
   s_parts: r('survival', 2, '零件辨識', '探索時有機率多找到一種零件', { partKindPct: 0.05 }, { max: 10, req: [['s_loot', 2]] }),
   s_loot: r('survival', 1, '拾荒技巧', '探索物資提升', { lootPct: 0.03 }),
@@ -201,7 +200,7 @@ const LABELS = {
   farmFlat: (v) => `每級農場食物 +${v.toFixed(1)}/時`, workbenchPct: (v) => `工作台產量 +${pct(v)}`, storagePct: (v) => `消耗品上限 +${pct(v)}`,
   dismantlePct: (v) => `拆解材料 +${pct(v)}`, sellPct: (v) => `商人回收價 +${pct(v)}`, generatorPct: (v) => `發電加成 +${pct(v)}`,
   generatorFuelReduce: (v) => `發電耗油 −${pct(v)}`, buildCostReduce: (v) => `建造費用 −${pct(v)}`, buildTimeReduce: (v) => `建造時間 −${pct(v)}`,
-  queueSlots: (v) => `探索佇列 +${Math.round(v)}`, partKindPct: (v) => `多找到一種零件 ${pct(v)}`, autoHops: (v) => `自動換點 +${Math.round(v)} 次`, exploreSpeed: (v) => `探索速度 +${pct(v)}`, lootPct: (v) => `探索物資 +${pct(v)}`, carryPct: (v) => `徒步運載 +${pct(v)}`,
+  queueSlots: (v) => `探索佇列 +${Math.round(v)}`, partKindPct: (v) => `多找到一種零件 ${pct(v)}`, exploreSpeed: (v) => `探索速度 +${pct(v)}`, lootPct: (v) => `探索物資 +${pct(v)}`, carryPct: (v) => `徒步運載 +${pct(v)}`,
   nightPenaltyReduce: (v) => `夜間懲罰 −${pct(v)}`, ambushReduce: (v) => `遇襲機率 −${pct(v)}`, itemFindPct: (v) => `裝備掉落 +${pct(v)}`,
   survivorFindPct: (v) => `遇到倖存者 +${pct(v)}`, blueprintPct: (v) => `設計圖 +${pct(v)}`, vehicleWearReduce: (v) => `載具磨損 −${pct(v)}`,
   vehicleFuelReduce: (v) => `載具耗油 −${pct(v)}`, repairCostReduce: (v) => `維修費用 −${pct(v)}`, vehicleSpeedPct: (v) => `載具速度 +${pct(v)}`,

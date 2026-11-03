@@ -7,8 +7,9 @@ import { PRIMARY_DANGER_COEF, MAX_OUTPOSTS, BASE_SIZES } from '../../config/civi
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { escapeHtml } from '../../utils/dom.js';
 import {
-  btn, costHtml, timerBar, progressBar, metaOf,
+  btn, costHtml, needHtml, timerBar, progressBar, metaOf,
 } from '../components.js';
+import { BUILD_QUEUE_SIZE } from '../../config/constants.js';
 
 /**
  * 避難所分頁（側邊/底部抽屜）：設施升級、施工佇列、防禦建築、事件紀錄。
@@ -16,7 +17,7 @@ import {
 /** 避難所面板的分頁 */
 const SHELTER_TABS = ['overview', 'facilities', 'defense', 'storage', 'garage', 'exchange', 'blackmarket'];
 /** 避難所面板本身處理的操作（其餘在倉庫、車庫分頁時交給倉庫面板） */
-const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon', 'cancelBuild', 'toggleAlert'];
+const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon', 'cancelBuild', 'toggleAlert', 'facFilter', 'gotoTab'];
 
 export class ShelterPanel {
   constructor(ui) {
@@ -37,20 +38,18 @@ export class ShelterPanel {
     const baseDanger = g.shelter.baseDanger(base);
     const danger = g.shelter.dangerLevel(base);
     return `
-      <div class="civ-card">
-        <div class="row-between"><b>${tier.icon} 文明度 ${b.total}</b><span class="tag tag-amber">${tier.name}</span></div>
-        ${progressBar(ratio, 'civ', next ? `距「${next.name}」${next.min - b.total}` : '已達最高階段')}
-        <div class="civ-parts"><span>🏗️ 建築 ${b.buildings}</span><span>👑 玩家等級 ${b.player}</span><span>🎒 裝備 ${b.equipment}</span><span>🔬 科技 ${b.research}</span></div>
-        <small class="muted block">屍潮強度隨文明度提升（殭屍 +${civ.levelBonus()} 級、頻率 ×${civ.spawnMul().toFixed(2)}），與天數無關。</small>
+      <section class="sh-card civ-card2">
+        <div class="row-between"><h3>${tier.icon} 文明度 ${b.total} <span class="tag tag-amber">${tier.name}</span></h3><small class="muted">${next ? `距「${next.name}」${next.min - b.total}` : '已達最高階段'}</small></div>
+        ${progressBar(ratio, 'civ')}
+        <div class="civ-grid"><div><small>建築</small><b>${b.buildings}</b></div><div><small>玩家等級</small><b>${b.player}</b></div><div><small>裝備</small><b>${b.equipment}</b></div><div><small>科技</small><b>${b.research}</b></div></div>
         <div class="row-between danger-row">
           <span>☠ 據點危險度 <b>${danger}</b>・<span class="zone-tag" style="--zc:${siege.zone().color}">${siege.zone().name}</span></span>
-          <small class="muted">${isPrimary ? `基礎 ${baseDanger} + 文明度 ${b.total} × ${PRIMARY_DANGER_COEF}` : `基礎 ${baseDanger}（前哨站不受文明度加成）`}</small>
+          <small class="muted">${siege.active() ? `殭屍 Lv${siege.zombieLevel()}・每波約 ${Math.round(siege.waveSize())} 隻` : `白天・入夜後殭屍約 Lv${siege.zombieLevel() + 1}`}</small>
         </div>
-        <small class="muted block">${BASE_SIZES[base.size]?.name || ''}據點屍潮 ×${siege.sizeMul().toFixed(2)}（據點越大、區域越危險，屍潮越多）</small>
-        <small class="muted block">${siege.active()
-    ? `本據點殭屍 Lv${siege.zombieLevel()}・每波約 ${Math.round(siege.waveSize())} 隻`
-    : `☀️ 白天殭屍躲在建築內；入夜後本據點殭屍約 Lv${siege.zombieLevel() + 1}`}</small>
-      </div>`;
+        <details class="civ-more" ${this.civOpen ? 'open' : ''}><summary>計算方式</summary>
+          <p class="muted">屍潮強度隨文明度提升（殭屍 +${civ.levelBonus()} 級、頻率 ×${civ.spawnMul().toFixed(2)}），與天數無關。${BASE_SIZES[base.size]?.name || ''}據點屍潮 ×${siege.sizeMul().toFixed(2)}（據點越大、區域越危險，屍潮越多）。危險度 = ${isPrimary ? `基礎 ${baseDanger} + 文明度 ${b.total} × ${PRIMARY_DANGER_COEF}` : `基礎 ${baseDanger}（前哨站不受文明度加成）`}。</p>
+        </details>
+      </section>`;
   }
 
   waveText(siege) {
@@ -86,17 +85,26 @@ export class ShelterPanel {
     }).join('');
 
     const outpost = g.shelter.isOutpost(sh);
+    const facFilter = this.facFilter || 'all';
     const facilities = Object.entries(FACILITIES).filter(([id]) => !outpost || OUTPOST_FACILITIES.includes(id)).map(([id, def]) => {
       const lv = sh.facilities[id].level;
       const busy = g.shelter.isFacilityBusy(sh, id);
       const max = lv >= FACILITY_MAX_LEVEL;
       const check = g.shelter.canUpgradeFacility(sh, id);
+      if (facFilter === 'ready' && !check.ok) return '';
+      if (facFilter === 'built' && lv === 0) return '';
+      if (facFilter === 'unbuilt' && lv > 0) return '';
+      const label = busy ? '施工中' : !check.ok && !max ? (check.reason?.includes('不足') ? '材料不足' : '無法升級') : lv === 0 ? '建造' : '升級';
       return `
-      <div class="fac-card ${lv === 0 ? 'unbuilt' : ''}">
-        <div class="fac-head"><span class="fac-icon">${def.icon}</span><div><b>${def.name}</b> <small>Lv${lv}</small><small class="muted block">${def.desc}</small></div></div>
-        <div class="fac-effect">${lv > 0 ? def.effectText(lv) : '尚未建造'}${max ? '' : `<span class="next">→ ${def.effectText(lv + 1)}</span>`}</div>
-        ${max ? '<div class="tag">MAX</div>' : `<div class="row-between"><div class="costs">${costHtml(st, g.shelter.facilityCost(sh, id))}</div>
-          ${btn(busy ? '施工中' : lv === 0 ? '建造' : '升級', 'upgrade', { id }, { cls: 'btn-sm btn-primary', disabled: !check.ok, title: check.reason || '' })}</div>`}
+      <div class="fac-card2 ${lv === 0 ? 'unbuilt' : ''}">
+        <div class="fac2-head"><span class="fac-icon">${def.icon}</span><b>${def.name}</b><span class="muted">Lv ${lv}</span></div>
+        <div class="fac2-effect">${lv > 0 ? def.effectText(lv) : '尚未建造'}${max ? '' : `<small class="muted block">下一級：${def.effectText(lv + 1)}</small>`}</div>
+        ${max ? '<div class="tag">已達最高等級</div>' : `<div class="fac2-cost">
+          <small class="muted">${busy ? '施工中（材料已扣除）' : `${lv === 0 ? '建造' : `升級到 Lv ${lv + 1}`}需要（擁有/需要）`}</small>
+          ${busy ? '' : `<div class="needs">${needHtml(st, g.shelter.facilityCost(sh, id))}</div>`}
+          <div class="row-between">${busy ? '<span></span>' : `<small class="muted">${check.ok ? '' : escapeHtml(check.reason || '')}</small>`}
+          ${btn(label, 'upgrade', { id }, { cls: `btn-sm ${check.ok ? 'btn-primary' : label === '材料不足' ? 'btn-lack' : ''}`, disabled: !check.ok, title: check.reason || '' })}</div>
+        </div>`}
       </div>`;
     }).join('');
 
@@ -114,36 +122,85 @@ export class ShelterPanel {
     const tab = SHELTER_TABS.includes(ui.shelterTab) ? ui.shelterTab : 'overview';
     const inv = ui.panels.inventory;
     const storeN = `${g.equipment.storeUsed()}/${g.equipment.storeCap()}`;
-    const tabBtn = (id, label) => `<button class="seg-btn ${tab === id ? 'active' : ''}" data-action="shelterTab" data-t="${id}">${label}</button>`;
-    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('storage', `🗄️ 倉庫 ${storeN}`)}${tabBtn('garage', `🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`)}${tabBtn('exchange', `🏪 交易所${g.market.mine().length ? ` ${g.market.mine().length}` : ''}`)}${tabBtn('blackmarket', '🕶️ 黑市')}</div>`;
+    const mine = g.market.mine().length;
+    // 分頁選單：網頁版在左側直排，手機版在上方一列可左右滑動
+    const navItem = (id, label, extra = '') => `<button class="sh-nav-item ${tab === id ? 'active' : ''}" data-action="shelterTab" data-t="${id}"><span>${label}</span>${extra ? `<small>${extra}</small>` : ''}</button>`;
+    const nav = `<nav class="sh-nav" aria-label="避難所分頁">
+      <div class="sh-base">
+        <b>${g.shelter.isPrimary(sh) ? '⭐' : '🏴'} ${escapeHtml(sh.name)}</b>
+        <small class="muted">避難所 ${g.shelter.hasShelter() ? 1 : 0}/1・前哨站 ${g.shelter.outposts().length}/${g.shelter.outpostLimit()}</small>
+        ${st.bases.length > 1 ? `<div class="sh-bases">${tabs}</div>` : ''}
+      </div>
+      <div class="sh-nav-list">
+        ${navItem('overview', '🏠 總覽')}
+        ${navItem('facilities', '🏗️ 設施', `施工 ${sh.buildQueue.length}/${BUILD_QUEUE_SIZE}`)}
+        ${navItem('defense', '🛡️ 防禦')}
+        ${navItem('storage', '🗄️ 倉庫', storeN)}
+        ${navItem('garage', '🚗 車庫', `${st.vehicles.length}/${g.vehicles.garageSize()}`)}
+        <i class="sh-nav-sep"></i>
+        ${navItem('exchange', '🏪 交易所', mine ? `刊登 ${mine}` : '')}
+        ${navItem('blackmarket', '🕶️ 黑市')}
+      </div>
+    </nav>`;
+
+    // 需要處理：可以直接點按鈕處理的事項
+    const todo = [];
+    const repairers = g.shelter.repairers().length;
+    if (wallRatio < 0.999 && !repairers) {
+      todo.push({ cls: 'warn', text: `圍牆 ${Math.round(wallRatio * 100)}%，沒有修繕人員`, sub: `每 100 點耗 ${Object.entries(g.shelter.repairCostPerHp()).map(([k, v]) => `${metaOf(k).name} ${+(v * 100).toFixed(v * 100 < 10 ? 1 : 0)}`).join('・')}`, btn: btn('指派修繕', 'gotoTab', { tab: 'survivors' }, { cls: 'btn-sm btn-primary' }) });
+    }
+    const repairNote = this.repairWarn();
+    if (repairNote) todo.push({ cls: 'warn', text: repairNote, sub: '', btn: '' });
+    if (sh.buildQueue.length < BUILD_QUEUE_SIZE && g.shelter.isPrimary(sh)) {
+      todo.push({ cls: 'info', text: `施工佇列還有空位（${sh.buildQueue.length}/${BUILD_QUEUE_SIZE}）`, sub: '', btn: btn('前往設施', 'shelterTab', { t: 'facilities' }, { cls: 'btn-sm' }) });
+    }
+    const storeRatio = g.equipment.storeUsed() / Math.max(1, g.equipment.storeCap());
+    if (storeRatio >= 0.85) todo.push({ cls: storeRatio >= 1 ? 'warn' : 'info', text: `倉庫 ${storeN}${storeRatio >= 1 ? '，已經滿了' : '，快滿了'}`, sub: '探索帶回的物資會放不下', btn: btn('整理倉庫', 'shelterTab', { t: 'storage' }, { cls: 'btn-sm' }) });
+    if (!g.research.state.active && g.shelter.maxLevel('researchCenter') > 0) todo.push({ cls: 'info', text: '研究中心目前沒有研究', sub: '', btn: btn('前往研究', 'gotoTab', { tab: 'research' }, { cls: 'btn-sm' }) });
+    const net = g.resources.rates().net;
+    if ((net.food || 0) < 0) todo.push({ cls: 'warn', text: `食物每小時 ${Math.round(net.food)}`, sub: '升級農場或多探索食物來源', btn: '' });
+    const todoHtml = todo.map((t) => `<div class="todo ${t.cls}"><div><span>${t.text}</span>${t.sub ? `<small class="muted block">${t.sub}</small>` : ''}</div>${t.btn}</div>`).join('')
+      || '<p class="muted">目前沒有需要處理的事項。</p>';
+
+    const queueBox = `<section class="sh-card"><h3>施工佇列 ${sh.buildQueue.length}/${BUILD_QUEUE_SIZE}</h3>${queue || ''}${Array.from({ length: Math.max(0, BUILD_QUEUE_SIZE - sh.buildQueue.length) }, () => '<div class="queue-empty">空位：點設施的「升級」加入</div>').join('')}</section>`;
+    const rates = g.resources.rates().net;
+    const ratesBox = `<section class="sh-card sh-rates"><h3>每小時產出</h3>${Object.entries(rates).filter(([, v]) => Math.round(v) !== 0).map(([k, v]) => `<div class="row-between"><span>${metaOf(k).icon} ${metaOf(k).name}</span><span class="${v < 0 ? 'neg' : 'pos'}">${v > 0 ? '+' : ''}${Math.round(v)}</span></div>`).join('') || '<p class="muted">沒有產出</p>'}</section>`;
+
     const sections = {
       overview: `
-        <div class="card row-between ${g.shelter.alert ? 'alert-on' : ''}"><span>${g.shelter.alert ? '🚨 <b>警戒中</b>：全部倖存者暫時為防禦駐守' : '🟢 正常：倖存者依指派的工作行動'}</span>${btn(g.shelter.alert ? '✅ 解除警戒' : '🚨 切換警戒', 'toggleAlert', {}, { cls: `btn-sm ${g.shelter.alert ? '' : 'btn-danger'}` })}</div>
-        <div class="label">避難所 ${g.shelter.hasShelter() ? 1 : 0}/1・前哨站 ${g.shelter.outposts().length}/${g.shelter.outpostLimit()} <small>（研究「擴張科技」最多 ${MAX_OUTPOSTS} 座，在地圖點選建築建立）</small></div>
+        <div class="alert-strip ${g.shelter.alert ? 'on' : ''}"><span>${g.shelter.alert ? '🚨 <b>警戒中</b>・全部倖存者暫時為防禦駐守' : '🟢 正常・倖存者依指派的工作行動'}</span>${btn(g.shelter.alert ? '解除警戒' : '🚨 切換警戒', 'toggleAlert', {}, { cls: `btn-sm ${g.shelter.alert ? '' : 'btn-danger'}` })}</div>
         ${g.shelter.hasShelter() ? '' : `<div class="card warn">🏚️ 目前沒有避難所，無法生產與探索。${btn('🗺️ 到地圖選擇新的避難所', 'gotoMap', {}, { cls: 'btn-sm btn-primary' })}</div>`}
-        <div class="chips">${tabs}</div>
-        <div class="stat-grid">
-          <div class="wide"><small>圍牆（不會自行修復）</small>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', `${Math.floor(g.shelter.wallHp(sh))}/${g.shelter.wallMax(sh)}`)}
-            <small class="muted block">🔨 修繕人員 ${g.shelter.repairers().length}・每秒 +${g.shelter.repairRate().toFixed(1)}・每 100 點耗 ${Object.entries(g.shelter.repairCostPerHp()).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name}${+(v * 100).toFixed(v * 100 < 10 ? 1 : 0)}`).join(' ')}${g.shelter.repairers().length ? '' : '（到倖存者頁指派「修繕圍牆」工作）'}</small>${this.repairWarn()}</div>
-          <div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div>
-          <div><small>來襲殭屍</small><b>${siege.zombies.length}</b></div>
-          <div class="wide"><small>屍潮波次</small><b>${this.waveText(siege)}</b></div>
-          ${this.assistText(sh)}
+        <div class="kpi-grid">
+          <div class="kpi wide"><div class="row-between"><small>圍牆</small><span><b>${Math.floor(g.shelter.wallHp(sh))}</b> / ${g.shelter.wallMax(sh)}</span></div>${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '')}<small class="muted">不會自行修復・修繕 ${repairers} 人・每秒 +${g.shelter.repairRate().toFixed(1)}</small></div>
+          <div class="kpi"><small>防禦 DPS</small><b class="big">${siege.defenseDps()}</b></div>
+          <div class="kpi"><small>屍潮</small><b>${this.waveText(siege)}</b></div>
+          <div class="kpi"><small>來襲殭屍</small><b class="big">${siege.zombies.length}</b></div>
         </div>
-        ${queue ? `<h4>施工佇列</h4>${queue}` : ''}
-        ${this.renderCivilization(sh)}
-        <div class="btn-row">${baseActions}</div>`,
-      facilities: `${queue ? `<h4>施工佇列</h4>${queue}` : ''}<div class="fac-list">${facilities}</div>`,
-      defense: `<p class="muted">${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築。點空地建造，點已建造的防禦建築升級或派人駐守（也可以直接點上方場景中的槽位）。</p>
+        ${this.assistText(sh) ? `<div class="sh-card">${this.assistText(sh)}</div>` : ''}
+        <div class="sh-cols">
+          <section class="sh-card"><h3>需要處理</h3>${todoHtml}</section>
+          ${this.renderCivilization(sh)}
+        </div>
+        ${queue ? queueBox : ''}
+        <div class="sh-foot"><small class="muted">${g.shelter.isPrimary(sh) ? '⭐ 避難所：倖存者居住、生產、探索出發、駐守倖存者防衛於此。' : '🏴 前哨站：只有防禦功能，不能生產。'}</small>${btn(g.shelter.isPrimary(sh) ? '🏚️ 放棄避難所（搬家）' : '🏚️ 放棄前哨站', 'abandon', {}, { cls: 'btn-xs btn-ghost' })}</div>`,
+      facilities: `<div class="sh-fac">
+        <div class="sh-fac-main">
+          <div class="chips fac-filter">${[['all', '全部'], ['ready', '可升級'], ['built', '已建造'], ['unbuilt', '未建造']].map(([k, l]) => `<button class="chip ${facFilter === k ? 'active' : ''}" data-action="facFilter" data-f="${k}">${l}</button>`).join('')}</div>
+          <div class="fac-grid">${facilities || '<p class="muted">沒有符合的設施。</p>'}</div>
+        </div>
+        <aside class="sh-fac-side">${queueBox}${ratesBox}</aside>
+      </div>`,
+      defense: `<p class="muted">${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築。點空地建造，點已建造的防禦建築升級或派人駐守。</p>
         <div class="slot-grid">${defenses}</div>
-        <div class="stat-grid"><div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div><div><small>屍潮波次</small><b>${this.waveText(siege)}</b></div></div>`,
-      storage: tab === 'storage' ? `<h4>🗄️ 物品倉庫（${storeN} 格）</h4>${inv.renderItems()}` : '',
+        <div class="kpi-grid"><div class="kpi"><small>防禦 DPS</small><b class="big">${siege.defenseDps()}</b></div><div class="kpi"><small>屍潮</small><b>${this.waveText(siege)}</b></div></div>
+        ${queue ? queueBox : ''}`,
+      storage: tab === 'storage' ? `<h3 class="sh-title">🗄️ 物品倉庫（${storeN} 格）</h3>${inv.renderItems()}` : '',
       garage: tab === 'garage' ? inv.renderGarage() : '',
       exchange: tab === 'exchange' ? exchangeBody(ui, this.exForm || {}) : '',
       blackmarket: tab === 'blackmarket' ? blackMarketBody(ui, ui.bmView) : '',
     };
-    return `<div class="drawer-top">${head}${ui.drawerCollapsed ? '' : tabs2}</div>
-      <div class="drawer-body">${sections[tab]}</div>`;
+    void head;
+    return `<div class="sh-layout">${nav}<div class="sh-main">${sections[tab]}</div></div>`;
   }
 
   /** 友好玩家的協防（避難所）：誰在協防、火力與今晚累計戰果 */
@@ -195,6 +252,15 @@ export class ShelterPanel {
     if (action === 'viewBase') this.ui.setViewBase(data.id);
     if (action === 'abandon') openAbandonDialog(this.ui, base);
     if (action === 'toggleAlert') this.ui.result(g.shelter.setAlert(!g.shelter.alert));
+    if (action === 'facFilter') {
+      this.facFilter = data.f;
+      this.ui.refresh(true);
+      return;
+    }
+    if (action === 'gotoTab') {
+      this.ui.switchTab(data.tab);
+      return;
+    }
     const tab = this.ui.shelterTab;
     const root = this.ui.panelEl;
     if (tab === 'blackmarket' && blackMarketAction(this.ui, action, data)) {
@@ -218,6 +284,13 @@ export class ShelterPanel {
 
   /** 保留輸入中的值（面板每秒重新繪製） */
   afterRender(el) {
+    // 每秒重新繪製：保留手機版分頁列的捲動位置與「計算方式」的展開狀態
+    const list = el.querySelector('.sh-nav-list');
+    if (list) {
+      list.scrollLeft = this.navScroll || 0;
+      list.addEventListener('scroll', () => { this.navScroll = list.scrollLeft; }, { passive: true });
+    }
+    el.querySelector('.civ-more')?.addEventListener('toggle', (e) => { this.civOpen = e.target.open; });
     if (this.boundEl === el) return;
     this.boundEl = el;
     const save = (e) => {

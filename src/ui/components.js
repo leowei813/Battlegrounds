@@ -27,6 +27,17 @@ export function costHtml(state, cost = {}) {
     .join('');
 }
 
+/** 所需材料：每項顯示「名稱 擁有/需要」，不夠的以紅色標示 */
+export function needHtml(state, cost = {}) {
+  return Object.entries(cost)
+    .map(([k, v]) => {
+      const have = amountOf(state, k);
+      const m = metaOf(k);
+      return `<span class="need ${have >= v ? '' : 'lack'}" title="${m.name}：擁有 ${formatNumber(have)}，需要 ${formatNumber(v)}">${m.icon} ${m.name} <b>${formatNumber(Math.floor(have))}</b>/${formatNumber(v)}</span>`;
+    })
+    .join('');
+}
+
 export function gainsHtml(gains = {}) {
   const parts = Object.entries(gains)
     .filter(([, v]) => Math.round(v) !== 0)

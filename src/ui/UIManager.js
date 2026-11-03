@@ -24,11 +24,13 @@ const TABS = [
   { id: 'shelter', icon: '🏠', name: '避難所' },
   { id: 'explore', icon: '🧭', name: '探索' },
   { id: 'survivors', icon: '👥', name: '倖存者' },
-  { id: 'inventory', icon: '🛠️', name: '製作' },
-  { id: 'research', icon: '🔬', name: '研究' },
-  { id: 'quests', icon: '📜', name: '任務' },
-  { id: 'settings', icon: '⚙️', name: '設定' },
+  { id: 'inventory', icon: '🛠️', name: '製作', more: true },
+  { id: 'research', icon: '🔬', name: '研究', more: true },
+  { id: 'quests', icon: '📜', name: '任務', more: true },
+  { id: 'settings', icon: '⚙️', name: '設定', more: true },
 ];
+/** 手機版底部選單收進「更多」的分頁 */
+const MORE_TABS = TABS.filter((t) => t.more).map((t) => t.id);
 
 const DESKTOP_BP = 900;
 /** 手機避難所抽屜佔畫面的比例（與 CSS 一致） */
@@ -74,11 +76,28 @@ export class UIManager {
   }
 
   init() {
-    this.nav.innerHTML = TABS.map((t) => `
-      <button class="nav-btn" data-action="tab" data-tab="${t.id}">
+    // 網頁版顯示全部分頁；手機版只顯示前 4 個，其餘收進「更多」
+    this.nav.innerHTML = `${TABS.map((t) => `
+      <button class="nav-btn ${t.more ? 'nav-secondary' : ''}" data-action="tab" data-tab="${t.id}">
         <span class="nav-icon">${t.icon}</span><span class="nav-label">${t.name}</span><i class="badge" data-badge="${t.id}"></i>
-      </button>`).join('');
-    delegateActions(this.nav, (action, data) => { if (action === 'tab') this.switchTab(data.tab); });
+      </button>`).join('')}
+      <button class="nav-btn nav-more-btn" data-action="navMore" aria-expanded="false">
+        <span class="nav-icon">☰</span><span class="nav-label">更多</span><i class="badge" data-badge="more"></i>
+      </button>
+      <div class="nav-more hidden" role="menu">${TABS.filter((t) => t.more).map((t) => `
+        <button class="nav-more-item" role="menuitem" data-action="tab" data-tab="${t.id}"><span>${t.icon}</span> ${t.name}<i class="badge" data-badge="${t.id}"></i></button>`).join('')}
+      </div>`;
+    delegateActions(this.nav, (action, data) => {
+      if (action === 'navMore') {
+        this.toggleMore();
+        return;
+      }
+      if (action === 'tab') {
+        this.toggleMore(false);
+        this.switchTab(data.tab);
+      }
+    });
+    document.addEventListener('click', (e) => { if (!this.nav.contains(e.target)) this.toggleMore(false); });
 
     delegateActions(this.panelEl, (action, data, el) => {
       if (action === 'toggleDrawer') {
@@ -168,13 +187,24 @@ export class UIManager {
     this.refresh(true);
   }
 
+  /** 手機版「更多」選單 */
+  toggleMore(open) {
+    const menu = this.nav.querySelector('.nav-more');
+    const btn = this.nav.querySelector('.nav-more-btn');
+    if (!menu) return;
+    const on = open ?? menu.classList.contains('hidden');
+    menu.classList.toggle('hidden', !on);
+    btn?.setAttribute('aria-expanded', String(on));
+  }
+
   switchTab(id) {
     if (!this.panels[id]) return;
     if (this.tab === 'map' && id !== 'map') this.panels.map.onHide();
     this.tab = id;
     this.lastHtml = '';
     this.panelEl.scrollTop = 0;
-    this.nav.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
+    this.nav.querySelectorAll('.nav-btn, .nav-more-item').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
+    this.nav.querySelector('.nav-more-btn')?.classList.toggle('active', MORE_TABS.includes(id));
     this.applyLayout();
     this.refresh(true);
     if (id === 'map') this.panels.map.onShow();
@@ -325,6 +355,7 @@ export class UIManager {
       survivors: g.state.recruitPool.length,
       explore: g.state.expeditions.length,
     };
+    counts.more = MORE_TABS.reduce((s, id) => s + (counts[id] || 0), 0);
     this.nav.querySelectorAll('[data-badge]').forEach((el) => {
       const n = counts[el.dataset.badge] || 0;
       el.textContent = n ? String(n) : '';

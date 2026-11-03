@@ -14,9 +14,9 @@ const ZONE_MODE_KEY = 'jdqs.zoneMode';
 export function savedZoneMode() {
   try {
     const m = localStorage.getItem(ZONE_MODE_KEY);
-    return ZONE_MODES[m] ? m : 'strong';
+    return ZONE_MODES[m] ? m : 'light';
   } catch {
-    return 'strong';
+    return 'light';
   }
 }
 import { dayKey } from '../systems/LootStock.js';
@@ -52,7 +52,7 @@ export class MapService {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
       className: 'base-tiles',
     }).addTo(this.map);
-    // 區域危險度底色（清楚模式時底圖降低彩度，讓底色更明顯）
+    // 區域危險度底色
     this.zoneLayer = new ZoneLayer(savedZoneMode()).addTo(this.map);
     this.applyZoneMode(savedZoneMode());
     this.layers.range = L.layerGroup().addTo(this.map);
@@ -157,7 +157,7 @@ export class MapService {
     }).addTo(this.layers.gps);
   }
 
-  /** 切換危險度圖層：清楚 → 淡 → 關閉 */
+  /** 切換危險度圖層：淡 ↔ 關閉 */
   cycleZoneMode() {
     const cur = this.zoneLayer?.mode || savedZoneMode();
     const next = ZONE_MODE_ORDER[(ZONE_MODE_ORDER.indexOf(cur) + 1) % ZONE_MODE_ORDER.length];
@@ -168,7 +168,6 @@ export class MapService {
 
   applyZoneMode(mode) {
     this.zoneLayer?.setMode(mode);
-    this.container?.classList?.toggle('zone-strong', mode === 'strong');
   }
 
   zoneMode() {

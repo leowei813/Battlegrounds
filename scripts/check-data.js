@@ -2636,7 +2636,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(Math.abs(u2 / u1 - 1.6) < 0.01, `等級越高食物消耗越多（Lv1 ${u1.toFixed(1)} → Lv21 ${u2.toFixed(1)}）`);
 }
 
-// ---- 56. v8.51：自動探索搜空後換到附近地點（次數有上限） ----
+// ---- 56. v9.2：自動探索把同一地點拿光才前往佇列的下一個地點；背包與倉庫都滿時停止所有佇列 ----
 {
   const ga = Game.newGame({ playerName: 'Au', classId: 'scout', lat: 25.03, lon: 121.56 });
   ga.state.map.pois = fillPois([], 25.03, 121.56);
@@ -2645,20 +2645,42 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ga.state.research.levels.s_scout = 1;
   ga.research.invalidate();
   const ex = ga.exploration;
-  const poi = ga.state.map.pois.find((p) => !ga.shelter.baseAtPoi(p.id) && ex.hasStock(p));
-  assert(ex.autoHopLimit() === 1, '自動換點基本 1 次');
-  const n0 = ex.autoNext({ poiId: poi.id, autoHops: 0 });
-  assert(n0.ok && n0.poiId === poi.id, '原地點還有物資時再去同一個地點');
+  const lead = ga.survivors.leader();
+  lead.level = 40;
+  const simA = ga.combat.simulate.bind(ga.combat);
+  ga.combat.simulate = (sv, _en, o) => simA(sv, [], o);
+  const pois = ga.state.map.pois.filter((p) => !ga.shelter.baseAtPoi(p.id) && ex.hasStock(p)).slice(0, 3);
+  const st = ex.start(pois[0].id, [lead.id], 5, true);
+  assert(st.ok && ex.enqueue(st.exp.id, pois[1].id).ok, '自動探索並加入佇列');
+  // 還有物資：回到同一個地點
   const orig = ex.hasStock.bind(ex);
-  ex.hasStock = (p, at) => (p.id === poi.id ? false : orig(p, at));
-  const n1 = ex.autoNext({ poiId: poi.id, autoHops: 0 });
-  assert(n1.ok && n1.poiId !== poi.id && n1.hops === 1, `搜空後換到附近的地點（${n1.note || n1.reason}）`);
-  const n2 = ex.autoNext({ poiId: poi.id, autoHops: 1 });
-  assert(!n2.ok && n2.reason.includes('次數已用完'), '換點次數用完就停止');
-  ga.state.research.levels.s_route = 4;
-  ga.research.invalidate();
-  assert(ex.autoHopLimit() === 5 && ex.autoNext({ poiId: poi.id, autoHops: 4 }).ok, '研究「巡迴搜索」最多 5 次');
+  ex.hasStock = (p, at) => (p.id === pois[0].id ? true : orig(p, at));
+  let reps = ex.update(st.exp.endAt + 1, { silent: true });
+  let cur = ga.state.expeditions[0];
+  assert(cur && cur.poiId === pois[0].id && cur.queue.length === 1, `還有物資時再搜同一個地點、佇列保留（${reps[0]?.events.slice(-1)}）`);
+  // 拿光了：前往佇列的下一個地點（不會自己換到附近其他地點）
+  ex.hasStock = (p, at) => (p.id === pois[0].id ? false : orig(p, at));
+  reps = ex.update(cur.endAt + 1, { silent: true });
+  cur = ga.state.expeditions[0];
+  assert(cur && cur.poiId === pois[1].id && !cur.queue.length, `拿光後前往佇列的下一個地點（${reps[0]?.events.slice(-1)}）`);
+  ex.hasStock = (p) => (p.id === pois[1].id ? false : true);
+  reps = ex.update(cur.endAt + 1, { silent: true });
+  assert(!ga.state.expeditions.length && reps[0].events.some((e) => e.includes('自動探索結束')), '佇列也沒有地點時自動探索結束，不會換到附近其他地點');
   ex.hasStock = orig;
+  // 背包都滿、倉庫也滿：停止所有佇列並說明原因
+  const st2 = ex.start(pois[2].id, [lead.id], 5, true);
+  ex.enqueue(st2.exp.id, pois[0].id);
+  ga.survivors.bagLoad = () => 1e9;
+  ga.equipment.storeUsed = () => ga.equipment.storeCap();
+  reps = ex.update(st2.exp.endAt + 1, { silent: true });
+  assert(!ga.state.expeditions.length && reps[0].events.some((e) => e.includes('探索佇列停止') && e.includes('倉庫')), '背包與倉庫都滿時停止佇列，報告寫明原因');
+  assert(ga.state.log.some((l) => l.msg.includes('探索佇列全部停止')), '訊息中記錄停止原因');
+  // 舊存檔：移除「巡迴搜索」研究
+  const old = JSON.parse(JSON.stringify(ga.state));
+  old.version = 18;
+  old.research.levels.s_route = 3;
+  const m = SaveManager.migrate(old);
+  assert(!('s_route' in m.research.levels), '移除巡迴搜索研究');
 }
 
 // ---- 58. v8.53：協防也參與 NPC 掠奪與玩家突襲的防守 ----

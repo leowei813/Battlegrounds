@@ -279,6 +279,19 @@ export class SaveManager {
         if (b.facilities && !b.facilities.clinic) b.facilities.clinic = { level: b.kind === 'outpost' ? 0 : 1 };
       });
     }
+    if (v < 19) {
+      // v9.2：移除「巡迴搜索」研究（自動探索不再換地點）；進行中的研究退回待研究
+      if (data.research?.levels) delete data.research.levels.s_route;
+      if (data.research?.active?.id === 's_route') {
+        // 退還已支付的研究材料
+        Object.entries(data.research.active.cost || {}).forEach(([k, n]) => {
+          const pool = data.resources && k in data.resources ? data.resources : (data.supplies = data.supplies || {});
+          pool[k] = (pool[k] || 0) + (Number(n) || 0);
+        });
+        data.research.active = null;
+      }
+      (data.expeditions || []).forEach((e) => { delete e.autoHops; });
+    }
     if (v < 18) {
       // v9：武器欄拆成遠程與近戰；新增彈藥欄與藥品欄
       // 流浪商人改為全體共用的黑市
