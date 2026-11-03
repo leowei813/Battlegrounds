@@ -123,6 +123,8 @@ export function cleanPlayer(p) {
     }));
   return {
     id: String(p.id || ''), name: String(p.name || '倖存者').slice(0, 16), civ: finite(p.civ) ? p.civ : 0, bases, trips,
+    // 這個角色的開局時間：同一個帳號刪除進度重新開始後會改變（用來解除舊角色的關係）
+    epoch: finite(p.epoch) ? p.epoch : 0,
     assist: cleanAssist(p.assist),
     // 最後一次上傳的時間（判斷對方是否開著遊戲）
     updatedAt: finite(p.updatedAt) ? p.updatedAt : 0,
@@ -198,6 +200,8 @@ export class WorldSync {
   /** 從世界上移除自己（刪除進度時） */
   async clear() {
     if (!this.provider) return;
+    // 先通知好友與提出過友好請求的人解除關係（離開世界後就無法再送出事件）
+    await this.game.territory?.leaveAll?.().catch(() => {});
     const { id, token } = this.identity();
     await this.provider.worldDelete(id, token).catch(() => {});
     this.shared = false;
@@ -237,6 +241,7 @@ export class WorldSync {
     return {
       name: g.state.player.name,
       civ: g.civilization.value(),
+      epoch: g.state.createdAt || 0,
       assist: g.assist.published(),
       // 屍潮防禦範圍與可分出的防禦火力（涵蓋友好據點時自動協助）
       cover: g.assist.publishedCover(),
@@ -290,6 +295,8 @@ export class WorldSync {
       }
       const list = await this.provider.worldNearby(center.lat, center.lon, WORLD_RADIUS_KM, id);
       this.others = list.map(cleanPlayer).filter((p) => p && p.id !== id);
+      // 對方刪除進度重新開始：解除與舊角色的關係
+      g.territory.checkEpochs?.(this.others);
       // 其他玩家送來的事件（攻擊、友好請求…）
       if (this.provider.worldInbox && this.shared) {
         const events = await this.provider.worldInbox(id, token).catch(() => []);

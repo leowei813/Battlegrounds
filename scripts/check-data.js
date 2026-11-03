@@ -3037,6 +3037,32 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(SaveManager.migrate(d2).vehicles[0].status === 'idle', '讀檔時歸還失效的指定');
 }
 
+// ---- 68. 刪除進度時解除好友 ----
+{
+  const ga5 = Game.newGame({ playerName: 'A5', classId: 'warrior', lat: 25, lon: 121 });
+  const sent = [];
+  ga5.world = {
+    provider: { worldSend: async (from, _t, to, type) => { sent.push([to, type]); } },
+    identity: () => ({ id: 'me', token: 't' }),
+  };
+  ga5.state.relations.players = { f1: { status: 'friend', name: '好友1' }, h1: { status: 'hostile', name: '敵人' } };
+  ga5.state.relations.requestsOut = { r1: { name: '待回覆' } };
+  await ga5.territory.leaveAll();
+  assert(sent.length === 2 && sent.every(([, t]) => t === 'friendRemove') && sent.some(([to]) => to === 'f1') && sent.some(([to]) => to === 'r1'), '刪除進度時通知所有好友與送出過請求的玩家解除關係');
+  const gb5 = Game.newGame({ playerName: 'B5', classId: 'warrior', lat: 25, lon: 121 });
+  gb5.state.relations.requestsIn = { me: { name: 'A5' } };
+  gb5.territory.handleEvents([{ from: 'me', fromName: 'A5', type: 'friendRemove' }]);
+  assert(!gb5.state.relations.requestsIn.me, '對方刪除進度後，收到的友好請求也一併移除');
+  // 漏收通知：以對方的開局時間判斷是否已重新開始
+  gb5.state.relations.players = { me: { status: 'friend', name: 'A5' } };
+  gb5.territory.checkEpochs([{ id: 'me', name: 'A5', epoch: 1000 }]);
+  assert(gb5.territory.relation('me') === 'friend' && gb5.state.relations.players.me.epoch === 1000, '第一次看到對方時記下開局時間');
+  gb5.territory.checkEpochs([{ id: 'me', name: 'A5', epoch: 1000 }]);
+  assert(gb5.territory.relation('me') === 'friend', '同一個角色維持好友');
+  gb5.territory.checkEpochs([{ id: 'me', name: 'A5 新', epoch: 2000 }]);
+  assert(gb5.territory.relation('me') !== 'friend', '對方重新開始（開局時間不同）時自動解除好友');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
