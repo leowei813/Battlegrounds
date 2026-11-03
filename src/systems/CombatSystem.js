@@ -144,6 +144,8 @@ export class CombatSystem {
       ...a, side: 'team', skills: {}, cd: randFloat(0, 0.3), healCd: 0, firstHit: true, lifeSteal: 0,
     }))];
     const foes = enemies.map((e) => ({ ...e, side: 'enemy', hp: e.maxHp, cd: randFloat(0.3, 1), skills: {} }));
+    // 戰前生命（戰鬥紀錄顯示戰前→戰後）
+    [...team, ...foes].forEach((u) => { u.hpStart = u.hp; });
     const log = [];
     const push = (t, msg, type = '') => { if (log.length < 400) log.push({ t: +t.toFixed(1), msg, type }); };
 
@@ -180,7 +182,11 @@ export class CombatSystem {
       push(t, `${atkUnit.name} ${crit ? '💥暴擊' : '攻擊'} ${target.name} -${dmg}`, atkUnit.side === 'team' ? (crit ? 'crit' : 'hit') : 'hurt');
       if (atkUnit.lifeSteal) {
         const heal = Math.round(dmg * atkUnit.lifeSteal);
-        if (heal > 0) atkUnit.hp = Math.min(atkUnit.maxHp, atkUnit.hp + heal);
+        if (heal > 0) {
+          const before = atkUnit.hp;
+          atkUnit.hp = Math.min(atkUnit.maxHp, atkUnit.hp + heal);
+          atkUnit.healed = (atkUnit.healed || 0) + Math.max(0, atkUnit.hp - before);
+        }
       }
       if (target.hp <= 0) {
         push(t, `☠️ ${target.name} 倒下`, target.side === 'enemy' ? 'kill' : 'down');
@@ -213,7 +219,9 @@ export class CombatSystem {
         if (u.meds && u.meds.qty > 0 && u.hp < u.maxHp * 0.35) {
           u.meds.qty -= 1;
           u.medsUsed += 1;
+          const before = u.hp;
           u.hp = Math.min(u.maxHp, u.hp + u.meds.heal);
+          u.healed = (u.healed || 0) + Math.max(0, u.hp - before);
           push(t, `💊 ${u.name} 使用 ${SUPPLIES[u.meds.key]?.name || '藥品'} +${u.meds.heal}`, 'heal');
         }
         // 醫生治療
@@ -224,7 +232,9 @@ export class CombatSystem {
             const hurt = alive(team).reduce((a, b) => (a.hp / a.maxHp < b.hp / b.maxHp ? a : b));
             if (hurt.hp < hurt.maxHp) {
               const amt = Math.round(hurt.maxHp * u.skills.healPct + u.atk * 0.5);
+              const before = hurt.hp;
               hurt.hp = Math.min(hurt.maxHp, hurt.hp + amt);
+              hurt.healed = (hurt.healed || 0) + Math.max(0, hurt.hp - before);
               push(t, `⚕️ ${u.name} 治療 ${hurt.name} +${amt}`, 'heal');
             }
           }
@@ -298,6 +308,7 @@ export class CombatSystem {
     const unit = (u) => ({
       name: u.name, side: u.side, dealt: Math.round(u.dealt || 0), taken: Math.round(u.taken || 0), crits: u.crits || 0, hits: u.hits || 0,
       kills: u.kills || 0, down: u.hp <= 0, weapon: u.weapon || '', meds: u.medsUsed || 0,
+      healed: Math.round(u.healed || 0), hpStart: Math.round(u.hpStart ?? 0), hpEnd: Math.max(0, Math.round(u.hp)), maxHp: Math.round(u.maxHp || 0),
     });
     const entry = {
       id: uid('bt'), at: Date.now(), title: String(title || '戰鬥').slice(0, 40), victory, duration: +duration.toFixed(1),
