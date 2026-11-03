@@ -114,7 +114,7 @@ export const SURVIVOR_RARITY = {
 };
 
 /**
- * 倖存者品級機率（%）：初始稀有 0%、罕見 0.1%；研究「招募技術」每級提升，滿級稀有 0.2%。
+ * 倖存者品級機率（%）：初始傳奇 0%、罕見 0.1%；研究「招募技術」每級提升，滿級傳奇 0.2%。
  * @param {number} tech 招募技術等級 0～15（換算成 0～10 的進度）
  */
 export function survivorRarityTable(tech = 0) {
@@ -143,8 +143,9 @@ export const RECRUIT_STAY_MS = 60 * 60 * 1000;
 
 /** 人員上限：3 + 領袖等級 ÷ 5 + 各據點等級總和，最多 10 人（含領袖） */
 export const MAX_SURVIVORS = 10;
-export const BASE_SURVIVOR_CAP = 3;
-export const LEADER_LEVELS_PER_SLOT = 5;
+/** 人數上限 = 基本 5 + 領袖等級 ÷ 3（最多 10 人），且不能超過宿舍可住人數 */
+export const BASE_SURVIVOR_CAP = 5;
+export const LEADER_LEVELS_PER_SLOT = 3;
 /** 一次招募出現的候選人數 */
 export const RECRUIT_CHOICES = 3;
 

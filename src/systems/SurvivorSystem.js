@@ -6,8 +6,11 @@ import {
 import { DAY_REAL_MS, RESOURCES, RESOURCE_KEYS } from '../config/constants.js';
 import { SLOT_KEYS, RARITIES, STACK_MAX } from '../config/equipment.js';
 import {
-  SUPPLIES, isSupply, unitWeight, suppliesOf,
+  SUPPLIES, isSupply, unitWeight, suppliesOf, AMMO_FOR,
 } from '../config/supplies.js';
+
+/** 彈藥欄、藥品欄的數量上限 */
+export const LOADOUT_MAX = { ammo: 100, med: 10 };
 import { createSurvivor } from '../core/GameState.js';
 import {
   withSeed,
@@ -41,11 +44,10 @@ export class SurvivorSystem {
     return Math.min(this.rankCap(), this.dormCap());
   }
 
-  /** 領袖等級與據點規模決定的上限 */
+  /** 領袖等級決定的上限（不再依據點數量） */
   rankCap() {
     const leaderLv = this.leader()?.level || 1;
-    const baseLv = this.game.state.bases.reduce((s, b) => s + this.game.shelter.baseLevel(b), 0);
-    return Math.min(MAX_SURVIVORS, BASE_SURVIVOR_CAP + Math.floor(leaderLv / LEADER_LEVELS_PER_SLOT) + baseLv);
+    return Math.min(MAX_SURVIVORS, BASE_SURVIVOR_CAP + Math.floor(leaderLv / LEADER_LEVELS_PER_SLOT));
   }
 
   /** 宿舍可住人數（避難所的宿舍） */
@@ -59,7 +61,7 @@ export class SurvivorSystem {
     if (this.dormCap() <= this.rankCap()) {
       return dorm ? `宿舍只能住 ${this.dormCap()} 人，請升級宿舍` : `沒有宿舍最多只能有 ${this.dormCap()} 人，請在避難所建造宿舍`;
     }
-    return `人數已達上限（${this.housing()} 人），提升領袖等級或據點等級可增加上限`;
+    return `人數已達上限（${this.housing()} 人），提升領袖等級可增加上限`;
   }
 
   /** 上限明細（UI 說明用） */
@@ -68,7 +70,6 @@ export class SurvivorSystem {
     return {
       base: BASE_SURVIVOR_CAP,
       leader: Math.floor(leaderLv / LEADER_LEVELS_PER_SLOT),
-      bases: this.game.state.bases.reduce((s, b) => s + this.game.shelter.baseLevel(b), 0),
       max: MAX_SURVIVORS,
       rank: this.rankCap(),
       dorm: this.dormCap(),
@@ -77,7 +78,7 @@ export class SurvivorSystem {
   }
 
   growthMul(sv) {
-    // 主角沒有品級，成長比照最高品級「稀有」
+    // 主角沒有品級，成長比照最高品級「傳奇」
     if (sv.isLeader) return SURVIVOR_RARITY.legendary.growth;
     return SURVIVOR_RARITY[sv.rarity]?.growth ?? 1;
   }
@@ -87,7 +88,7 @@ export class SurvivorSystem {
     return sv.isLeader ? SURVIVOR_RARITY.legendary : SURVIVOR_RARITY[sv.rarity] || SURVIVOR_RARITY.common;
   }
 
-  /** 可解放的技能數：依品級（劣質 1 → 稀有 6） */
+  /** 可解放的技能數：依品級（劣質 1 → 傳奇 6） */
   skillSlots(sv) {
     return this.rarityDef(sv).skills;
   }
@@ -111,7 +112,20 @@ export class SurvivorSystem {
   /**
    * 計算最終戰鬥屬性：職業基礎 + 等級成長 + 裝備 + 技能 + 研究。
    */
-  stats(sv) {
+  /**
+   * 目前會使用的武器：遠程武器有彈藥時用遠程，否則改用近戰武器。
+   * @returns {'ranged'|'melee'}
+   */
+  weaponMode(sv) {
+    return sv.equipment?.weapon && this.canUseRanged(sv) ? 'ranged' : 'melee';
+  }
+
+  /**
+   * 能力值。
+   * @param {'auto'|'ranged'|'melee'} [mode] 使用哪一把武器（另一把不計入）；auto 依彈藥自動判斷
+   */
+  stats(sv, mode = 'auto') {
+    const use = mode === 'auto' ? this.weaponMode(sv) : mode;
     const cls = CLASSES[sv.classId];
     // 品級越高，每級提升的能力越多
     const lv = (sv.level - 1) * this.growthMul(sv);
@@ -132,6 +146,8 @@ export class SurvivorSystem {
     let hpPct = 0;
     let defPct = 0;
     SLOT_KEYS.forEach((slot) => {
+      // 一次只用一把武器：遠程（有彈藥）或近戰
+      if ((slot === 'weapon' && use !== 'ranged') || (slot === 'melee' && use !== 'melee')) return;
       const item = this.game.equipment.getItem(sv.equipment[slot]);
       if (!item) return;
       const st = this.game.equipment.itemStats(item);
@@ -150,7 +166,7 @@ export class SurvivorSystem {
     s.dodge += fx.dodgeAdd || 0;
     s.lifeSteal += fx.lifeStealAdd || 0;
     const rb = this.game.research.bonuses();
-    const weapon = this.game.equipment.getItem(sv.equipment.weapon);
+    const weapon = this.game.equipment.getItem(sv.equipment[use === 'ranged' ? 'weapon' : 'melee']);
     atkPct += (rb.atkPct || 0) + (weapon ? rb[`catAtk_${weapon.cat}`] || 0 : 0);
     hpPct += rb.hpPct || 0;
     defPct += rb.defPct || 0;
@@ -167,8 +183,10 @@ export class SurvivorSystem {
     s.dodge = clamp(s.dodge, 0, 0.6);
     s.atkSpeed = clamp(+s.atkSpeed.toFixed(2), 0.3, 3);
     s.critDmg = +s.critDmg.toFixed(2);
-    s.power = Math.round(s.atk * s.atkSpeed * (1 + s.crit * (s.critDmg - 1)) * 4 + s.hp * 0.4 + s.def * 3);
+    // 戰力：輸出（含暴擊、吸血）＋生存（含閃避）
+    s.power = Math.round(s.atk * s.atkSpeed * (1 + s.crit * (s.critDmg - 1)) * (1 + (s.lifeSteal || 0)) * 4 + (s.hp * 0.4) / Math.max(0.4, 1 - (s.dodge || 0)) + s.def * 3);
     s.skills = fx;
+    s.weaponMode = use;
     return s;
   }
 
@@ -402,6 +420,11 @@ export class SurvivorSystem {
   }
 
   setJob(id, job) {
+    // 警戒中指派工作：記住新的工作，解除警戒時恢復成這個工作
+    if (this.game.shelter.alert && this.game.state.alert?.prev) {
+      this.game.state.alert.prev[id] = job;
+      if (job !== 'guard') return { ok: false, reason: '警戒中全員防禦駐守；這個工作會在解除警戒後生效' };
+    }
     const sv = this.get(id);
     if (!sv || !JOBS[job]) return { ok: false, reason: '無效指令' };
     if (sv.status === 'exploring') return { ok: false, reason: '探索中' };
@@ -573,7 +596,7 @@ export class SurvivorSystem {
 
   /** 目前負重（攜帶資源總量） */
   bagLoad(sv) {
-    return Object.entries(this.bagOf(sv)).reduce((s, [k, v]) => s + v * unitWeight(k), 0) + this.game.equipment.bagItemWeight(sv);
+    return Object.entries(this.bagOf(sv)).reduce((s, [k, v]) => s + v * unitWeight(k), 0) + this.game.equipment.bagItemWeight(sv) + this.loadoutWeight(sv);
   }
 
   /** 倉庫：基本資源在消耗品倉庫，材料物品在物品倉庫 */
@@ -671,32 +694,182 @@ export class SurvivorSystem {
     return sv.supply;
   }
 
-  setSupply(id, key, qty) {
-    const sv = this.get(id);
-    if (!sv) return { ok: false, reason: '找不到倖存者' };
-    if (!(RESOURCE_KEYS.includes(key) || isSupply(key))) return { ok: false, reason: '請選擇要補給的物品' };
-    const rules = this.supplyRules(sv);
-    const n = Math.max(0, Math.min(9999, Math.floor(Number(qty) || 0)));
-    if (!n) {
-      delete rules[key];
-      return { ok: true, msg: '已移除自動補給' };
-    }
-    if (!(key in rules) && Object.keys(rules).length >= 8) return { ok: false, reason: '最多設定 8 項自動補給' };
-    rules[key] = n;
-    const r = this.autoResupply(sv);
-    return { ok: true, msg: `已設定：回到避難所時自動補到 ${n} 個${r ? `（已補給 ${r}）` : ''}` };
+  // ================= 彈藥欄與藥品欄 =================
+
+  /** 彈藥欄（最多 100）與藥品欄（最多 10）：{ ammo: {key, qty} | null, med: {key, qty} | null } */
+  loadout(sv) {
+    sv.loadout = sv.loadout || { ammo: null, med: null };
+    return sv.loadout;
   }
 
-  /** 依設定從倉庫補給到背包（受負重與格子限制）；回傳補給說明 */
+  /** 欄位允許的物品種類 */
+  static slotAccepts(kind, key) {
+    return kind === 'ammo' ? SUPPLIES[key]?.cat === 'ammo' : SUPPLIES[key]?.cat === 'med' && (SUPPLIES[key].heal || 0) > 0;
+  }
+
+  /** 遠程武器需要的彈藥種類 */
+  ammoNeed(sv) {
+    const w = this.game.equipment.getItem(sv?.equipment?.weapon);
+    return w ? AMMO_FOR[w.type] || null : null;
+  }
+
+  /** 可用彈藥數量：彈藥欄（同種類）＋背包＋在避難所時的倉庫 */
+  ammoAvailable(sv, key) {
+    const lo = this.loadout(sv);
+    return (lo.ammo?.key === key ? lo.ammo.qty : 0) + Math.floor(sv.bag?.[key] || 0) + (this.atShelter(sv) ? Math.floor(this.game.state.supplies?.[key] || 0) : 0);
+  }
+
+  /** 是否能使用遠程武器（有足夠一場戰鬥的彈藥） */
+  canUseRanged(sv) {
+    const need = this.ammoNeed(sv);
+    return !!need && this.ammoAvailable(sv, need.ammo) >= need.perFight;
+  }
+
+  /** 消耗彈藥：先用彈藥欄，再用背包，最後用倉庫（在避難所時）；回傳實際扣除數 */
+  useAmmo(sv, key, n) {
+    let left = n;
+    const lo = this.loadout(sv);
+    if (lo.ammo?.key === key) {
+      const a = Math.min(left, lo.ammo.qty);
+      lo.ammo.qty -= a;
+      left -= a;
+      if (lo.ammo.qty <= 0) lo.ammo = null;
+    }
+    const bag = sv.bag || {};
+    if (left > 0 && bag[key]) {
+      const a = Math.min(left, bag[key]);
+      bag[key] -= a;
+      left -= a;
+      if (bag[key] <= 0) delete bag[key];
+    }
+    const store = this.game.state.supplies || {};
+    if (left > 0 && this.atShelter(sv) && store[key]) {
+      const a = Math.min(left, store[key]);
+      store[key] -= a;
+      left -= a;
+      if (store[key] <= 0) delete store[key];
+    }
+    return n - left;
+  }
+
+  /** 欄位物品的重量（計入負重） */
+  loadoutWeight(sv) {
+    const lo = this.loadout(sv);
+    return ['ammo', 'med'].reduce((s, k) => s + (lo[k] ? lo[k].qty * unitWeight(lo[k].key) : 0), 0);
+  }
+
+  /** 裝填：從倉庫（在避難所時）或背包放進彈藥欄／藥品欄；欄位原本是別的種類時先卸下 */
+  loadSlot(id, kind, key, qty = Infinity) {
+    const sv = this.get(id);
+    if (!sv) return { ok: false, reason: '找不到倖存者' };
+    if (!SurvivorSystem.slotAccepts(kind, key)) return { ok: false, reason: kind === 'ammo' ? '這個欄位只能放彈藥或箭矢' : '這個欄位只能放藥品' };
+    const lo = this.loadout(sv);
+    if (lo[kind] && lo[kind].key !== key) {
+      const u = this.unloadSlot(id, kind);
+      if (!u.ok) return u;
+    }
+    const max = LOADOUT_MAX[kind];
+    const cur = lo[kind]?.qty || 0;
+    let want = Math.min(Math.max(0, Math.floor(qty === Infinity ? max : qty)), max - cur);
+    if (want <= 0) return { ok: false, reason: `欄位已滿（最多 ${max}）` };
+    // 負重
+    const room = Math.floor(Math.max(0, this.bagCap(sv) - this.bagLoad(sv)) / unitWeight(key) + (sv.bag?.[key] || 0) * 0);
+    let got = 0;
+    const bag = sv.bag || {};
+    const fromBag = Math.min(want, Math.floor(bag[key] || 0));
+    if (fromBag) {
+      bag[key] -= fromBag;
+      if (bag[key] <= 0) delete bag[key];
+      got += fromBag;
+      want -= fromBag;
+    }
+    if (want > 0 && this.atShelter(sv)) {
+      const store = this.game.state.supplies || {};
+      const n = Math.min(want, Math.floor(store[key] || 0), room);
+      if (n > 0) {
+        store[key] -= n;
+        if (store[key] <= 0) delete store[key];
+        got += n;
+      }
+    }
+    if (!got) return { ok: false, reason: this.atShelter(sv) ? '倉庫與背包都沒有（或負重已滿）' : '背包裡沒有' };
+    lo[kind] = { key, qty: cur + got };
+    return { ok: true, n: got, msg: `裝填 ${SUPPLIES[key].name}×${got}` };
+  }
+
+  /** 卸下彈藥欄／藥品欄：在避難所放回倉庫，在外面放進背包 */
+  unloadSlot(id, kind) {
+    const sv = this.get(id);
+    const lo = sv && this.loadout(sv);
+    if (!lo?.[kind]) return { ok: false, reason: '欄位是空的' };
+    const { key, qty } = lo[kind];
+    if (this.atShelter(sv)) {
+      const room = this.storeRoom(key);
+      const n = Math.min(qty, room);
+      this.game.state.supplies[key] = (this.game.state.supplies[key] || 0) + n;
+      lo[kind] = qty - n > 0 ? { key, qty: qty - n } : null;
+      if (qty - n > 0) return { ok: false, reason: '倉庫空間不足' };
+    } else {
+      sv.bag = sv.bag || {};
+      sv.bag[key] = (sv.bag[key] || 0) + qty;
+      lo[kind] = null;
+    }
+    return { ok: true, msg: `已卸下 ${SUPPLIES[key].name}×${qty}` };
+  }
+
+  /** 戰鬥中使用一個藥品欄的藥（回傳回復量；沒有則 0） */
+  useLoadoutMed(sv) {
+    const lo = this.loadout(sv);
+    if (!lo.med?.qty) return 0;
+    const heal = this.healAmount(sv, lo.med.key);
+    lo.med.qty -= 1;
+    if (lo.med.qty <= 0) lo.med = null;
+    return heal;
+  }
+
+  // ================= 自動補給 =================
+
+  /** 自動補給設定：{ ammo: 彈藥種類 | null, med: 藥品種類 | null }（各只能設一種） */
+  supplyRules(sv) {
+    if (!sv.supply || typeof sv.supply !== 'object' || !('ammo' in sv.supply || 'med' in sv.supply)) {
+      // 舊版設定（{種類: 數量}）：各取第一個彈藥與藥品
+      const old = sv.supply || {};
+      const keys = Object.keys(old);
+      sv.supply = { ammo: keys.find((k) => SUPPLIES[k]?.cat === 'ammo') || null, med: keys.find((k) => SurvivorSystem.slotAccepts('med', k)) || null };
+    }
+    return sv.supply;
+  }
+
+  /** 設定自動補給（kind：ammo 或 med；key 為空時取消） */
+  setSupply(id, kind, key) {
+    const sv = this.get(id);
+    if (!sv) return { ok: false, reason: '找不到倖存者' };
+    if (kind !== 'ammo' && kind !== 'med') return { ok: false, reason: '只能設定彈藥或藥品' };
+    const rules = this.supplyRules(sv);
+    if (!key) {
+      rules[kind] = null;
+      return { ok: true, msg: '已取消自動補給' };
+    }
+    if (!SurvivorSystem.slotAccepts(kind, key)) return { ok: false, reason: kind === 'ammo' ? '請選擇彈藥' : '請選擇藥品' };
+    rules[kind] = key;
+    const r = this.autoResupply(sv);
+    return { ok: true, msg: `已設定自動補給 ${SUPPLIES[key].name}（最多 ${LOADOUT_MAX[kind]}）${r ? `，已補給 ${r}` : ''}` };
+  }
+
+  /** 依設定把彈藥欄、藥品欄補滿（在避難所從倉庫補；在外面從背包補）；回傳補給說明 */
   autoResupply(sv) {
-    if (!sv || !this.atShelter(sv)) return '';
-    const bag = this.bagOf(sv);
+    if (!sv || sv.severe && sv.status !== 'idle') return '';
+    const rules = this.supplyRules(sv);
     const got = [];
-    Object.entries(this.supplyRules(sv)).forEach(([k, want]) => {
-      const need = want - Math.floor(bag[k] || 0);
-      if (need <= 0) return;
-      const r = this.withdraw(sv.id, k, need);
-      if (r.ok && r.n > 0) got.push(`${SUPPLIES[k]?.name || RESOURCES[k]?.name || k}×${r.n}`);
+    ['ammo', 'med'].forEach((kind) => {
+      const key = rules[kind];
+      if (!key) return;
+      const lo = this.loadout(sv);
+      if (lo[kind] && lo[kind].key !== key && !this.atShelter(sv)) return; // 在外面不換種類
+      if ((lo[kind]?.key === key ? lo[kind].qty : 0) >= LOADOUT_MAX[kind]) return;
+      if (!this.atShelter(sv) && !(sv.bag?.[key] > 0)) return;
+      const r = this.loadSlot(sv.id, kind, key);
+      if (r.ok && r.n > 0) got.push(`${SUPPLIES[key].name}×${r.n}`);
     });
     return got.join('、');
   }

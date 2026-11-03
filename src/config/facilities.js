@@ -28,12 +28,13 @@ const mat = (key, tags, base, lv) => {
 /** 生產設施每級的每小時產量（生產只是輔助，主要物資需靠探索） */
 export const FARM_FOOD = 7;
 /** 伐木場每級每小時產出木材（產量低，比不上直接探索樹林） */
-export const LUMBER_WOOD = 3;
+export const LUMBER_WOOD = 4;
 /** 工作台每級每小時產出（木材，以及少量基礎零件） */
 export const WORKBENCH = { wood: 3, nail: 0.5, screw: 0.5 };
 
 /** 修繕圍牆：每名修繕人員每秒修復的耐久，與每點耐久消耗的材料 */
-export const REPAIR = { hpPerSec: 1.5, cost: { wood: 0.09, nail: 0.006, scrap: 0.003 } };
+/** 圍牆修繕：每點耐久的材料（每單位材料修復量比以前多約 30%） */
+export const REPAIR = { hpPerSec: 1.8, cost: { wood: 0.07, nail: 0.0045, scrap: 0.0023 } };
 
 /** 前哨站只有防禦功能，只能建造這些設施 */
 export const OUTPOST_FACILITIES = ['wall', 'watchtower'];
@@ -43,7 +44,7 @@ export const FACILITIES = {
     name: '圍牆', icon: '🧱', startLevel: 1,
     desc: '避難所的生命線。提升耐久與減傷。',
     cost: (lv) => mat('wall', ['struct'], { wood: 80, metal: 40 }, lv),
-    effectText: (lv) => `耐久 ${wallMaxHp(lv)}，減傷 ${Math.round(lv * 3)}%`,
+    effectText: (lv) => `耐久 ${wallMaxHp(lv)}，減傷 ${Math.round(10 + lv * 3)}%`,
   },
   warehouse: {
     name: '消耗品倉庫', icon: '📦', startLevel: 1,
@@ -89,9 +90,15 @@ export const FACILITIES = {
   },
   exchange: {
     name: '交易所', icon: '🏪', startLevel: 0,
-    desc: '建好才能和其他玩家交易：派人擺攤、發布收購需求、交付別人的收購。每一級可以同時掛 1 項收購需求。',
+    desc: '建好才能使用交易市場：刊登賣出或收購，與其他玩家即時成交。Lv1 可同時刊登賣出、收購各 2 筆，每升一級各 +1。',
     cost: (lv) => mat('exchange', ['struct', 'elec'], { wood: 110, metal: 50, cloth: 30 }, lv),
-    effectText: (lv) => `可交易，同時掛 ${lv} 項收購需求`,
+    effectText: (lv) => (lv > 0 ? `賣出、收購各可刊登 ${lv + 1} 筆` : '尚未建造'),
+  },
+  broadcast: {
+    name: '廣播塔', icon: '📡', startLevel: 0,
+    desc: '可以對 NPC 據點或重度感染據點發起集結，好友會收到通知並派隊參加。Lv1 可集結 2 支隊伍（含自己），每升一級 +1。',
+    cost: (lv) => mat('broadcast', ['elec', 'struct'], { wood: 90, metal: 80, cloth: 20 }, lv),
+    effectText: (lv) => (lv > 0 ? `集結最多 ${lv + 1} 支隊伍` : '尚未建造'),
   },
   cellar: {
     name: '地窖', icon: '🕳️', startLevel: 0,
@@ -131,8 +138,8 @@ export const facilityBuildTime = (lv) => Math.round(40 * timeCurve(lv, 1.6, 2.52
 export const wallMaxHp = (lv) => 400 + lv * 350 + lv * lv * 40;
 /** 消耗品上限：Lv6 以後成長加快，配合高等級的升級費用 */
 export const storageCap = (lv) => 600 + lv * 700 + lv * lv * 120 + (lv > 6 ? 1500 * (lv - 6) ** 2 : 0);
-/** 物品倉庫格子：Lv1 30 格，每升一級 +10 */
-export const itemStoreSlots = (lv) => 30 + Math.max(0, lv - 1) * 10;
+/** 物品倉庫格子：Lv1 30 格，每升一級 +13（裝備與材料共用） */
+export const itemStoreSlots = (lv) => 30 + Math.max(0, lv - 1) * 13;
 export const housingCap = (lv) => 3 + lv * 2;
 /** 地窖容量：每種基礎物資（食物、木材、燃料）可藏的數量；金錢另計 */
 export const cellarCap = (lv) => (lv > 0 ? 60 * lv + 15 * lv * lv : 0);

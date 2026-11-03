@@ -133,6 +133,14 @@ export function spreadPick(list, cap, lat0, cellM = POI_SPREAD_CELL_M) {
   return picked.concat(rest.slice(0, Math.max(0, cap - picked.length)));
 }
 
+/** 住宅區淘汰比例 */
+const RESIDENTIAL_DROP = 0.15;
+const idHash = (s) => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i += 1) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 10000) / 10000;
+};
+
 /** 稀有度：越常見的類型越先被淘汰（住宅、商店最常見） */
 const COMMON_RANK = { residential: 0, shop: 1, school: 2, factory: 2, warehouse: 2 };
 
@@ -148,6 +156,8 @@ export function thinPois(pois, lat0, keep = new Set(), cellM = POI_DENSITY_CELL_
   const used = new Set();
   return sorted.filter((p) => {
     if (keep.has(p.id)) return true;
+    // 住宅區比例略降：依地點 ID 固定淘汰約 15%（每次結果相同）
+    if (p.type === 'residential' && idHash(p.id) < RESIDENTIAL_DROP) return false;
     const cell = `${Math.floor((p.lat * mPerLat) / cellM)}:${Math.floor((p.lon * mPerLon) / cellM)}`;
     if (used.has(cell)) return false;
     used.add(cell);

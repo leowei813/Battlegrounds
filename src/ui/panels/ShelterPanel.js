@@ -1,4 +1,5 @@
 import { exchangeBody, exchangeAction, exchangeForm } from '../ExchangeDialog.js';
+import { blackMarketBody, blackMarketAction } from '../BlackMarketView.js';
 import { FACILITIES, FACILITY_MAX_LEVEL, OUTPOST_FACILITIES } from '../../config/facilities.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL } from '../../config/defenses.js';
 import { CLASSES } from '../../config/survivors.js';
@@ -13,9 +14,9 @@ import {
  * 避難所分頁（側邊/底部抽屜）：設施升級、施工佇列、防禦建築、事件紀錄。
  */
 /** 避難所面板的分頁 */
-const SHELTER_TABS = ['overview', 'facilities', 'defense', 'storage', 'garage', 'exchange'];
+const SHELTER_TABS = ['overview', 'facilities', 'defense', 'storage', 'garage', 'exchange', 'blackmarket'];
 /** 避難所面板本身處理的操作（其餘在倉庫、車庫分頁時交給倉庫面板） */
-const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon'];
+const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon', 'cancelBuild', 'toggleAlert'];
 
 export class ShelterPanel {
   constructor(ui) {
@@ -39,7 +40,7 @@ export class ShelterPanel {
       <div class="civ-card">
         <div class="row-between"><b>${tier.icon} 文明度 ${b.total}</b><span class="tag tag-amber">${tier.name}</span></div>
         ${progressBar(ratio, 'civ', next ? `距「${next.name}」${next.min - b.total}` : '已達最高階段')}
-        <div class="civ-parts"><span>🏗️ 建築 ${b.buildings}</span><span>👑 玩家等級 ${b.player}</span><span>🎒 裝備 ${b.equipment}</span></div>
+        <div class="civ-parts"><span>🏗️ 建築 ${b.buildings}</span><span>👑 玩家等級 ${b.player}</span><span>🎒 裝備 ${b.equipment}</span><span>🔬 科技 ${b.research}</span></div>
         <small class="muted block">屍潮強度隨文明度提升（殭屍 +${civ.levelBonus()} 級、頻率 ×${civ.spawnMul().toFixed(2)}），與天數無關。</small>
         <div class="row-between danger-row">
           <span>☠ 據點危險度 <b>${danger}</b>・<span class="zone-tag" style="--zc:${siege.zone().color}">${siege.zone().name}</span></span>
@@ -66,8 +67,8 @@ export class ShelterPanel {
     const st = g.state;
     const sh = this.ui.viewBase();
     const ui = this.ui;
-    const head = `<div class="drawer-head"><b data-action="toggleDrawer">${sh && g.shelter.isPrimary(sh) ? '⭐' : '🏴'} ${escapeHtml(sh?.name || '避難所')}</b>
-      <span class="drawer-ctrl">${ui.drawerCollapsed ? '' : `<button class="btn btn-xs btn-ghost mobile-only" data-action="drawerFull">${ui.drawerFull ? '⤓ 縮小' : '⤢ 全螢幕'}</button>`}<button class="btn btn-xs btn-ghost" data-action="toggleDrawer">${ui.drawerCollapsed ? '▲ 展開' : '▼ 收合'}</button></span></div>`;
+    const head = `<div class="drawer-head"><b>${sh && g.shelter.isPrimary(sh) ? '⭐' : '🏴'} ${escapeHtml(sh?.name || '避難所')}</b>
+      </div>`;
     if (!sh) {
       return `${head}<div class="empty">尚未建立避難所。<br>${btn('🗺️ 前往地圖選擇建築', 'gotoMap', {}, { cls: 'btn-primary' })}</div>`;
     }
@@ -78,9 +79,10 @@ export class ShelterPanel {
     const baseActions = g.shelter.isPrimary(sh)
       ? `<small class="muted">⭐ 避難所：倖存者居住、生產、探索出發、駐守倖存者防衛於此。</small>${btn('🏚️ 放棄避難所（搬家）', 'abandon', {}, { cls: 'btn-sm btn-ghost' })}`
       : `<small class="muted">🏴 前哨站：只有防禦功能，不能生產。</small>${btn('🏚️ 放棄前哨站', 'abandon', {}, { cls: 'btn-sm btn-ghost' })}`;
-    const queue = sh.buildQueue.map((q) => {
+    const queue = sh.buildQueue.map((q, i) => {
       const name = q.kind === 'facility' ? FACILITIES[q.id].name : `${DEFENSES[q.id].name}（槽位 ${q.slot + 1}）`;
-      return `<div class="queue-item">🔨 ${name} → Lv${q.targetLevel}${timerBar(q.startAt || now, q.endAt, now)}</div>`;
+      const done = Math.min(1, Math.max(0, (now - (q.startAt || now)) / Math.max(1, q.endAt - (q.startAt || now))));
+      return `<div class="queue-item"><div class="row-between"><span>🔨 ${name} → Lv${q.targetLevel}</span>${btn(`取消（退 ${Math.round(90 * (1 - done))}%）`, 'cancelBuild', { i }, { cls: 'btn-xs btn-ghost' })}</div>${timerBar(q.startAt || now, q.endAt, now)}</div>`;
     }).join('');
 
     const outpost = g.shelter.isOutpost(sh);
@@ -111,11 +113,12 @@ export class ShelterPanel {
     const z = g.shelter.sizeInfo(sh);
     const tab = SHELTER_TABS.includes(ui.shelterTab) ? ui.shelterTab : 'overview';
     const inv = ui.panels.inventory;
-    const storeN = g.equipment.storeItems().length;
+    const storeN = `${g.equipment.storeUsed()}/${g.equipment.storeCap()}`;
     const tabBtn = (id, label) => `<button class="seg-btn ${tab === id ? 'active' : ''}" data-action="shelterTab" data-t="${id}">${label}</button>`;
-    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('storage', `🗄️ 倉庫 ${storeN}`)}${tabBtn('garage', `🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`)}${tabBtn('exchange', `🏪 交易所${g.demand.list.length ? ` ${g.demand.list.length}` : ''}`)}</div>`;
+    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('storage', `🗄️ 倉庫 ${storeN}`)}${tabBtn('garage', `🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`)}${tabBtn('exchange', `🏪 交易所${g.market.mine().length ? ` ${g.market.mine().length}` : ''}`)}${tabBtn('blackmarket', '🕶️ 黑市')}</div>`;
     const sections = {
       overview: `
+        <div class="card row-between ${g.shelter.alert ? 'alert-on' : ''}"><span>${g.shelter.alert ? '🚨 <b>警戒中</b>：全部倖存者暫時為防禦駐守' : '🟢 正常：倖存者依指派的工作行動'}</span>${btn(g.shelter.alert ? '✅ 解除警戒' : '🚨 切換警戒', 'toggleAlert', {}, { cls: `btn-sm ${g.shelter.alert ? '' : 'btn-danger'}` })}</div>
         <div class="label">避難所 ${g.shelter.hasShelter() ? 1 : 0}/1・前哨站 ${g.shelter.outposts().length}/${g.shelter.outpostLimit()} <small>（研究「擴張科技」最多 ${MAX_OUTPOSTS} 座，在地圖點選建築建立）</small></div>
         ${g.shelter.hasShelter() ? '' : `<div class="card warn">🏚️ 目前沒有避難所，無法生產與探索。${btn('🗺️ 到地圖選擇新的避難所', 'gotoMap', {}, { cls: 'btn-sm btn-primary' })}</div>`}
         <div class="chips">${tabs}</div>
@@ -134,9 +137,10 @@ export class ShelterPanel {
       defense: `<p class="muted">${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築。點空地建造，點已建造的防禦建築升級或派人駐守（也可以直接點上方場景中的槽位）。</p>
         <div class="slot-grid">${defenses}</div>
         <div class="stat-grid"><div><small>防禦 DPS</small><b>${siege.defenseDps()}</b></div><div><small>屍潮波次</small><b>${this.waveText(siege)}</b></div></div>`,
-      storage: tab === 'storage' ? `<h4>🗄️ 物品倉庫（裝備 ${storeN} 件）</h4>${inv.renderItems()}` : '',
+      storage: tab === 'storage' ? `<h4>🗄️ 物品倉庫（${storeN} 格）</h4>${inv.renderItems()}` : '',
       garage: tab === 'garage' ? inv.renderGarage() : '',
       exchange: tab === 'exchange' ? exchangeBody(ui, this.exForm || {}) : '',
+      blackmarket: tab === 'blackmarket' ? blackMarketBody(ui, ui.bmView) : '',
     };
     return `<div class="drawer-top">${head}${ui.drawerCollapsed ? '' : tabs2}</div>
       <div class="drawer-body">${sections[tab]}</div>`;
@@ -155,7 +159,7 @@ export class ShelterPanel {
   }
 
   /** 據點遭襲紀錄：防禦成功或失敗、損失資源、毀損建築、受重傷的人 */
-  defenseLogHtml() {
+  defenseLogHtml(since = Infinity) {
     const list = this.game.state.defenseLog || [];
     const rows = list.slice(0, 15).map((e) => {
       const t = new Date(e.at);
@@ -169,7 +173,7 @@ export class ShelterPanel {
         e.wallLost ? `🧱 圍牆 −${e.wallLost}` : '',
       ].filter(Boolean).join('・');
       return `<div class="card defense-log ${e.success ? 'ok' : 'fail'}">
-        <div class="row-between"><b>${e.success ? '🛡️ 防禦成功' : '💥 防禦失敗'}</b><small class="muted">${when}</small></div>
+        <div class="row-between"><b>${(e.at || 0) > since ? '<span class="tag tag-blue">未讀</span>' : ''}${e.success ? '🛡️ 防禦成功' : '💥 防禦失敗'}</b><small class="muted">${when}</small></div>
         <div>「${escapeHtml(e.baseName)}」遭 ${escapeHtml(e.attacker)} 攻擊</div>
         ${lines ? `<small class="muted block">${lines}</small>` : ''}
         ${lost.length ? `<div class="neg">損失資源：${lost.join('、')}</div>` : (e.success ? '<div class="pos">沒有損失資源</div>' : '')}
@@ -186,13 +190,18 @@ export class ShelterPanel {
     if (action === 'gotoMap') this.ui.switchTab('map');
     const base = this.ui.viewBase();
     if (action === 'upgrade') this.ui.result(g.shelter.upgradeFacility(base, data.id));
+    if (action === 'cancelBuild' && confirm('取消施工？依完成度退還材料，完成度越高退得越少。')) this.ui.result(g.shelter.cancelBuild(base, +data.i));
     if (action === 'slot') this.openSlot(+data.slot);
     if (action === 'viewBase') this.ui.setViewBase(data.id);
     if (action === 'abandon') openAbandonDialog(this.ui, base);
+    if (action === 'toggleAlert') this.ui.result(g.shelter.setAlert(!g.shelter.alert));
     const tab = this.ui.shelterTab;
     const root = this.ui.panelEl;
-    if (tab === 'exchange' && exchangeAction(this.ui, action, data, root)) {
-      if (action === 'exPost') this.exForm = null;
+    if (tab === 'blackmarket' && blackMarketAction(this.ui, action, data)) {
+      this.ui.refresh(true);
+      return;
+    }
+    if (tab === 'exchange' && exchangeAction(this.ui, action, data, root, this.exForm || {}, (f) => { this.exForm = f; })) {
       this.ui.refresh(true);
       return;
     }
@@ -213,7 +222,7 @@ export class ShelterPanel {
     this.boundEl = el;
     const save = (e) => {
       if (e.target.id === 'inv-drop-qty') this.ui.panels.inventory.dropQty = Number(e.target.value) || 1;
-      if (e.target.closest?.('.demand-form')) this.exForm = exchangeForm(el);
+      if (e.target.closest?.('.demand-form') || e.target.classList?.contains('d-gear-price')) this.exForm = exchangeForm(el, this.exForm || {});
     };
     el.addEventListener('input', save);
     el.addEventListener('change', save);

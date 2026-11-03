@@ -2,7 +2,7 @@
 
 export const GAME_TITLE = '絕地求生';
 export const SAVE_KEY = 'jdqs_save_v1';
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 18;
 
 export const TICK_MS = 1000;
 export const AUTOSAVE_MS = 30 * 1000;
@@ -77,3 +77,10 @@ export const COIN_GAIN_MUL = 0.8;
  *  - minMin：步行最少分鐘數（載具仍有加速效果）
  */
 export const RAID_TRAVEL = { playerMul: 4, npcMul: 2.5, minMin: 5 };
+
+/**
+ * 世界時間：所有玩家共用同一個日曆與日夜。
+ * WORLD_EPOCH_MS 這一刻為 2050/1/1 06:00（v9.0.0 上線時間），遊戲一天＝現實 1 小時。
+ */
+export const WORLD_EPOCH_MS = Date.UTC(2026, 10, 3, 7, 10, 0);
+export const WORLD_START = { year: 2050, month: 1, day: 1, hour: 6 };

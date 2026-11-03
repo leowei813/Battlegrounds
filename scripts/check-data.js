@@ -15,11 +15,14 @@ import { FACILITIES, LUMBER_WOOD } from '../src/config/facilities.js';
 import {
   RARITIES, RARITY_ORDER, SLOT_KEYS, ITEM_TYPES, ITEM_MODELS,
 } from '../src/config/equipment.js';
-import { DAY_REAL_MS, START_HOUR } from '../src/config/constants.js';
+import {
+  DAY_REAL_MS, SAVE_VERSION as SAVE_VERSION_NOW, WORLD_EPOCH_MS, WORLD_START,
+} from '../src/config/constants.js';
 
 /** 把遊戲時鐘調到指定時刻（建檔時間往前推） */
 const setHour = (game, hour) => {
-  game.state.createdAt = Date.now() - (((hour - START_HOUR + 24) % 24) / 24) * DAY_REAL_MS;
+  // v9 世界時間：調整 worldShift 讓目前時刻變成 hour
+  game.state.worldShift = (((hour - WORLD_START.hour + 24) % 24) / 24) * DAY_REAL_MS - (Date.now() - WORLD_EPOCH_MS);
 };
 import { SaveManager } from '../src/core/SaveManager.js';
 import { WORLD as WORLDC } from '../src/systems/SiegeSystem.js';
@@ -101,7 +104,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
 setHour(g, 21);
 const save = JSON.parse(JSON.stringify(g.state));
-assert(save.version === 17, 'state is serializable');
+assert(save.version === SAVE_VERSION_NOW, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
 g.state.map.pois[1].lastVisit = 123;
@@ -155,7 +158,7 @@ v1.shelter = { ...v1.bases[0], poiId: v1.bases[0].poiId };
 delete v1.bases;
 delete v1.primaryBaseId;
 const migrated = SaveManager.migrate(v1);
-assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
+assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && migrated.bases[0].kind === 'shelter' && migrated.primaryBaseId === migrated.bases[0].id && !migrated.shelter, 'v1 → v2 存檔遷移');
 
 // ---- 6. 探索行程與途中遇襲 ----
 {
@@ -243,7 +246,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
 {
   const ge = Game.newGame({ playerName: 'Gear', classId: 'warrior', lat: 0, lon: 0 });
   const eq = ge.equipment;
-  assert(Object.keys(ITEM_TYPES).length >= 15 && SLOT_KEYS.length === 8, `裝備類型 ${Object.keys(ITEM_TYPES).length} 種、裝備欄 ${SLOT_KEYS.length} 個`);
+  assert(Object.keys(ITEM_TYPES).length >= 15 && SLOT_KEYS.length === 9, `裝備類型 ${Object.keys(ITEM_TYPES).length} 種、裝備欄 ${SLOT_KEYS.length} 個`);
   // 每個品級範圍首尾相接、不重疊
   RARITY_ORDER.slice(1).forEach((r, i) => {
     assert(RARITIES[r].min >= RARITIES[RARITY_ORDER[i]].max, `${RARITIES[r].name}最低倍率 ≥ ${RARITIES[RARITY_ORDER[i]].name}最高倍率`);
@@ -523,8 +526,9 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   const plainMs = gw.exploration.plan(poiFar, [gw.survivors.leader()], 15).travelMs;
   const carMs = gw.exploration.plan(poiFar, [gw.survivors.leader()], 15, Date.now(), [bike]).travelMs;
   assert(carMs < plainMs, '騎腳踏車縮短路程時間');
+  Object.assign(gw.survivors.leader(), { severe: false, hp: null, status: 'idle' }); // 前面的屍潮近戰防守可能受傷
   const r = gw.exploration.start(poiFar.id, ['leader'], 15, false, Date.now(), { vehicleIds: [bike.id] });
-  assert(r.ok && bike.status === 'out', '帶載具出發');
+  assert(r.ok && bike.status === 'out', `帶載具出發（${r.reason || ''}・${JSON.stringify({ sev: gw.survivors.leader().severe, st: gw.survivors.leader().status })}）`);
   const dur0 = bike.durability;
   gw.exploration.update(Date.now() + 3 * 3600e3, { silent: true });
   assert(bike.status === 'idle' && bike.durability < dur0, `返回後載具磨損（${dur0} → ${bike.durability}）`);
@@ -572,11 +576,10 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   const perCell = {};
   gn.npcs.list.forEach((n) => { perCell[n.cell] = (perCell[n.cell] || 0) + 1; });
   assert(gn.npcs.list.length >= 2 && Object.values(perCell).every((c) => c <= 2) && Object.values(perCell).some((c) => c === 2), `每平方公里約 2 個 NPC 據點（共 ${gn.npcs.list.length} 個、${Object.keys(perCell).length} 格）`);
-  const npc = gn.npcs.list[0];
+  const npc = gn.npcs.list.find((n) => n.level < 30) || gn.npcs.list[0];
   const lv = npc.level;
-  npc.nextLevelAt = t0;
-  gn.npcs.update(t0 + 1000);
-  assert(npc.level === lv + 1, 'NPC 據點會升級');
+  const { SHARED_NPC } = await import('../src/systems/NpcSystem.js');
+  assert(gn.npcs.sharedLevel(npc, t0 + SHARED_NPC.levelMs) === gn.npcs.sharedLevel(npc, t0) + 1 && lv >= 1, 'NPC 據點會隨時間升級');
   npc.trip = null;
   npc.nextExploreAt = t0;
   npc.nextRaidAt = t0 + 1e9;
@@ -589,6 +592,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   // 掠奪：玩家沒有防禦且無人在家 → 被搶
   gn.state.survivors.forEach((s) => { s.status = 'exploring'; });
   Object.keys(gn.state.resources).forEach((k) => { gn.state.resources[k] = 1000; });
+  npc.baseLevel += 30 - npc.level;
   npc.level = 30;
   npc.trip = null;
   npc.wounded = 0;
@@ -879,20 +883,16 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   gt.territory.handleEvents([{ from: 'p1', fromName: '鄰居', type: 'attack', data: { win: true, lossPct: 0.1 } }]);
   assert(gt.territory.relation('p1') === 'hostile' && gt.state.resources.wood === 900, '被其他玩家攻擊後變成敵對並損失資源');
   const ph = gt.territory.route(home, target);
-  const th = gt.territory.threats(ph);
-  assert(th.length === 1 && th[0].kind === 'player', '敵對據點的警戒範圍不會自動繞開，經過時會遭到駐守人員攻擊');
-  assert(crossings(gt.territory.route(home, target, { avoidHostile: true }), [zoneCircle]).length === 0, '可選擇連敵對範圍也繞開');
-  // 實際派隊：經過敵對範圍時發生戰鬥（打輸會撤退）
-  setHour(gt, 10);
+  assert(crossings(ph, [zoneCircle]).length === 0 && gt.territory.threats(ph).length === 0, 'v9：敵對據點的警戒範圍也一律繞開，不會遭到攻擊');
   const lead = gt.survivors.leader();
-  Object.assign(lead, { status: 'idle', severe: false, hp: null, level: 1 });
-  gt.world.others[0].bases[0].guards = 6;
-  gt.world.others[0].bases[0].guardLevel = 40;
-  gt.territory.noticed = () => true;
-  const ex = gt.exploration.start(target.id, ['leader'], 10);
-  assert(ex.ok && ex.exp.threats.length === 2, '出發時算出去程與返程會經過的敵對範圍');
-  const [rep] = gt.exploration.update(ex.exp.endAt + 1, { silent: true });
-  assert(!gt.state.expeditions.length && rep && !rep.success && rep.events.some((e) => e.includes('警戒範圍')), `在敵對範圍被駐守人員擊退後撤退（${JSON.stringify(rep?.events)}）`);
+  // 友好玩家的範圍不需要繞開
+  gt.state.relations.players.p1 = { status: 'friend', name: '鄰居' };
+  const pf = gt.territory.route(home, target);
+  assert(crossings(pf, [zoneCircle]).length === 1, '友好玩家的警戒範圍不需要繞開');
+  gt.world.others[0].trips = [{ id: 'tf', from: { lat: home.lat, lon: home.lon + 0.006 }, to: { lat: home.lat, lon: home.lon }, startAt: Date.now(), endAt: Date.now() + 600000, travelMs: 300000, searchMs: 0, members: 1 }];
+  assert(!gt.threats().some((t) => t.includes('鄰居')), '友好玩家的隊伍靠近不顯示威脅');
+  gt.world.others[0].trips = [];
+  gt.state.relations.players.p1 = { status: 'hostile', name: '鄰居' };
   // 友好
   gt.territory.handleEvents([{ from: 'p2', fromName: '阿美', type: 'friendRequest' }]);
   assert(gt.territory.rel.requestsIn.p2, '收到友好請求');
@@ -929,7 +929,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   gi.shelter.primary().facilities.itemStore.level = 3;
   gi.state.research.levels.i_shelves = 2;
   gi.research.invalidate();
-  assert(eq.storeCap() === STORE_BASE_SLOTS + 20 + 10, '升級物品倉庫與研究可增加物品格子');
+  assert(eq.storeCap() === STORE_BASE_SLOTS + 26 + 14, '升級物品倉庫與研究可增加物品格子');
   gi.shelter.primary().facilities.itemStore.level = 1;
   gi.state.research.levels.i_shelves = 0;
   gi.research.invalidate();
@@ -990,7 +990,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   home.facilities.warehouse.level = 3;
   assert(gq.resources.storageCap() > cap0 && gq.equipment.storeCap() === slots0, '消耗品倉庫只提高消耗品上限');
   home.facilities.itemStore.level = 3;
-  assert(gq.equipment.storeCap() === slots0 + 20, '物品倉庫提高物品格子');
+  assert(gq.equipment.storeCap() === slots0 + 26, '物品倉庫提高物品格子');
   assert(gq.shelter.sizeInfo(home).total <= 20, '據點建築總數上限仍為 20');
   // 堆疊上限 999
   const lead = gq.survivors.leader();
@@ -1093,7 +1093,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   gk.equipment.equip(lead.id, pistol.id);
   delete gk.state.supplies.ammo9;
   lead.bag = {};
-  const full = gk.survivors.stats(lead).atk;
+  const full = gk.survivors.stats(lead, 'ranged').atk;
   const noAmmo = gk.combat.unitFromSurvivor(lead).atk;
   assert(noAmmo < full, `沒有彈藥時無法使用槍械（攻擊 ${full} → ${Math.round(noAmmo)}）`);
   lead.bag = { ammo9: 10 };
@@ -1108,7 +1108,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   lead.bag = {};
   const far = gk.state.map.pois.find((p) => p.type === 'residential' && !gk.shelter.baseAtPoi(p.id));
   const ex = gk.exploration.start(far.id, [lead.id], 5);
-  assert(ex.ok && lead.bag.ammo9 === sup.AMMO_FOR.pistol.perFight * sup.AMMO_PACK_FIGHTS, '出發時自動從倉庫補充彈藥');
+  assert(ex.ok && lead.loadout.ammo?.qty === sup.AMMO_FOR.pistol.perFight * sup.AMMO_PACK_FIGHTS, '出發時自動把彈藥裝進彈藥欄');
   gk.exploration.recall(ex.exp.id);
   gk.exploration.update(Date.now() + 5000, { silent: true });
 
@@ -1252,7 +1252,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   const sd = gd.siege.of();
   gd.state.supplies.ammo556 = 3;
   assert(sd.canShoot(lead), '據點庫存有彈藥時可以遠程射擊');
-  const full = gd.survivors.stats(lead);
+  const full = gd.survivors.stats(lead, 'ranged');
   const a1 = sd.attackPower(lead, full);
   assert(a1.ranged && a1.value === full.atk && gd.state.supplies.ammo556 === 2, '防守射擊消耗據點庫存的彈藥');
   gd.state.supplies.ammo556 = 0;
@@ -1319,7 +1319,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(outside === 0, `製作出的裝備數值都在顯示的範圍內（超出 ${outside}）`);
 }
 
-// ---- 23. v8.5：遊戲一天 = 現實 1 小時，舊存檔維持目前天數與時刻 ----
+// ---- 23. v8.5：遊戲一天 = 現實 1 小時，舊存檔維持生存天數（v9 起時刻改為世界時間） ----
 {
   assert(DAY_REAL_MS === 3600000, '遊戲一天為現實 1 小時');
   const gt = Game.newGame({ playerName: 'T', classId: 'warrior', lat: 25, lon: 121 });
@@ -1328,7 +1328,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   old.version = 12;
   const mig = SaveManager.migrate(old);
   const gm = new Game(mig);
-  assert(gm.time.day() === 6 && Math.abs(gm.time.hour() - 20) < 0.1, `舊存檔換算後天數與時刻不變（第 ${gm.time.day()} 天 ${gm.time.hour().toFixed(1)} 時）`);
+  assert(gm.time.survivalDay() === 6, `舊存檔換算後生存天數不變（第 ${gm.time.survivalDay()} 天）`);
 }
 
 // ---- 24. v8.7：據點遭襲紀錄 ----
@@ -1385,59 +1385,374 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(!raid.success ? raid.injured.length >= 0 : true, 'NPC 掠奪紀錄包含重傷名單');
 }
 
-// ---- 25. v8.7：流浪商人 ----
+// ---- 25. v9：黑市（全體共用、先到先得；取代流浪商人） ----
 {
-  const { TRADER } = await import('../src/systems/TraderSystem.js');
-  const gt = Game.newGame({ playerName: 'T', classId: 'warrior', lat: 25, lon: 121 });
-  gt.state.map.pois = fillPois([], 25, 121);
-  gt.shelter.establish(gt.state.map.pois[0]);
-  setHour(gt, 9);
-  gt.trader.update(Date.now());
-  assert(!gt.state.trader && !gt.trader.isHere(), '早上 11 點前商人不會出現');
-  // 找一個會出現的種子
-  let appeared = false;
-  for (let i = 0; i < 20 && !appeared; i += 1) {
-    gt.state.trader = null;
-    gt.state.rng.trader = 1000 + i;
-    setHour(gt, 12);
-    gt.trader.update(Date.now());
-    appeared = gt.trader.isHere();
+  const { BLACK_MARKET } = await import('../src/systems/BlackMarketSystem.js');
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon: 121 });
+    gx.state.map.pois = fillPois([], 25, 121);
+    gx.shelter.establish(gx.state.map.pois[0]);
+    return gx;
+  };
+  const gt = mk('T');
+  const gu = mk('U');
+  const store = new MemoryObjects();
+  gt.shared.backend = store;
+  gu.shared.backend = store;
+  const shelfT = gt.blackMarket.shelf();
+  const shelfU = gu.blackMarket.shelf();
+  assert(shelfT.length === BLACK_MARKET.slots, `黑市有 ${BLACK_MARKET.slots} 項商品`);
+  assert(JSON.stringify(shelfT.map((x) => [x.id, x.kind, x.key || x.item.model, x.qty || 1, x.price])) === JSON.stringify(shelfU.map((x) => [x.id, x.kind, x.key || x.item.model, x.qty || 1, x.price])), '所有玩家看到的黑市商品完全相同');
+  // 每 10 分鐘只換掉 1 格
+  const t0 = Date.now();
+  const later = gt.blackMarket.shelf(t0 + BLACK_MARKET.rotateMs).map((x) => x.id);
+  const diff = shelfT.filter((x, i) => x.id !== later[i]).length;
+  assert(diff === 1, `每 10 分鐘換掉 1 格（換了 ${diff} 格）`);
+  // 比例與品級：大量取樣
+  let gearN = 0;
+  let legend = 0;
+  let poor = 0;
+  const N = 3000;
+  for (let i = 0; i < N; i += 1) {
+    const x = gt.blackMarket.good(i % 20, 100000 + i);
+    if (x.kind === 'gear') gearN += 1;
+    const r = x.kind === 'gear' ? x.item.rarity : x.rarity;
+    if (r === 'legendary') legend += 1;
+    if (r === 'poor') poor += 1;
   }
-  assert(appeared && gt.state.trader.stock.length === TRADER.goods, `11:00～15:00 有機率出現，帶著 ${TRADER.goods} 項商品`);
-  const until = gt.state.trader.until;
-  const left = (until - Date.now()) / DAY_REAL_MS * 24;
-  assert(left > 2.9 && left < 3.1, `商人待到下午 3 點（剩 ${left.toFixed(2)} 小時）`);
-  const gear = gt.state.trader.stock.filter((x) => x.kind === 'gear');
-  const legendaryPrice = gt.trader.gearPrice(gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'legendary' }));
-  const poorPrice = gt.trader.gearPrice(gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'poor' }));
-  assert(legendaryPrice > poorPrice * 10 && gt.trader.supplyPrice('titanium') > gt.trader.supplyPrice('nail') && gt.trader.supplyPrice('largeKit') > gt.trader.supplyPrice('gauze'), '越稀有的商品越貴');
-  const good = gt.state.trader.stock[0];
+  assert(gearN / N > 0.11 && gearN / N < 0.19, `裝備約占 15%（${((gearN / N) * 100).toFixed(1)}%）`);
+  assert(poor / N > 0.35 && poor / N < 0.45 && legend / N < 0.015, `品級機率：劣質約 40%、傳奇約 0.5%（${((poor / N) * 100).toFixed(1)}% / ${((legend / N) * 100).toFixed(2)}%）`);
+  // 價格高於過去的流浪商人
+  const gx = shelfT.find((x) => x.kind === 'supply');
+  assert(gx.price >= Math.round(gt.blackMarket.supplyPrice(gx.key) * gx.qty * 1.5), '黑市價格高於過去的商人');
+  const legendaryPrice = gt.blackMarket.gearPrice(gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'legendary' }));
+  const poorPrice = gt.blackMarket.gearPrice(gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'poor' }));
+  assert(legendaryPrice > poorPrice * 10, '越稀有越貴');
+  // 購買：金錢不足、同時搶購只有一人成功、另一人退錢
+  const good = shelfT.find((x) => x.kind === 'supply');
   gt.state.player.coins = 0;
-  assert(!gt.trader.buy(good.id).ok, '金錢不足不能購買');
+  assert(!(await gt.blackMarket.buy(good.id)).ok && gt.state.player.coins === 0, '金錢不足不能購買');
   gt.state.player.coins = 1e6;
-  const coins0 = gt.state.player.coins;
-  assert(gt.trader.buy(good.id).ok && gt.state.player.coins === coins0 - good.price && gt.state.trader.stock.length === TRADER.goods - 1, '用金錢購買商品');
-  // 同一天不會重新出現；過了 15:00 離開
-  const stock = JSON.stringify(gt.state.trader.stock);
-  gt.trader.update(Date.now());
-  assert(JSON.stringify(gt.state.trader.stock) === stock, '同一天商品不會重新產生');
-  // 回收：約售價 1/8，越稀有比例越好
+  gu.state.player.coins = 1e6;
+  const before = gt.state.supplies[good.key] || 0;
+  const beforeU = gu.state.supplies[good.key] || 0;
+  const [rt, ru] = await Promise.all([gt.blackMarket.buy(good.id), gu.blackMarket.buy(good.id)]);
+  assert(rt.ok !== ru.ok, `兩人同時購買同一項只有一人成功（${rt.ok}/${ru.ok}）`);
+  const [win, lose] = rt.ok ? [gt, gu] : [gu, gt];
+  assert(win.state.player.coins === 1e6 - good.price && lose.state.player.coins === 1e6, '買到的人扣錢，沒買到的人全額退還');
+  assert((gt.state.supplies[good.key] || 0) + (gu.state.supplies[good.key] || 0) === before + beforeU + good.qty, '商品只交付一次');
+  await lose.blackMarket.refresh();
+  assert(lose.blackMarket.shelf().find((x) => x.id === good.id).soldTo, '另一位玩家立即看到已售出');
+  assert(!(await lose.blackMarket.buy(good.id)).ok, '已售出的商品不能再買');
+  // 離線玩家：關閉遊戲期間別人買走，回來後同步看到已售出（不會因為沒有快取而重複購買）
+  const go = mk('O');
+  go.shared.backend = store;
+  go.state.player.coins = 1e6;
+  const r2 = await go.blackMarket.buy(good.id);
+  assert(!r2.ok && go.state.player.coins === 1e6, '剛上線（沒有快取）的玩家也不能買到已售出的商品，金錢不變');
+  // 連線失敗：退錢
+  const gn = mk('N');
+  gn.shared.backend = { objList: async () => [], objPut: async () => { const e = new Error('x'); e.kind = 'network'; throw e; } };
+  gn.state.player.coins = 1e6;
+  const g2 = shelfT.find((x) => x.kind === 'supply' && x.id !== good.id);
+  const nBefore = gn.state.supplies[g2.key] || 0;
+  const rn = await gn.blackMarket.buy(g2.id);
+  assert(!rn.ok && gn.state.player.coins === 1e6 && (gn.state.supplies[g2.key] || 0) === nBefore, '連線失敗時購買取消並退錢');
+  // 回收：沿用商人回收價，不需要商人在場
   gt.state.supplies.nail = 100;
   gt.state.supplies.titanium = 10;
   const c1 = gt.state.player.coins;
-  assert(gt.trader.sell('nail', 100).ok && !gt.state.supplies.nail && gt.state.player.coins === c1 + gt.trader.buybackPrice('nail', 100), '可以把物資賣給商人');
-  const rN = gt.trader.buybackRate('nail');
-  const rT = gt.trader.buybackRate('titanium');
-  assert(rN >= 0.09 && rN <= 0.14 && rT > rN && rT <= 0.16, `回收價約為售價 1/8，稀有物資比例較好（${rN.toFixed(3)} / ${rT.toFixed(3)}）`);
-  assert(!gt.trader.sell('nail', 5).ok, '沒有的物資不能賣');
-  // 裝備只能賣給商人
+  assert(gt.blackMarket.sell('nail', 100).ok && !gt.state.supplies.nail && gt.state.player.coins === c1 + gt.blackMarket.buybackPrice('nail', 100), '可以把物資賣到黑市');
+  const rN = gt.blackMarket.buybackRate('nail');
+  const rT = gt.blackMarket.buybackRate('titanium');
+  assert(rN >= 0.09 && rN <= 0.14 && rT > rN && rT <= 0.16, `回收價比例（${rN.toFixed(3)} / ${rT.toFixed(3)}）`);
+  assert(!gt.blackMarket.sell('nail', 5).ok, '沒有的物資不能賣');
   const gi = gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'rare' });
   gt.equipment.addItem(gi, 't');
   const c2 = gt.state.player.coins;
-  const gp = gt.trader.gearBuyback(gi);
-  assert(gp > 0 && gp < gt.trader.gearPrice(gi) / 5 && gt.trader.sellItem(gi.id).ok && gt.state.player.coins === c2 + gp && !gt.equipment.getItem(gi.id), `裝備可以賣給商人（約售價 1/8：💰${gp}）`);
-  assert(!gt.trader.isHere(until + 1000), '下午 3 點後商人離開');
-  void gear;
+  const gp = gt.blackMarket.gearBuyback(gi);
+  assert(gp > 0 && gt.blackMarket.sellItem(gi.id).ok && gt.state.player.coins === c2 + gp && !gt.equipment.getItem(gi.id), `裝備可以賣到黑市（💰${gp}）`);
+}
+
+// ---- 25c. v9：NPC 據點所有玩家共用、狀態同步（含對方離線） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const store = new MemoryObjects();
+  const pois = fillPois([], 25.02, 121.02);
+  const mk = (name, idx) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.02, lon: 121.02 });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shelter.establish(gx.state.map.pois[idx]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    return gx;
+  };
+  const A = mk('A', 0);
+  const B = mk('B', 0);
+  setHour(A, 10);
+  setHour(B, 10);
+  const t0 = Date.now();
+  A.npcs.update(t0);
+  B.npcs.update(t0);
+  const ids = (gx) => gx.npcs.list.filter((n) => n.sid).map((n) => `${n.id}@${n.lat.toFixed(5)},${n.lon.toFixed(5)}:${n.level}:${n.name}`).sort().join('|');
+  assert(A.npcs.list.length > 0 && ids(A) === ids(B), `兩位玩家看到相同的 NPC 據點（位置、名稱、等級）（${A.npcs.list.length} 個）`);
+  // 其他玩家的據點警戒範圍內不會有 NPC
+  const nA = A.npcs.list[0];
+  const C = mk('C', 0);
+  C.world.others = [{ id: 'X', bases: [{ lat: nA.lat, lon: nA.lon, alert: 120 }], trips: [] }];
+  C.npcs.update(t0);
+  assert(!C.npcs.list.some((n) => n.id === nA.id), '任何玩家的警戒範圍內不會出現 NPC 據點（避免與玩家重疊）');
+  // A 讓 NPC 受傷、等級下降；B 同步後相同
+  A.npcs.wound(nA, 2, t0);
+  A.npcs.levelDown(nA);
+  await new Promise((r) => setTimeout(r, 5));
+  await B.shared.poll();
+  const nB = B.npcs.get(nA.id);
+  assert(nB && nB.wounded === 2 && nB.level === nA.level, `NPC 的傷亡與等級同步給其他玩家（${nB?.wounded} / ${nB?.level} vs ${nA.level}）`);
+  // 兩人同時造成傷亡：累加，不會互相覆蓋
+  await Promise.all([A.npcs.wound(nA, 1, t0), B.npcs.wound(nB, 1, t0)]);
+  await A.shared.poll();
+  await B.shared.poll();
+  assert(A.npcs.get(nA.id).wounded === 4 && B.npcs.get(nA.id).wounded === 4, `兩位玩家同時造成的傷亡會累加（${A.npcs.get(nA.id).wounded}/${B.npcs.get(nA.id).wounded}/${JSON.stringify(A.shared.get('npc', nA.sid))}）`);
+  // B 離線（不執行）；A 摧毀 NPC；B 之後上線：該 NPC 已消失
+  A.npcs.destroy(A.npcs.get(nA.id), t0);
+  await new Promise((r) => setTimeout(r, 5));
+  assert(!A.npcs.get(nA.id), '摧毀後從自己的地圖消失');
+  const B2 = Game.fromSave ? null : null;
+  void B2;
+  await B.shared.poll();
+  assert(!B.npcs.get(nA.id), '離線的玩家上線同步後，被別人摧毀的 NPC 也消失');
+  B.npcs.update(t0 + 1000);
+  assert(!B.npcs.list.some((n) => n.sid === nA.sid), '重生時間前同一格不會重新出現');
+  // 重生後出現新的勢力（兩人相同）
+  const later = t0 + 2 * 3600000;
+  A.npcs.update(later);
+  B.npcs.update(later);
+  assert(ids(A) === ids(B), '重生後兩位玩家看到的仍然相同');
+  // 夜晚屍群：結果相同且只結算一次
+  const n2 = A.npcs.list.find((n) => n.sid);
+  const n2b = B.npcs.get(n2.id);
+  const night = A.time.nightKey(later);
+  A.npcs.nightSiege(n2, night, later);
+  B.npcs.nightSiege(n2b, night, later);
+  assert(n2.lastSiege.result === n2b.lastSiege.result, '同一晚 NPC 抵禦屍群的結果所有玩家相同');
+  await new Promise((r) => setTimeout(r, 5));
+  await A.shared.poll();
+  const d = A.shared.get('npc', n2.sid);
+  assert(d.siegeNight === night, '屍群結果寫入共用資料（每晚只結算一次）');
+  // 單機（沒有伺服器）：摧毀的 NPC 重新開啟後仍然消失
+  const S = Game.newGame({ playerName: 'S', classId: 'warrior', lat: 25.02, lon: 121.02 });
+  S.state.map.pois = JSON.parse(JSON.stringify(pois));
+  S.shelter.establish(S.state.map.pois[0]);
+  S.npcs.update(t0);
+  const ns = S.npcs.list.find((n) => n.sid);
+  S.npcs.destroy(ns, t0);
+  await new Promise((r) => setTimeout(r, 5));
+  const S2 = new Game(JSON.parse(JSON.stringify(S.state)));
+  await S2.shared.poll();
+  S2.npcs.update(t0 + 1000);
+  assert(!S2.npcs.list.some((n) => n.sid === ns.sid), '單機時共用狀態存在存檔中');
+}
+
+// ---- 25d. v9：夜晚殭屍群與 Boss 所有玩家共用、擊倒同步（含對方離線） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const store = new MemoryObjects();
+  const pois = fillPois([], 25.05, 121.05);
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.05, lon: 121.05 });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    setHour(gx, 22);
+    return gx;
+  };
+  const A = mk('A');
+  const B = mk('B');
+  A.zombies.refresh();
+  B.zombies.refresh();
+  const sig = (gx) => gx.state.map.zombieGroups.map((z) => `${z.id}:${z.enemyId}:${z.count}:${z.level}:${z.lat.toFixed(5)}`).sort().join('|');
+  assert(A.state.map.zombieGroups.length > 0 && sig(A) === sig(B), `兩位玩家看到相同的夜晚殭屍群（${A.state.map.zombieGroups.length} 群）`);
+  const gr = A.state.map.zombieGroups[0];
+  await A.zombies.killGroup(gr, 'A');
+  assert(!A.state.map.zombieGroups.some((z) => z.id === gr.id), '擊倒後從自己的地圖消失');
+  // B 一直沒上線；之後上線同步：該殭屍群消失
+  await B.shared.poll();
+  assert(!B.state.map.zombieGroups.some((z) => z.id === gr.id), '其他玩家（包含剛上線的）同步後也看不到被擊倒的殭屍群');
+  const g2 = A.state.map.zombieGroups.find((z) => z.count >= 2);
+  if (g2) {
+    await A.zombies.hurtGroup(g2, 1);
+    await B.shared.poll();
+    assert(B.state.map.zombieGroups.find((z) => z.id === g2.id).count === g2.count, '殭屍群的傷亡（剩餘數量）同步');
+  }
+  // 新玩家當晚才開啟遊戲：同樣看不到被擊倒的
+  const C = mk('C');
+  await C.shared.poll();
+  C.zombies.refresh();
+  assert(!C.state.map.zombieGroups.some((z) => z.id === gr.id), '當晚才開啟遊戲的玩家也看不到已被擊倒的殭屍群');
+}
+
+// ---- 25e. v9：重度感染據點（共用淨化度、緩慢回復、消滅獎勵只發一次） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const { INFECTED } = await import('../src/systems/InfectedSystem.js');
+  const store = new MemoryObjects();
+  const pois = fillPois([], 25.1, 121.1);
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.1, lon: 121.1 });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    return gx;
+  };
+  const A = mk('A');
+  const B = mk('B');
+  const la = A.infected.list();
+  assert(la.length > 0 && la.map((x) => `${x.id}${x.lat}${x.level}`).join() === B.infected.list().map((x) => `${x.id}${x.lat}${x.level}`).join(), `重度感染據點位置與強度所有玩家相同（${la.length} 座）`);
+  const s = la[0];
+  const t0 = Date.now();
+  const r1 = await A.infected.addPurity(s, 30, t0);
+  assert(r1.ok && Math.round(r1.purity) === 30, '淨化度累積');
+  await B.shared.poll();
+  assert(Math.round(B.infected.purity(s, t0)) === 30, '其他玩家（包含之前離線的）同步看到淨化度');
+  assert(Math.abs(B.infected.purity(s, t0 + 600000) - (30 - INFECTED.decayPerHour / 6)) < 0.01 || B.infected.siteDay(t0 + 600000) !== B.infected.siteDay(t0), '未清除時淨化度緩慢回復感染');
+  // 單一隊伍很難清除
+  const one = A.infected.battle(A.infected.get(s.id, t0), A.state.survivors, [], t0);
+  assert(!one.result.victory && one.gain < 40, `單人隊伍無法一次清除（淨化 +${one.gain.toFixed(1)}%）`);
+  // 兩人同時把淨化度推到 100%：只有一人負責發獎勵
+  const [ka, kb] = await Promise.all([A.infected.addPurity(s, 80, t0), B.infected.addPurity(s, 80, t0)]);
+  assert((ka.killed ? 1 : 0) + (kb.killed ? 1 : 0) === 1, '同時淨化到 100% 時只有一人取得消滅獎勵');
+  await A.shared.poll();
+  await B.shared.poll();
+  assert(!A.infected.get(s.id, t0) && !B.infected.get(s.id, t0), '消滅後所有玩家的地圖上都消失');
+  const next = A.infected.nextRefresh(t0);
+  assert(A.infected.list(next + 1000).some((x) => x.id === s.id), '下一個中午 12:00 重新出現');
+  // 獎勵：1 人 3～4 種，每多 1 人上下限 +2，最低優良
+  const rw1 = A.infected.rewards(s, 1);
+  const n1 = rw1.items.length + Object.keys(rw1.mats).length;
+  const rw3 = A.infected.rewards(s, 3);
+  const n3 = rw3.items.length + Object.values(rw3.mats).length;
+  assert(n1 >= 2 && n1 <= 4 && rw3.items.every((it) => ['uncommon', 'rare', 'epic', 'legendary'].includes(it.rarity)), `消滅獎勵數量與品級（1 人 ${n1} 種）`);
+  void n3;
+  // 偵查等級可得知更多情報
+  assert(!A.infected.intelView(s).boss, '偵查 0 級不知道首領');
+  A.state.research.levels = { ...(A.state.research.levels || {}), s_recon: 6 };
+  const iv = A.infected.intelView(s);
+  assert(iv.boss && iv.roster && iv.power > 0, '偵查等級越高情報越完整');
+}
+
+// ---- 25f. v9：集結（廣播塔、好友參加、發起人離線也能結算） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const store = new MemoryObjects();
+  const pois = fillPois([], 25.15, 121.15);
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.15, lon: 121.15 });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    setHour(gx, 10);
+    gx.survivors.leader().level = 60;
+    return gx;
+  };
+  const A = mk('A');
+  const B = mk('B');
+  A.state.relations.players.B = { status: 'friend', name: 'B' };
+  B.state.relations.players.A = { status: 'friend', name: 'A' };
+  A.npcs.update(Date.now());
+  B.npcs.update(Date.now());
+  const n = [...A.npcs.list].filter((x) => x.sid).sort((x, y) => x.level - y.level)[0];
+  n.baseLevel = 1; n.levelLoss = 0; n.level = 1; n.wounded = n.wounded || 0;
+  const target = { kind: 'npc', id: n.id, ident: n.ident, name: n.name, lat: n.lat, lon: n.lon };
+  assert(!A.rally.canStart(target).ok, '沒有廣播塔不能發起集結');
+  A.shelter.primary().facilities.broadcast.level = 1;
+  assert(A.rally.maxTeams() === 2, '廣播塔 Lv1 可集結 2 支隊伍');
+  const lead = A.survivors.leader();
+  const st = await A.rally.start(target, 5, [lead.id]);
+  assert(st.ok && lead.status === 'exploring', `發起集結，自己的隊伍加入（${st.reason || ''}）`);
+  assert(!(await A.rally.start(target, 5, [])).ok, '同時只能發起一個集結');
+  await B.shared.poll();
+  B.rally.lastAt = 0;
+  B.rally.update(Date.now());
+  assert(B.rally.invites().length === 1 && B.state.log.some((l) => l.msg.includes('發起集結')), '好友收到集結通知');
+  const C = mk('C');
+  await C.shared.poll();
+  assert(!C.rally.invites().length && !(await C.rally.join(st.id, [C.survivors.leader().id])).ok, '不是好友不能參加');
+  const jb = await B.rally.join(st.id, [B.survivors.leader().id]);
+  assert(jb.ok, `好友參加集結（${jb.reason || ''}）`);
+  // 滿員立即出發；A 之後離線
+  await A.shared.poll();
+  await A.rally.step(A.rally.trips()[0], Date.now());
+  await B.shared.poll();
+  const d1 = B.rally.get(st.id);
+  assert(d1.status === 'departed' && d1.fightAt >= Date.now() - 1000, '滿員時立即出發');
+  // 發起人 A 離線（不再執行）；B 到時間自己結算
+  await B.rally.step(B.rally.trips()[0], d1.fightAt + 1);
+  await B.shared.poll();
+  const d2 = B.rally.get(st.id);
+  assert(d2.status === 'done' && d2.result, `發起人離線時，其他參加者也能結算（${d2.status}）`);
+  await B.rally.step(B.rally.trips()[0], d1.fightAt + 2);
+  const eb = B.rally.trips()[0];
+  const cb0 = B.state.player.coins;
+  const reps = B.exploration.update(eb.endAt + 1, { silent: true });
+  assert(reps.some((r) => r.poiName.includes('集結')) && !B.rally.trips().length, 'B 的隊伍帶著結果回家');
+  // A 之後上線：同步並收到自己的那一份
+  await A.shared.poll();
+  await A.rally.step(A.rally.trips()[0], d1.fightAt + 5);
+  const ea = A.rally.trips()[0];
+  const ca0 = A.state.player.coins;
+  A.exploration.update(ea.endAt + 1, { silent: true });
+  assert(!A.rally.trips().length && lead.status === 'idle', '離線的發起人上線後隊伍回家並結算');
+  assert(d2.result.victory, `強大的集結隊伍攻陷弱小的 NPC（${d2.result.summary}）`);
+  {
+    assert(A.state.player.coins - ca0 === B.state.player.coins - cb0 && A.state.player.coins > ca0, `勝利時金錢平分（${A.state.player.coins - ca0} / ${B.state.player.coins - cb0}）`);
+    await B.shared.poll();
+    assert(!B.npcs.get(n.id), '集結攻陷的 NPC 據點在所有人地圖上消失');
+  }
+  // 取消：出發前發起人取消，參加者的隊員留在家裡
+  const n2 = [...A.npcs.list].find((x) => x.sid && x.id !== n.id);
+  const t2 = { kind: 'npc', id: n2.id, ident: n2.ident, name: n2.name, lat: n2.lat, lon: n2.lon };
+  A.shelter.primary().facilities.broadcast.level = 3;
+  lead.severe = false;
+  A.survivors.setHp(lead, 99999);
+  B.survivors.leader().severe = false;
+  const s2 = await A.rally.start(t2, 10, [lead.id]);
+  await B.shared.poll();
+  const j2 = await B.rally.join(s2.id, [B.survivors.leader().id]);
+  assert(s2.ok && j2.ok, `第二次集結（${s2.reason || j2.reason || ''}）`);
+  assert((await A.rally.leave(s2.id)).ok && lead.status === 'idle', '發起人可以在出發前取消');
+  await B.shared.poll();
+  await B.rally.step(B.rally.trips()[0], Date.now());
+  assert(!B.rally.trips().length && B.survivors.leader().status === 'idle', '集結取消後參加者的隊員留在避難所');
+}
+
+// ---- 25b. v9：共用物件伺服器（版本號先到先得） ----
+{
+  const os = await import('node:os');
+  const fsm = await import('node:fs');
+  const pathm = await import('node:path');
+  const { WorldStore } = await import('../server/WorldStore.js');
+  const dir = fsm.mkdtempSync(pathm.join(os.tmpdir(), 'jdqs-obj-'));
+  const ws = new WorldStore(dir);
+  const tok = 'ab'.repeat(32);
+  const pres = { name: 'A', bases: [{ lat: 25, lon: 121, name: 'x' }], trips: [] };
+  assert(ws.put('a'.repeat(32), tok, pres) === 'ok', '伺服器：登記玩家');
+  assert(ws.objPut('b'.repeat(32), tok, 'bm', 'sold', { data: {}, ver: 0 }).status === 'forbidden', '伺服器：未登記的玩家不能寫入共用物件');
+  const r1 = ws.objPut('a'.repeat(32), tok, 'bm', 'sold', { data: { sold: { x: 1 } }, ver: 0 });
+  assert(r1.status === 'ok' && r1.obj.ver === 1, '伺服器：新建物件版本 1');
+  const r2 = ws.objPut('a'.repeat(32), tok, 'bm', 'sold', { data: { sold: {} }, ver: 0 });
+  assert(r2.status === 'conflict' && r2.obj.data.sold.x === 1, '伺服器：版本不符回傳衝突與最新資料');
+  assert(ws.objPut('a'.repeat(32), tok, 'bm', 'sold', { data: { sold: { y: 1 } }, ver: 1 }).status === 'ok', '伺服器：版本相符才寫入');
+  assert(ws.objList('bm', 0, 0, 1).length === 1 && ws.objList('npc', 25, 121, 1).length === 0, '伺服器：全域物件不受位置限制');
+  ws.objPut('a'.repeat(32), tok, 'npc', 'c1', { lat: 25, lon: 121, data: {}, ver: 0 });
+  assert(ws.objList('npc', 25, 121, 1).length === 1 && ws.objList('npc', 26, 121, 1).length === 0, '伺服器：依位置範圍查詢');
+  assert(ws.objPut('a'.repeat(32), tok, 'BAD', 'x', { data: {}, ver: 0 }).status === 'invalid', '伺服器：不合法的種類');
+  clearTimeout(ws.objTimer);
+  clearTimeout(ws.timer);
 }
 
 // ---- 26. v8.8：施工佇列 3 條、同時最多 5 支隊伍 ----
@@ -1738,84 +2053,97 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(!gc.state.recruitOffer && !gc.state.recruitPool.length, '超過一小時未招募的候選人會離開');
 }
 
-// ---- 39. v8.23：玩家交易（派倖存者到對方據點擺攤）----
+// ---- 39. v9：交易市場（刊登時保管、即時成交、離線玩家上線後收款） ----
 {
-  const { WorldSync: WS } = await import('../src/multiplayer/WorldSync.js');
-  const mk = (name, lat) => {
-    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat, lon: 121 });
-    gx.state.map.pois = fillPois([], lat, 121);
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const { LISTING_MS } = await import('../src/systems/MarketSystem.js');
+  const store = new MemoryObjects();
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon: 121 });
+    gx.state.map.pois = fillPois([], 25, 121);
     gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
     return gx;
   };
-  const A = mk('賣家', 25);
-  const B = mk('買家', 25.004);
-  const box = { A: [], B: [] };
-  const wire = (gx, id, other) => {
-    gx.world = {
-      others: [],
-      identity: () => ({ id, token: 't' }),
-      provider: { worldSend: async (_f, _t, to, type, data) => { box[to].push({ from: id, fromName: gx.state.player.name, type, data: JSON.parse(JSON.stringify(data)) }); } },
-    };
-    void other;
-  };
-  wire(A, 'A');
-  wire(B, 'B');
-  // 交易需要雙方都有交易所
-  A.shelter.primary().facilities.exchange.level = 1;
-  assert(!A.trade.canStart('B').ok, '對方沒有交易所時不能交易');
-  B.shelter.primary().facilities.exchange.level = 1;
-  const pres = (gx, id) => ({ id, ...JSON.parse(JSON.stringify(WS.prototype.presence.call({ game: gx }))) });
-  const deliver = (gx, id) => { gx.territory.handleEvents(box[id].splice(0)); };
-  A.world.others = [pres(B, 'B')];
+  const A = mk('A');
+  const B = mk('B');
+  const C = mk('C');
   A.state.supplies.nail = 50;
+  assert(!(await A.market.post({ side: 'sell', key: 'nail', qty: 10, price: 3 })).ok, '沒有交易所不能刊登');
+  [A, B, C].forEach((gx) => { gx.shelter.primary().facilities.exchange.level = 1; });
+  assert(A.market.limit() === 2, '交易所 Lv1 可刊登賣單、收購各 2 筆');
+  const p1 = await A.market.post({ side: 'sell', key: 'nail', qty: 20, price: 3 });
+  assert(p1.ok && A.state.supplies.nail === 30, '刊登賣單時物品先移到市場保管');
+  assert((await A.market.post({ side: 'sell', key: 'nail', qty: 5, price: 3 })).ok, '第 2 筆賣單');
+  assert(!(await A.market.post({ side: 'sell', key: 'nail', qty: 5, price: 3 })).ok && A.state.supplies.nail === 25, '超過上限不能刊登，物品不會被扣');
+  A.shelter.primary().facilities.exchange.level = 2;
+  assert(A.market.limit() === 3, '每升一級 +1 筆');
+  // A 下線（不再執行任何程式）；B、C 同時購買
+  await B.market.refresh();
+  await C.market.refresh();
+  assert(B.market.listings().length === 2, '其他玩家看得到刊登');
+  B.state.player.coins = 1000;
+  C.state.player.coins = 1000;
+  const nb0 = B.state.supplies.nail || 0;
+  const nc0 = C.state.supplies.nail || 0;
+  const [rb, rc] = await Promise.all([B.market.buy(p1.id, 15), C.market.buy(p1.id, 15)]);
+  assert(rb.ok !== rc.ok, `同時購買超過剩餘數量時只有一人成功（${rb.reason || 'ok'} / ${rc.reason || 'ok'}）`);
+  const [w, l] = rb.ok ? [B, C] : [C, B];
+  assert(w.state.player.coins === 1000 - 45 && l.state.player.coins === 1000, '成交的人付款，失敗的人退款');
+  assert((B.state.supplies.nail || 0) + (C.state.supplies.nail || 0) === nb0 + nc0 + 15, '物品只交付一次');
+  const r5 = await l.market.buy(p1.id, 5);
+  assert(r5.ok, '剩下的數量可以繼續購買');
+  assert(!(await l.market.buy(p1.id, 1)).ok, '賣完後不能再買');
+  // A 離線期間的成交，上線後自動收款
+  const coinsA = A.state.player.coins;
+  await A.market.refresh();
+  assert(A.state.player.coins === coinsA + 60, `離線玩家上線後收到全部貨款（+${A.state.player.coins - coinsA}）`);
+  await A.market.refresh();
+  assert(A.state.player.coins === coinsA + 60, '貨款不會重複收取');
+  assert(!A.market.mine().find((m) => m.id === p1.id), '賣完且收款後從自己的刊登移除');
+  // 收購單：保管金錢、別人賣給他、刊登者離線時也成立
+  A.state.player.coins = 100;
+  assert(!(await A.market.post({ side: 'buy', key: 'screw', qty: 30, price: 5 })).ok && A.state.player.coins === 100, '金錢不足不能刊登收購');
+  const pb = await A.market.post({ side: 'buy', key: 'screw', qty: 10, price: 5 });
+  assert(pb.ok && A.state.player.coins === 50, '刊登收購時先保管金錢');
+  await B.market.refresh();
+  B.state.supplies.screw = 6;
+  const cb = B.state.player.coins;
+  const sell = await B.market.sellTo(pb.id, 6);
+  assert(sell.ok && !B.state.supplies.screw && B.state.player.coins === cb + 30, '賣給收購單：立即拿到錢');
+  assert(!(await B.market.sellTo(pb.id, 6)).ok, '沒有物品不能賣');
+  const sc0 = A.state.supplies.screw || 0;
+  await A.market.refresh();
+  assert((A.state.supplies.screw || 0) === sc0 + 6, '收購者上線後收到物品');
+  // 下架：退還未成交部分
+  const r = await A.market.cancel(pb.id);
+  assert(r.ok && A.state.player.coins === 70, `下架退還未成交的保管金額（${A.state.player.coins}）`);
+  await B.market.refresh();
+  assert(!(await B.market.sellTo(pb.id, 1)).ok, '下架後不能成交');
+  // 裝備刊登
   const gear = A.equipment.generate({ level: 5, model: 'knife', rarity: 'rare' });
   A.equipment.addItem(gear, 't');
-  const seller = A.survivors.leader();
-  assert(!A.trade.start('B', seller.id, [{ key: 'nail', qty: 99999, price: 1 }]).ok && A.state.supplies.nail === 50, '超過負重的商品無法帶出門（不會扣掉）');
-  const st = A.trade.start('B', seller.id, [{ key: 'nail', qty: 20, price: 3 }, { itemId: gear.id, price: 0 }]);
-  assert(st.ok && A.state.supplies.nail === 30 && seller.bag.nail === 20 && A.equipment.getItem(gear.id).loc === seller.id, '交易隊帶著商品出發（放進倖存者背包）');
-  const ex = st.exp;
-  // 抵達對方據點
-  const shift = ex.travelMs + 1000;
-  ex.startAt -= shift; ex.endAt -= shift;
-  const pa = pres(A, 'A');
-  const trip = pa.trips.find((t) => t.kind === 'trade');
-  assert(trip && trip.targetId === 'B' && trip.stall.length === 2, '公開資料包含擺攤商品與交易對象');
-  B.world.others = [pa];
-  assert(B.trade.incoming().length === 1 && !B.intercept.target({ kind: 'player', playerId: 'A', tripId: trip.id }), '買方看得到來訪的交易隊，交易隊不能被攔截');
-  B.state.player.coins = 100;
-  const nailGood = trip.stall.find((x) => x.key === 'nail');
-  const gearGood = trip.stall.find((x) => x.item);
-  const n0 = B.state.supplies.nail || 0;
-  assert(B.trade.buy('A', trip.id, nailGood.id, 10).ok && B.state.player.coins === 70 && B.state.supplies.nail === n0 + 10, '買方用金錢購買物資');
-  assert(B.trade.remaining(trip.id, nailGood) === 10, '買方看到的剩餘數量會扣掉已購買的');
-  assert(B.trade.buy('A', trip.id, gearGood.id, 1).ok && B.state.player.coins === 70, '價格 0 的商品等於免費贈送');
-  const got = B.state.inventory.items.find((i) => i.model === 'knife' && i.rarity === 'rare');
-  assert(got && JSON.stringify(got.stats) === JSON.stringify(gear.stats), '買到的裝備與對方擺出的完全相同');
-  const coinA = A.state.player.coins;
-  deliver(A, 'A');
-  assert(A.state.player.coins === coinA + 30 && seller.bag.nail === 10 && !A.equipment.getItem(gear.id), '賣方收到金錢、交出商品');
-  // 被竄改的裝備數值不會被接受
-  const fake = B.equipment.importItem({ ...A.equipment.exportItem(gear), stats: { ...gear.stats, atk: 99999 } });
-  assert(fake && fake.stats.atk < 1000, '不合理的裝備數值會被修正');
-  // 超量購買（對方已賣光）→ 退款
-  B.state.trade.bought[trip.id][nailGood.id] = 0;
-  A.trade.onBuy('B', '買家', { tripId: trip.id, goodId: nailGood.id, qty: 15, coins: 45 });
-  assert(seller.bag.nail === undefined || seller.bag.nail === 0, '賣方只交出還有的數量');
-  deliver(B, 'B');
-  assert(B.state.player.coins === 70 + 15, `賣不出的部分退款給買方（${B.state.player.coins}）`);
-  // 買方結束交易 → 賣方倖存者回家
-  assert(B.trade.end('A', trip.id).ok && !B.trade.canTrade('A', trip.id).ok, '買方可以結束交易');
-  deliver(A, 'A');
-  assert(ex.tradeEnded && A.exploration.progress(ex).phase === 'returning', '結束交易後賣方的倖存者回家');
-  const rep = A.exploration.update(ex.endAt + 1, { silent: true })[0];
-  assert(rep && rep.events.some((e) => e.includes('💰')) && seller.status === 'idle', `交易隊回家後有交易報告（${rep?.events.slice(-2).join(' / ')}）`);
-  // 賣方召回
-  A.world.others = [pres(B, 'B')];
-  A.state.supplies.nail = 10;
-  const st2 = A.trade.start('B', seller.id, [{ key: 'nail', qty: 5, price: 0 }]);
-  assert(st2.ok && A.exploration.recall(st2.exp.id).ok, '賣方可以自行召回交易隊');
-  assert(!pres(A, 'A').trips.some((t) => t.kind === 'trade'), '召回後不再公開擺攤');
+  const pg = await A.market.post({ side: 'sell', itemId: gear.id, price: 200 });
+  assert(pg.ok && !A.equipment.getItem(gear.id), '裝備刊登後移到市場保管');
+  await B.market.refresh();
+  B.state.player.coins = 500;
+  assert((await B.market.buy(pg.id)).ok && B.state.player.coins === 300 && B.equipment.storeItems().some((i) => i.model === 'knife' && i.rarity === 'rare'), '買到裝備');
+  assert(!(await A.market.buy(pg.id)).ok, '不能購買自己的刊登');
+  // 到期自動下架退還
+  A.state.supplies.wood = 0;
+  A.state.resources.wood = 100;
+  const pw = await A.market.post({ side: 'sell', key: 'wood', qty: 40, price: 1 });
+  assert(pw.ok && A.state.resources.wood === 60, '基礎物資也能刊登');
+  await A.shared.list('mk', 20);
+  await A.market.settle(Date.now() + LISTING_MS + 1000);
+  assert(A.state.resources.wood === 100 && !A.market.mine().find((m) => m.id === pw.id), '到期自動下架並退還');
+  // 連線失敗：刊登取消、物品退回
+  const N = mk('N');
+  N.shelter.primary().facilities.exchange.level = 1;
+  N.shared.backend = { objList: async () => [], objPut: async () => { const e = new Error('x'); e.kind = 'network'; throw e; } };
+  N.state.supplies.nail = 10;
+  assert(!(await N.market.post({ side: 'sell', key: 'nail', qty: 10, price: 1 })).ok && N.state.supplies.nail === 10, '連線失敗時刊登取消，物品退回');
 }
 
 // ---- 40. v8.24：探索檢核點 ----
@@ -1908,8 +2236,8 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   // NPC 掠奪：圍牆守住就不會被搶
   const base = gw.shelter.primary();
   const n = gw.npcs.spawnAt(gw.state.map.pois.find((p) => !gw.shelter.baseAtPoi(p.id)), 'x', Date.now(), true);
-  n.level = 3;
-  base.facilities.wall.level = 10;
+  n.level = 1;
+  base.facilities.wall.level = 15;
   base.wallHp = null;
   gw.state.resources.food = 500;
   n.trip = { kind: 'raid', baseId: base.id, startAt: Date.now() - 1000, travelMs: 0, endAt: Date.now() + 1000 };
@@ -1960,69 +2288,20 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(gc.state.resources.wood === cap, '屍潮突破時地窖裡的物資也不會損失');
 }
 
-// ---- 44. v8.31：交易所與收購需求 ----
+// ---- 44. v9：移除派人交易／交付的存檔遷移 ----
 {
-  const { WorldSync: WS2 } = await import('../src/multiplayer/WorldSync.js');
-  const mk = (name, lat) => {
-    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat, lon: 121 });
-    gx.state.map.pois = fillPois([], lat, 121);
-    gx.shelter.establish(gx.state.map.pois[0]);
-    setHour(gx, 10);
-    return gx;
-  };
-  const P = mk('收購方', 25);
-  const S = mk('出貨方', 25.003);
-  const box = { P: [], S: [] };
-  const wire = (gx, id) => {
-    gx.world = { others: [], identity: () => ({ id, token: 't' }), provider: { worldSend: async (_f, _t, to, type, data) => { box[to].push({ from: id, fromName: gx.state.player.name, type, data: JSON.parse(JSON.stringify(data)) }); } } };
-  };
-  wire(P, 'P');
-  wire(S, 'S');
-  const pres = (gx, id) => ({ id, ...JSON.parse(JSON.stringify(WS2.prototype.presence.call({ game: gx }))) });
-  const deliverBox = (gx, id) => gx.territory.handleEvents(box[id].splice(0));
-  assert(!P.demand.post('nail', 10, 5).ok, '沒有交易所不能發布收購');
-  P.shelter.primary().facilities.exchange.level = 1;
-  P.state.player.coins = 100;
-  assert(!P.demand.post('nail', 100, 5).ok, '金錢不足時不能掛單（收購總額要先保留）');
-  assert(P.demand.post('nail', 10, 5).ok && P.state.player.coins === 50, '掛單時保留收購總額');
-  assert(!P.demand.post('screw', 1, 1).ok, '交易所 Lv1 只能掛一項');
-  const pp = pres(P, 'P');
-  assert(pp.exchange === 1 && pp.demands.length === 1 && pp.demands[0].qty === 10, '公開資料包含交易所等級與收購需求');
-  S.world.others = [pp];
-  const dm = pp.demands[0];
-  assert(!S.demand.canDeliver('P', dm.id).ok, '出貨方沒有交易所時不能交付');
-  S.shelter.primary().facilities.exchange.level = 1;
-  S.state.supplies.nail = 20;
-  const sv = S.survivors.leader();
-  const r = S.demand.deliver('P', dm.id, sv.id, 15);
-  assert(r.ok && r.exp.deliver.qty === 10 && S.state.supplies.nail === 10, `派人交付（最多交付需求的數量：${r.exp?.deliver?.qty}）`);
-  S.demand.checkDeliveries(r.exp.startAt + r.exp.travelMs - 1000);
-  assert(!r.exp.deliver.delivered, '還沒抵達不會交付（需要移動時間）');
-  S.demand.checkDeliveries(r.exp.startAt + r.exp.travelMs + 1);
-  assert(r.exp.deliver.delivered && !sv.bag.nail, '抵達時交出物資');
-  const pn0 = P.state.supplies.nail || 0;
-  deliverBox(P, 'P');
-  assert(P.state.supplies.nail === pn0 + 10 && !P.demand.list.length && P.state.player.coins === 50, '收購方收下物資，收滿後自動結束');
-  const sc0 = S.state.player.coins;
-  deliverBox(S, 'S');
-  assert(S.state.player.coins === sc0 + 50, '出貨方收到款項');
-  // 收購已結束時交付 → 物資退回
-  P.demand.onSell('S', '出貨方', { demandId: dm.id, key: 'nail', qty: 5 });
-  const sn0 = S.state.supplies.nail;
-  deliverBox(S, 'S');
-  assert(S.state.supplies.nail === sn0 + 5, '收購已經結束時，物資退回出貨方');
-  const rep = S.exploration.update(r.exp.endAt + 1, { silent: true })[0];
-  assert(rep?.success, '交付隊回家有報告');
-  // 取消收購退還保留金額
-  P.state.player.coins = 100;
-  P.demand.post('wood', 10, 3);
-  const c0 = P.state.player.coins;
-  assert(P.demand.cancel(P.demand.list[0].id).ok && P.state.player.coins === c0 + 30, '取消收購退還保留金額');
-  // 玩家突襲也會搶金錢（地窖除外）
-  P.state.player.coins = 1000;
-  P.shelter.primary().facilities.cellar.level = 0;
-  P.territory.handleEvents([{ from: 'S', fromName: '出貨方', type: 'attack', data: { win: true, lossPct: 0.1 } }]);
-  assert(P.state.player.coins === 900, `玩家突襲成功會搶走金錢（${P.state.player.coins}）`);
+  const old = Game.newGame({ playerName: 'M', classId: 'warrior', lat: 25, lon: 121 });
+  const data = JSON.parse(JSON.stringify(old.state));
+  data.version = 17;
+  data.player.coins = 10;
+  data.demands = { list: [{ id: 'd1', key: 'nail', qty: 10, filled: 4, price: 5 }] };
+  const sv = data.survivors[0];
+  sv.status = 'exploring';
+  data.expeditions = [{ id: 'e1', kind: 'trade', memberIds: [sv.id], vehicleIds: [] }];
+  data.trader = { day: 1, active: true };
+  const m = SaveManager.migrate(data);
+  assert(m.player.coins === 40 && !m.demands && !m.trader, '收購保留的金錢退還、流浪商人資料移除');
+  assert(!m.expeditions.length && m.survivors[0].status === 'idle', '交易中的倖存者回到避難所');
 }
 
 // ---- 45. v8.34：區域安全程度影響夜間殭屍 ----
@@ -2061,7 +2340,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(MAX_RESEARCH_LEVEL === 15 && FACILITY_MAX_LEVEL === 15 && DEFENSE_MAX_LEVEL === 15, '研究、設施、防禦最高 15 級');
   const day = 86400;
   const longest = Math.max(...Object.keys(RS).map((id) => rt(id, 15)));
-  assert(Math.abs(longest / day - 10) < 0.6, `最難的研究 Lv15 約 10 天（${(longest / day).toFixed(1)} 天）`);
+  assert(Math.abs(longest / day - 5) < 0.4, `最難的研究 Lv15 約 5 天（${(longest / day).toFixed(1)} 天）`);
   assert(Math.abs(facilityBuildTime(15) / day - 20) < 1 && Math.abs(defenseBuildTime(15) / day - 20) < 1, `建築 Lv15 約 20 天（設施 ${(facilityBuildTime(15) / day).toFixed(1)}、防禦 ${(defenseBuildTime(15) / day).toFixed(1)} 天）`);
   // Lv4 以後升級難度大幅提高：費用與經驗
   const { FACILITIES: FC, storageCap: sc } = await import('../src/config/facilities.js');
@@ -2161,14 +2440,36 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   ga.shelter.establish(ga.state.map.pois[0]);
   setHour(ga, 10);
   const lead = ga.survivors.leader();
-  ga.state.supplies.bandage = 10;
-  assert(ga.survivors.setSupply(lead.id, 'bandage', 3).ok && lead.bag.bandage === 3 && ga.state.supplies.bandage === 7, '設定自動補給後立即從倉庫補到指定數量');
-  lead.bag.bandage = 1;
+  ga.state.supplies.bandage = 30;
+  assert(ga.survivors.setSupply(lead.id, 'med', 'bandage').ok && lead.loadout.med.qty === 10 && ga.state.supplies.bandage === 20, 'v9：設定自動補給後藥品欄立即補滿（最多 10）');
+  assert(!ga.survivors.setSupply(lead.id, 'med', 'nail').ok, '藥品欄只能設定藥品');
+  lead.loadout.med.qty = 4;
   const poi = ga.state.map.pois.find((p) => !ga.shelter.baseAtPoi(p.id));
   const ex = ga.exploration.start(poi.id, [lead.id], 5).exp;
   ga.exploration.update(ex.endAt + 1, { silent: true });
-  assert(lead.bag.bandage === 3, `回到避難所時自動補給（背包繃帶 ${lead.bag.bandage}）`);
-  assert(ga.survivors.setSupply(lead.id, 'bandage', 0).ok && !lead.supply.bandage, '可以移除自動補給');
+  assert(lead.loadout.med.qty === 10, `回到避難所時自動補滿藥品欄（${lead.loadout.med.qty}）`);
+  assert(ga.survivors.setSupply(lead.id, 'med', null).ok && !lead.supply.med, '可以取消自動補給');
+  // 彈藥欄：最多 100，戰鬥優先用遠程，沒彈藥改用近戰
+  const gun = ga.equipment.generate({ level: 5, model: 'm1911', rarity: 'common' });
+  const knife = ga.equipment.generate({ level: 5, model: 'knife', rarity: 'common' });
+  [gun, knife].forEach((it) => { ga.equipment.addItem(it, 't'); ga.equipment.equip(lead.id, it.id); });
+  assert(lead.equipment.weapon === gun.id && lead.equipment.melee === knife.id, '遠程武器與近戰武器分開兩欄');
+  ga.state.supplies.ammo9 = 300;
+  assert(ga.survivors.loadSlot(lead.id, 'ammo', 'ammo9').ok && lead.loadout.ammo.qty === 100, '彈藥欄最多 100');
+  const u1 = ga.combat.unitFromSurvivor(lead);
+  assert(u1.weapon === 'ranged' && lead.loadout.ammo.qty === 94, '有彈藥時優先使用遠程武器並消耗彈藥欄');
+  lead.loadout.ammo = null;
+  delete ga.state.supplies.ammo9;
+  const u2 = ga.combat.unitFromSurvivor(lead);
+  assert(u2.weapon === 'melee', '沒有彈藥時自動改用近戰武器');
+  // 戰鬥中自動用藥
+  ga.state.supplies.bandage = 10;
+  lead.loadout.med = null;
+  ga.survivors.loadSlot(lead.id, 'med', 'bandage', 5);
+  ga.survivors.setHp(lead, 1);
+  const r = ga.combat.simulate([lead], [ga.combat.createEnemy('walker', 1)]);
+  ga.combat.applyOutcome([lead], r);
+  assert(r.log.some((l) => l.msg.includes('💊')) && lead.loadout.med.qty < 5, '生命過低時自動使用藥品欄的藥');
   lead.bag.nail = 10;
   assert(ga.survivors.discardBag(lead.id, 'nail', 4).ok && lead.bag.nail === 6, '背包物品可以指定數量丟棄');
   assert(ga.survivors.discardBag(lead.id, 'nail', Infinity).ok && !lead.bag.nail, '背包物品可以全部丟棄');
@@ -2314,51 +2615,6 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   ex.hasStock = orig;
 }
 
-// ---- 57. v8.52.3：伺服器拒絕交易事件時退回 ----
-{
-  const mk = (name, lat) => {
-    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat, lon: 121 });
-    gx.state.map.pois = fillPois([], lat, 121);
-    gx.shelter.establish(gx.state.map.pois[0]);
-    gx.shelter.primary().facilities.exchange.level = 1;
-    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }), provider: { worldSend: async () => { const e = new Error('x'); e.kind = 'invalid'; throw e; } } };
-    return gx;
-  };
-  const { WorldSync: WS2, cleanPlayer } = await import('../src/multiplayer/WorldSync.js');
-  const pres = (gx, id) => cleanPlayer({ id, ...JSON.parse(JSON.stringify(WS2.prototype.presence.call({ game: gx }))) });
-  const S = mk('S', 25);
-  const Bq = mk('Bq', 25.004);
-  Bq.state.player.coins = 500;
-  Bq.demand.post('nail', 10, 5);
-  S.world.others = [pres(Bq, 'Bq')];
-  S.state.supplies.nail = 30;
-  const lead = S.survivors.leader();
-  const dv = S.demand.deliver('Bq', S.world.others[0].demands[0].id, lead.id, 10);
-  assert(dv.ok, `可以出發交付（${dv.reason || ''}）`);
-  const sh = dv.exp.travelMs + 1000;
-  dv.exp.startAt -= sh; dv.exp.endAt -= sh;
-  S.demand.checkDeliveries();
-  await new Promise((r) => setTimeout(r, 10));
-  assert(lead.bag.nail === 10 && !dv.exp.deliver.handed, `通知失敗時物資放回背包帶回家（背包 ${lead.bag.nail}）`);
-  // 交易購買失敗：退錢、收回商品
-  S.exploration.update(dv.exp.endAt + 1, { silent: true });
-  S.state.supplies.nail = 30;
-  S.world.others = [pres(Bq, 'Bq')];
-  const tr = S.trade.start('Bq', lead.id, [{ key: 'nail', qty: 5, price: 4 }]);
-  assert(tr.ok, `交易隊出發（${tr.reason || ''}）`);
-  if (tr.ok) {
-    const s2 = tr.exp.travelMs + 1000;
-    tr.exp.startAt -= s2; tr.exp.endAt -= s2;
-    Bq.world.others = [pres(S, 'S')];
-    const trip = Bq.world.others[0].trips.find((t) => t.kind === 'trade');
-    const c0 = Bq.state.player.coins;
-    const n0 = Bq.state.supplies.nail || 0;
-    assert(Bq.trade.buy('S', trip.id, trip.stall[0].id, 5).ok, '購買');
-    await new Promise((r) => setTimeout(r, 10));
-    assert(Bq.state.player.coins === c0 && (Bq.state.supplies.nail || 0) === n0, `通知賣方失敗時取消購買並退錢（💰${Bq.state.player.coins}）`);
-  }
-}
-
 // ---- 58. v8.53：協防也參與 NPC 掠奪與玩家突襲的防守 ----
 {
   const { WorldSync: WS3, cleanPlayer: cp3 } = await import('../src/multiplayer/WorldSync.js');
@@ -2412,6 +2668,117 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(rep.events.some((e) => e.includes('協防隊員')) && sent?.helpers?.H, `突襲結算包含協防隊員並回報給對方（${rep.events.slice(-2).join(' / ')}）`);
   V.territory.handleEvents([{ from: 'C', fromName: 'C', type: 'attack', data: sent }]);
   assert(V.state.defenseLog[0].note.includes('友好協防'), `被突襲方的防守紀錄寫入協防（${V.state.defenseLog[0].note}）`);
+}
+
+// ---- 59. v9：NPC 據點大幅增強 ----
+{
+  const { createSurvivor: cs } = await import('../src/core/GameState.js');
+  let wins = 0;
+  for (let t = 0; t < 8; t += 1) {
+    const gn = Game.newGame({ playerName: 'N', classId: 'warrior', lat: 25, lon: 121 });
+    gn.state.map.pois = fillPois([], 25, 121);
+    gn.shelter.establish(gn.state.map.pois[0]);
+    gn.survivors.leader().level = 10;
+    ['scout', 'medic', 'warrior'].forEach((c) => gn.state.survivors.push(cs(`x${c}`, c, 8, 'rare')));
+    gn.state.survivors.forEach((m) => ['weapon', 'armor', 'helmet', 'legs', 'boots', 'gloves'].forEach((slot) => {
+      const it = gn.equipment.generate({ level: m.level + 2, rarity: 'epic', slot });
+      gn.equipment.addItem(it, 't');
+      try { gn.equipment.equip(m.id, it.id); } catch { /* 部位不符 */ }
+    }));
+    const n = gn.npcs.spawnAt(gn.state.map.pois[5], 'x', Date.now(), true);
+    n.level = 21;
+    const rep = gn.npcs.resolveRaid({ poiId: n.id, memberIds: gn.state.survivors.map((m) => m.id), endAt: Date.now(), travelEvents: [], cargo: 200 });
+    if (rep.success) wins += 1;
+  }
+  assert(wins <= 1, `Lv10＋三名 Lv8 打 Lv21 NPC 據點不再輕鬆獲勝（8 場勝 ${wins}）`);
+}
+
+// ---- 60. v9 存檔遷移：近戰武器移到近戰欄、彈藥藥品欄 ----
+{
+  const go = Game.newGame({ playerName: 'O', classId: 'warrior', lat: 25, lon: 121 });
+  const kn = go.equipment.generate({ level: 3, model: 'knife', rarity: 'common' });
+  go.equipment.addItem(kn, 't');
+  const old = JSON.parse(JSON.stringify(go.state));
+  old.version = 17;
+  old.survivors[0].equipment = { ...old.survivors[0].equipment, weapon: kn.id };
+  delete old.survivors[0].equipment.melee;
+  delete old.survivors[0].loadout;
+  old.inventory.items.find((i) => i.id === kn.id).slot = 'weapon';
+  const m = SaveManager.migrate(old);
+  assert(m.survivors[0].equipment.melee === kn.id && !m.survivors[0].equipment.weapon && m.survivors[0].loadout, 'v9 遷移：原本拿在武器欄的近戰武器移到近戰欄');
+}
+
+// ---- 61. v9 快速換裝 ----
+{
+  const gq2 = Game.newGame({ playerName: 'Q', classId: 'warrior', lat: 25, lon: 121 });
+  gq2.state.map.pois = fillPois([], 25, 121);
+  gq2.shelter.establish(gq2.state.map.pois[0]);
+  const lead = gq2.survivors.leader();
+  const weak = gq2.equipment.generate({ level: 3, model: 'knife', rarity: 'poor' });
+  const strong = gq2.equipment.generate({ level: 10, model: 'knife', rarity: 'epic' });
+  const gun = gq2.equipment.generate({ level: 10, model: 'ak47', rarity: 'epic' });
+  [weak, strong, gun].forEach((it) => gq2.equipment.addItem(it, 't'));
+  gq2.equipment.equip(lead.id, weak.id);
+  delete gq2.state.supplies.ammo556;
+  lead.bag = {};
+  const r = gq2.equipment.quickEquip(lead.id);
+  assert(r.ok && lead.equipment.melee === strong.id && !lead.equipment.weapon, `快速換裝換上戰力最高的近戰武器，沒有彈藥的槍不換（${r.msg}）`);
+  gq2.state.supplies.ammo556 = 50;
+  gq2.equipment.quickEquip(lead.id);
+  assert(lead.equipment.weapon === gun.id, '有彈藥時換上遠程武器');
+}
+
+// ---- 62. v9 警戒模式 ----
+{
+  const ga2 = Game.newGame({ playerName: 'AL', classId: 'warrior', lat: 25, lon: 121 });
+  ga2.state.map.pois = fillPois([], 25, 121);
+  ga2.shelter.establish(ga2.state.map.pois[0]);
+  const lead = ga2.survivors.leader();
+  ga2.survivors.setJob(lead.id, 'scavenge');
+  ga2.shelter.setAlert(true);
+  assert(lead.job === 'guard' && ga2.shelter.alert, '警戒時全員改為防禦駐守');
+  ga2.shelter.setAlert(false);
+  assert(lead.job === 'scavenge' && !ga2.shelter.alert, '解除警戒後恢復原本的工作');
+  // 近戰防守屍潮會受傷
+  setHour(ga2, 23);
+  const sx = ga2.siege.of();
+  lead.job = 'guard';
+  sx.update(0.1);
+  sx.spawn('walker');
+  Object.assign(sx.zombies[0], { x: 0, y: 40, hp: 1e6, maxHp: 1e6 });
+  const hp0 = ga2.survivors.hpOf(lead);
+  for (let i = 0; i < 40; i += 1) sx.step(0.1);
+  assert(ga2.survivors.hpOf(lead) < hp0 || lead.severe, '近戰防守屍潮時會被殭屍反擊受傷');
+}
+
+// ---- 63. v9 臨時小隊探索佇列 ----
+{
+  const gq3 = Game.newGame({ playerName: 'QQ', classId: 'scout', lat: 25, lon: 121 });
+  gq3.state.map.pois = fillPois([], 25, 121);
+  gq3.shelter.establish(gq3.state.map.pois[0]);
+  setHour(gq3, 10);
+  const ex = gq3.exploration;
+  const pois = gq3.state.map.pois.filter((p) => !gq3.shelter.baseAtPoi(p.id) && p.type === 'residential').slice(0, 5);
+  gq3.survivors.leader().level = 40; // 避免途中戰鬥失敗影響佇列測試
+  const st = ex.start(pois[0].id, [gq3.survivors.leader().id], 5);
+  assert(st.ok && ex.squads().length === 1, '派出後成為臨時小隊');
+  assert(ex.queueLimit() === 2, '探索佇列基本 2 個');
+  assert(ex.enqueue(st.exp.id, pois[1].id).ok && ex.enqueue(st.exp.id, pois[2].id).ok && !ex.enqueue(st.exp.id, pois[3].id).ok, '佇列滿了不能再加入');
+  const [rep] = ex.update(st.exp.endAt + 1, { silent: true });
+  const next = gq3.state.expeditions[0];
+  assert(rep && next && next.poiId === pois[1].id && next.queue.length === 1, `完成後自動前往佇列中的下一個地點（${rep?.events.slice(-1)}）`);
+  const { labLevelFor: llf } = await import('../src/config/research.js');
+  assert(llf('s_queue', 1) === 4 && llf('s_queue', 3) === 10, '佇列科技依研究中心等級解鎖（最後一級需要 Lv10）');
+}
+
+// ---- 64. v9 世界時間 ----
+{
+  const w1 = Game.newGame({ playerName: 'W1', classId: 'warrior', lat: 25, lon: 121 });
+  const w2 = Game.newGame({ playerName: 'W2', classId: 'warrior', lat: 30, lon: 100 });
+  w2.state.createdAt = Date.now() - 5 * DAY_REAL_MS;
+  assert(w1.time.hour() === w2.time.hour() && w1.time.dateText() === w2.time.dateText(), '所有玩家共用同一個世界時間與日期');
+  assert(w1.time.dateText(WORLD_EPOCH_MS) === '2050/1/1' && Math.abs(w1.time.hour(WORLD_EPOCH_MS) - 6) < 1e-6, '世界時間從 2050/1/1 06:00 起算');
+  assert(w1.time.survivalDay() === 1 && w2.time.survivalDay() === 6, '生存天數從自己開局算起');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

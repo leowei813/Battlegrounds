@@ -27,9 +27,11 @@ import { POI_THIN_VERSION } from '../config/constants.js';
 import { fillPois } from '../map/PoiGenerator.js';
 import { MarkerSystem } from '../systems/MarkerSystem.js';
 import { InterceptSystem } from '../systems/InterceptSystem.js';
-import { TraderSystem } from '../systems/TraderSystem.js';
-import { TradeSystem } from '../systems/TradeSystem.js';
-import { DemandSystem } from '../systems/DemandSystem.js';
+import { BlackMarketSystem } from '../systems/BlackMarketSystem.js';
+import { SharedWorld } from '../multiplayer/SharedWorld.js';
+import { MarketSystem } from '../systems/MarketSystem.js';
+import { InfectedSystem } from '../systems/InfectedSystem.js';
+import { RallySystem } from '../systems/RallySystem.js';
 import { AssistSystem } from '../systems/AssistSystem.js';
 
 /**
@@ -43,6 +45,7 @@ export class Game {
     this.bus = bus;
     this.started = false;
 
+    this.shared = new SharedWorld(this);
     this.time = new TimeSystem(this);
     this.research = new ResearchSystem(this);
     this.resources = new ResourceSystem(this);
@@ -61,9 +64,10 @@ export class Game {
     this.gps = new GpsSystem(this);
     this.markers = new MarkerSystem(this);
     this.intercept = new InterceptSystem(this);
-    this.trader = new TraderSystem(this);
-    this.trade = new TradeSystem(this);
-    this.demand = new DemandSystem(this);
+    this.blackMarket = new BlackMarketSystem(this);
+    this.market = new MarketSystem(this);
+    this.infected = new InfectedSystem(this);
+    this.rally = new RallySystem(this);
     this.assist = new AssistSystem(this);
 
     this.lastPhase = null;
@@ -96,6 +100,32 @@ export class Game {
    * 或屍潮正在攻擊據點。
    * @returns {string[]} 威脅說明（空陣列代表安全）
    */
+  /**
+   * 威脅明細：誰正在攻過來、預計多久抵達（地圖左上角顯示）。
+   * @returns {{text:string, at:number|null, kind:string}[]}
+   */
+  threatDetails(now = Date.now()) {
+    const out = [];
+    const bases = this.state.bases;
+    if (!bases.length) return out;
+    (this.state.npcs?.list || []).forEach((n) => {
+      const t = n.trip;
+      if (t?.kind === 'raid' && !t.resolved && !t.hidden && now < t.startAt + t.travelMs && bases.some((b) => b.id === t.baseId)) {
+        out.push({ text: `NPC「${n.name}」掠奪隊 → ${t.target || '據點'}`, at: t.startAt + t.travelMs, kind: 'npc' });
+      }
+    });
+    (this.world?.others || []).forEach((p) => (p.trips || []).forEach((t) => {
+      if (this.territory.relation(p.id) === 'friend') return;
+      if (t.kind || t.defeated || now >= t.startAt + (t.travelMs || 0)) return;
+      if (bases.some((b) => haversine(b.lat, b.lon, t.to.lat, t.to.lon) < 40)) out.push({ text: `玩家「${p.name}」的隊伍`, at: t.startAt + (t.travelMs || 0), kind: 'player' });
+    }));
+    bases.forEach((b) => {
+      const w = this.siege.of(b.id).waveInfo?.();
+      if (w?.active && w.attacking) out.push({ text: `屍潮（${b.name}）第 ${w.wave}/${w.maxWaves} 波・剩 ${w.left} 隻`, at: null, kind: 'siege' });
+    });
+    return out.sort((a, b) => (a.at || 0) - (b.at || 0));
+  }
+
   threats(now = Date.now()) {
     const out = [];
     const bases = this.state.bases;
@@ -105,7 +135,9 @@ export class Game {
       if (t?.kind === 'raid' && !t.resolved && !t.hidden && now < t.startAt + t.travelMs && bases.some((b) => b.id === t.baseId)) out.push(`NPC「${n.name}」掠奪隊`);
     });
     (this.world?.others || []).forEach((p) => (p.trips || []).forEach((t) => {
-      if (t.kind === 'trade' || t.kind === 'assist' || t.kind === 'deliver' || t.defeated || now >= t.startAt + (t.travelMs || 0)) return;
+      // 友好玩家的隊伍靠近不算威脅
+      if (this.territory.relation(p.id) === 'friend') return;
+      if (t.kind === 'assist' || t.defeated || now >= t.startAt + (t.travelMs || 0)) return;
       if (bases.some((b) => haversine(b.lat, b.lon, t.to.lat, t.to.lon) < 40)) out.push(`玩家「${p.name}」的隊伍`);
     }));
     bases.forEach((b) => {
@@ -124,6 +156,8 @@ export class Game {
    * @returns {object|null} 離線報告
    */
   start() {
+    // 裝備戰力公式可能更新（例如計入詞條）：每次啟動重新計算
+    this.equipment.items.forEach((it) => { it.power = this.equipment.itemPower(it); });
     this.thinMap();
     this.markers.ensure();
     const report = this.processOffline();
@@ -196,10 +230,10 @@ export class Game {
     this.survivors.updateBoard(now);
     this.exploration.update(now, { silent });
     this.npcs.update(now);
-    this.trader.update(now);
-    this.trade.notifyArrivals(now);
     this.assist.update(now);
-    this.trade.prune(now);
+    this.market.update(now);
+    this.shared.tick(now);
+    this.rally.update(now);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();

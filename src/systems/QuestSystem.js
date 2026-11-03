@@ -205,6 +205,6 @@ export class QuestSystem {
 
   update() {
     this.ensureDaily();
-    this.game.state.stats.daysSurvived = Math.max(this.game.state.stats.daysSurvived, this.game.time.day() - 1);
+    this.game.state.stats.daysSurvived = Math.max(this.game.state.stats.daysSurvived, this.game.time.survivalDay() - 1);
   }
 }

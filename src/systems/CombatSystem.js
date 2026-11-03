@@ -1,6 +1,6 @@
 import { COIN_GAIN_MUL } from '../config/constants.js';
 import { ITEM_MODELS } from '../config/equipment.js';
-import { AMMO_FOR } from '../config/supplies.js';
+import { SUPPLIES } from '../config/supplies.js';
 import { ALL_ENEMIES, ELITE_MUL } from '../config/enemies.js';
 import { chance, randFloat, pick, uid } from '../utils/math.js';
 
@@ -50,7 +50,8 @@ export class CombatSystem {
     };
   }
 
-  createEnemy(enemyId, level = 1, elite = false) {
+  /** @param {{hp?:number, atk?:number}} [mul] 額外強度倍率（夜晚、地圖殭屍群等） */
+  createEnemy(enemyId, level = 1, elite = false, mul = null) {
     const def = ALL_ENEMIES[enemyId];
     const l = Math.max(1, level) - 1;
     const e = {
@@ -71,6 +72,7 @@ export class CombatSystem {
       xp: Math.round(def.xp * (1 + 0.25 * l)),
       coins: Math.round(def.coins * (1 + 0.2 * l)),
       partsChance: def.partsChance,
+      ranged: !!def.ranged,
     };
     if (elite) {
       e.maxHp = Math.round(e.maxHp * ELITE_MUL.hp);
@@ -79,13 +81,17 @@ export class CombatSystem {
       e.xp *= ELITE_MUL.xp;
       e.coins *= ELITE_MUL.coins;
     }
+    if (mul) {
+      e.maxHp = Math.round(e.maxHp * (mul.hp || 1));
+      e.atk = Math.round(e.atk * (mul.atk || 1));
+    }
     return e;
   }
 
   /** 把倖存者轉成戰鬥單位 */
-  /** 需要燃料的武器（電鋸）：每場戰鬥耗油，燃料不足時只剩 30% 攻擊 */
-  weaponFuelMul(sv) {
-    const weapon = this.game.equipment.getItem(sv.equipment?.weapon);
+  /** 需要燃料的武器（電鋸，近戰）：每場戰鬥耗油，燃料不足時只剩 30% 攻擊 */
+  weaponFuelMul(sv, mode) {
+    const weapon = this.game.equipment.getItem(sv.equipment?.[mode === 'ranged' ? 'weapon' : 'melee']);
     const fuel = ITEM_MODELS[weapon?.model]?.fuel;
     if (!fuel) return 1;
     const res = this.game.state.resources;
@@ -95,44 +101,33 @@ export class CombatSystem {
   }
 
   /**
-   * 槍械需要彈藥、弓弩需要箭矢：每場戰鬥消耗固定數量，先用隊員背包裡的，在避難所時也可用倉庫的。
-   * 彈藥不足時無法使用該武器，只能徒手作戰（失去武器攻擊力）。
-   * @returns {number} 扣除的攻擊力
+   * 決定這場戰鬥用哪把武器：遠程武器有足夠彈藥（彈藥欄→背包→在家時的倉庫）就用遠程並消耗彈藥，
+   * 否則自動改用近戰武器。
+   * @returns {'ranged'|'melee'}
    */
-  weaponAmmoPenalty(sv, s) {
-    const weapon = this.game.equipment.getItem(sv.equipment?.weapon);
-    const need = weapon && AMMO_FOR[weapon.type];
-    if (!need) return 0;
-    const bag = sv.bag || {};
-    const store = this.game.state.supplies || {};
-    const home = sv.status === 'idle';
-    const have = (bag[need.ammo] || 0) + (home ? store[need.ammo] || 0 : 0);
-    if (have < need.perFight) {
-      sv.noAmmo = need.ammo;
-      return Math.min(s.atk - 1, this.game.equipment.itemStats(weapon).atk || 0);
+  pickWeapon(sv) {
+    const svs = this.game.survivors;
+    const need = svs.ammoNeed(sv);
+    if (need && svs.ammoAvailable(sv, need.ammo) >= need.perFight) {
+      svs.useAmmo(sv, need.ammo, need.perFight);
+      delete sv.noAmmo;
+      return 'ranged';
     }
-    let n = need.perFight;
-    const fromBag = Math.min(n, bag[need.ammo] || 0);
-    if (fromBag) {
-      bag[need.ammo] -= fromBag;
-      if (bag[need.ammo] <= 0) delete bag[need.ammo];
-      n -= fromBag;
-    }
-    if (n > 0) {
-      store[need.ammo] -= n;
-      if (store[need.ammo] <= 0) delete store[need.ammo];
-    }
-    delete sv.noAmmo;
-    return 0;
+    if (need) sv.noAmmo = need.ammo;
+    return 'melee';
   }
 
   unitFromSurvivor(sv) {
-    const s = this.game.survivors.stats(sv);
-    const ammoPenalty = this.weaponAmmoPenalty(sv, s);
+    const mode = this.pickWeapon(sv);
+    const s = this.game.survivors.stats(sv, mode);
+    const lo = this.game.survivors.loadout(sv);
     return {
-      id: sv.id, name: sv.name, side: 'team', classId: sv.classId,
+      id: sv.id, name: sv.name, side: 'team', classId: sv.classId, weapon: mode,
       // 以目前生命出戰（受過傷的隊員不會回滿血）
-      maxHp: s.hp, hp: this.game.survivors.hpOf(sv), atk: (s.atk - ammoPenalty) * this.weaponFuelMul(sv), def: s.def, crit: s.crit, critDmg: s.critDmg,
+      maxHp: s.hp, hp: this.game.survivors.hpOf(sv), atk: s.atk * this.weaponFuelMul(sv, mode), def: s.def, crit: s.crit, critDmg: s.critDmg,
+      // 藥品欄：生命低於 35% 時自動使用
+      meds: lo.med ? { key: lo.med.key, qty: lo.med.qty, heal: Math.round(this.game.survivors.healAmount(sv, lo.med.key)) } : null,
+      medsUsed: 0,
       dodge: s.dodge, atkSpeed: s.atkSpeed, skills: s.skills, lifeSteal: Math.min(0.5, s.lifeSteal || 0),
       cd: randFloat(0, 0.3), healCd: s.skills.healEvery || 0, firstHit: true,
     };
@@ -150,7 +145,7 @@ export class CombatSystem {
     }))];
     const foes = enemies.map((e) => ({ ...e, side: 'enemy', hp: e.maxHp, cd: randFloat(0.3, 1), skills: {} }));
     const log = [];
-    const push = (t, msg, type = '') => { if (log.length < 140) log.push({ t: +t.toFixed(1), msg, type }); };
+    const push = (t, msg, type = '') => { if (log.length < 400) log.push({ t: +t.toFixed(1), msg, type }); };
 
     // 先手：探照燈加成讓隊伍首輪攻擊提前
     if (chance(opts.firstStrikeBonus || 0)) {
@@ -177,6 +172,11 @@ export class CombatSystem {
       const raw = atk * randFloat(0.9, 1.1) * (crit ? atkUnit.critDmg : 1);
       const dmg = Math.max(1, Math.round(raw * (100 / (100 + target.def * 2))));
       target.hp -= dmg;
+      // 傷害統計
+      atkUnit.dealt = (atkUnit.dealt || 0) + dmg;
+      target.taken = (target.taken || 0) + dmg;
+      if (crit) atkUnit.crits = (atkUnit.crits || 0) + 1;
+      atkUnit.hits = (atkUnit.hits || 0) + 1;
       push(t, `${atkUnit.name} ${crit ? '💥暴擊' : '攻擊'} ${target.name} -${dmg}`, atkUnit.side === 'team' ? (crit ? 'crit' : 'hit') : 'hurt');
       if (atkUnit.lifeSteal) {
         const heal = Math.round(dmg * atkUnit.lifeSteal);
@@ -209,6 +209,13 @@ export class CombatSystem {
         if (u.hp <= 0) continue;
         const opponents = alive(u.side === 'team' ? foes : team);
         if (!opponents.length) break;
+        // 生命低於 35% 時自動使用藥品欄的藥
+        if (u.meds && u.meds.qty > 0 && u.hp < u.maxHp * 0.35) {
+          u.meds.qty -= 1;
+          u.medsUsed += 1;
+          u.hp = Math.min(u.maxHp, u.hp + u.meds.heal);
+          push(t, `💊 ${u.name} 使用 ${SUPPLIES[u.meds.key]?.name || '藥品'} +${u.meds.heal}`, 'heal');
+        }
         // 醫生治療
         if (u.skills.healEvery) {
           u.healCd -= STEP;
@@ -232,6 +239,8 @@ export class CombatSystem {
 
     const victory = alive(foes).length === 0 && alive(team).length > 0;
     push(t, victory ? '🏆 戰鬥勝利！' : '💀 戰鬥失敗，隊伍撤退…', victory ? 'win' : 'lose');
+    // 記錄這場戰鬥的詳細資料（逐筆傷害、暴擊與每人傷害統計），在「消息 → 戰鬥紀錄」查看
+    if (opts.record !== false && survivors.length) this.record(opts.title, victory, t, log, team, foes);
 
     return {
       victory,
@@ -239,7 +248,7 @@ export class CombatSystem {
       log,
       kills,
       team: team.map((u) => ({
-        id: u.id, name: u.name, hp: Math.max(0, Math.round(u.hp)), maxHp: u.maxHp, down: u.hp <= 0, kills: u.kills || 0, ally: u.ally,
+        id: u.id, name: u.name, hp: Math.max(0, Math.round(u.hp)), maxHp: u.maxHp, down: u.hp <= 0, kills: u.kills || 0, ally: u.ally, medsUsed: u.medsUsed || 0, weapon: u.weapon,
       })),
       foes: foes.map((u) => ({ id: u.id, ally: u.ally, down: u.hp <= 0, hp: Math.max(0, Math.round(u.hp)), kills: u.kills || 0 })),
       enemies: foes.map((f) => ({ name: f.name, icon: f.icon, hp: Math.max(0, Math.round(f.hp)), maxHp: f.maxHp })),
@@ -256,6 +265,58 @@ export class CombatSystem {
    * 生命歸零的隊員重傷並扣除經驗（可能降級），且不獲得本場經驗。
    * 由探索與地圖戰鬥共用。
    */
+  /**
+   * 守城期間防守人員的傷勢：近戰防守的人一定會被攻擊者打到；
+   * 攻擊方有遠程武器時，使用遠程武器的防守人員也有機率中彈。
+   * @param {object[]} defenders 倖存者
+   * @param {object[]} attackers 攻擊者（含 atk、ranged）
+   * @param {number} sec 攻城秒數
+   * @returns {string[]} 受傷的人
+   */
+  wallDefenseHurt(defenders, attackers, sec, reason = '守城時受傷') {
+    const svs = this.game.survivors;
+    if (!attackers.length || !sec) return [];
+    const avgAtk = attackers.reduce((s, a) => s + (a.atk || 0), 0) / attackers.length;
+    const ranged = attackers.some((a) => a.ranged);
+    const hurt = [];
+    defenders.forEach((sv) => {
+      const st = svs.stats(sv);
+      const usesRanged = st.weaponMode === 'ranged';
+      if (usesRanged && (!ranged || !chance(0.35))) return;
+      const hits = usesRanged ? 1 + Math.floor(sec / 30) : Math.max(1, Math.round(sec / 8));
+      const dmg = hits * avgAtk * (usesRanged ? 0.6 : 0.5) * (100 / (100 + st.def * 2));
+      if (dmg <= 0) return;
+      svs.damage(sv, dmg, reason);
+      hurt.push(sv.name);
+    });
+    return hurt;
+  }
+
+  /** 保存最近的戰鬥詳細（最多 10 場，每場最多 120 筆紀錄） */
+  record(title, victory, duration, log, team, foes) {
+    const st = this.game.state;
+    const unit = (u) => ({
+      name: u.name, side: u.side, dealt: Math.round(u.dealt || 0), taken: Math.round(u.taken || 0), crits: u.crits || 0, hits: u.hits || 0,
+      kills: u.kills || 0, down: u.hp <= 0, weapon: u.weapon || '', meds: u.medsUsed || 0,
+    });
+    const entry = {
+      id: uid('bt'), at: Date.now(), title: String(title || '戰鬥').slice(0, 40), victory, duration: +duration.toFixed(1),
+      team: team.map(unit), foes: foes.map(unit),
+      log: (log.length > 120 ? [...log.slice(0, 100), { t: -1, msg: `…（中間省略 ${log.length - 120} 筆）`, type: 'info' }, ...log.slice(-20)] : log),
+    };
+    st.battles = [entry, ...(st.battles || [])].slice(0, 10);
+    this.lastBattleId = entry.id;
+  }
+
+  /** 扣掉戰鬥中用掉的藥品欄藥品 */
+  consumeMeds(sv, u) {
+    if (!u?.medsUsed) return;
+    const lo = this.game.survivors.loadout(sv);
+    if (!lo.med) return;
+    lo.med.qty -= u.medsUsed;
+    if (lo.med.qty <= 0) lo.med = null;
+  }
+
   applyOutcome(survivors, result, at = Date.now()) {
     const st = this.game.state.stats;
     st.kills += result.kills.length;
@@ -264,6 +325,7 @@ export class CombatSystem {
     const xpEach = Math.round(result.xp / Math.max(1, survivors.length)) + (result.victory ? 5 : 0);
     survivors.forEach((sv) => {
       const u = result.team.find((x) => x.id === sv.id);
+      this.consumeMeds(sv, u);
       if (u?.down) {
         this.game.survivors.becomeSevere(sv, '在戰鬥中', at);
         return;

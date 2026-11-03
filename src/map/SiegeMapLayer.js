@@ -5,7 +5,7 @@ import { EXP_PHASES, AMBUSH_RADIUS_M, tripProgress } from '../systems/Exploratio
 import { formatDuration } from '../utils/math.js';
 
 /** 停在目的地時的狀態名稱（不是探索） */
-const STAY_NAMES = { trade: '🏪 擺攤中', assist: '🛡️ 協防中', deliver: '📦 交付中' };
+const STAY_NAMES = { assist: '🛡️ 協防中' };
 
 /** 屍潮世界座標 1 單位 = 1.5 公尺（出生圈半徑 150 → 約 225 公尺） */
 export const METERS_PER_UNIT = 1.5;
@@ -208,12 +208,8 @@ export const SiegeMapLayer = L.Layer.extend({
       if (now > trip.endAt) return;
       const p = tripProgress(trip, now);
       // 其他玩家的隊伍只看得到移動，看不到剩餘時間；被攔截撤回中的隊伍不能再攔截
-      if (trip.kind === 'deliver') {
-        this.drawTrip(ctx, size, p, `📦 ${player.name}・交付`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false, '交付中');
-      } else if (trip.kind === 'assist') {
+      if (trip.kind === 'assist') {
         this.drawTrip(ctx, size, p, `🛡️ ${player.name}・協防`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false, '協防中');
-      } else if (trip.kind === 'trade') {
-        this.drawTrip(ctx, size, p, `🤝 ${player.name}${trip.targetId === this.game.trade.myId() ? '・來找你交易（點擊）' : '・交易隊'}`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false, '擺攤中');
       } else this.drawTrip(ctx, size, p, `👤 ${player.name}${trip.defeated ? '・🏳️撤回' : ''}`, ['rgba(38,198,218,0.55)', '#00838f', '#e0f7fa', 'rgba(0,77,64,0.85)'], !!trip.defeated);
       if (trip.id && !trip.defeated) this.teams.push({ kind: 'player', playerId: player.id, tripId: trip.id, pos: p.pos });
     }));

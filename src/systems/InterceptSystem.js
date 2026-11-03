@@ -46,7 +46,7 @@ export class InterceptSystem {
     }
     const p = (g.world?.others || []).find((x) => x.id === team.playerId);
     const trip = p?.trips.find((t) => t.id === team.tripId);
-    if (!p || !trip || trip.defeated || trip.kind === 'trade' || trip.kind === 'deliver' || trip.endAt <= now) return null;
+    if (!p || !trip || trip.defeated || trip.endAt <= now) return null;
     const pr = tripProgress(trip, now);
     return {
       kind: 'player', id: `icpt:pl:${p.id}:${trip.id}`, playerId: p.id, tripId: trip.id, endAt: trip.endAt,
@@ -128,7 +128,7 @@ export class InterceptSystem {
         return;
       }
       const enemies = Array.from({ length: this.npcTeamSize(n) }, () => g.combat.createEnemy('raider', n.level));
-      const result = g.combat.simulate(members, enemies);
+      const result = g.combat.simulate(members, enemies, { title: '⚔️ 攔截野外隊伍' });
       g.combat.applyOutcome(members, result, at);
       exp.travelKills = (exp.travelKills || 0) + result.kills.length;
       exp.travelXp = (exp.travelXp || 0) + result.xp;
@@ -151,7 +151,7 @@ export class InterceptSystem {
       } else {
         g.state.stats.battlesLost += 1;
         const lost = this.defeatLoss(members);
-        Object.entries(lost.resources).forEach(([k, v]) => { n.resources[k] = (n.resources[k] || 0) + v; });
+        g.npcs.addResources(n, lost.resources);
         out.events.push(`💀 攔截失敗！${this.lossText(lost)}`);
         g.log(`💀 攔截「${t.owner}」的隊伍失敗`, 'danger');
       }
@@ -165,7 +165,7 @@ export class InterceptSystem {
       return;
     }
     const enemies = Array.from({ length: Math.max(1, Math.min(6, t.members)) }, () => g.combat.createEnemy('raider', t.level));
-    const result = g.combat.simulate(members, enemies);
+    const result = g.combat.simulate(members, enemies, { title: '⚔️ 攔截野外隊伍' });
     g.combat.applyOutcome(members, result, at);
     exp.travelKills = (exp.travelKills || 0) + result.kills.length;
     exp.travelXp = (exp.travelXp || 0) + result.xp;

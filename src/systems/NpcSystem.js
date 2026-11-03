@@ -10,8 +10,22 @@ import { tripProgress } from './ExplorationSystem.js';
 import { planRoute, pathLength, crossings } from '../map/routing.js';
 import {
   withSeed,
-  uid, pick, randFloat, randInt, haversine, chance,
+  pick, randFloat, randInt, haversine, chance, uid,
 } from '../utils/math.js';
+import { seeded, cellOf as gridCell, cellBox } from '../multiplayer/worldGrid.js';
+
+/**
+ * 共用 NPC：位置、名稱、基礎等級由「格子＋世代」決定（所有玩家相同）；
+ * 傷亡、等級損失、物資增減、被摧毀等變化寫入共用物件 npc:<格子>:<編號>，大家同步。
+ */
+export const SHARED_NPC = {
+  /** 每個 NPC 據點存在的時間，之後由新的勢力取代（避免全部長到最高等級） */
+  lifeMs: 48 * 3600000,
+  /** 每隔多久升一級 */
+  levelMs: 2 * 3600000,
+  /** 同步範圍（公里） */
+  km: 5,
+};
 
 const rand = ([a, b]) => randFloat(a, b);
 
@@ -20,9 +34,15 @@ const rand = ([a, b]) => randFloat(a, b);
  * 玩家可以派隊攻打 NPC 據點搶奪資源；據點被摧毀後會在別處重新出現。
  * 夜晚屍潮期間 NPC 不會出動掠奪。
  */
+/** 攻陷 NPC 據點時能搶到的金錢比例 */
+const NPC_COIN_LOOT = 0.35;
+
 export class NpcSystem {
   constructor(game) {
     this.game = game;
+    this.pending = [];
+    game.shared?.watch('npc', SHARED_NPC.km);
+    game.bus?.on?.('shared:changed', () => this.applyShared());
   }
 
   get state() {
@@ -47,7 +67,12 @@ export class NpcSystem {
 
   /** 滿編時的掠奪者人數（不含首領） */
   fullCount(n) {
-    return Math.min(6, 2 + Math.floor(n.level / 5));
+    return Math.min(8, 3 + Math.floor(n.level / 4));
+  }
+
+  /** NPC 據點的防禦：圍牆耐久與防禦火力（攻打時要先破牆） */
+  defense(n) {
+    return { wall: Math.round(400 + n.level * 160), dps: Math.round(10 + n.level * 5) };
   }
 
   /** 據點守備：掠奪者人數（扣除傷亡）與等級 */
@@ -74,48 +99,220 @@ export class NpcSystem {
 
   /** 建築所在的 1 公里格子 */
   cellOf(lat, lon) {
-    const dLat = NPC_CONFIG.cellKm / 111.32;
-    const dLon = dLat / Math.cos((this.origin().lat * Math.PI) / 180);
-    return `${Math.floor(lat / dLat)}:${Math.floor(lon / dLon)}`;
+    return gridCell(lat, lon, NPC_CONFIG.cellKm).key;
+  }
+
+  /** 共用格子中某一格的 NPC（被摧毀等待重生時回傳 null）；由種子決定，所有玩家相同 */
+  slotNpc(cellKey, slot, now = Date.now()) {
+    const [i, j] = cellKey.split(':').map(Number);
+    const sid = `${cellKey}:${slot}`;
+    const offset = seeded(`npc-off:${sid}`, () => randFloat(0, SHARED_NPC.lifeMs));
+    const gen = Math.floor((now + offset) / SHARED_NPC.lifeMs);
+    const genStart = gen * SHARED_NPC.lifeMs - offset;
+    const d = this.sharedOf(sid, gen);
+    const dc = d?.dc || 0;
+    if (d?.destroyed && now < d.destroyed.respawnAt) return null;
+    const bornAt = dc > 0 && d?.destroyed ? d.destroyed.respawnAt : genStart;
+    const ident = `${sid}:${gen}:${dc}`;
+    const box = cellBox(i, j, NPC_CONFIG.cellKm);
+    return seeded(`npc:${ident}`, () => {
+      const lat = box.lat0 + box.dLat * randFloat(0.1, 0.9);
+      const lon = box.lon0 + box.dLon * randFloat(0.1, 0.9);
+      const zone = zoneAt(lat, lon);
+      const baseLevel = randInt(1, 6) + Math.max(0, zone.danger) * 2;
+      return {
+        sid, ident, gen, dc, cell: cellKey, lat, lon, bornAt, baseLevel,
+        name: pick(NPC_NAMES),
+        resources: {
+          food: randInt(60, 160), wood: randInt(60, 200), fuel: randInt(10, 60), scrap: randInt(10, 40), nail: randInt(10, 40), bandage: randInt(0, 4),
+        },
+        coins: randInt(40, 120),
+      };
+    });
+  }
+
+  /** 依識別碼找回共用 NPC（不在自己附近時也能重建，例如集結時） */
+  byIdent(ident, now = Date.now()) {
+    if (!ident) return null;
+    const hit = this.list.find((n) => n.ident === ident);
+    if (hit) return hit;
+    const [i, j, slot] = ident.split(':');
+    const s = this.slotNpc(`${i}:${j}`, Number(slot), now);
+    return s && s.ident === ident ? this.materialize(s, now) : null;
+  }
+
+  /** 共用資料（不是同一世代的舊資料視為沒有） */
+  sharedOf(sid, gen) {
+    const d = this.game.shared?.get('npc', sid);
+    return d && d.gen === gen ? d : null;
+  }
+
+  /** 共用 NPC 目前的等級：基礎等級＋存在時間成長－被擊退的損失 */
+  sharedLevel(n, now = Date.now()) {
+    return Math.max(1, Math.min(NPC_CONFIG.maxLevel, n.baseLevel + Math.floor(Math.max(0, now - n.bornAt) / SHARED_NPC.levelMs) - (n.levelLoss || 0)));
+  }
+
+  /** 由共用資料更新 NPC 的狀態（有人改變過才套用） */
+  applySharedTo(n) {
+    if (!n.sid) return;
+    const obj = this.game.shared?.cache?.get(`npc:${n.sid}`);
+    const d = obj?.data;
+    if (!d || d.ident !== n.ident || obj.ver === n.sharedVer) return;
+    n.sharedVer = obj.ver;
+    n.wounded = Math.max(0, d.wounded || 0);
+    n.healAt = d.healAt || 0;
+    n.levelLoss = d.levelLoss || 0;
+    const res = { ...n.baseRes };
+    Object.entries(d.res || {}).forEach(([k, v]) => { res[k] = Math.max(0, (res[k] || 0) + v); });
+    n.resources = res;
+    n.coins = Math.max(0, n.baseCoins + (d.coins || 0));
+    if (d.siegeNight) n.siegeNight = d.siegeNight;
+    if (d.lastSiege) n.lastSiege = d.lastSiege;
+    n.level = this.sharedLevel(n);
+  }
+
+  applyShared() {
+    if (!this.state?.list) return;
+    this.list.forEach((n) => this.applySharedTo(n));
+    // 被別人摧毀或世代更替：重新整理
+    this.reconcile(Date.now());
+    this.retryPending();
   }
 
   /**
-   * 每個有建築的 1 公里格子維持 3 個 NPC 據點（被摧毀的格子要等重生時間）。
+   * 寫入共用 NPC 狀態（依目前伺服器資料套用變化，大家的變化會累加）。
+   * fn(d) 直接修改資料；回傳 false 表示不需要寫入。
+   */
+  push(n, fn) {
+    if (!n?.sid || !this.game.shared) return null;
+    const run = () => this.game.shared.update('npc', n.sid, (cur) => {
+      const d = cur && cur.gen === n.gen ? cur : { gen: n.gen, dc: n.dc, ident: n.ident };
+      if (d.ident !== n.ident) {
+        if ((d.dc || 0) > n.dc) return { fail: 'stale' };
+        Object.assign(d, {
+          ident: n.ident, dc: n.dc, wounded: 0, healAt: 0, levelLoss: 0, res: {}, coins: 0, destroyed: null,
+        });
+      }
+      if (fn(d) === false) return { fail: 'skip' };
+      return { data: d };
+    }, cellBox(...n.cell.split(':').map(Number), NPC_CONFIG.cellKm)).then((r) => {
+      if (r.ok) {
+        // 套用伺服器上合併後的結果（包含別人同時造成的變化）
+        n.sharedVer = null;
+        this.applySharedTo(n);
+      } else if (r.reason && !['stale', 'skip'].includes(r.reason) && this.pending.length < 30) this.pending.push(run);
+      return r;
+    });
+    return run();
+  }
+
+  /** 連線失敗的共用寫入：下次同步時重試 */
+  retryPending() {
+    const list = this.pending.splice(0, 30);
+    list.forEach((run) => run());
+  }
+
+  /** 共用 NPC：傷亡隨時間補回 */
+  static healTo(d, now, full) {
+    while (d.wounded > 0 && d.healAt && now >= d.healAt) {
+      d.wounded -= 1;
+      d.healAt += NPC_CONFIG.woundHealMs;
+    }
+    if (!(d.wounded > 0)) {
+      d.wounded = 0;
+      d.healAt = 0;
+    }
+    d.wounded = Math.min(full, d.wounded);
+  }
+
+  /**
+   * 共用 NPC：附近有建築（危險度 ≥ 2）的格子，每格依種子產生固定數量的 NPC 據點（所有玩家相同）。
+   * 不會出現在任何玩家據點的警戒範圍內，也不會在避難所旁邊；被摧毀的要等重生時間。
    * @returns {number} 本次新增的數量
    */
   fillCells(now = Date.now(), { silent = false } = {}) {
-    const st = this.state;
-    st.cellNext = st.cellNext || {};
     const o = this.origin();
-    const used = new Set(this.list.map((n) => n.poiId));
-    // 不會生成在任何警戒範圍內：自己的據點、其他玩家的據點、其他 NPC 據點
-    const zones = this.alertZones();
+    if (!o) return 0;
+    const zones = this.playerZones();
     const inAlert = (p) => zones.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r);
-    const cells = new Map();
+    const cells = new Set();
     this.game.state.map.pois.forEach((p) => {
-      if (used.has(p.id) || this.game.shelter.baseAtPoi(p.id) || POI_TYPES[p.type].danger < 2) return;
-      if (haversine(o.lat, o.lon, p.lat, p.lon) < NPC_CONFIG.minFromShelterM) return;
-      if (inAlert(p)) return;
-      const key = this.cellOf(p.lat, p.lon);
-      if (!cells.has(key)) cells.set(key, []);
-      cells.get(key).push(p);
+      if (POI_TYPES[p.type]?.danger >= 2) cells.add(this.cellOf(p.lat, p.lon));
     });
-    let added = 0;
-    cells.forEach((pois, key) => {
-      if ((st.cellNext[key] || 0) > now) return;
-      let need = NPC_CONFIG.perCell - this.list.filter((n) => n.cell === key).length;
-      const pool = [...pois];
-      while (need > 0 && pool.length) {
-        const poi = pool.splice(Math.floor(randFloat(0, pool.length)), 1)[0];
-        if (inAlert(poi)) continue; // 同一輪剛生成的 NPC 範圍也要避開
-        const n = this.spawnAt(poi, key, now, silent);
-        zones.push({ lat: n.lat, lon: n.lon, r: 60 + n.level });
-        need -= 1;
-        added += 1;
+    const want = [];
+    cells.forEach((key) => {
+      const inCell = [];
+      for (let slot = 0; slot < NPC_CONFIG.perCell; slot += 1) {
+        const s = this.slotNpc(key, slot, now);
+        if (!s) continue;
+        if (haversine(o.lat, o.lon, s.lat, s.lon) < NPC_CONFIG.minFromShelterM || inAlert(s)) continue;
+        if (inCell.some((x) => haversine(x.lat, x.lon, s.lat, s.lon) < 120)) continue;
+        inCell.push(s);
+        want.push(s);
       }
     });
-    if (added) this.game.bus.emit('npcs:changed');
+    const keep = new Set(want.map((s) => s.ident));
+    const before = this.list.length;
+    // 不再存在的共用 NPC 移除（正在掠奪途中的隊伍保留到結束）
+    this.state.list = this.list.filter((n) => !n.sid || keep.has(n.ident) || (n.trip && n.trip.endAt > now && !n.gone));
+    const have = new Set(this.list.map((n) => n.ident).filter(Boolean));
+    let added = 0;
+    want.forEach((s) => {
+      if (have.has(s.ident)) return;
+      const n = this.materialize(s, now);
+      this.list.push(n);
+      added += 1;
+      if (!silent) this.game.log(`🏴‍☠️ NPC 勢力「${n.name}」在附近建立據點（${this.intelView(n).levelShort}）`, 'danger');
+    });
+    if (added || this.list.length !== before) this.game.bus.emit('npcs:changed');
     return added;
+  }
+
+  /** 由共用格子資料建立 NPC（本機另外記錄自己的行動時間） */
+  materialize(s, now = Date.now()) {
+    const coins = s.coins * (s.baseLevel + 5);
+    const n = {
+      id: `npc_${s.ident.replace(/:/g, '_')}`,
+      sid: s.sid,
+      ident: s.ident,
+      gen: s.gen,
+      dc: s.dc,
+      name: s.name,
+      cell: s.cell,
+      lat: s.lat,
+      lon: s.lon,
+      baseLevel: s.baseLevel,
+      bornAt: s.bornAt,
+      level: 1,
+      levelLoss: 0,
+      baseRes: { ...s.resources },
+      resources: { ...s.resources },
+      baseCoins: coins,
+      coins,
+      wounded: 0,
+      nextLevelAt: Infinity,
+      nextExploreAt: now + rand(NPC_CONFIG.exploreEveryMs) * randFloat(0.3, 1),
+      nextRaidAt: now + this.raidDelay(),
+      trip: null,
+    };
+    this.applySharedTo(n);
+    n.level = this.sharedLevel(n, now);
+    return n;
+  }
+
+  /** 重新整理共用 NPC（被摧毀、世代更替） */
+  reconcile(now = Date.now()) {
+    if (!this.game.state.map.pois.length || !this.game.shelter.hasShelter()) return;
+    this.fillCells(now, { silent: true });
+  }
+
+  /** 玩家據點的警戒範圍（NPC 不會出現在裡面） */
+  playerZones() {
+    const g = this.game;
+    return [
+      ...g.state.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: g.territory.alertRadius(b) })),
+      ...(g.world?.others || []).flatMap((p) => p.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: b.alert || 80 }))),
+    ];
   }
 
   /** 所有警戒範圍（公尺）：自己的據點、其他玩家的據點、NPC 據點 */
@@ -172,9 +369,9 @@ export class NpcSystem {
     const st = this.state;
     if (now >= (st.nextSpawnAt || 0)) {
       // 第一次（或重新掃描後）一次補齊，不逐一記錄
-      const first = !this.list.length;
+      const first = !this.list.some((n) => n.sid);
       const added = this.fillCells(now, { silent: first });
-      if (first && added) this.game.log(`🏴‍☠️ 附近出現 ${added} 個 NPC 勢力據點（每平方公里約 ${NPC_CONFIG.perCell} 個）`, 'danger');
+      if (first && added) this.game.log(`🏴‍☠️ 附近有 ${added} 個 NPC 勢力據點（所有倖存者看到的相同）`, 'danger');
       st.nextSpawnAt = now + 60000;
     }
     const phase = this.game.time.phase(now);
@@ -191,7 +388,8 @@ export class NpcSystem {
       }
       // 夜晚：NPC 據點也要抵禦屍群（每晚一次）
       if (phase.zombies && n.siegeNight !== night) this.nightSiege(n, night, now);
-      // 升級
+      // 升級（共用 NPC 依存在時間計算）
+      if (n.sid) n.level = this.sharedLevel(n, now);
       let guard = 0;
       while (now >= n.nextLevelAt && guard < 20) {
         guard += 1;
@@ -218,6 +416,32 @@ export class NpcSystem {
     if (count <= 0) return;
     n.wounded = Math.min(this.fullCount(n), (n.wounded || 0) + count);
     if (!n.healAt || n.healAt < now) n.healAt = now + NPC_CONFIG.woundHealMs;
+    const full = this.fullCount(n);
+    return this.push(n, (d) => {
+      NpcSystem.healTo(d, now, full);
+      d.wounded = Math.min(full, (d.wounded || 0) + count);
+      if (!d.healAt || d.healAt < now) d.healAt = now + NPC_CONFIG.woundHealMs;
+    });
+  }
+
+  /** NPC 等級下降（被擊退、攔截） */
+  levelDown(n, by = 1) {
+    if (n.sid) {
+      n.levelLoss = (n.levelLoss || 0) + by;
+      n.level = this.sharedLevel(n);
+      this.push(n, (d) => { d.levelLoss = (d.levelLoss || 0) + by; });
+    } else n.level = Math.max(1, n.level - by);
+  }
+
+  /** NPC 物資增減（掠奪所得、被屍群破壞） */
+  addResources(n, delta = {}, coins = 0) {
+    Object.entries(delta).forEach(([k, v]) => { n.resources[k] = Math.max(0, (n.resources[k] || 0) + v); });
+    n.coins = Math.max(0, (n.coins || 0) + coins);
+    this.push(n, (d) => {
+      d.res = d.res || {};
+      Object.entries(delta).forEach(([k, v]) => { d.res[k] = (d.res[k] || 0) + v; });
+      d.coins = (d.coins || 0) + coins;
+    });
   }
 
   /**
@@ -228,24 +452,43 @@ export class NpcSystem {
     n.siegeNight = night;
     const zone = zoneAt(n.lat, n.lon);
     const weak = (n.wounded || 0) / Math.max(1, this.fullCount(n));
-    const r = randFloat(0.5, 1.5) * (1 + Math.max(0, zone.danger) * 0.08) + weak * 0.6;
-    let result;
-    if (r < 0.85) {
-      result = 'held';
-      this.wound(n, chance(0.4) ? 1 : 0, now);
-    } else if (r < 1.3) {
-      result = 'hurt';
-      this.wound(n, randInt(1, 2), now);
-      Object.keys(n.resources).forEach((k) => { n.resources[k] = Math.floor(n.resources[k] * 0.9); });
-    } else {
-      result = 'breached';
-      this.wound(n, randInt(2, 3), now);
-      Object.keys(n.resources).forEach((k) => { n.resources[k] = Math.floor(n.resources[k] * 0.7); });
-      n.level = Math.max(1, n.level - 1);
+    // 共用 NPC：結果由種子決定（每位玩家看到的相同），且每晚只結算一次
+    const roll = () => {
+      const r = randFloat(0.5, 1.5) * (1 + Math.max(0, zone.danger) * 0.08) + weak * 0.6;
+      if (r < 0.85) return { r, result: 'held', hurt: chance(0.4) ? 1 : 0, mul: 1, drop: 0 };
+      if (r < 1.3) return { r, result: 'hurt', hurt: randInt(1, 2), mul: 0.9, drop: 0 };
+      return { r, result: 'breached', hurt: randInt(2, 3), mul: 0.7, drop: 1 };
+    };
+    const o = n.sid ? seeded(`npc-siege:${n.ident}:${night}`, roll) : roll();
+    const full = this.fullCount(n);
+    n.wounded = Math.min(full, (n.wounded || 0) + o.hurt);
+    if (o.hurt && (!n.healAt || n.healAt < now)) n.healAt = now + NPC_CONFIG.woundHealMs;
+    const lost = {};
+    Object.keys(n.resources).forEach((k) => {
+      lost[k] = n.resources[k] - Math.floor(n.resources[k] * o.mul);
+      n.resources[k] -= lost[k];
+    });
+    if (o.drop) {
+      if (n.sid) {
+        n.levelLoss = (n.levelLoss || 0) + o.drop;
+        n.level = this.sharedLevel(n, now);
+      } else n.level = Math.max(1, n.level - o.drop);
     }
-    n.lastSiege = { night, result };
+    n.lastSiege = { night, result: o.result };
+    this.push(n, (d) => {
+      if (d.siegeNight === night) return false;
+      d.siegeNight = night;
+      d.lastSiege = n.lastSiege;
+      NpcSystem.healTo(d, now, full);
+      d.wounded = Math.min(full, (d.wounded || 0) + o.hurt);
+      if (o.hurt && (!d.healAt || d.healAt < now)) d.healAt = now + NPC_CONFIG.woundHealMs;
+      d.res = d.res || {};
+      Object.entries(lost).forEach(([k, v]) => { if (v) d.res[k] = (d.res[k] || 0) - v; });
+      d.levelLoss = (d.levelLoss || 0) + o.drop;
+      return true;
+    });
     // 人員全數倒下：據點被屍群攻陷
-    if (result === 'breached' && this.garrison(n).length <= 1 && r > 1.6) {
+    if (o.result === 'breached' && this.garrison(n).length <= 1 && o.r > 1.6) {
       if (this.intel() >= 1) this.game.log(`🧟 NPC 勢力「${n.name}」的據點被屍群攻陷了`, 'info');
       this.destroy(n, now);
     }
@@ -295,7 +538,7 @@ export class NpcSystem {
   /** 玩家據點看起來的防禦強度（防禦塔與駐守人員的武器）；NPC 不知道據點還有沒有彈藥 */
   baseDefense(base) {
     const g = this.game;
-    const guards = g.territory.garrison(base).list.reduce((s, sv) => s + g.survivors.stats(sv).power, 0);
+    const guards = g.territory.garrison(base).list.reduce((s, sv) => s + g.survivors.stats(sv, sv.equipment?.weapon ? 'ranged' : 'melee').power, 0);
     return g.siege.of(base.id).defenseDps({ apparent: true }) * 8 + guards;
   }
 
@@ -339,13 +582,13 @@ export class NpcSystem {
       const guards = base ? g.territory.garrison(base).list : [];
       if (!guards.length) continue;
       const enemies = Array.from({ length: Math.min(4, 2 + Math.floor(n.level / 8)) }, () => g.combat.createEnemy('raider', n.level));
-      const result = g.combat.simulate(guards, enemies);
+      const result = g.combat.simulate(guards, enemies, { title: `🏴‍☠️ 攔截 NPC「${n.name}」的隊伍` });
       g.combat.applyOutcome(guards, result, now);
       if (result.victory) {
         g.log(`🛡️「${base.name}」的駐守人員擊退了路過的「${n.name}」隊伍`, 'success');
         g.toast(`🛡️「${base.name}」擊退了路過的「${n.name}」隊伍`, 'success');
         n.trip = null;
-        n.level = Math.max(1, n.level - 1);
+        this.levelDown(n);
         g.bus.emit('npcs:changed');
         return;
       }
@@ -426,7 +669,7 @@ export class NpcSystem {
       const remain = this.game.state.map.remain || {};
       if (!poi || (poi.lootedDay === dayKey(at) && !remain[poi.id])) return;
       const stock = stockOf(poi, at, remain);
-      Object.entries(stock.resources).forEach(([k, v]) => { n.resources[k] = (n.resources[k] || 0) + Math.round(v * 0.6); });
+      this.addResources(n, Object.fromEntries(Object.entries(stock.resources).map(([k, v]) => [k, Math.round(v * 0.6)])));
       // NPC 探索過的建築資源一併消失（包含殘留的物資）
       poi.lootedDay = dayKey(at);
       delete remain[poi.id];
@@ -454,16 +697,19 @@ export class NpcSystem {
     const helpers = isHome ? g.assist.incoming().filter((h) => h.kind === 'team') : [];
     const allies = isHome ? g.assist.allyUnits() : [];
     const helpDps = helpers.reduce((s, h) => s + (h.dps || 0), 0);
+    const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));
     const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps() * (1 + g.research.bonus('raidDefensePct')) + helpDps);
     base.wallHp = Math.max(0, as.wallLeft);
+    // 守城時：近戰防守的人會受傷，對方有遠程武器時遠程防守的人也可能中彈
+    const wallGuards = [...siege.guards().map((x) => x.sv), ...base.defenses.map((d) => g.survivors.get(d.garrisonId)).filter(Boolean)];
+    g.combat.wallDefenseHurt([...new Set(wallGuards)], all, as.sec, '守城對抗 NPC 掠奪時受傷');
     const enemies = as.alive;
     const defenders = this.defenders(base);
-    const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));
     // 2. 圍牆被打破後，與據點中的人員交戰；打贏才能掠奪
     let victory = !as.breached;
     let result = null;
     if (as.breached && (defenders.length || allies.length)) {
-      result = g.combat.simulate(defenders, enemies, { firstStrikeBonus: base.facilities.watchtower.level * 0.04, allies });
+      result = g.combat.simulate(defenders, enemies, { firstStrikeBonus: base.facilities.watchtower.level * 0.04, allies, title: `🛡️ 防守 NPC「${n.name}」的掠奪` });
       g.combat.applyOutcome(defenders, result, now);
       victory = result.victory;
     }
@@ -486,7 +732,7 @@ export class NpcSystem {
         base, attacker: label, success: true, kills, injured, wallLost: as.wallLost, note: [how, assistNote].filter(Boolean).join('。'),
       });
       g.toast(`🛡️「${base.name}」擊退了「${n.name}」的掠奪隊！`, 'success');
-      n.level = Math.max(1, n.level - 1);
+      this.levelDown(n);
       g.bus.emit('npc:raid', { npcId: n.id, baseId: base.id, victory: true });
       return;
     }
@@ -497,11 +743,10 @@ export class NpcSystem {
     RESOURCE_KEYS.forEach((k) => {
       stolen[k] = Math.floor(g.shelter.exposed(k) * NPC_CONFIG.raidStealPct); // 地窖裡的搶不走
       res[k] -= stolen[k];
-      n.resources[k] = (n.resources[k] || 0) + stolen[k];
     });
     const coins = Math.floor(g.shelter.exposed('coins') * 0.1);
     g.state.player.coins -= coins;
-    n.coins += coins;
+    this.addResources(n, stolen, coins);
     g.state.stats.battlesLost += 1;
     const damaged = siege.damageBuildings(base);
     g.shelter.recordDefense({
@@ -541,8 +786,24 @@ export class NpcSystem {
     }
     const enemies = this.garrison(n);
     report.events.push(`⚔️ 攻打「${n.name}」（Lv${n.level}）：守軍 ${enemies.length} 人${n.wounded ? `（另有 ${n.wounded} 人傷亡中）` : ''}`);
-    const result = g.combat.simulate(members, enemies);
-    g.combat.applyOutcome(members, result, exp.endAt);
+    // 1. 先打破 NPC 據點的圍牆：期間據點的防禦火力持續射擊，被擊倒的隊員重傷
+    const df = this.defense(n);
+    const attackers = members.map((m) => ({ sv: m, maxHp: Math.max(1, g.survivors.hpOf(m)), atk: g.survivors.stats(m).atk }));
+    const as = g.combat.wallAssault(attackers, df.wall, df.dps);
+    attackers.forEach((a) => {
+      if (!as.alive.includes(a)) g.survivors.becomeSevere(a.sv, '在攻打 NPC 據點時被防禦火力擊倒', exp.endAt);
+      else g.survivors.setHp(a.sv, a.hp);
+    });
+    report.events.push(`🧱 攻擊圍牆 ${as.sec} 秒（耐久 ${df.wall}）${as.killed ? `，${as.killed} 名隊員被防禦火力擊倒` : ''}`);
+    const fighters = as.alive.map((a) => a.sv);
+    if (!as.breached || !fighters.length) {
+      g.state.stats.battlesLost += 1;
+      report.events.push(fighters.length ? '🧱 圍牆太堅固，久攻不下只好撤退' : '💀 隊員全被防禦火力擊倒，攻打失敗');
+      return report;
+    }
+    // 2. 破牆後與守軍交戰
+    const result = g.combat.simulate(fighters, enemies, { title: `⚔️ 攻打 NPC「${n.name}」（Lv${n.level}）` });
+    g.combat.applyOutcome(fighters, result, exp.endAt);
     report.kills += result.kills.length;
     report.xp += result.xp;
     if (!result.victory) {
@@ -558,7 +819,8 @@ export class NpcSystem {
     const total = Object.entries(n.resources).reduce((s, [k, v]) => s + (v || 0) * unitWeight(k), 0);
     const ratio = total > carry ? carry / total : 1;
     const loot = Object.fromEntries(Object.entries(n.resources).map(([k, v]) => [k, Math.floor((v || 0) * ratio)]));
-    report.resources = g.grant({ ...loot, coins: n.coins });
+    // 據點的金錢只搶得到一部分
+    report.resources = g.grant({ ...loot, coins: Math.round(n.coins * NPC_COIN_LOOT) });
     if (ratio < 1) report.events.push(`🎒 帶不走全部物資（運載量 ${carry}），留下約 ${Math.round(total - carry)} 重量的物資`);
     if (chance(0.6)) {
       const item = g.equipment.generate({ level: n.level, boost: 0.3 + zoneAt(n.lat, n.lon).rarityBoost });
@@ -573,8 +835,26 @@ export class NpcSystem {
 
   destroy(n, now = Date.now()) {
     this.state.list = this.list.filter((x) => x.id !== n.id);
+    n.gone = true;
+    const respawnAt = now + rand(NPC_CONFIG.respawnMs);
     this.state.cellNext = this.state.cellNext || {};
-    this.state.cellNext[n.cell || this.cellOf(n.lat, n.lon)] = now + rand(NPC_CONFIG.respawnMs);
+    this.state.cellNext[n.cell || this.cellOf(n.lat, n.lon)] = respawnAt;
+    // 共用 NPC：所有玩家的地圖上一起消失，重生時間到後出現新的勢力
+    const r = this.push(n, (d) => {
+      if (d.ident !== n.ident || (d.dc || 0) !== n.dc) return false;
+      d.destroyed = { at: now, respawnAt };
+      d.dc = n.dc + 1;
+      return true;
+    });
+    if (r && n.sid) {
+      // 本機先反映（伺服器確認前也不會再出現）
+      const obj = this.game.shared.cache.get(`npc:${n.sid}`);
+      if (!obj || obj.data?.dc === n.dc) {
+        this.game.shared.cache.set(`npc:${n.sid}`, {
+          kind: 'npc', id: n.sid, ver: obj?.ver || 0, data: { ...(obj?.data || { gen: n.gen, ident: n.ident }), gen: n.gen, dc: n.dc + 1, destroyed: { at: now, respawnAt } },
+        });
+      }
+    }
     this.game.bus.emit('npcs:changed');
   }
 

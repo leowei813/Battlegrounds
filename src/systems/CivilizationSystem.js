@@ -31,9 +31,11 @@ export class CivilizationSystem {
       power += this.game.equipment.getItem(sv.equipment[slot])?.power || 0;
     }));
     const equipment = power * CIV_WEIGHTS.equipmentPower;
-    const total = Math.round(buildings + player + equipment);
+    const researchLv = Object.values(st.research?.levels || {}).reduce((s, v) => s + v, 0);
+    const research = researchLv * CIV_WEIGHTS.researchLevel;
+    const total = Math.round(buildings + player + equipment + research);
     this.cache = {
-      total, buildings: Math.round(buildings), player: Math.round(player), equipment: Math.round(equipment),
+      total, buildings: Math.round(buildings), player: Math.round(player), equipment: Math.round(equipment), research: Math.round(research),
     };
     this.cachedAt = now;
     if (total > (st.stats.peakCivilization || 0)) st.stats.peakCivilization = total;

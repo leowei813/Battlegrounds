@@ -1,3 +1,4 @@
+import { formatDuration } from '../utils/math.js';
 import { RESOURCES, RESOURCE_KEYS, CURRENCIES } from '../config/constants.js';
 import { bus, EVT } from '../core/EventBus.js';
 import { $, delegateActions, escapeHtml } from '../utils/dom.js';
@@ -30,9 +31,7 @@ const TABS = [
 ];
 
 const DESKTOP_BP = 900;
-const DRAWER_W = 400;
 /** 手機避難所抽屜佔畫面的比例（與 CSS 一致） */
-const DRAWER_MOBILE = 0.6;
 
 /**
  * UI 總管：HUD、導覽列、分頁切換、面板渲染、彈窗與通知。
@@ -99,6 +98,9 @@ export class UIManager {
       if (action === 'shelterTab') {
         this.shelterTab = data.t;
         this.panelEl.scrollTop = 0;
+        // 黑市、交易市場：切換時重新讀取共用資料
+        if (data.t === 'blackmarket') this.game.blackMarket.refresh().then(() => this.refresh(true));
+        if (data.t === 'exchange') this.game.market?.refresh().then(() => this.refresh(true));
         this.refresh(true);
         return;
       }
@@ -121,8 +123,8 @@ export class UIManager {
     bus.on('ui:openZombie', ({ groupId }) => this.panels.map.openZombie(groupId));
     bus.on('ui:openPlayer', ({ playerId }) => this.panels.map.openPlayer(playerId));
     bus.on('ui:openNpc', ({ npcId }) => this.panels.map.openNpc(npcId));
+    bus.on('ui:openInfected', ({ id }) => this.panels.map.openInfected(id));
     bus.on('ui:openTeam', (team) => this.panels.map.openTeam(team));
-    bus.on('ui:openTrader', () => this.panels.map.openTrader());
     // 點避難所畫面上的設施：展開管理面板的「設施」分頁
     bus.on('ui:shelterTab', ({ tab }) => {
       this.shelterTab = tab;
@@ -131,7 +133,8 @@ export class UIManager {
       this.refresh(true);
     });
     bus.on('npcs:changed', () => this.panels.map.renderMap(true));
-    bus.on('trader:changed', () => this.panels.map.renderMap(true));
+    bus.on('trader:changed', () => this.refresh(true));
+    bus.on('shared:changed', () => this.panels.map.renderMap());
     bus.on('relations:changed', () => this.panels.map.onWorld(this.game.world?.others || []));
     bus.on('gps:update', (gps) => {
       this.panels.map.service?.renderGps(gps);
@@ -183,14 +186,14 @@ export class UIManager {
     const isMap = this.tab === 'map';
     const isShelter = this.tab === 'shelter';
     this.mapRoot.classList.toggle('hidden', !isMap);
-    this.panelEl.className = `panel ${isMap ? 'hidden' : isShelter ? 'drawer' : 'full'} ${this.drawerCollapsed ? 'collapsed' : ''} ${this.drawerFull && !desktop ? 'drawer-full' : ''}`;
-    let inset = { right: 0, bottom: 0, top: 0 };
-    if (isShelter && !this.drawerCollapsed) {
-      // 手機的抽屜高度依實際版面量測（預設約 60%，全螢幕時場景不需置中）
-      const stageH = this.panelEl.parentElement?.clientHeight || window.innerHeight;
-      inset = desktop ? { right: DRAWER_W, bottom: 0, top: 0 } : { right: 0, bottom: Math.round(stageH * (this.drawerFull ? 0 : DRAWER_MOBILE)), top: 0 };
-    }
-    this.phaser.registry.set('viewInset', inset);
+    // v9：移除避難所畫面，避難所頁只顯示面板內容（與其他頁相同的全頁面板）
+    void isShelter;
+    void desktop;
+    this.drawerCollapsed = false;
+    this.panelEl.className = `panel ${isMap ? 'hidden' : 'full'}`;
+    this.phaser.registry.set('viewInset', { right: 0, bottom: 0, top: 0 });
+    // 避難所場景不再顯示：暫停繪製以節省效能
+    try { this.phaser.loop?.sleep?.(); } catch { /* 尚未啟動 */ }
   }
 
   /** 據點被當成攻擊目標時：螢幕外圍紅框＋上方閃爍「威脅接近中」 */
@@ -204,7 +207,12 @@ export class UIManager {
     }
     const on = list.length > 0;
     this.threatEl.classList.toggle('on', on);
-    this.threatEl.querySelector('.threat-label').title = list.join('、');
+    // 顯示誰攻過來、預計多久抵達
+    const d = on ? this.game.threatDetails()[0] : null;
+    const text = d ? `⚠️ 威脅接近中：${d.text}${d.at ? `・約 ${formatDuration(d.at - Date.now())}後抵達` : ''}` : '⚠️ 威脅接近中';
+    const label = this.threatEl.querySelector('.threat-label');
+    if (label.textContent !== text) label.textContent = text;
+    label.title = list.join('、');
   }
 
   refresh(force = false) {
@@ -251,7 +259,7 @@ export class UIManager {
       <div class="hud-left">
         <div class="clock phase-${g.time.phaseId()}" title="${phase.desc}">
           <span class="phase-icon">${phase.icon}</span>
-          <div><b>第 ${g.time.day()} 天 ${g.time.clockText()}</b><small>${phase.name}・${phase.desc}</small></div>
+          <div><b>${g.time.dateText()} ${g.time.clockText()}</b><small>${phase.name}・生存第 ${g.time.survivalDay()} 天</small></div>
         </div>
         <div class="hud-badges">
         ${this.cloudBadge()}

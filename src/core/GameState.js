@@ -52,7 +52,7 @@ export function createLeader(name, classId = 'warrior') {
     level: 1,
     xp: 0,
     isLeader: true,
-    rarity: null, // 主角沒有品級，能力成長比照稀有（橘）
+    rarity: null, // 主角沒有品級，能力成長比照傳奇（橘）
     status: 'idle', // idle | exploring
     job: 'guard',
     hp: null, // 目前生命（null = 滿血）

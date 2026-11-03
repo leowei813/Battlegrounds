@@ -37,7 +37,7 @@ const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT, 'data'));
 const STATIC_DIR = path.resolve(process.env.STATIC_DIR || path.join(ROOT, '..', 'dist'));
 const CORS_ORIGINS = (process.env.CORS_ORIGIN || '*').split(',').map((s) => s.trim());
 const MAX_BODY = 2 * 1024 * 1024;
-const RATE_LIMIT = 120; // 每 IP 每分鐘請求數
+const RATE_LIMIT = 300; // 每 IP 每分鐘請求數（同一個網路的多位玩家共用 IP）
 
 const ID_RE = /^[0-9a-f]{32}$/;
 const TOKEN_RE = /^[0-9a-f]{64}$/;
@@ -139,6 +139,31 @@ async function handleWorld(req, res, url) {
     return json(res, 200, { players: world.nearby(lat, lon, km, String(url.searchParams.get('exclude') || '')) });
   }
   // 玩家事件信箱：POST 送出（寄件者 token），GET 讀取並清空（本人 token）
+  // 共用世界物件
+  if (url.pathname === '/api/world/objects' && req.method === 'GET') {
+    const lat = Number(url.searchParams.get('lat'));
+    const lon = Number(url.searchParams.get('lon'));
+    const km = Math.min(20, Math.max(0.5, Number(url.searchParams.get('km')) || 5));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json(res, 400, { error: 'invalid position' });
+    // 一次查詢多種：q=npc:5,zk:6（種類:公里）
+    const q = String(url.searchParams.get('q') || '');
+    if (q) {
+      const objects = q.split(',').slice(0, 10).flatMap((part) => {
+        const [kind, k] = part.split(':');
+        return world.objList(kind, lat, lon, Math.min(20, Math.max(0.5, Number(k) || 5)));
+      });
+      return json(res, 200, { objects });
+    }
+    return json(res, 200, { objects: world.objList(String(url.searchParams.get('kind') || ''), lat, lon, km) });
+  }
+  const om = /^\/api\/world\/objects\/([a-z]{2,12})\/([^/]+)$/.exec(url.pathname);
+  if (om && req.method === 'POST') {
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const body = await readBody(req);
+    const r = world.objPut(String(body?.from || ''), token, om[1], decodeURIComponent(om[2]), body);
+    const code = { ok: 200, conflict: 409, forbidden: 403, invalid: 400 }[r.status];
+    return json(res, code, r);
+  }
   const ev = /^\/api\/world\/players\/([^/]+)\/events$/.exec(url.pathname);
   if (ev && ID_RE.test(ev[1])) {
     const token = bearer(req);

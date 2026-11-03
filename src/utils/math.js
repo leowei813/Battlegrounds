@@ -42,6 +42,27 @@ export function withSeed(holder, key, fn) {
   }
 }
 
+/**
+ * 以獨立的種子執行（不受外層 withSeed 影響，結束後恢復外層亂數）：
+ * 用於所有玩家必須得到相同結果的共用世界（NPC、殭屍群、黑市…）。
+ */
+export function withOwnSeed(seed, fn) {
+  const prev = source;
+  let s = seed >>> 0;
+  source = () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  try {
+    return fn();
+  } finally {
+    source = prev;
+  }
+}
+
 export const randFloat = (min, max) => min + rnd() * (max - min);
 
 export const randInt = (min, max) => Math.floor(randFloat(min, max + 1));

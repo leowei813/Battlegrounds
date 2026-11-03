@@ -1,5 +1,5 @@
 import {
-  RARITIES, RARITY_ORDER, ITEM_TYPES, AFFIXES, RARITY_PREFIX, SLOT_KEYS, rarityIndex,
+  RARITIES, RARITY_ORDER, ITEM_TYPES, AFFIXES, RARITY_PREFIX, SLOT_KEYS, SLOTS, rarityIndex,
   ITEM_MODELS, tierMul, benchFor, craftRarityTable,
   BAG_BASE_SLOTS, STORE_BASE_SLOTS, STORE_SLOTS_PER_LEVEL, STACK_MAX, itemSize, itemWeight,
 } from '../config/equipment.js';
@@ -8,7 +8,7 @@ import {
   weightedPick, pick, randFloat, uid, clamp, chance,
 } from '../utils/math.js';
 import { canAfford, payCost, grant } from './costUtils.js';
-import { SUPPLIES, AMMO_RECIPES } from '../config/supplies.js';
+import { SUPPLIES, AMMO_RECIPES, AMMO_FOR } from '../config/supplies.js';
 
 /** 防護裝備依強度使用的板材與布料（索引為型號強度 1～10） */
 const PLATE = [null, null, null, 'ironWire', 'ironPlate', 'ironPlate', 'steelPlate', 'steelPlate', 'alloyPlate', 'alloyPlate', 'titanium'];
@@ -242,12 +242,14 @@ export class EquipmentSystem {
   }
 
   itemPower(item) {
+    // 裝備戰力：基本數值加上所有附加詞條（百分比詞條依裝備等級換算成實際效果）
     const s = this.itemStats(item);
+    const lv = item.level || 1;
     return Math.round(
-      (s.atk || 0) * 3 + (s.def || 0) * 4 + (s.hp || 0) * 0.5 +
-      ((s.crit || 0) + (s.dodge || 0)) * 300 + (s.critDmg || 0) * 100 +
-      (s.atkSpeed || 0) * 120 + ((s.atkPct || 0) + (s.hpPct || 0) + (s.defPct || 0)) * 400 + (s.lootBonus || 0) * 200
-      + (s.lifeSteal || 0) * 500 + (s.exploreSpeed || 0) * 250 + (s.carry || 0) * 2,
+      (s.atk || 0) * 3 + (s.def || 0) * 4 + (s.hp || 0) * 0.5
+      + (s.crit || 0) * 1000 + (s.dodge || 0) * 1000 + (s.critDmg || 0) * 250 + (s.atkSpeed || 0) * 300
+      + (s.atkPct || 0) * (800 + lv * 40) + ((s.hpPct || 0) + (s.defPct || 0)) * (600 + lv * 30)
+      + (s.lifeSteal || 0) * 1200 + (s.exploreSpeed || 0) * 500 + (s.lootBonus || 0) * 500 + (s.carry || 0) * 2,
     );
   }
 
@@ -382,7 +384,7 @@ export class EquipmentSystem {
     if (rarityIndex(item.rarity) >= rarityIndex('rare')) st.rareItems += 1;
     if (item.rarity === 'legendary') {
       st.legendaryItems += 1;
-      this.game.toast(`🌟 獲得稀有（橘色）裝備「${item.name}」！`, 'legendary');
+      this.game.toast(`🌟 獲得傳奇（橘色）裝備「${item.name}」！`, 'legendary');
     }
     if (rarityIndex(item.rarity) >= rarityIndex('epic')) {
       this.game.log(`${source}獲得 ${RARITIES[item.rarity].name}裝備「${item.name}」`, 'loot');
@@ -394,7 +396,11 @@ export class EquipmentSystem {
     const sv = this.game.survivors.get(survivorId);
     const item = this.getItem(itemId);
     if (!sv || !item) return { ok: false, reason: '找不到目標' };
-    if (sv.status === 'exploring') return { ok: false, reason: '探索中無法更換裝備' };
+    if (sv.status !== 'idle') return { ok: false, reason: '已派出的倖存者無法更換裝備' };
+    // 不能拿走已派出的人身上或背包裡的裝備
+    const holder = this.game.state.survivors.find((s) => s.id !== sv.id && (SLOT_KEYS.some((slot) => s.equipment[slot] === itemId) || item.loc === s.id));
+    if (holder && holder.status !== 'idle') return { ok: false, reason: `「${holder.name}」已派出，無法拿取他的裝備` };
+    if (item.loc && item.loc !== 'store' && item.loc !== sv.id && !holder) return { ok: false, reason: '這件裝備不在避難所' };
     const prevLoc = item.loc || 'store';
     const old = this.getItem(sv.equipment[item.slot]);
     const owners = [];
@@ -421,10 +427,40 @@ export class EquipmentSystem {
     return { ok: true };
   }
 
+  /**
+   * 快速換裝：從倉庫與待在避難所的倖存者背包中，每個部位換上戰力最高的裝備。
+   * 不會拿走別人身上已經穿戴的裝備；遠程武器只換有彈藥庫存的。
+   * @returns {{ok:boolean, changed:string[], msg?:string, reason?:string}}
+   */
+  quickEquip(survivorId) {
+    const g = this.game;
+    const sv = g.survivors.get(survivorId);
+    if (!sv) return { ok: false, reason: '找不到倖存者' };
+    if (sv.status !== 'idle') return { ok: false, reason: '已派出的倖存者無法更換裝備' };
+    const homeIds = new Set(g.state.survivors.filter((s) => g.survivors.atShelter(s)).map((s) => s.id));
+    const changed = [];
+    SLOT_KEYS.forEach((slot) => {
+      const cur = this.getItem(sv.equipment[slot]);
+      const pool = this.items.filter((i) => i.slot === slot && !this.equippedBy(i.id)
+        && ((i.loc || 'store') === 'store' || homeIds.has(i.loc)));
+      const usable = slot === 'weapon'
+        ? pool.filter((i) => { const need = AMMO_FOR[i.type]; return need && g.survivors.ammoAvailable(sv, need.ammo) >= need.perFight; })
+        : pool;
+      const best = usable.sort((a, b) => b.power - a.power)[0];
+      if (!best || best.power <= (cur?.power || 0)) return;
+      const r = this.equip(sv.id, best.id);
+      if (r.ok) changed.push(`${SLOTS[slot].name}：${best.name}`);
+    });
+    return changed.length
+      ? { ok: true, changed, msg: `快速換裝：${changed.join('、')}` }
+      : { ok: true, changed, msg: '目前已經是戰力最高的裝備' };
+  }
+
   /** 卸下：放回倉庫，倉庫滿了放進自己的背包 */
   unequip(survivorId, slot) {
     const sv = this.game.survivors.get(survivorId);
     if (!sv) return { ok: false, reason: '找不到倖存者' };
+    if (sv.status !== 'idle') return { ok: false, reason: '已派出的倖存者無法更換裝備' };
     const item = this.getItem(sv.equipment[slot]);
     if (item) {
       sv.equipment[slot] = null;
@@ -502,10 +538,21 @@ export class EquipmentSystem {
 
   dismantle(itemId) {
     const item = this.getItem(itemId);
+    const owner = item && item.loc && item.loc !== 'store' ? this.game.survivors.get(item.loc) : null;
     const res = this.removeItem(itemId);
     if (!res.ok) return res;
     const gain = this.dismantleValue(item);
-    const got = this.game.grant(gain);
+    // 背包裡的裝備：人在避難所時材料放進倉庫；在外面時材料放進他的背包
+    let got;
+    if (owner && !this.game.survivors.atShelter(owner)) {
+      got = {};
+      owner.bag = owner.bag || {};
+      Object.entries(gain).forEach(([k, v]) => {
+        if (k === 'parts') { this.game.state.player.parts += v; got[k] = v; return; }
+        owner.bag[k] = (owner.bag[k] || 0) + v;
+        got[k] = v;
+      });
+    } else got = this.game.grant(gain);
     const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || '稀有材料'}×${v}`).join('、');
     return { ok: true, msg: `拆解獲得 ${text || '（倉庫已滿，沒有回收到材料）'}` };
   }

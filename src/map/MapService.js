@@ -40,7 +40,8 @@ export class MapService {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
     }).addTo(this.map);
-    this.zoneLayer = new ZoneLayer().addTo(this.map);
+    // v9：不再整片塗區域底色，區域顏色改畫在建築圖示的底色上
+    this.zoneLayer = new ZoneLayer();
     this.layers.range = L.layerGroup().addTo(this.map);
     this.poiLayer = new PoiCanvasLayer((poiId) => bus.emit(EVT.OPEN_POI, { poiId })).addTo(this.map);
     this.layers.routes = L.layerGroup().addTo(this.map);
@@ -48,8 +49,8 @@ export class MapService {
     this.layers.shelter = L.layerGroup().addTo(this.map);
     this.layers.others = L.layerGroup().addTo(this.map);
     this.layers.npcs = L.layerGroup().addTo(this.map);
+    this.layers.infected = L.layerGroup().addTo(this.map);
     this.layers.gps = L.layerGroup().addTo(this.map);
-    this.layers.trader = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
     this.poiLayer.teamHit = (pt) => {
       const team = this.siegeLayer.teamAt(pt);
@@ -165,20 +166,22 @@ export class MapService {
     });
   }
 
-  /** 流浪商人（遊戲時間 11:00～15:00 有機率出現） */
-  renderTrader(t, here) {
+
+  /** 重度感染據點（比巨型據點略大，標示淨化度） */
+  renderInfected(list = [], pin = 48) {
     if (!this.map) return;
-    const key = here ? `${t.lat},${t.lon}` : '';
-    if (key === this.traderKey) return;
-    this.traderKey = key;
-    this.layers.trader.clearLayers();
-    if (!here) return;
-    L.marker([t.lat, t.lon], {
-      icon: this.icon('<div class="trader-pin">🧳</div>', 'shelter-icon', 38),
-      zIndexOffset: 950,
-    }).on('click', () => bus.emit('ui:openTrader'))
-      .bindTooltip('🧳 流浪商人（點擊交易）', { direction: 'top', offset: [0, -19] })
-      .addTo(this.layers.trader);
+    const key = list.map((s) => `${s.id}:${Math.floor(s.purity)}`).join('|');
+    if (key === this.infKey) return;
+    this.infKey = key;
+    this.layers.infected.clearLayers();
+    list.forEach((s) => {
+      L.marker([s.lat, s.lon], {
+        icon: this.icon(`<div class="inf-pin" style="--d:${pin}px">☣️<i class="inf-pur">${Math.floor(s.purity)}%</i></div>`, 'shelter-icon', pin),
+        zIndexOffset: 860,
+      }).on('click', () => bus.emit('ui:openInfected', { id: s.id }))
+        .bindTooltip(`☣️ 重度感染據點「${escapeHtml(s.name)}」・淨化 ${Math.floor(s.purity)}%`, { direction: 'top', offset: [0, -pin / 2] })
+        .addTo(this.layers.infected);
+    });
   }
 
   /** 其他玩家公開的據點（多人互動） */
@@ -195,7 +198,7 @@ export class MapService {
       const { icon, d } = this.baseIcon(b.size, b.primary, `other-pin rel-${rel}`);
       L.marker([b.lat, b.lon], { icon, zIndexOffset: 800 })
         .on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
-        .bindTooltip(`${{ hostile: '⚔️ 敵對', friend: '🤝 友好', neutral: '👤 中立' }[rel]}・${escapeHtml(p.name)}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）${b.primary && p.demands?.length ? '・📢 收購中' : ''}`, { direction: 'top', offset: [0, -d / 2] })
+        .bindTooltip(`${{ hostile: '⚔️ 敵對', friend: '🤝 友好', neutral: '👤 中立' }[rel]}・${escapeHtml(p.name)}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）`, { direction: 'top', offset: [0, -d / 2] })
         .addTo(this.layers.others);
       // 友好玩家正遭到屍潮攻擊：顯示 🧟 圖示與狀況，點擊可協防
       if (rel === 'friend' && b.siege) {
@@ -215,15 +218,6 @@ export class MapService {
           zIndexOffset: 950,
         }).on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
           .bindTooltip(`⚔️ ${escapeHtml(p.name)} 的據點正被攻打：${raids.map((r) => `${escapeHtml(r.by)}（約 ${Math.max(1, Math.round((r.at - Date.now()) / 60000))} 分鐘後抵達）`).join('、')}`, { direction: 'top' })
-          .addTo(this.layers.others);
-      }
-      // 有收購需求：主要據點旁顯示 📢 圖示，點擊查看
-      if (b.primary && p.demands?.length) {
-        L.marker([b.lat, b.lon], {
-          icon: L.divIcon({ className: 'demand-badge', html: `<span>📢${p.demands.length > 1 ? `<i>${p.demands.length}</i>` : ''}</span>`, iconSize: [26, 26], iconAnchor: [-d / 2 + 6, d / 2 + 14] }),
-          zIndexOffset: 900,
-        }).on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
-          .bindTooltip(`📢 ${escapeHtml(p.name)} 收購 ${p.demands.length} 項物資（點擊查看）`, { direction: 'top' })
           .addTo(this.layers.others);
       }
     }));

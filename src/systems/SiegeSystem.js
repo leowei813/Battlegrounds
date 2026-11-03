@@ -1,5 +1,5 @@
 import { DEFENSES } from '../config/defenses.js';
-import { ENEMIES, BOSSES } from '../config/enemies.js';
+import { ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR } from '../config/enemies.js';
 import { RESOURCE_KEYS, COIN_GAIN_MUL } from '../config/constants.js';
 import {
   SIEGE_SCALING, BREACH_LOSS, BASE_SIZES,
@@ -28,7 +28,9 @@ const BREACH_GRACE = 90;
 const MELEE_REACH = WORLD.WALL_R + 8;
 const MELEE_REACH_POST = 14;
 /** 殭屍對圍牆的傷害係數（放置遊戲節奏：讓防線有時間反應） */
-const WALL_DMG_MUL = 0.3;
+const WALL_DMG_MUL = 0.25;
+/** 近戰防守時被殭屍反擊的傷害倍率 */
+const MELEE_COUNTER = 0.35;
 /** 圍牆被打破後，每隔幾秒與衝進來的殭屍交戰一次 */
 const GATE_FIGHT_EVERY = 3;
 /** 防守失敗時 1 棟防禦設施損毀（降 1 級）的機率 */
@@ -373,6 +375,11 @@ export class BaseSiege {
         const crit = chance(stats.crit);
         this.damage(t, atk.value * 0.6 * this.guardMul() * (crit ? stats.critDmg : 1), crit);
         this.pushFx({ type: 'shot', kind: atk.ranged ? 'guard' : 'melee', x1: 0, y1: 0, x2: t.x, y2: t.y });
+        // 近戰防守的人會被貼在牆邊的殭屍反擊受傷（即使圍牆還在）
+        if (!atk.ranged && t.hp > 0) {
+          const hurt = Math.max(1, t.atk * MELEE_COUNTER * (100 / (100 + stats.def * 2)) * (chance(stats.dodge) ? 0 : 1));
+          if (hurt > 0) this.game.survivors.damage(sv, hurt, '近戰防守屍潮時受傷');
+        }
       });
     }
 
@@ -498,55 +505,42 @@ export class BaseSiege {
   }
 
   /**
-   * 估算用的攻擊力（不消耗彈藥）：沒有彈藥時只算近戰，且打得到的機會較少。
+   * 估算用的攻擊力（不消耗彈藥）：有遠程武器與彈藥時用遠程，否則用近戰武器（打得到的機會較少）。
    * @param {boolean} apparent 外人看到的強度：只看得到拿著什麼武器，不知道還有沒有彈藥
    */
   meleeOrRangedAtk(sv, apparent = false) {
-    const s = this.game.survivors.stats(sv);
-    const weapon = this.game.equipment.getItem(sv.equipment?.weapon);
-    if (!weapon || !AMMO_FOR[weapon.type]) return s.atk * 0.5;
-    if (apparent || this.canShoot(sv)) return s.atk;
-    return Math.max(1, s.atk - (this.game.equipment.itemStats(weapon).atk || 0)) * 0.5;
+    const svs = this.game.survivors;
+    if (sv.equipment?.weapon && (apparent || this.canShoot(sv))) return svs.stats(sv, 'ranged').atk;
+    return svs.stats(sv, 'melee').atk * 0.5;
   }
 
-  /** 是否能遠程射擊：武器是槍械／弓弩，且身上或據點庫存有彈藥 */
+  /** 是否能遠程射擊：有遠程武器，且彈藥欄、背包或據點庫存有彈藥 */
   canShoot(sv) {
     const weapon = this.game.equipment.getItem(sv.equipment?.weapon);
     const need = weapon && AMMO_FOR[weapon.type];
     if (!need) return false;
-    const perShot = ammoPerShot(weapon.type);
-    return (sv.bag?.[need.ammo] || 0) + (this.game.state.supplies?.[need.ammo] || 0) >= perShot;
+    return this.game.survivors.ammoAvailable(sv, need.ammo) >= ammoPerShot(weapon.type);
   }
 
   /**
-   * 駐守人員一次攻擊的攻擊力：槍械／弓弩每次射擊消耗彈藥（先用身上的，再用據點庫存）；
-   * 沒有彈藥時只能近戰，失去武器的攻擊力。
+   * 駐守人員一次攻擊的攻擊力：遠程武器每次射擊消耗彈藥（彈藥欄→背包→據點庫存）；
+   * 沒有彈藥時改用近戰武器。
    * @returns {{value:number, ranged:boolean}}
    */
-  attackPower(sv, stats) {
+  attackPower(sv) {
+    const svs = this.game.survivors;
     const weapon = this.game.equipment.getItem(sv.equipment?.weapon);
     const need = weapon && AMMO_FOR[weapon.type];
-    if (!need) return { value: stats.atk, ranged: false };
-    let n = ammoPerShot(weapon.type);
-    const bag = sv.bag || {};
-    const store = this.game.state.supplies || {};
-    if ((bag[need.ammo] || 0) + (store[need.ammo] || 0) < n) {
-      if (!sv.noAmmo) this.game.log(`🎯 ${sv.name} 沒有${SUPPLIES[need.ammo].name}了，只能近戰防守`, 'danger');
+    if (need && svs.ammoAvailable(sv, need.ammo) >= ammoPerShot(weapon.type)) {
+      svs.useAmmo(sv, need.ammo, ammoPerShot(weapon.type));
+      delete sv.noAmmo;
+      return { value: svs.stats(sv, 'ranged').atk, ranged: true };
+    }
+    if (need && !sv.noAmmo) {
+      this.game.log(`🎯 ${sv.name} 沒有${SUPPLIES[need.ammo].name}了，改用近戰武器防守`, 'danger');
       sv.noAmmo = need.ammo;
-      return { value: Math.max(1, stats.atk - (this.game.equipment.itemStats(weapon).atk || 0)), ranged: false };
     }
-    const fromBag = Math.min(n, bag[need.ammo] || 0);
-    if (fromBag) {
-      bag[need.ammo] -= fromBag;
-      if (bag[need.ammo] <= 0) delete bag[need.ammo];
-      n -= fromBag;
-    }
-    if (n > 0) {
-      store[need.ammo] -= n;
-      if (store[need.ammo] <= 0) delete store[need.ammo];
-    }
-    delete sv.noAmmo;
-    return { value: stats.atk, ranged: true };
+    return { value: svs.stats(sv, 'melee').atk, ranged: false };
   }
 
   damage(z, amount, crit = false) {
@@ -598,14 +592,15 @@ export class BaseSiege {
       return;
     }
     const foes = zombies.map((z) => {
-      const e = g.combat.createEnemy(z.enemyId, this.zombieLevel());
+      const e = g.combat.createEnemy(z.enemyId, this.zombieLevel(), false, ZOMBIE_VS_SURVIVOR);
       return { ...e, id: `z${z.id}`, maxHp: Math.max(1, Math.round(z.hp)), atk: z.atk, xp: 0, coins: 0, partsChance: 0 };
     });
-    const result = g.combat.simulate(defenders, foes, { allies });
+    const result = g.combat.simulate(defenders, foes, { allies, title: `🧱 「${base.name}」圍牆被破，迎戰屍潮` });
     // 套用人員傷勢（殭屍的擊殺獎勵由屍潮結算，不重複給）
     defenders.forEach((sv) => {
       const u = result.team.find((x) => x.id === sv.id);
       if (!u) return;
+      g.combat.consumeMeds(sv, u);
       if (u.down) g.survivors.becomeSevere(sv, '在據點內迎戰屍潮', Date.now());
       else g.survivors.setHp(sv, u.hp);
     });

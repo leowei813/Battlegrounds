@@ -11,13 +11,14 @@ export const RARITIES = {
   uncommon: { name: '優良', color: '#4caf50', min: 1.0, max: 1.2, affixes: 1, weight: 22, sell: 12 },
   rare: { name: '精良', color: '#2196f3', min: 1.2, max: 1.45, affixes: 2, weight: 10, sell: 30 },
   epic: { name: '罕見', color: '#ab47bc', min: 1.45, max: 1.75, affixes: 3, weight: 3.4, sell: 80 },
-  legendary: { name: '稀有', color: '#ff9800', min: 1.75, max: 2.2, affixes: 4, weight: 0.6, sell: 250 },
+  legendary: { name: '傳奇', color: '#ff9800', min: 1.75, max: 2.2, affixes: 4, weight: 0.6, sell: 250 },
 };
 export const RARITY_ORDER = Object.keys(RARITIES);
 export const rarityIndex = (r) => RARITY_ORDER.indexOf(r);
 
 export const SLOTS = {
-  weapon: { name: '武器', icon: '🔫' },
+  weapon: { name: '遠程武器', icon: '🔫' },
+  melee: { name: '近戰武器', icon: '🪓' },
   helmet: { size: 2, weight: 2, name: '頭盔', icon: '⛑️' },
   armor: { size: 3, weight: 5, name: '衣服', icon: '🦺' },
   legs: { size: 2, weight: 3, name: '護腿', icon: '👖' },
@@ -39,7 +40,7 @@ export const emptyEquipment = () => Object.fromEntries(SLOT_KEYS.map((k) => [k, 
  */
 export const ITEM_TYPES = {
   // ---- 武器 ----
-  melee: { size: 1, weight: 2, name: '近戰武器', slot: 'weapon', icon: '🪓', base: { atk: 11, atkSpeed: 0.1, crit: 0.08, lifeSteal: 0.03 }, perLevel: { atk: 1.9 } },
+  melee: { size: 1, weight: 2, name: '近戰武器', slot: 'melee', icon: '🪓', base: { atk: 11, atkSpeed: 0.1, crit: 0.08, lifeSteal: 0.03 }, perLevel: { atk: 1.9 } },
   crossbow: { size: 2, weight: 4, name: '弓弩', slot: 'weapon', icon: '🏹', gun: 2, base: { atk: 18, atkSpeed: -0.2, crit: 0.12, critDmg: 0.2 }, perLevel: { atk: 2.8 } },
   pistol: { size: 1, weight: 2, name: '手槍', slot: 'weapon', icon: '🔫', gun: 1, base: { atk: 9, atkSpeed: 0.25, crit: 0.05 }, perLevel: { atk: 1.6 } },
   smg: { size: 2, weight: 4, name: '衝鋒槍', slot: 'weapon', icon: '🔫', gun: 3, base: { atk: 8, atkSpeed: 0.55, crit: 0.04 }, perLevel: { atk: 1.5 } },
@@ -245,7 +246,7 @@ export const BAG_BASE_SLOTS = 10;
 /** 消耗品每格堆疊上限 */
 export const STACK_MAX = 999;
 export const STORE_BASE_SLOTS = 30;
-export const STORE_SLOTS_PER_LEVEL = 10;
+export const STORE_SLOTS_PER_LEVEL = 13;
 
 /** 物品佔用的格子數與重量 */
 export const itemSize = () => 1;
@@ -258,7 +259,7 @@ export const tierMul = (tier) => 1 + (tier - 1) * 0.25;
 export const benchFor = (model) => (model.simple ? 0 : model.tier);
 
 /**
- * 製作的品級機率（%）：初始稀有 0%、罕見 0.1%；研究「製作技術」每級提升，滿級稀有 0.2%。
+ * 製作的品級機率（%）：初始傳奇 0%、罕見 0.1%；研究「製作技術」每級提升，滿級傳奇 0.2%。
  * @param {number} tech 製作技術等級 0～15（換算成 0～10 的進度）
  */
 export function craftRarityTable(tech = 0) {

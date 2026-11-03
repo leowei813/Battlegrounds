@@ -24,6 +24,19 @@ export const SIEGE_RANGE = { min: 0.4, fullM: 225 };
  *
  * 大多數方法第一個參數為據點（物件或 ID），省略時代表避難所。
  */
+/**
+ * 取消施工／研究的退還：完成度越高退得越少（未開始 90% → 完成 0%）。
+ * @param {{startAt:number, endAt:number, cost?:object}} q
+ * @param {() => object} fallback 舊資料沒有記錄費用時重新計算
+ */
+export function cancelRefund(q, now, fallback) {
+  const total = Math.max(1, q.endAt - q.startAt);
+  const done = Math.min(1, Math.max(0, (now - q.startAt) / total));
+  const ratio = Math.max(0, 0.9 * (1 - done));
+  const cost = Object.fromEntries(Object.entries(q.cost || fallback()).map(([k, v]) => [k, Math.floor(v * ratio)]).filter(([, v]) => v > 0));
+  return { ratio, done, cost };
+}
+
 export class ShelterSystem {
   constructor(game) {
     this.game = game;
@@ -301,8 +314,9 @@ export class ShelterSystem {
   /** 主要據點中工程師技能的最大效果 */
   engineerEffect(key) {
     let best = 0;
+    // 工程師的折扣不因外出探索而消失（否則所需材料會忽多忽少）；重傷時不算
     this.game.state.survivors.forEach((sv) => {
-      if (sv.classId !== 'engineer' || sv.status === 'exploring') return;
+      if (sv.classId !== 'engineer' || sv.severe) return;
       best = Math.max(best, this.game.survivors.skillEffects(sv)[key] || 0);
     });
     return best;
@@ -337,7 +351,10 @@ export class ShelterSystem {
   }
 
   wallReduction(b) {
-    return Math.min(0.6, this.resolve(b).facilities.wall.level * 0.03 + this.game.research.bonus('wallReduceAdd'));
+    // 圍牆硬度：基本 10% 減傷，每級 +3%，加上「減傷結構」與「強化牆體」研究（上限 75%）
+    const r = this.game.research;
+    const reduce = 0.1 + this.resolve(b).facilities.wall.level * 0.03 + r.bonus('wallReduceAdd');
+    return Math.min(0.75, 1 - (1 - reduce) * Math.max(0.4, 1 - r.bonus('wallHardPct')));
   }
 
   towerDamageMul(b) {
@@ -407,10 +424,11 @@ export class ShelterSystem {
     const base = this.resolve(b);
     const check = this.canUpgradeFacility(base, id);
     if (!check.ok) return check;
-    payCost(this.game.state, this.facilityCost(base, id));
+    const cost = this.facilityCost(base, id);
+    payCost(this.game.state, cost);
     const target = base.facilities[id].level + 1;
     base.buildQueue.push({
-      kind: 'facility', id, targetLevel: target, startAt: Date.now(), endAt: Date.now() + this.buildSeconds(facilityBuildTime(target)) * 1000,
+      kind: 'facility', id, targetLevel: target, startAt: Date.now(), endAt: Date.now() + this.buildSeconds(facilityBuildTime(target)) * 1000, cost,
     });
     return { ok: true, msg: `${FACILITIES[id].name} 開始${target === 1 ? '建造' : '升級'}` };
   }
@@ -442,12 +460,60 @@ export class ShelterSystem {
     if (this.isSlotBusy(base, slot)) return { ok: false, reason: '施工中' };
     if (this.queueFull(base)) return { ok: false, reason: '施工佇列已滿' };
     const target = d.level + 1;
-    if (!payCost(this.game.state, this.defenseCost(type, target))) return { ok: false, reason: '資源不足' };
+    const cost = this.defenseCost(type, target);
+    if (!payCost(this.game.state, cost)) return { ok: false, reason: '資源不足' };
     d.type = type;
     base.buildQueue.push({
-      kind: 'defense', slot, id: type, targetLevel: target, startAt: Date.now(), endAt: Date.now() + this.buildSeconds(defenseBuildTime(target)) * 1000,
+      kind: 'defense', slot, id: type, targetLevel: target, startAt: Date.now(), endAt: Date.now() + this.buildSeconds(defenseBuildTime(target)) * 1000, cost,
     });
     return { ok: true, msg: `${DEFENSES[type].name} ${target === 1 ? '建造' : '升級'}中` };
+  }
+
+  // ---------- 警戒模式 ----------
+
+  /** 警戒中：全部倖存者暫時改為防禦駐守 */
+  get alert() {
+    return !!this.game.state.alert?.on;
+  }
+
+  /**
+   * 切換警戒／正常。警戒時所有倖存者的工作暫時變為「防禦駐守」，切回正常時恢復原本的工作。
+   */
+  setAlert(on) {
+    const st = this.game.state;
+    if (on === this.alert) return { ok: true, msg: on ? '已經在警戒中' : '已經是正常狀態' };
+    if (on) {
+      const prev = {};
+      st.survivors.forEach((sv) => { prev[sv.id] = sv.job; sv.job = 'guard'; });
+      st.alert = { on: true, prev, at: Date.now() };
+      this.game.log('🚨 進入警戒：全部倖存者暫時改為防禦駐守', 'danger');
+      return { ok: true, msg: '🚨 警戒中：全部倖存者改為防禦駐守' };
+    }
+    const prev = st.alert?.prev || {};
+    st.survivors.forEach((sv) => { if (prev[sv.id]) sv.job = prev[sv.id]; });
+    st.alert = { on: false };
+    this.game.log('✅ 解除警戒：倖存者恢復原本的工作', 'info');
+    return { ok: true, msg: '已解除警戒，恢復原本的工作' };
+  }
+
+  /**
+   * 取消施工：依完成度退還材料（完成度越高退得越少，最多退 90%）。
+   * @returns {{ok:boolean, refund?:object, msg?:string, reason?:string}}
+   */
+  cancelBuild(b, index, now = Date.now()) {
+    const base = this.resolve(b);
+    const q = base?.buildQueue?.[index];
+    if (!q) return { ok: false, reason: '找不到這項施工' };
+    const refund = cancelRefund(q, now, () => (q.kind === 'facility' ? this.discounted(FACILITIES[q.id].cost(q.targetLevel)) : this.defenseCost(q.id, q.targetLevel)));
+    base.buildQueue.splice(index, 1);
+    if (q.kind === 'defense') {
+      const d = base.defenses[q.slot];
+      if (d && d.level < 1) Object.assign(d, { type: null, level: 0, garrisonId: null });
+    }
+    const got = this.game.grant(refund.cost);
+    const name = q.kind === 'facility' ? FACILITIES[q.id].name : DEFENSES[q.id].name;
+    this.game.log(`🚫 取消施工「${name}」Lv${q.targetLevel}，退還 ${Math.round(refund.ratio * 100)}% 材料`, 'info');
+    return { ok: true, refund: got, msg: `已取消「${name}」，退還約 ${Math.round(refund.ratio * 100)}% 材料` };
   }
 
   demolish(b, slot) {
@@ -515,7 +581,8 @@ export class ShelterSystem {
 
   /** 每點耐久的修繕材料（研究「快速修補」減少） */
   repairCostPerHp() {
-    const mul = Math.max(0.5, 1 - this.game.research.bonus('repairPct') * 0.3);
+    // 「快速修補」與「修補材料學」：每單位材料修復更多耐久
+    const mul = Math.max(0.5, 1 - this.game.research.bonus('repairPct') * 0.3) / (1 + this.game.research.bonus('repairEffPct'));
     return Object.fromEntries(Object.entries(REPAIR.cost).map(([k, v]) => [k, v * mul]));
   }
 

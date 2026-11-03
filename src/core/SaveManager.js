@@ -279,6 +279,41 @@ export class SaveManager {
         if (b.facilities && !b.facilities.clinic) b.facilities.clinic = { level: b.kind === 'outpost' ? 0 : 1 };
       });
     }
+    if (v < 18) {
+      // v9：武器欄拆成遠程與近戰；新增彈藥欄與藥品欄
+      // 流浪商人改為全體共用的黑市
+      delete data.trader;
+      // NPC 據點改為所有玩家共用（重新產生）
+      data.npcs = { list: [], nextSpawnAt: 0 };
+      // 移除派人交易與派人交付：收購保留的金錢退還，交易／交付中的倖存者帶著背包裡的物品直接回到避難所
+      (data.demands?.list || []).forEach((d) => {
+        const left = Math.max(0, (d.qty || 0) - (d.filled || 0));
+        if (data.player) data.player.coins = (data.player.coins || 0) + left * (d.price || 0);
+      });
+      delete data.demands;
+      delete data.trade;
+      const ended = (data.expeditions || []).filter((e) => e.kind === 'trade' || e.kind === 'deliver');
+      ended.forEach((e) => (e.memberIds || []).forEach((id) => {
+        const sv = (data.survivors || []).find((x) => x.id === id);
+        if (sv && sv.status === 'exploring') sv.status = 'idle';
+      }));
+      if (ended.length) {
+        data.expeditions = data.expeditions.filter((e) => !ended.includes(e));
+        (data.vehicles || []).forEach((v) => { if (ended.some((e) => (e.vehicleIds || []).includes(v.id))) v.status = 'idle'; });
+      }
+      const items = data.inventory?.items || [];
+      (data.survivors || []).forEach((sv) => {
+        sv.equipment = sv.equipment || {};
+        if (!('melee' in sv.equipment)) sv.equipment.melee = null;
+        const w = items.find((i) => i.id === sv.equipment.weapon);
+        if (w && w.type === 'melee') {
+          sv.equipment.melee = w.id;
+          sv.equipment.weapon = null;
+        }
+        sv.loadout = sv.loadout || { ammo: null, med: null };
+      });
+      items.forEach((i) => { if (i.type === 'melee') i.slot = 'melee'; });
+    }
     // 新增的設施（例如地窖）：舊據點補上 Lv0
     (data.bases || []).forEach((b) => {
       if (!b.facilities) return;

@@ -53,17 +53,31 @@ export const ALL_ENEMIES = { ...ENEMIES, ...BOSSES };
 /** 精英怪倍率 */
 export const ELITE_MUL = { hp: 2.4, atk: 1.6, def: 1.5, xp: 3, coins: 3 };
 
+/** 殭屍對倖存者的攻擊強度倍率（探索、地圖殭屍群、破牆後交戰） */
+export const ZOMBIE_VS_SURVIVOR = { atk: 1.3 };
+/** 夜晚的危險度：基本倍率，區域每高一級再增加 */
+export const NIGHT_MUL = { hp: 1.2, atk: 1.25, perDanger: 0.12 };
+/** 夜晚地圖上的殭屍群：一般、精英、Boss 的額外強度 */
+export const MAP_GROUP_MUL = {
+  normal: { hp: 1.3, atk: 1.3 },
+  elite: { hp: 1.8, atk: 1.4 },
+  boss: { hp: 2.6, atk: 1.8 },
+};
+
+/** 合併強度倍率 */
+export const mulOf = (...list) => list.filter(Boolean).reduce((a, m) => ({ hp: a.hp * (m.hp || 1), atk: a.atk * (m.atk || 1) }), { hp: 1, atk: 1 });
+
 /** 人類敵人：NPC 據點的掠奪者（不會出現在屍潮或一般探索中） */
 export const RAIDERS = {
   raider: {
     name: '掠奪者', icon: '🥷', color: 0x6d4c41, tier: 2,
-    hp: 95, atk: 15, def: 6, crit: 0.1, dodge: 0.1, atkSpeed: 1, speed: 12,
-    xp: 16, coins: 8, partsChance: 0.08,
+    hp: 190, atk: 30, def: 14, crit: 0.12, dodge: 0.12, atkSpeed: 1.1, speed: 12,
+    xp: 18, coins: 4, partsChance: 0.08, ranged: true,
   },
   raiderChief: {
     name: '掠奪者首領', icon: '🦹', color: 0x4e342e, tier: 4,
-    hp: 320, atk: 30, def: 14, crit: 0.15, dodge: 0.12, atkSpeed: 1, speed: 10,
-    xp: 80, coins: 40, partsChance: 0.5,
+    hp: 760, atk: 58, def: 30, crit: 0.18, dodge: 0.12, atkSpeed: 1.1, speed: 10,
+    xp: 90, coins: 15, partsChance: 0.5, ranged: true,
   },
 };
 Object.assign(ALL_ENEMIES, RAIDERS);

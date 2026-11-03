@@ -184,6 +184,73 @@ export class WorldStore {
     return { status: 'ok', events };
   }
 
+  // ================= 共用世界物件（NPC、殭屍群、黑市、市場、集結…） =================
+
+  /** 物件存放在 objects.json；第一次使用時載入 */
+  objs() {
+    if (!this.objects) {
+      this.objects = new Map();
+      try {
+        JSON.parse(fs.readFileSync(this.objFile(), 'utf8')).forEach((o) => this.objects.set(`${o.kind}:${o.id}`, o));
+      } catch { /* 沒有檔案 */ }
+    }
+    return this.objects;
+  }
+
+  objFile() {
+    return path.join(path.dirname(this.file), 'objects.json');
+  }
+
+  persistObjectsSoon() {
+    clearTimeout(this.objTimer);
+    this.objTimer = setTimeout(() => {
+      const tmp = `${this.objFile()}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify([...this.objs().values()]));
+      fs.renameSync(tmp, this.objFile());
+    }, 2000);
+  }
+
+  /** 範圍內某種類的物件（lat/lon 為 null 的全域物件一律回傳） */
+  objList(kind, lat, lon, km) {
+    const dLat = km / 111.32;
+    const dLon = km / (111.32 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
+    const out = [];
+    const now = Date.now();
+    this.objs().forEach((o, key) => {
+      // 14 天沒有更新的物件清除
+      if (now - (o.updatedAt || 0) > 14 * 24 * 3600 * 1000) {
+        this.objs().delete(key);
+        return;
+      }
+      if (o.kind !== kind) return;
+      if (o.lat != null && (Math.abs(o.lat - lat) > dLat || Math.abs(o.lon - lon) > dLon)) return;
+      out.push(o);
+    });
+    return out.slice(0, 500);
+  }
+
+  /**
+   * 以版本號寫入（先到先得）：ver 必須等於目前版本（新建時為 0），否則回傳 conflict 與最新資料。
+   * @returns {{status:'ok'|'conflict'|'forbidden'|'invalid', obj?:object}}
+   */
+  objPut(playerId, token, kind, id, body) {
+    const p = this.players.get(playerId);
+    if (!p || !WorldStore.matches(p, token)) return { status: 'forbidden' };
+    if (!/^[a-z]{2,12}$/.test(kind) || !id || String(id).length > 80) return { status: 'invalid' };
+    const json = JSON.stringify(body?.data ?? null);
+    if (json.length > 16000) return { status: 'invalid' };
+    const key = `${kind}:${id}`;
+    const cur = this.objs().get(key);
+    const ver = Number(body?.ver) || 0;
+    if ((cur?.ver || 0) !== ver) return { status: 'conflict', obj: cur || null };
+    const lat = Number.isFinite(body?.lat) ? body.lat : null;
+    const lon = Number.isFinite(body?.lon) ? body.lon : null;
+    const obj = { kind, id: String(id), lat, lon, data: JSON.parse(json), ver: ver + 1, updatedAt: Date.now() };
+    this.objs().set(key, obj);
+    this.persistObjectsSoon();
+    return { status: 'ok', obj };
+  }
+
   /** 任一據點在範圍內的玩家（不含自己、不含過期資料） */
   nearby(lat, lon, km, excludeId = '') {
     const now = Date.now();

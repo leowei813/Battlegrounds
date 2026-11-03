@@ -90,6 +90,31 @@ export class SelfHostProvider {
     this.check(status, body);
   }
 
+  /** 共用世界物件：範圍內某種類 */
+  async objList(kind, lat, lon, km) {
+    const q = new URLSearchParams({ kind, lat, lon, km });
+    const { status, body } = await fetchJson(this.url(`/world/objects?${q}`));
+    return this.check(status, body).objects || [];
+  }
+
+  /** 共用世界物件：一次查詢多種（[{kind, km}]） */
+  async objListMany(list, lat, lon) {
+    const q = new URLSearchParams({ q: list.map((x) => `${x.kind}:${x.km}`).join(','), lat, lon });
+    const { status, body } = await fetchJson(this.url(`/world/objects?${q}`));
+    return this.check(status, body).objects || [];
+  }
+
+  /** 共用世界物件：以版本號寫入；回傳 { status: 'ok'|'conflict', obj } */
+  async objPut(fromId, token, kind, id, { lat = null, lon = null, data, ver = 0 }) {
+    const { status, body } = await fetchJson(this.url(`/world/objects/${kind}/${encodeURIComponent(id)}`), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: fromId, lat, lon, data, ver }),
+    });
+    if (status === 409) return { status: 'conflict', obj: body?.obj || null };
+    return this.check(status, body);
+  }
+
   /** 讀取並清空自己的事件信箱 */
   async worldInbox(id, token) {
     const { status, body } = await fetchJson(this.url(`/world/players/${id}/events`), { headers: { Authorization: `Bearer ${token}` } });

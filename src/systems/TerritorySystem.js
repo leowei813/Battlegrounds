@@ -75,6 +75,7 @@ export class TerritorySystem {
       }
     });
     (g.world?.others || []).forEach((p) => (p.trips || []).forEach((t) => {
+      if (this.relation(p.id) === 'friend') return;
       if (t.kind || t.defeated || now >= t.startAt + (t.travelMs || 0)) return;
       if (haversine(base.lat, base.lon, t.to.lat, t.to.lon) < 40) out.push({ by: `玩家「${p.name}」`, kind: 'player', at: t.startAt + (t.travelMs || 0) });
     }));
@@ -103,11 +104,12 @@ export class TerritorySystem {
   }
 
   /**
-   * 規劃探索路線：預設繞開非敵對據點的警戒範圍；avoidHostile 時連敵對範圍也繞開。
+   * 規劃探索路線：一律繞開 NPC、敵對與中立玩家據點的警戒範圍；友好玩家的範圍可以直接通過。
    * @param {string[]} ignore 不需要繞開的範圍（例如攻擊目標本身）
    */
   route(from, to, { avoidHostile = false, ignore = [] } = {}) {
-    const avoid = this.zones().filter((z) => !ignore.includes(z.id) && (avoidHostile || z.relation !== 'hostile'));
+    void avoidHostile;
+    const avoid = this.zones().filter((z) => !ignore.includes(z.id) && z.relation !== 'friend');
     return planRoute(from, to, avoid);
   }
 
@@ -176,7 +178,7 @@ export class TerritorySystem {
       report.events.push(fighters.length ? '🧱 圍牆太堅固，久攻不下只好撤退' : '💀 隊員全被防禦設施擊倒');
     } else if (zone.guards > 0 || allyFoes.length) {
       // 2. 圍牆被打破後才能和駐守人員（與對方的友好協防隊）交戰，打贏才可掠奪
-      const result = g.combat.simulate(fighters, [...(zone.guards > 0 ? this.defenders(zone) : []), ...allyFoes]);
+      const result = g.combat.simulate(fighters, [...(zone.guards > 0 ? this.defenders(zone) : []), ...allyFoes], { title: `⚔️ 突襲「${poi.name}」` });
       g.combat.applyOutcome(fighters, result, exp.endAt);
       report.kills += result.kills.length;
       win = result.victory;
@@ -314,18 +316,6 @@ export class TerritorySystem {
         g.intercept.handleIntercept(e);
       } else if (e.type === 'plunder') {
         g.intercept.handlePlunder(e);
-      } else if (e.type === 'tradeBuy') {
-        g.trade.onBuy(e.from, name, e.data);
-      } else if (e.type === 'tradeEnd') {
-        g.trade.onEnd(e.from, name, e.data);
-      } else if (e.type === 'tradeRefund') {
-        g.trade.onRefund(name, e.data);
-      } else if (e.type === 'demandSell') {
-        g.demand.onSell(e.from, name, e.data);
-      } else if (e.type === 'demandPay') {
-        g.demand.onPay(name, e.data);
-      } else if (e.type === 'demandReturn') {
-        g.demand.onReturn(name, e.data);
       } else if (e.type === 'friendRemove') {
         if (this.relation(e.from) === 'friend') delete this.rel.players[e.from];
         g.log(`「${name}」解除了友好關係`, 'info');

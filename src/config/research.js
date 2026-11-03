@@ -48,10 +48,11 @@ const BRANCH_TAGS = {
 };
 const TIER_AMOUNT = [0, 60, 150, 350, 700];
 const TIER_PARTS = [0, 0, 1, 3, 6];
-const TIER_TIME = [0, 90, 240, 600, 1200];
+/** 各階基本研究秒數：最難的第 4 階 Lv15 約 5 天，其他依比例縮短 */
+const TIER_TIME = [0, 45, 120, 300, 600];
 
 const r = (branch, tier, name, desc, effects, opts = {}) => ({
-  branch, tier, name, desc, effects, maxLevel: opts.max || MAX_RESEARCH_LEVEL,
+  branch, tier, name, desc, effects, maxLevel: opts.max || MAX_RESEARCH_LEVEL, labReq: opts.labReq || null,
   requires: opts.req || [], unlock: opts.unlock || [], costMul: opts.costMul || 1,
 });
 
@@ -73,17 +74,19 @@ export const RESEARCH = {
   // ---- 防禦 ----
   d_wall: r('defense', 1, '加固工事', '圍牆耐久提升', { wallHpPct: 0.05 }),
   d_repair: r('defense', 1, '快速修補', '修繕圍牆速度提升、耗材降低', { repairPct: 0.1 }),
-  d_trap: r('defense', 1, '陷阱工藝', '尖刺陷阱傷害提升', { defDmg_trap: 0.06 }),
-  d_fence: r('defense', 2, '電網', '解鎖電網（需要發電機運轉），並提升電網傷害', { defDmg_electricFence: 0.05 }, { unlock: ['electricFence'], req: [['d_trap', 2]] }),
-  d_volt: r('defense', 3, '高壓電流', '電網傷害大幅提升', { defDmg_electricFence: 0.08 }, { req: [['d_fence', 3]] }),
-  d_mg: r('defense', 1, '機槍塔', '解鎖機槍塔，並提升機槍塔傷害', { defDmg_machineGun: 0.05 }, { unlock: ['machineGun'] }),
-  d_tower: r('defense', 2, '火力強化', '所有防禦塔傷害提升', { towerDmgPct: 0.04 }, { req: [['d_mg', 2]] }),
-  d_range: r('defense', 2, '精準射擊', '防禦設施傷害提升，屍潮防禦範圍擴大', { towerRangePct: 0.03 }, { req: [['d_mg', 2]] }),
-  d_armor: r('defense', 2, '減傷結構', '圍牆減傷提升', { wallReduceAdd: 0.01 }, { req: [['d_wall', 3]] }),
+  d_trap: r('defense', 1, '陷阱工藝', '尖刺陷阱傷害提升', { defDmg_trap: 0.12 }),
+  d_fence: r('defense', 2, '電網', '解鎖電網（需要發電機運轉），並提升電網傷害', { defDmg_electricFence: 0.1 }, { unlock: ['electricFence'], req: [['d_trap', 2]] }),
+  d_volt: r('defense', 3, '高壓電流', '電網傷害大幅提升', { defDmg_electricFence: 0.15 }, { req: [['d_fence', 3]] }),
+  d_mg: r('defense', 1, '機槍塔', '解鎖機槍塔，並提升機槍塔傷害', { defDmg_machineGun: 0.1 }, { unlock: ['machineGun'] }),
+  d_tower: r('defense', 2, '火力強化', '所有防禦塔傷害提升', { towerDmgPct: 0.08 }, { req: [['d_mg', 2]] }),
+  d_range: r('defense', 2, '精準射擊', '防禦設施傷害提升，屍潮防禦範圍擴大', { towerRangePct: 0.06 }, { req: [['d_mg', 2]] }),
+  d_armor: r('defense', 2, '減傷結構', '圍牆減傷提升', { wallReduceAdd: 0.015 }, { req: [['d_wall', 3]] }),
+  d_harden: r('defense', 2, '強化牆體', '圍牆硬度提升：殭屍與掠奪者對圍牆造成的傷害降低', { wallHardPct: 0.03 }, { req: [['d_wall', 2]] }),
+  d_patch: r('defense', 2, '修補材料學', '每單位材料可修復更多圍牆耐久（修繕更省材料）', { repairEffPct: 0.05 }, { req: [['d_repair', 2]] }),
   d_guard: r('defense', 2, '守備訓練', '防禦駐守與瞭望塔駐守傷害提升', { guardDmgPct: 0.05 }),
   d_npc: r('defense', 2, '反掠奪', '對 NPC 掠奪隊的防禦傷害提升', { raidDefensePct: 0.08 }),
-  d_flame: r('defense', 2, '燃燒劑', '解鎖火焰塔，並提升火焰塔傷害', { defDmg_flameTower: 0.05 }, { unlock: ['flameTower'], req: [['d_mg', 3]] }),
-  d_em: r('defense', 3, '電磁學', '解鎖電磁塔，並提升電磁塔傷害', { defDmg_emTower: 0.05 }, { unlock: ['emTower'], req: [['d_flame', 3]] }),
+  d_flame: r('defense', 2, '燃燒劑', '解鎖火焰塔，並提升火焰塔傷害', { defDmg_flameTower: 0.1 }, { unlock: ['flameTower'], req: [['d_mg', 3]] }),
+  d_em: r('defense', 3, '電磁學', '解鎖電磁塔，並提升電磁塔傷害', { defDmg_emTower: 0.1 }, { unlock: ['emTower'], req: [['d_flame', 3]] }),
   d_offline: r('defense', 3, '夜間自動防禦', '解鎖離線防守收益，並提升離線擊殺數', { offlineDefPct: 0.1 }, { unlock: ['offlineDefense'], req: [['d_tower', 3]] }),
   // ---- 醫療 ----
   m_regen: r('medical', 1, '休養', '生命自然回復加快', { regenPct: 0.08 }),
@@ -98,7 +101,7 @@ export const RESEARCH = {
   // ---- 農業 ----
   a_food: r('agriculture', 1, '輪作', '農場食物產量提升', { foodPct: 0.04 }),
   a_lumber: r('agriculture', 1, '伐木技術', '伐木場木材產量提升', { lumberPct: 0.05 }),
-  a_forestry: r('agriculture', 2, '林業管理', '每級伐木場額外產出木材', { lumberFlat: 0.2 }, { req: [['a_lumber', 2]] }),
+  a_forestry: r('agriculture', 2, '林業管理', '每級伐木場額外產出木材', { lumberFlat: 0.35 }, { req: [['a_lumber', 2]] }),
   a_ration: r('agriculture', 2, '配給制度', '每人消耗的食物減少', { foodUpkeepReduce: 0.03 }, { req: [['a_food', 2]] }),
   a_forage: r('agriculture', 2, '野外覓食', '探索時食物收穫提升', { forageAdd: 0.05 }),
   a_fuel: r('agriculture', 3, '生質燃料', '每小時產出燃料', { fuelPerHour: 0.3 }, { req: [['a_food', 3]] }),
@@ -106,7 +109,7 @@ export const RESEARCH = {
   // ---- 工業 ----
   i_work: r('industry', 1, '工作台效率', '工作台資源產量提升', { workbenchPct: 0.05 }),
   i_storage: r('industry', 1, '消耗品倉儲', '消耗品倉庫的上限提升', { storagePct: 0.05 }),
-  i_shelves: r('industry', 1, '物品倉儲', '物品倉庫的格子增加', { storeSlots: 5 }),
+  i_shelves: r('industry', 1, '物品倉儲', '物品倉庫的格子增加', { storeSlots: 7 }),
   i_salvage: r('industry', 1, '拆解回收', '拆解裝備獲得的材料提升', { dismantlePct: 0.08 }),
   i_trade: r('industry', 1, '以物易物', '賣給流浪商人獲得的金錢提升', { sellPct: 0.05 }),
   i_gen: r('industry', 2, '發電效率', '發電機的生產加成提升', { generatorPct: 0.05 }, { req: [['i_work', 2]] }),
@@ -116,6 +119,8 @@ export const RESEARCH = {
   // ---- 生存 ----
   s_scout: r('survival', 1, '斥候訓練', '探索速度提升，解鎖「自動探索」', { exploreSpeed: 0.02 }, { unlock: ['autoExplore'] }),
   s_route: r('survival', 2, '巡迴搜索', '自動探索把地點搜空後，可以多換一次附近的地點繼續探索（基本 1 次，最多 5 次）', { autoHops: 1 }, { max: 4, req: [['s_scout', 1]] }),
+  s_queue: r('survival', 2, '行動規劃', '每支臨時小隊的探索佇列 +1 個地點（基本 2 個，最多 5 個）；Lv1 需要研究中心 Lv4、Lv2 需要 Lv7、Lv3 需要 Lv10', { queueSlots: 1 }, { max: 3, labReq: [4, 7, 10] }),
+  s_parts: r('survival', 2, '零件辨識', '探索時有機率多找到一種零件', { partKindPct: 0.05 }, { max: 10, req: [['s_loot', 2]] }),
   s_loot: r('survival', 1, '拾荒技巧', '探索物資提升', { lootPct: 0.03 }),
   s_carry: r('survival', 1, '負重訓練', '每人徒步運載量提升', { carryPct: 0.05 }),
   s_night: r('survival', 2, '夜行者', '夜間探索懲罰降低', { nightPenaltyReduce: 0.06 }, { req: [['s_scout', 2]] }),
@@ -133,14 +138,14 @@ export const RESEARCH = {
   v_find: r('vehicles', 2, '車輛搜尋', '探索時找到載具的機率提升', { vehicleFindPct: 0.1 }),
   v_garage: r('vehicles', 2, '車庫擴建', '車庫容量提升（每 2 級 +1）', { garageSlots: 0.5 }),
   // ---- 製作 ----
-  c_tech: r('crafting', 1, '製作技術', '製作出高品級裝備的機率提升（滿級時稀有 0.2%）', { craftTech: 1 }),
+  c_tech: r('crafting', 1, '製作技術', '製作出高品級裝備的機率提升（滿級時傳奇 0.2%）', { craftTech: 1 }),
   c_cost: r('crafting', 1, '材料節約', '製作費用降低', { craftCostReduce: 0.03 }),
   c_gun: r('crafting', 2, '槍械製造', '解鎖槍械製作：Lv1 手槍、Lv2 十字弓、Lv3 衝鋒槍、Lv4 散彈槍、Lv5 步槍、Lv7 狙擊槍、Lv9 輕機槍', { gunCraft: 1 }, { req: [['c_tech', 1]] }),
   c_level: r('crafting', 2, '精工', '製作的裝備等級提升', { craftLevelAdd: 1 }, { req: [['c_tech', 2]] }),
   c_bp: r('crafting', 3, '設計圖解析', '用設計圖製作時有機會提升一個品級', { craftBpBoost: 0.03 }, { req: [['c_tech', 3]] }),
   c_quality: r('crafting', 3, '品質控管', '製作裝備的素質提升', { craftQualityAdd: 0.03 }, { req: [['c_level', 2]] }),
   // ---- 招募 ----
-  r_tech: r('recruitment', 1, '招募技術', '招募到高品級倖存者的機率提升（滿級時稀有 0.2%）', { recruitTech: 1 }),
+  r_tech: r('recruitment', 1, '招募技術', '招募到高品級倖存者的機率提升（滿級時傳奇 0.2%）', { recruitTech: 1 }),
   r_cost: r('recruitment', 1, '招募宣傳', '招募費用降低', { recruitCostReduce: 0.04 }),
   r_board: r('recruitment', 2, '情報網', '每小時出現的倖存者人數增加（每 5 級 +1）', { boardSlots: 0.2 }, { req: [['r_tech', 2]] }),
   r_train: r('recruitment', 2, '教練', '倖存者獲得的經驗提升', { xpPct: 0.04 }),
@@ -154,7 +159,7 @@ export const RESEARCH = {
 export const requiredLabLevel = (tier) => tier * 2 - 1;
 
 /** 研究到第 level 級需要的研究中心等級 */
-export const labLevelFor = (id, level) => Math.max(requiredLabLevel(RESEARCH[id].tier), level);
+export const labLevelFor = (id, level) => Math.max(requiredLabLevel(RESEARCH[id].tier), RESEARCH[id].labReq ? RESEARCH[id].labReq[level - 1] || 0 : level);
 
 /** 研究到第 level 級的費用 */
 export function researchCost(id, level) {
@@ -172,7 +177,7 @@ export function researchCost(id, level) {
 }
 
 /** 研究到第 level 級的基本時間（秒） */
-/** 研究秒數：前 6 級每級 ×1.5（第 4 階 Lv6 約 2.5 小時），之後每級 ×1.658；第 4 階 Lv15 約 10 天 */
+/** 研究秒數：前 6 級每級 ×1.5，之後每級 ×1.658；最高（第 4 階 Lv15）約 5 天 */
 export const researchTime = (id, level) => Math.round(TIER_TIME[RESEARCH[id].tier] * timeCurve(level, 1.5, 1.658));
 
 /** 效果說明 */
@@ -188,7 +193,7 @@ const LABELS = {
   atkSpeedAdd: (v) => `攻速 +${v.toFixed(2)}`, lifeStealAdd: (v) => `吸血 +${pct(v)}`, hpPct: (v) => `生命 +${pct(v)}`,
   defPct: (v) => `防禦 +${pct(v)}`, dodgeAdd: (v) => `閃避 +${pct(v)}`, wallHpPct: (v) => `圍牆耐久 +${pct(v)}`,
   repairPct: (v) => `修繕效率 +${pct(v)}`, towerDmgPct: (v) => `防禦塔傷害 +${pct(v)}`, towerRangePct: (v) => `防禦傷害 +${pct(v)}`,
-  wallReduceAdd: (v) => `圍牆減傷 +${pct(v)}`, guardDmgPct: (v) => `駐守傷害 +${pct(v)}`, raidDefensePct: (v) => `防禦 NPC +${pct(v)}`,
+  wallReduceAdd: (v) => `圍牆減傷 +${pct(v)}`, wallHardPct: (v) => `圍牆受到傷害 −${pct(v)}`, repairEffPct: (v) => `每單位材料修復量 +${pct(v)}`, guardDmgPct: (v) => `駐守傷害 +${pct(v)}`, raidDefensePct: (v) => `防禦 NPC +${pct(v)}`,
   offlineDefPct: (v) => `離線擊殺 +${pct(v)}`, regenPct: (v) => `回復 +${pct(v)}`, healPct: (v) => `治療量 +${pct(v)}`,
   healCostReduce: (v) => `不消耗藥品機率 ${pct(Math.min(0.5, v))}`, medicinePerHour: (v) => `紗布 +${v.toFixed(1)}/時`, severeRegenPct: (v) => `重傷回復 +${pct(v)}`,
   starveResist: (v) => `飢餓扣血 −${pct(v)}`, foodPct: (v) => `食物 +${pct(v)}`, lumberPct: (v) => `伐木場產量 +${pct(v)}`, lumberFlat: (v) => `每級伐木場木材 +${v.toFixed(1)}/時`,
@@ -196,7 +201,7 @@ const LABELS = {
   farmFlat: (v) => `每級農場食物 +${v.toFixed(1)}/時`, workbenchPct: (v) => `工作台產量 +${pct(v)}`, storagePct: (v) => `消耗品上限 +${pct(v)}`,
   dismantlePct: (v) => `拆解材料 +${pct(v)}`, sellPct: (v) => `商人回收價 +${pct(v)}`, generatorPct: (v) => `發電加成 +${pct(v)}`,
   generatorFuelReduce: (v) => `發電耗油 −${pct(v)}`, buildCostReduce: (v) => `建造費用 −${pct(v)}`, buildTimeReduce: (v) => `建造時間 −${pct(v)}`,
-  autoHops: (v) => `自動換點 +${Math.round(v)} 次`, exploreSpeed: (v) => `探索速度 +${pct(v)}`, lootPct: (v) => `探索物資 +${pct(v)}`, carryPct: (v) => `徒步運載 +${pct(v)}`,
+  queueSlots: (v) => `探索佇列 +${Math.round(v)}`, partKindPct: (v) => `多找到一種零件 ${pct(v)}`, autoHops: (v) => `自動換點 +${Math.round(v)} 次`, exploreSpeed: (v) => `探索速度 +${pct(v)}`, lootPct: (v) => `探索物資 +${pct(v)}`, carryPct: (v) => `徒步運載 +${pct(v)}`,
   nightPenaltyReduce: (v) => `夜間懲罰 −${pct(v)}`, ambushReduce: (v) => `遇襲機率 −${pct(v)}`, itemFindPct: (v) => `裝備掉落 +${pct(v)}`,
   survivorFindPct: (v) => `遇到倖存者 +${pct(v)}`, blueprintPct: (v) => `設計圖 +${pct(v)}`, vehicleWearReduce: (v) => `載具磨損 −${pct(v)}`,
   vehicleFuelReduce: (v) => `載具耗油 −${pct(v)}`, repairCostReduce: (v) => `維修費用 −${pct(v)}`, vehicleSpeedPct: (v) => `載具速度 +${pct(v)}`,

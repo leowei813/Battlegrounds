@@ -6,8 +6,9 @@ import { RESOURCE_KEYS } from '../../config/constants.js';
 import { SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS } from '../../config/supplies.js';
 import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
+import { LOADOUT_MAX } from '../../systems/SurvivorSystem.js';
 import {
-  btn, costHtml, survivorCard, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf,
+  btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf,
 } from '../components.js';
 import {
   RARITIES, ITEM_MODELS, ITEM_TYPES, itemWeight, STACK_MAX,
@@ -68,7 +69,7 @@ export class SurvivorPanel {
     const { net } = g.resources.rates();
     return `<div class="panel-inner">
       <h2>👥 倖存者 <small>${st.survivors.length}/${g.survivors.housing()} 人（上限 ${cap.max}）</small></h2>
-      <p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 5（${cap.leader}）+ 各據點等級（${cap.bases}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級（${g.shelter.maxLevel('clinic') ? `Lv${g.shelter.maxLevel('clinic')}` : '<b class="neg">尚未建造，不會自然回復</b>'}），主要仍需藥品治療。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），等級越高吃得越多（每高 1 級 +${Math.round(FOOD_LEVEL_STEP * 100)}%），目前食物淨收入 <b class="${net.food < 0 ? 'neg' : 'pos'}">${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時</b>。</p>
+      <p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 3（${cap.leader}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級（${g.shelter.maxLevel('clinic') ? `Lv${g.shelter.maxLevel('clinic')}` : '<b class="neg">尚未建造，不會自然回復</b>'}），主要仍需藥品治療。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），等級越高吃得越多（每高 1 級 +${Math.round(FOOD_LEVEL_STEP * 100)}%），目前食物淨收入 <b class="${net.food < 0 ? 'neg' : 'pos'}">${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時</b>。</p>
       <div class="grid">${list}</div>
       ${oddsCard}
       ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷，飢餓時無法治療。重傷且持續飢餓滿遊戲內 3 天的隊員會永久死亡（領袖除外）。</div>' : ''}
@@ -134,7 +135,7 @@ export class SurvivorPanel {
       const item = g.equipment.getItem(sv.equipment[slot]);
       return `<div class="equip-slot">
         <div class="row-between"><small>${SLOTS[slot].icon} ${SLOTS[slot].name}</small>
-        <span>${btn('更換', 'pickItem', { slot }, { cls: 'btn-xs', disabled: !this.candidates(sv.id, slot).length, title: this.candidates(sv.id, slot).length ? '' : '沒有可以裝備的物品' })}${item ? btn('卸下', 'unequip', { slot }, { cls: 'btn-xs btn-ghost' }) : ''}</span></div>
+        <span>${sv.status !== 'idle' ? '<small class="muted">已派出，無法更換</small>' : `${btn('更換', 'pickItem', { slot }, { cls: 'btn-xs', disabled: !this.candidates(sv.id, slot).length, title: this.candidates(sv.id, slot).length ? '' : '沒有可以裝備的物品' })}${item ? btn('卸下', 'unequip', { slot }, { cls: 'btn-xs btn-ghost' }) : ''}`}</span></div>
         ${item ? itemCard(item, { compact: true }) : '<div class="muted">— 空 —</div>'}
       </div>`;
     }).join('');
@@ -156,7 +157,7 @@ export class SurvivorPanel {
         <h4>技能 <small class="muted">（品級可解放 ${skillSlots}/${cls.skills.length} 個）</small></h4><ul class="skill-list">${skills}</ul>
         <h4>工作指派 <small class="muted">（閒置在避難所時生效）</small></h4><div class="chips">${jobs}</div>
         ${this.jobsHelp(sv)}
-        <h4>裝備</h4><div class="equip-grid">${slots}</div>
+        <div class="row-between"><h4>裝備</h4>${sv.status === 'idle' ? btn('⚡ 快速換裝', 'quickEquip', {}, { cls: 'btn-sm btn-primary', title: '從倉庫與在家隊員的背包，每個部位換上戰力最高的裝備（不拿別人身上的；遠程武器只換有彈藥的）' }) : ''}</div><div class="equip-grid">${slots}</div>
         ${this.bagHtml(sv)}
         ${this.supplyHtml(sv)}
         ${sv.isLeader ? '' : `<div class="btn-row end">${btn('🚪 驅逐', 'dismiss', {}, { cls: 'btn-ghost btn-sm', disabled: sv.status === 'exploring' })}</div>`}
@@ -206,23 +207,30 @@ export class SurvivorPanel {
    * 個人背包（資源與負重）；在避難所時右側顯示倉庫，可存入／取出。
    * 倉庫的每種基本物資都是固定格子，只能改變存取數量。
    */
-  /** 自動補給設定：每次回到避難所時自動從倉庫補到指定數量 */
+  /** 彈藥欄（最多 100）與藥品欄（最多 10），以及自動補給（各一種） */
   supplyHtml(sv) {
     const g = this.game;
-    const rules = g.survivors.supplyRules(sv);
-    const bag = g.survivors.bagOf(sv);
-    const rows = Object.entries(rules).map(([k, n]) => `<div class="card row-between"><span>${metaOf(k).icon} ${metaOf(k).name}：補到 <b>${n}</b> <small class="muted">（目前 ${Math.floor(bag[k] || 0)}）</small></span>${btn('移除', 'supplyDel', { key: k }, { cls: 'btn-xs btn-ghost' })}</div>`).join('');
-    const keys = [...RESOURCE_KEYS, ...SUPPLY_KEYS];
-    const cur = this.supplyKey && keys.includes(this.supplyKey) ? this.supplyKey : 'bandage';
-    const opts = [
-      `<optgroup label="基礎物資">${RESOURCE_KEYS.map((k) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${metaOf(k).icon} ${metaOf(k).name}</option>`).join('')}</optgroup>`,
-      ...Object.entries(SUPPLY_CATS).map(([cat, c]) => `<optgroup label="${c.name}">${SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === cat).map((k) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${SUPPLIES[k].icon} ${SUPPLIES[k].name}</option>`).join('')}</optgroup>`),
-    ].join('');
-    return `<h4>🔄 自動補給 <small class="muted">（每次回到避難所時，自動從倉庫補到指定數量；受負重限制）</small></h4>
-      ${rows || '<p class="muted">尚未設定。例如設定「繃帶 補到 3」，出門用掉後回來會自動補滿 3 個。</p>'}
-      <div class="trade-row supply-form"><label>物品 <select class="sup-key">${opts}</select></label>
-        <label>補到 <input type="number" class="sup-qty" min="1" max="9999" value="5" inputmode="numeric"></label>
-        ${btn('加入', 'supplyAdd', {}, { cls: 'btn-xs btn-primary' })}</div>`;
+    const svs = g.survivors;
+    const lo = svs.loadout(sv);
+    const rules = svs.supplyRules(sv);
+    const home = svs.atShelter(sv);
+    const need = svs.ammoNeed(sv);
+    const store = g.state.supplies || {};
+    const slot = (kind, label, max, keys) => {
+      const cur = lo[kind];
+      const opts = keys.map((k) => `<option value="${k}" ${(cur?.key || rules[kind] || (kind === 'ammo' ? need?.ammo : 'bandage')) === k ? 'selected' : ''}>${SUPPLIES[k].icon} ${SUPPLIES[k].name}（倉庫 ${Math.floor(store[k] || 0)}・背包 ${Math.floor(sv.bag?.[k] || 0)}）</option>`).join('');
+      return `<div class="card loadout-slot" data-kind="${kind}">
+        <div class="row-between"><b>${label}</b><span>${cur ? `${SUPPLIES[cur.key].icon} ${SUPPLIES[cur.key].name} <b>${cur.qty}</b> / ${max}` : '<span class="muted">— 空 —</span>'}</span></div>
+        <div class="trade-row"><select class="lo-key">${opts}</select>
+          ${btn('裝填', 'loLoad', { kind }, { cls: 'btn-xs btn-primary', disabled: !home && !keys.some((k) => sv.bag?.[k] > 0) })}${cur ? btn('卸下', 'loUnload', { kind }, { cls: 'btn-xs btn-ghost' }) : ''}</div>
+        <label class="toggle"><input type="checkbox" class="lo-auto" data-kind="${kind}" ${rules[kind] ? 'checked' : ''}> 🔄 自動補給${rules[kind] ? `：${SUPPLIES[rules[kind]].name}` : ''}（回到避難所或探索找到時自動補滿）</label>
+      </div>`;
+    };
+    const ammoKeys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === 'ammo');
+    const medKeys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === 'med' && (SUPPLIES[k].heal || 0) > 0);
+    return `<h4>🎯 彈藥與 💊 藥品欄</h4>
+      <p class="muted">戰鬥時優先使用遠程武器，彈藥不足時自動改用近戰武器${need ? `（目前遠程武器使用 ${SUPPLIES[need.ammo].name}，每場約 ${need.perFight} 發）` : ''}。生命低於 35% 時自動使用藥品欄的藥。</p>
+      <div class="grid">${slot('ammo', '🎯 彈藥欄', LOADOUT_MAX.ammo, ammoKeys)}${slot('med', '💊 藥品欄', LOADOUT_MAX.med, medKeys)}</div>`;
   }
 
   bagHtml(sv) {
@@ -245,7 +253,7 @@ export class SurvivorPanel {
       ...eq.bagItems(sv).map((it) => `
         <div class="slot-cell item" style="--rc:${RARITIES[it.rarity].color}">
           <div class="slot-main"><span class="slot-icon">${ITEM_MODELS[it.model]?.icon || ITEM_TYPES[it.type]?.icon || '❔'}</span><b>${escapeHtml(it.name)}</b><small class="muted">戰力 ${it.power}・⚖️${itemWeight(it)}</small></div>
-          <div class="slot-ctrl">${btn('裝備', 'equipBag', { item: it.id }, { cls: 'btn-xs btn-primary' })}${home ? btn('存入倉庫', 'itemToStore', { item: it.id }, { cls: 'btn-xs' }) : ''}${btn('🗑️ 丟棄', 'bagDropItem', { item: it.id }, { cls: 'btn-xs btn-danger', disabled: it.locked })}</div>
+          <div class="slot-ctrl">${sv.status === 'idle' ? btn('裝備', 'equipBag', { item: it.id }, { cls: 'btn-xs btn-primary' }) : ''}${home ? btn('存入倉庫', 'itemToStore', { item: it.id }, { cls: 'btn-xs' }) : ''}${btn('🔨 拆解', 'bagDismantle', { item: it.id }, { cls: 'btn-xs', disabled: it.locked, title: it.locked ? '已上鎖' : `拆解可得：${Object.entries(eq.dismantleValue(it)).map(([k, v]) => `${metaOf(k).name}×${v}`).join('、')}` })}${btn('🗑️ 丟棄', 'bagDropItem', { item: it.id }, { cls: 'btn-xs btn-danger', disabled: it.locked })}</div>
         </div>`),
     ];
     while (cells.length < slots) cells.push('<div class="slot-cell empty">空</div>');
@@ -281,16 +289,19 @@ export class SurvivorPanel {
           const name = metaOf(data.key).name;
           if (confirm(`確定丟棄 ${name}×${n}？丟棄後無法復原。`)) this.ui.result(g.survivors.discardBag(id, data.key, n));
         }
+        if (action === 'bagDismantle') {
+          const it = g.equipment.getItem(data.item);
+          if (it && confirm(`確定拆解「${it.name}」？`)) this.ui.result(g.equipment.dismantle(data.item));
+        }
         if (action === 'bagDropItem') {
           const it = g.equipment.getItem(data.item);
           if (it && confirm(`確定丟棄「${it.name}」？丟棄後無法復原。`)) this.ui.result(g.equipment.discardItem(data.item));
         }
-        if (action === 'supplyAdd') {
-          const f = el.closest('.supply-form');
-          this.supplyKey = f.querySelector('.sup-key').value;
-          this.ui.result(g.survivors.setSupply(id, this.supplyKey, f.querySelector('.sup-qty').value));
+        if (action === 'loLoad') {
+          const key = el.closest('.loadout-slot').querySelector('.lo-key').value;
+          this.ui.result(g.survivors.loadSlot(id, data.kind, key));
         }
-        if (action === 'supplyDel') this.ui.result(g.survivors.setSupply(id, data.key, 0));
+        if (action === 'loUnload') this.ui.result(g.survivors.unloadSlot(id, data.kind));
         if (action === 'equipBag') this.ui.result(g.equipment.equip(id, data.item));
         if (action === 'itemToStore') this.ui.result(g.equipment.moveToStore(data.item));
         if (action === 'pickFromStore') {
@@ -300,6 +311,7 @@ export class SurvivorPanel {
         if (action === 'job') this.ui.result(g.survivors.setJob(id, data.job));
         if (action === 'heal') this.ui.result(g.survivors.heal(id, data.key || null));
         if (action === 'unequip') this.ui.result(g.equipment.unequip(id, data.slot));
+        if (action === 'quickEquip') this.ui.result(g.equipment.quickEquip(id));
         if (action === 'dismiss') {
           if (this.confirmDismiss(id)) m.close();
           return;
@@ -312,7 +324,15 @@ export class SurvivorPanel {
       },
     });
     // 自動補給的物品選擇在畫面重繪時保留
-    modal.el?.addEventListener('change', (e) => { if (e.target.classList?.contains('sup-key')) this.supplyKey = e.target.value; });
+    modal.el?.addEventListener('change', (e) => {
+      // 自動補給開關：使用欄位下拉選單目前選的種類
+      if (e.target.classList?.contains('lo-auto')) {
+        const kind = e.target.dataset.kind;
+        const key = e.target.checked ? e.target.closest('.loadout-slot').querySelector('.lo-key').value : null;
+        this.ui.result(g.survivors.setSupply(id, kind, key));
+        g.changed();
+      }
+    });
   }
 
   /** 從倉庫拿取：消耗品可選數量或全部；裝備一件一格 */
@@ -379,11 +399,10 @@ export class SurvivorPanel {
         ? items.map((it) => {
           const owner = g.equipment.equippedBy(it.id);
           const carrier = !owner && it.loc && it.loc !== 'store' ? g.survivors.get(it.loc) : null;
-          const diff = it.power - (cur?.power || 0);
           return itemCard(it, {
             equippedBy: owner,
             carrier,
-            actions: `${btn('裝備', 'equip', { id: it.id }, { cls: 'btn-sm btn-primary' })}<span class="${diff >= 0 ? 'pos' : 'neg'}">戰力 ${diff >= 0 ? '▲' : '▼'}${Math.abs(diff)}</span>`,
+            actions: `${btn('裝備', 'equip', { id: it.id }, { cls: 'btn-sm btn-primary' })}${compareHtml(g, it, cur)}`,
           });
         }).join('')
         : '<p class="muted">沒有可以裝備的物品。</p>';

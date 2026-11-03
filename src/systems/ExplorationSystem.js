@@ -1,4 +1,8 @@
 import { ASSIST_TRAVEL_MUL } from './AssistSystem.js';
+import { LOADOUT_MAX } from './SurvivorSystem.js';
+
+/** 再次探索同一地點：剩餘搜索時間的下限比例、回去拿帶不走物資的時間（分鐘） */
+const REVISIT = { minFrac: 0.2, pickupMin: 0.3 };
 
 /** 自動探索換點次數上限 */
 export const AUTO_HOP_MAX = 5;
@@ -17,8 +21,12 @@ import {
   withSeed,
   chance, pick, randInt, uid, weightedPick, haversine, randFloat, lerp,
 } from '../utils/math.js';
-import { ALL_ENEMIES } from '../config/enemies.js';
-import { stockOf, dayKey } from './LootStock.js';
+import {
+  ALL_ENEMIES, ZOMBIE_VS_SURVIVOR, NIGHT_MUL, mulOf,
+} from '../config/enemies.js';
+import {
+  stockOf, dayKey, pickSupply, remainOf,
+} from './LootStock.js';
 import { zoneAt } from '../config/zones.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 import { pathLength, pointAlong } from '../map/routing.js';
@@ -106,7 +114,7 @@ export class ExplorationSystem {
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   poi(id) {
     return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id)
-      || this.game.intercept?.asPoi(id) || this.game.trade?.asPoi(id) || this.game.demand?.asPoi(id) || this.game.assist?.asPoi(id) || this.huntPoi(id) || null;
+      || this.game.intercept?.asPoi(id) || this.game.assist?.asPoi(id) || this.game.infected?.asPoi(id) || this.game.rally?.asPoi(id) || this.huntPoi(id) || null;
   }
 
   /**
@@ -153,7 +161,14 @@ export class ExplorationSystem {
     if (!poi || poi.npc) return 2;
     const size = BASE_SIZES[baseSizeOf(poi)];
     const danger = this.game.zombies.areaDanger(poi);
-    return Math.max(1, Math.round(size.searchMin * (0.6 + 0.4 * Math.min(1, (danger - 1) / 5))));
+    const full = Math.max(1, Math.round(size.searchMin * (0.6 + 0.4 * Math.min(1, (danger - 1) / 5))));
+    // 上次沒搜索完：只需剩餘的搜索時間；已經搜完、只是帶不走回來拿：只需很短的時間
+    const r = this.game.state.map.remain?.[poi.id];
+    if (r && remainOf(poi, this.game.state.map.remain)) {
+      if (!r.hidden) return REVISIT.pickupMin;
+      return Math.max(REVISIT.pickupMin, +(full * Math.max(REVISIT.minFrac, r.leftFrac ?? 1)).toFixed(2));
+    }
+    return full;
   }
 
   /** 計算實際探索時間（毫秒） */
@@ -181,6 +196,37 @@ export class ExplorationSystem {
     const members = memberIds.map((id) => this.game.survivors.get(id));
     if (members.some((m) => !m || !this.game.survivors.isAvailable(m))) return { ok: false, reason: '有隊員無法出發' };
     return { ok: true, poi, members };
+  }
+
+  /** 每支臨時小隊的探索佇列上限：基本 2 個，研究「行動規劃」每級 +1（最多 5 個） */
+  queueLimit() {
+    return Math.min(5, 2 + Math.floor(this.game.research.bonus('queueSlots')));
+  }
+
+  /** 可以加入佇列的臨時小隊（探索中、沒有召回或撤退） */
+  squads() {
+    return this.list.filter((e) => e.kind === 'explore' && !e.recalled && !e.defeated);
+  }
+
+  /** 把地點加入臨時小隊的探索佇列 */
+  enqueue(expId, poiId) {
+    const exp = this.list.find((e) => e.id === expId);
+    if (!exp || exp.kind !== 'explore' || exp.recalled || exp.defeated) return { ok: false, reason: '這支小隊無法加入佇列' };
+    const poi = this.poi(poiId);
+    if (!poi || !POI_TYPES[poi.type] || poi.npc || poi.pvp) return { ok: false, reason: '只能加入一般建築的探索' };
+    exp.queue = exp.queue || [];
+    if (exp.queue.length >= this.queueLimit()) return { ok: false, reason: `探索佇列已滿（${this.queueLimit()} 個，研究「行動規劃」可增加）` };
+    if (exp.poiId === poiId || exp.queue.includes(poiId)) return { ok: false, reason: '這個地點已經在佇列中' };
+    exp.queue.push(poiId);
+    return { ok: true, msg: `已加入探索佇列（${exp.queue.length}/${this.queueLimit()}）：${poi.name}` };
+  }
+
+  /** 從佇列移除 */
+  dequeue(expId, index) {
+    const exp = this.list.find((e) => e.id === expId);
+    if (!exp?.queue?.[index]) return { ok: false, reason: '找不到這個地點' };
+    exp.queue.splice(index, 1);
+    return { ok: true, msg: '已從佇列移除' };
   }
 
   /** 自動探索可以換到其他地點的次數：基本 1 次，研究「巡迴搜索」每級 +1，最多 5 次 */
@@ -232,7 +278,7 @@ export class ExplorationSystem {
     if (!v.ok) return v;
     if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'deliver' || kind === 'assist' ? 0 : kind === 'raid' || kind === 'pvp' ? 2 : this.searchMinutes(v.poi);
+    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' || kind === 'rally' ? 0 : kind === 'raid' || kind === 'pvp' || kind === 'infect' ? 2 : this.searchMinutes(v.poi);
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
@@ -268,15 +314,19 @@ export class ExplorationSystem {
   /** 出發前：使用槍械／弓弩的隊員自動從倉庫補充彈藥（約 4 場戰鬥的量） */
   packAmmo(members) {
     const notes = [];
+    const svs = this.game.survivors;
     members.forEach((m) => {
-      const weapon = this.game.equipment.getItem(m.equipment?.weapon);
-      const need = weapon && AMMO_FOR[weapon.type];
+      svs.autoResupply(m);
+      const need = svs.ammoNeed(m);
       if (!need) return;
-      const want = need.perFight * AMMO_PACK_FIGHTS - (m.bag?.[need.ammo] || 0);
-      if (want > 0 && (this.game.state.supplies?.[need.ammo] || 0) > 0) this.game.survivors.withdraw(m.id, need.ammo, want);
-      if ((m.bag?.[need.ammo] || 0) < need.perFight) notes.push(`${m.name}沒有${SUPPLIES[need.ammo].name}`);
+      // 沒設定自動補給：出發時把對應彈藥裝進彈藥欄（約 4 場戰鬥）
+      const lo = svs.loadout(m);
+      const have = lo.ammo?.key === need.ammo ? lo.ammo.qty : 0;
+      const want = Math.min(LOADOUT_MAX.ammo, need.perFight * AMMO_PACK_FIGHTS) - have;
+      if (want > 0 && (!lo.ammo || lo.ammo.key === need.ammo) && (this.game.state.supplies?.[need.ammo] || 0) > 0) svs.loadSlot(m.id, 'ammo', need.ammo, want);
+      if (svs.ammoAvailable(m, need.ammo) - (svs.atShelter(m) ? Math.floor(this.game.state.supplies?.[need.ammo] || 0) : 0) < need.perFight) notes.push(`${m.name}沒有${SUPPLIES[need.ammo].name}`);
     });
-    return notes.length ? `（⚠️ ${notes.join('、')}，無法使用武器）` : '';
+    return notes.length ? `（⚠️ ${notes.join('、')}，會改用近戰武器）` : '';
   }
 
   /**
@@ -293,7 +343,6 @@ export class ExplorationSystem {
     [...this.list].forEach((exp) => this.checkThreats(exp, now));
     this.game.intercept?.checkArrivals(now);
     this.checkHunts(now);
-    this.game.demand?.checkDeliveries(now);
     this.list.forEach((exp) => this.runCheckpoints(exp, now));
     const out = [];
     const groups = this.game.state.map.zombieGroups;
@@ -340,7 +389,7 @@ export class ExplorationSystem {
         continue;
       }
       const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
-      const result = this.game.combat.simulate(members, this.game.territory.defenders(th));
+      const result = this.game.combat.simulate(members, this.game.territory.defenders(th), { title: `⚔️ 經過「${th.name}」的警戒範圍` });
       this.game.combat.applyOutcome(members, result, now);
       exp.travelKills += result.kills.length;
       exp.travelXp += result.xp;
@@ -379,11 +428,20 @@ export class ExplorationSystem {
     return report;
   }
 
+  /** 建築內遭遇殭屍的強度：對倖存者的攻擊較強，夜晚更危險（區域越危險越強） */
+  encounterMul(ctx) {
+    const night = ctx.phase?.zombies ? {
+      hp: NIGHT_MUL.hp + NIGHT_MUL.perDanger * Math.max(0, ctx.zone.danger || 0),
+      atk: NIGHT_MUL.atk + NIGHT_MUL.perDanger * Math.max(0, ctx.zone.danger || 0),
+    } : null;
+    return mulOf(ZOMBIE_VS_SURVIVOR, night);
+  }
+
   /** 途中遭遇戰：勝利則消滅殭屍群繼續前進，失敗則全隊撤退、探索結束 */
   ambush(exp, g, members, now) {
     const poi = this.poi(exp.poiId);
-    const enemies = Array.from({ length: g.count }, () => this.game.combat.createEnemy(g.enemyId, g.level, g.elite));
-    const result = this.game.combat.simulate(members, enemies);
+    const enemies = Array.from({ length: g.count }, () => this.game.combat.createEnemy(g.enemyId, g.level, g.elite, this.game.zombies.groupMul(g)));
+    const result = this.game.combat.simulate(members, enemies, { title: `🧟 途中遭遇 ${this.game.zombies.groupLabel(g)}` });
     this.game.combat.applyOutcome(members, result, now);
     const label = `${ALL_ENEMIES[g.enemyId].icon} ${this.game.zombies.groupLabel(g)}`;
     exp.travelKills += result.kills.length;
@@ -391,7 +449,7 @@ export class ExplorationSystem {
     const where = this.progress(exp, now)?.phase === 'returning' ? '返程途中' : '前往途中';
     if (result.victory) {
       this.game.state.stats.battlesWon += 1;
-      this.game.state.map.zombieGroups = this.game.state.map.zombieGroups.filter((x) => x.id !== g.id);
+      this.game.zombies.killGroup(g, this.game.state.player.name);
       exp.travelEvents.push(`⚔️ ${where}遭遇${label}，擊退！（擊殺 ${result.kills.length}，💰${Math.round(result.coins * COIN_GAIN_MUL)}）`);
       this.game.toast(`⚔️ 前往「${poi?.name}」的隊伍${where}遭遇殭屍，成功擊退`, 'success');
       this.game.log(`⚔️ 探索隊${where}擊退${this.game.zombies.groupLabel(g)}`, 'success');
@@ -399,7 +457,7 @@ export class ExplorationSystem {
       return { exp, group: g, result, aborted: false };
     }
     this.game.state.stats.battlesLost += 1;
-    g.count = Math.max(1, g.count - result.kills.length);
+    this.game.zombies.hurtGroup(g, result.kills.length);
     exp.travelEvents.push(`💀 ${where}遭遇${label}，戰敗撤退`);
     this.game.toast(`💀 前往「${poi?.name}」的隊伍${where}遭到襲擊，被迫撤退！`, 'danger');
     this.game.log(`💀 探索隊${where}遭${this.game.zombies.groupLabel(g)}襲擊，撤退`, 'danger');
@@ -420,7 +478,7 @@ export class ExplorationSystem {
 
   /** 是否還能召回：已經在返程（或被擊敗撤回中）的隊伍不需要召回 */
   canRecall(exp, now = Date.now()) {
-    if (!exp || exp.defeated || exp.recalled) return false;
+    if (!exp || exp.defeated || exp.recalled || exp.kind === 'rally') return false;
     return this.progress(exp, now)?.phase !== 'returning';
   }
 
@@ -501,7 +559,6 @@ export class ExplorationSystem {
 
   updateNow(now, { silent = false } = {}) {
     const reports = [];
-    this.game.demand?.checkDeliveries(now);
     let guard = 0;
     let due = this.list.filter((e) => e.endAt <= now);
     while (due.length && guard < 400) {
@@ -514,14 +571,14 @@ export class ExplorationSystem {
           return;
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
-        const report = exp.kind === 'trade' && !exp.defeated ? this.game.trade.report(exp)
-          : exp.kind === 'deliver' && !exp.defeated ? this.game.demand.report(exp)
+        const report = exp.kind === 'rally' ? this.game.rally.report(exp)
           : exp.kind === 'assist' && !exp.defeated && !exp.recalled ? this.game.assist.report(exp)
           : exp.recalled ? (exp.kind === 'explore' ? this.finishExplore(exp, { recalled: true }) : this.recalledReport(exp))
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)
             : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
+            : exp.kind === 'infect' ? this.game.infected.resolveAttack(exp)
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp);
         report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
         reports.push(report);
@@ -531,6 +588,22 @@ export class ExplorationSystem {
           const m = this.game.survivors.get(id);
           return m && !m.severe;
         });
+        // 臨時小隊的探索佇列：完成後自動前往佇列中的下一個地點
+        if (exp.kind === 'explore' && !exp.defeated && !exp.recalled && (exp.queue || []).length && healthy && now - exp.endAt < OFFLINE_CAP_MS) {
+          const queue = [...exp.queue];
+          let started = null;
+          while (queue.length && !started) {
+            const poiId = queue.shift();
+            const r = this.start(poiId, exp.memberIds, exp.durationMin, exp.auto, exp.endAt, { vehicleIds: exp.vehicleIds || [] });
+            if (r.ok) started = r.exp;
+            else report.events.push(`⏭️ 佇列中的地點無法前往：${r.reason}`);
+          }
+          if (started) {
+            started.queue = queue;
+            report.events.push(`➡️ 依探索佇列前往下一個地點「${this.poi(started.poiId)?.name || ''}」${queue.length ? `（佇列還有 ${queue.length} 個）` : ''}`);
+            return;
+          }
+        }
         if (exp.kind === 'explore' && !exp.defeated && !exp.recalled && exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
           const next = this.autoNext(exp, exp.endAt);
           if (!next.ok) report.events.push(`⏹️ 自動探索停止：${next.reason}`);
@@ -627,11 +700,11 @@ export class ExplorationSystem {
   }
 
   /** 記錄建築內殘留的物資（地圖會顯示剩餘數量）；沒有殘留則清除 */
-  setRemain(poi, res, at = Date.now(), { hidden = false } = {}) {
+  setRemain(poi, res, at = Date.now(), { hidden = false, leftFrac = 1 } = {}) {
     const map = this.game.state.map;
     map.remain = map.remain || {};
     const left = Object.fromEntries(Object.entries(res || {}).filter(([, v]) => v > 0));
-    if (Object.keys(left).length) map.remain[poi.id] = { day: dayKey(at), res: left, ...(hidden ? { hidden: true } : {}) };
+    if (Object.keys(left).length) map.remain[poi.id] = { day: dayKey(at), res: left, ...(hidden ? { hidden: true, leftFrac } : {}) };
     else delete map.remain[poi.id];
     // 過期的殘留紀錄一併清掉
     const today = dayKey(at);
@@ -695,6 +768,13 @@ export class ExplorationSystem {
       if (!ctx) return;
       if (!exp.cp) {
         const stock = stockOf(ctx.poi, ctx.arriveAt, this.game.state.map.remain);
+        // 研究「零件辨識」：有機率在建築裡多找到一種零件
+        const pk = this.game.research.bonus('partKindPct');
+        if (pk > 0 && !stock.partial && !stock.empty && Object.keys(stock.resources).some((k) => SUPPLIES[k]?.cat === 'part') && chance(pk)) {
+          const zone = zoneAt(ctx.poi.lat, ctx.poi.lon);
+          const k = pickSupply('part', Math.random, ctx.pt.danger + Math.max(0, zone.danger || 0));
+          stock.resources[k] = (stock.resources[k] || 0) + randInt(2, 6);
+        }
         exp.cp = {
           total: this.checkpointCount(ctx.poi), done: 0, searchMs: exp.searchMs || 0,
           stock: { resources: { ...stock.resources }, itemMul: stock.itemMul, gear: stock.gear, vehicle: stock.vehicle, empty: stock.empty, partial: !!stock.partial },
@@ -729,6 +809,20 @@ export class ExplorationSystem {
       if (key === 'food') v *= 1 + ctx.forage;
       cp.gained[key] = (cp.gained[key] || 0) + v;
       found.push(nameOf(key));
+    });
+    // 探索取得自動補給設定的彈藥或藥品：直接補進隊員的彈藥欄／藥品欄
+    ctx.members.forEach((m) => {
+      const rules = this.game.survivors.supplyRules(m);
+      ['ammo', 'med'].forEach((kind) => {
+        const key = rules[kind];
+        if (!key || !(cp.gained[key] >= 1)) return;
+        const lo = this.game.survivors.loadout(m);
+        if (lo[kind] && lo[kind].key !== key) return;
+        const n = Math.min(Math.floor(cp.gained[key]), LOADOUT_MAX[kind] - (lo[kind]?.qty || 0));
+        if (n <= 0) return;
+        cp.gained[key] -= n;
+        lo[kind] = { key, qty: (lo[kind]?.qty || 0) + n };
+      });
     });
     const share = (1 + 0.25 * (cp.total - 1)) / cp.total; // 大建築總機率略高
     const extra = [];
@@ -774,15 +868,15 @@ export class ExplorationSystem {
       const isElite = ev === 'elite';
       let enemies;
       if (isElite) {
-        enemies = [this.game.combat.createEnemy(weightedPick(pt.enemies), level + 2, true)];
+        enemies = [this.game.combat.createEnemy(weightedPick(pt.enemies), level + 2, true, this.encounterMul(ctx))];
         cp.events.push(`⚠️ ${tag}遭遇精英怪 ${enemies[0].name}！`);
       } else {
         const n = randInt(2, 2 + danger);
-        enemies = Array.from({ length: n }, () => this.game.combat.createEnemy(weightedPick(pt.enemies), level));
+        enemies = Array.from({ length: n }, () => this.game.combat.createEnemy(weightedPick(pt.enemies), level, false, this.encounterMul(ctx)));
         cp.events.push(`🧟 ${tag}遭遇 ${n} 隻殭屍`);
       }
       const fs = this.game.shelter.primary().facilities.watchtower.level * 0.04;
-      const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs });
+      const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs, title: `🔍 ${ctx.poi.name}：${enemies[0]?.name || '殭屍'}${enemies.length > 1 ? ` ×${enemies.length}` : ''}` });
       this.game.combat.applyOutcome(members, result, at);
       cp.kills += result.kills.length;
       cp.xp += result.xp;
@@ -897,7 +991,8 @@ export class ExplorationSystem {
     else {
       const rest = { ...overflow };
       Object.entries(cp.remaining).forEach(([k, v]) => { const n = Math.floor(v); if (n > 0) rest[k] = (rest[k] || 0) + n; });
-      this.setRemain(poi, rest, arriveAt, { hidden: true });
+      // 記下還沒搜索的比例：下次再來只需剩餘的搜索時間
+      this.setRemain(poi, rest, arriveAt, { hidden: true, leftFrac: Math.max(0, 1 - cp.done / Math.max(1, cp.total)) });
     }
     delete poi.depletion;
     poi.lastVisit = exp.endAt;

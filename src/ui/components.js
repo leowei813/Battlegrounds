@@ -77,6 +77,27 @@ export function statLine(stats) {
     .join('');
 }
 
+/**
+ * 與目前裝備比較：列出所有能力（含附加詞條）的差異，較好▲綠、較差▼紅。
+ * @param {object} game
+ * @param {object} item 候選裝備
+ * @param {object|null} cur 目前的裝備
+ */
+export function compareHtml(game, item, cur) {
+  const a = game.equipment.itemStats(item);
+  const b = cur ? game.equipment.itemStats(cur) : {};
+  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => STAT_FMT[k]);
+  const rows = keys.map((k) => {
+    const d = (a[k] || 0) - (b[k] || 0);
+    if (Math.abs(d) < 1e-9) return '';
+    const [name, f] = STAT_FMT[k];
+    const good = k === 'weight' ? d < 0 : d > 0;
+    return `<span class="${good ? 'pos' : 'neg'}">${name} ${d > 0 ? '▲' : '▼'}${f(Math.abs(d))}</span>`;
+  }).filter(Boolean);
+  const pd = (item.power || 0) - (cur?.power || 0);
+  return `<div class="compare"><b class="${pd >= 0 ? 'pos' : 'neg'}">戰力 ${pd >= 0 ? '▲' : '▼'}${Math.abs(pd)}</b>${rows.join('') || '<span class="muted">能力相同</span>'}</div>`;
+}
+
 /** 能力範圍（最小值～最大值） */
 export function statRangeLine(range) {
   return Object.entries(range)
@@ -155,6 +176,12 @@ export function survivorCard(game, sv, { actions = '', selected = false } = {}) 
     <div class="sv-status">${survivorStatus(game, sv)}</div>
     ${hpBar(game, sv)}
     ${progressBar(sv.xp / xpToNext(sv.level), 'xp', `XP ${sv.xp}/${xpToNext(sv.level)}`)}
+    ${(() => {
+    // 負重狀況
+    const load = Math.floor(game.survivors.bagLoad(sv));
+    const cap = game.survivors.bagCap(sv);
+    return progressBar(cap ? load / cap : 0, load >= cap ? 'danger' : 'load', `🎒 負重 ${load}/${cap}・格子 ${game.equipment.bagSlotsUsed(sv)}/${game.equipment.bagSlotCap(sv)}`);
+  })()}
     <div class="stat-line">${statLine({ hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, dodge: s.dodge })}<span>攻速 ${s.atkSpeed}</span></div>
     ${actions ? `<div class="btn-row">${actions}</div>` : ''}
   </div>`;

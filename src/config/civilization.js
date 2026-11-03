@@ -9,10 +9,11 @@ import { materialize } from './supplies.js';
 
 /** 文明度權重 */
 export const CIV_WEIGHTS = {
-  facilityLevel: 2, // 每個據點每一級設施
-  defenseLevel: 1.5, // 每一級防禦建築
+  facilityLevel: 1.8, // 每個據點每一級設施
+  defenseLevel: 1.3, // 每一級防禦建築
   playerLevel: 4, // 玩家（領袖）每一級
-  equipmentPower: 1 / 50, // 已裝備裝備的戰力總和
+  equipmentPower: 1 / 70, // 已裝備裝備的戰力總和（裝備戰力公式計入詞條後數值較高）
+  researchLevel: 0.25, // 每一級科技（科技總數多，權重較低）
 };
 
 export const CIV_TIERS = [
