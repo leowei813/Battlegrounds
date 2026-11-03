@@ -283,6 +283,22 @@ export class SaveManager {
       // v9：武器欄拆成遠程與近戰；新增彈藥欄與藥品欄
       // 流浪商人改為全體共用的黑市
       delete data.trader;
+      // 移除派人交易與派人交付：收購保留的金錢退還，交易／交付中的倖存者帶著背包裡的物品直接回到避難所
+      (data.demands?.list || []).forEach((d) => {
+        const left = Math.max(0, (d.qty || 0) - (d.filled || 0));
+        if (data.player) data.player.coins = (data.player.coins || 0) + left * (d.price || 0);
+      });
+      delete data.demands;
+      delete data.trade;
+      const ended = (data.expeditions || []).filter((e) => e.kind === 'trade' || e.kind === 'deliver');
+      ended.forEach((e) => (e.memberIds || []).forEach((id) => {
+        const sv = (data.survivors || []).find((x) => x.id === id);
+        if (sv && sv.status === 'exploring') sv.status = 'idle';
+      }));
+      if (ended.length) {
+        data.expeditions = data.expeditions.filter((e) => !ended.includes(e));
+        (data.vehicles || []).forEach((v) => { if (ended.some((e) => (e.vehicleIds || []).includes(v.id))) v.status = 'idle'; });
+      }
       const items = data.inventory?.items || [];
       (data.survivors || []).forEach((sv) => {
         sv.equipment = sv.equipment || {};

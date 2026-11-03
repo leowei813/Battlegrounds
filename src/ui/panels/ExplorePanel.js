@@ -26,12 +26,11 @@ export class ExplorePanel {
       const poi = g.exploration.poi(ex.poiId);
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
       return `<div class="card">
-        <div class="row-between"><b>${poi ? poi.icon || POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.kind === 'raid' ? '<span class="tag tag-red">⚔️ 攻打</span>' : ex.kind === 'intercept' ? '<span class="tag tag-red">⚔️ 攔截</span>' : ex.kind === 'hunt' ? '<span class="tag tag-red">🧟 獵殺</span>' : ex.kind === 'trade' ? `<span class="tag tag-green">🤝 交易・已收入 💰${ex.trade?.earned || 0}</span>` : ''}${ex.defeated ? '<span class="tag tag-red">🏳️ 撤回中</span>' : ex.recalled ? '<span class="tag">↩️ 召回中</span>' : ''}${(ex.vehicleIds || []).length ? `<span class="tag">${ex.vehicleIds.map((id) => { const v = g.vehicles.get(id); return v ? VEHICLES[v.type].icon : ''; }).join('')}</span>` : ''}${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
+        <div class="row-between"><b>${poi ? poi.icon || POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.kind === 'raid' ? '<span class="tag tag-red">⚔️ 攻打</span>' : ex.kind === 'intercept' ? '<span class="tag tag-red">⚔️ 攔截</span>' : ex.kind === 'hunt' ? '<span class="tag tag-red">🧟 獵殺</span>' : ''}${ex.defeated ? '<span class="tag tag-red">🏳️ 撤回中</span>' : ex.recalled ? '<span class="tag">↩️ 召回中</span>' : ''}${(ex.vehicleIds || []).length ? `<span class="tag">${ex.vehicleIds.map((id) => { const v = g.vehicles.get(id); return v ? VEHICLES[v.type].icon : ''; }).join('')}</span>` : ''}${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
         <div class="muted">隊員：${names}・搜索 ${ex.durationMin} 分鐘</div>
         ${this.progressHtml(ex, now)}
         ${timerBar(ex.startAt, ex.endAt, now)}
         ${this.checkpointHtml(ex)}
-        ${ex.kind === 'trade' && ex.trade ? `<small class="block">🤝 擺攤：${ex.trade.goods.map((x) => `${escapeHtml(g.trade.goodName(x))} 已賣 ${x.sold}/${x.qty}`).join('、') || '沒有商品'}</small>` : ''}
         ${(ex.travelEvents || []).length ? `<ul class="event-list">${ex.travelEvents.slice(-3).map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul>` : ''}
         <div class="btn-row">${btn('🗺️ 在地圖上追蹤', 'track', { id: ex.id }, { cls: 'btn-sm btn-primary' })}${btn(ex.auto ? '停止自動' : '🔁 自動探索', 'auto', { id: ex.id }, { cls: 'btn-sm btn-ghost', disabled: !g.research.hasUnlock('autoExplore') })}${g.exploration.canRecall(ex, now) ? btn('召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' }) : ''}</div>
       </div>`;

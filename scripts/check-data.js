@@ -1798,84 +1798,97 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!gc.state.recruitOffer && !gc.state.recruitPool.length, '超過一小時未招募的候選人會離開');
 }
 
-// ---- 39. v8.23：玩家交易（派倖存者到對方據點擺攤）----
+// ---- 39. v9：交易市場（刊登時保管、即時成交、離線玩家上線後收款） ----
 {
-  const { WorldSync: WS } = await import('../src/multiplayer/WorldSync.js');
-  const mk = (name, lat) => {
-    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat, lon: 121 });
-    gx.state.map.pois = fillPois([], lat, 121);
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const { LISTING_MS } = await import('../src/systems/MarketSystem.js');
+  const store = new MemoryObjects();
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon: 121 });
+    gx.state.map.pois = fillPois([], 25, 121);
     gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
     return gx;
   };
-  const A = mk('賣家', 25);
-  const B = mk('買家', 25.004);
-  const box = { A: [], B: [] };
-  const wire = (gx, id, other) => {
-    gx.world = {
-      others: [],
-      identity: () => ({ id, token: 't' }),
-      provider: { worldSend: async (_f, _t, to, type, data) => { box[to].push({ from: id, fromName: gx.state.player.name, type, data: JSON.parse(JSON.stringify(data)) }); } },
-    };
-    void other;
-  };
-  wire(A, 'A');
-  wire(B, 'B');
-  // 交易需要雙方都有交易所
-  A.shelter.primary().facilities.exchange.level = 1;
-  assert(!A.trade.canStart('B').ok, '對方沒有交易所時不能交易');
-  B.shelter.primary().facilities.exchange.level = 1;
-  const pres = (gx, id) => ({ id, ...JSON.parse(JSON.stringify(WS.prototype.presence.call({ game: gx }))) });
-  const deliver = (gx, id) => { gx.territory.handleEvents(box[id].splice(0)); };
-  A.world.others = [pres(B, 'B')];
+  const A = mk('A');
+  const B = mk('B');
+  const C = mk('C');
   A.state.supplies.nail = 50;
+  assert(!(await A.market.post({ side: 'sell', key: 'nail', qty: 10, price: 3 })).ok, '沒有交易所不能刊登');
+  [A, B, C].forEach((gx) => { gx.shelter.primary().facilities.exchange.level = 1; });
+  assert(A.market.limit() === 2, '交易所 Lv1 可刊登賣單、收購各 2 筆');
+  const p1 = await A.market.post({ side: 'sell', key: 'nail', qty: 20, price: 3 });
+  assert(p1.ok && A.state.supplies.nail === 30, '刊登賣單時物品先移到市場保管');
+  assert((await A.market.post({ side: 'sell', key: 'nail', qty: 5, price: 3 })).ok, '第 2 筆賣單');
+  assert(!(await A.market.post({ side: 'sell', key: 'nail', qty: 5, price: 3 })).ok && A.state.supplies.nail === 25, '超過上限不能刊登，物品不會被扣');
+  A.shelter.primary().facilities.exchange.level = 2;
+  assert(A.market.limit() === 3, '每升一級 +1 筆');
+  // A 下線（不再執行任何程式）；B、C 同時購買
+  await B.market.refresh();
+  await C.market.refresh();
+  assert(B.market.listings().length === 2, '其他玩家看得到刊登');
+  B.state.player.coins = 1000;
+  C.state.player.coins = 1000;
+  const nb0 = B.state.supplies.nail || 0;
+  const nc0 = C.state.supplies.nail || 0;
+  const [rb, rc] = await Promise.all([B.market.buy(p1.id, 15), C.market.buy(p1.id, 15)]);
+  assert(rb.ok !== rc.ok, `同時購買超過剩餘數量時只有一人成功（${rb.reason || 'ok'} / ${rc.reason || 'ok'}）`);
+  const [w, l] = rb.ok ? [B, C] : [C, B];
+  assert(w.state.player.coins === 1000 - 45 && l.state.player.coins === 1000, '成交的人付款，失敗的人退款');
+  assert((B.state.supplies.nail || 0) + (C.state.supplies.nail || 0) === nb0 + nc0 + 15, '物品只交付一次');
+  const r5 = await l.market.buy(p1.id, 5);
+  assert(r5.ok, '剩下的數量可以繼續購買');
+  assert(!(await l.market.buy(p1.id, 1)).ok, '賣完後不能再買');
+  // A 離線期間的成交，上線後自動收款
+  const coinsA = A.state.player.coins;
+  await A.market.refresh();
+  assert(A.state.player.coins === coinsA + 60, `離線玩家上線後收到全部貨款（+${A.state.player.coins - coinsA}）`);
+  await A.market.refresh();
+  assert(A.state.player.coins === coinsA + 60, '貨款不會重複收取');
+  assert(!A.market.mine().find((m) => m.id === p1.id), '賣完且收款後從自己的刊登移除');
+  // 收購單：保管金錢、別人賣給他、刊登者離線時也成立
+  A.state.player.coins = 100;
+  assert(!(await A.market.post({ side: 'buy', key: 'screw', qty: 30, price: 5 })).ok && A.state.player.coins === 100, '金錢不足不能刊登收購');
+  const pb = await A.market.post({ side: 'buy', key: 'screw', qty: 10, price: 5 });
+  assert(pb.ok && A.state.player.coins === 50, '刊登收購時先保管金錢');
+  await B.market.refresh();
+  B.state.supplies.screw = 6;
+  const cb = B.state.player.coins;
+  const sell = await B.market.sellTo(pb.id, 6);
+  assert(sell.ok && !B.state.supplies.screw && B.state.player.coins === cb + 30, '賣給收購單：立即拿到錢');
+  assert(!(await B.market.sellTo(pb.id, 6)).ok, '沒有物品不能賣');
+  const sc0 = A.state.supplies.screw || 0;
+  await A.market.refresh();
+  assert((A.state.supplies.screw || 0) === sc0 + 6, '收購者上線後收到物品');
+  // 下架：退還未成交部分
+  const r = await A.market.cancel(pb.id);
+  assert(r.ok && A.state.player.coins === 70, `下架退還未成交的保管金額（${A.state.player.coins}）`);
+  await B.market.refresh();
+  assert(!(await B.market.sellTo(pb.id, 1)).ok, '下架後不能成交');
+  // 裝備刊登
   const gear = A.equipment.generate({ level: 5, model: 'knife', rarity: 'rare' });
   A.equipment.addItem(gear, 't');
-  const seller = A.survivors.leader();
-  assert(!A.trade.start('B', seller.id, [{ key: 'nail', qty: 99999, price: 1 }]).ok && A.state.supplies.nail === 50, '超過負重的商品無法帶出門（不會扣掉）');
-  const st = A.trade.start('B', seller.id, [{ key: 'nail', qty: 20, price: 3 }, { itemId: gear.id, price: 0 }]);
-  assert(st.ok && A.state.supplies.nail === 30 && seller.bag.nail === 20 && A.equipment.getItem(gear.id).loc === seller.id, '交易隊帶著商品出發（放進倖存者背包）');
-  const ex = st.exp;
-  // 抵達對方據點
-  const shift = ex.travelMs + 1000;
-  ex.startAt -= shift; ex.endAt -= shift;
-  const pa = pres(A, 'A');
-  const trip = pa.trips.find((t) => t.kind === 'trade');
-  assert(trip && trip.targetId === 'B' && trip.stall.length === 2, '公開資料包含擺攤商品與交易對象');
-  B.world.others = [pa];
-  assert(B.trade.incoming().length === 1 && !B.intercept.target({ kind: 'player', playerId: 'A', tripId: trip.id }), '買方看得到來訪的交易隊，交易隊不能被攔截');
-  B.state.player.coins = 100;
-  const nailGood = trip.stall.find((x) => x.key === 'nail');
-  const gearGood = trip.stall.find((x) => x.item);
-  const n0 = B.state.supplies.nail || 0;
-  assert(B.trade.buy('A', trip.id, nailGood.id, 10).ok && B.state.player.coins === 70 && B.state.supplies.nail === n0 + 10, '買方用金錢購買物資');
-  assert(B.trade.remaining(trip.id, nailGood) === 10, '買方看到的剩餘數量會扣掉已購買的');
-  assert(B.trade.buy('A', trip.id, gearGood.id, 1).ok && B.state.player.coins === 70, '價格 0 的商品等於免費贈送');
-  const got = B.state.inventory.items.find((i) => i.model === 'knife' && i.rarity === 'rare');
-  assert(got && JSON.stringify(got.stats) === JSON.stringify(gear.stats), '買到的裝備與對方擺出的完全相同');
-  const coinA = A.state.player.coins;
-  deliver(A, 'A');
-  assert(A.state.player.coins === coinA + 30 && seller.bag.nail === 10 && !A.equipment.getItem(gear.id), '賣方收到金錢、交出商品');
-  // 被竄改的裝備數值不會被接受
-  const fake = B.equipment.importItem({ ...A.equipment.exportItem(gear), stats: { ...gear.stats, atk: 99999 } });
-  assert(fake && fake.stats.atk < 1000, '不合理的裝備數值會被修正');
-  // 超量購買（對方已賣光）→ 退款
-  B.state.trade.bought[trip.id][nailGood.id] = 0;
-  A.trade.onBuy('B', '買家', { tripId: trip.id, goodId: nailGood.id, qty: 15, coins: 45 });
-  assert(seller.bag.nail === undefined || seller.bag.nail === 0, '賣方只交出還有的數量');
-  deliver(B, 'B');
-  assert(B.state.player.coins === 70 + 15, `賣不出的部分退款給買方（${B.state.player.coins}）`);
-  // 買方結束交易 → 賣方倖存者回家
-  assert(B.trade.end('A', trip.id).ok && !B.trade.canTrade('A', trip.id).ok, '買方可以結束交易');
-  deliver(A, 'A');
-  assert(ex.tradeEnded && A.exploration.progress(ex).phase === 'returning', '結束交易後賣方的倖存者回家');
-  const rep = A.exploration.update(ex.endAt + 1, { silent: true })[0];
-  assert(rep && rep.events.some((e) => e.includes('💰')) && seller.status === 'idle', `交易隊回家後有交易報告（${rep?.events.slice(-2).join(' / ')}）`);
-  // 賣方召回
-  A.world.others = [pres(B, 'B')];
-  A.state.supplies.nail = 10;
-  const st2 = A.trade.start('B', seller.id, [{ key: 'nail', qty: 5, price: 0 }]);
-  assert(st2.ok && A.exploration.recall(st2.exp.id).ok, '賣方可以自行召回交易隊');
-  assert(!pres(A, 'A').trips.some((t) => t.kind === 'trade'), '召回後不再公開擺攤');
+  const pg = await A.market.post({ side: 'sell', itemId: gear.id, price: 200 });
+  assert(pg.ok && !A.equipment.getItem(gear.id), '裝備刊登後移到市場保管');
+  await B.market.refresh();
+  B.state.player.coins = 500;
+  assert((await B.market.buy(pg.id)).ok && B.state.player.coins === 300 && B.equipment.storeItems().some((i) => i.model === 'knife' && i.rarity === 'rare'), '買到裝備');
+  assert(!(await A.market.buy(pg.id)).ok, '不能購買自己的刊登');
+  // 到期自動下架退還
+  A.state.supplies.wood = 0;
+  A.state.resources.wood = 100;
+  const pw = await A.market.post({ side: 'sell', key: 'wood', qty: 40, price: 1 });
+  assert(pw.ok && A.state.resources.wood === 60, '基礎物資也能刊登');
+  await A.shared.list('mk', 20);
+  await A.market.settle(Date.now() + LISTING_MS + 1000);
+  assert(A.state.resources.wood === 100 && !A.market.mine().find((m) => m.id === pw.id), '到期自動下架並退還');
+  // 連線失敗：刊登取消、物品退回
+  const N = mk('N');
+  N.shelter.primary().facilities.exchange.level = 1;
+  N.shared.backend = { objList: async () => [], objPut: async () => { const e = new Error('x'); e.kind = 'network'; throw e; } };
+  N.state.supplies.nail = 10;
+  assert(!(await N.market.post({ side: 'sell', key: 'nail', qty: 10, price: 1 })).ok && N.state.supplies.nail === 10, '連線失敗時刊登取消，物品退回');
 }
 
 // ---- 40. v8.24：探索檢核點 ----
@@ -2020,69 +2033,20 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gc.state.resources.wood === cap, '屍潮突破時地窖裡的物資也不會損失');
 }
 
-// ---- 44. v8.31：交易所與收購需求 ----
+// ---- 44. v9：移除派人交易／交付的存檔遷移 ----
 {
-  const { WorldSync: WS2 } = await import('../src/multiplayer/WorldSync.js');
-  const mk = (name, lat) => {
-    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat, lon: 121 });
-    gx.state.map.pois = fillPois([], lat, 121);
-    gx.shelter.establish(gx.state.map.pois[0]);
-    setHour(gx, 10);
-    return gx;
-  };
-  const P = mk('收購方', 25);
-  const S = mk('出貨方', 25.003);
-  const box = { P: [], S: [] };
-  const wire = (gx, id) => {
-    gx.world = { others: [], identity: () => ({ id, token: 't' }), provider: { worldSend: async (_f, _t, to, type, data) => { box[to].push({ from: id, fromName: gx.state.player.name, type, data: JSON.parse(JSON.stringify(data)) }); } } };
-  };
-  wire(P, 'P');
-  wire(S, 'S');
-  const pres = (gx, id) => ({ id, ...JSON.parse(JSON.stringify(WS2.prototype.presence.call({ game: gx }))) });
-  const deliverBox = (gx, id) => gx.territory.handleEvents(box[id].splice(0));
-  assert(!P.demand.post('nail', 10, 5).ok, '沒有交易所不能發布收購');
-  P.shelter.primary().facilities.exchange.level = 1;
-  P.state.player.coins = 100;
-  assert(!P.demand.post('nail', 100, 5).ok, '金錢不足時不能掛單（收購總額要先保留）');
-  assert(P.demand.post('nail', 10, 5).ok && P.state.player.coins === 50, '掛單時保留收購總額');
-  assert(!P.demand.post('screw', 1, 1).ok, '交易所 Lv1 只能掛一項');
-  const pp = pres(P, 'P');
-  assert(pp.exchange === 1 && pp.demands.length === 1 && pp.demands[0].qty === 10, '公開資料包含交易所等級與收購需求');
-  S.world.others = [pp];
-  const dm = pp.demands[0];
-  assert(!S.demand.canDeliver('P', dm.id).ok, '出貨方沒有交易所時不能交付');
-  S.shelter.primary().facilities.exchange.level = 1;
-  S.state.supplies.nail = 20;
-  const sv = S.survivors.leader();
-  const r = S.demand.deliver('P', dm.id, sv.id, 15);
-  assert(r.ok && r.exp.deliver.qty === 10 && S.state.supplies.nail === 10, `派人交付（最多交付需求的數量：${r.exp?.deliver?.qty}）`);
-  S.demand.checkDeliveries(r.exp.startAt + r.exp.travelMs - 1000);
-  assert(!r.exp.deliver.delivered, '還沒抵達不會交付（需要移動時間）');
-  S.demand.checkDeliveries(r.exp.startAt + r.exp.travelMs + 1);
-  assert(r.exp.deliver.delivered && !sv.bag.nail, '抵達時交出物資');
-  const pn0 = P.state.supplies.nail || 0;
-  deliverBox(P, 'P');
-  assert(P.state.supplies.nail === pn0 + 10 && !P.demand.list.length && P.state.player.coins === 50, '收購方收下物資，收滿後自動結束');
-  const sc0 = S.state.player.coins;
-  deliverBox(S, 'S');
-  assert(S.state.player.coins === sc0 + 50, '出貨方收到款項');
-  // 收購已結束時交付 → 物資退回
-  P.demand.onSell('S', '出貨方', { demandId: dm.id, key: 'nail', qty: 5 });
-  const sn0 = S.state.supplies.nail;
-  deliverBox(S, 'S');
-  assert(S.state.supplies.nail === sn0 + 5, '收購已經結束時，物資退回出貨方');
-  const rep = S.exploration.update(r.exp.endAt + 1, { silent: true })[0];
-  assert(rep?.success, '交付隊回家有報告');
-  // 取消收購退還保留金額
-  P.state.player.coins = 100;
-  P.demand.post('wood', 10, 3);
-  const c0 = P.state.player.coins;
-  assert(P.demand.cancel(P.demand.list[0].id).ok && P.state.player.coins === c0 + 30, '取消收購退還保留金額');
-  // 玩家突襲也會搶金錢（地窖除外）
-  P.state.player.coins = 1000;
-  P.shelter.primary().facilities.cellar.level = 0;
-  P.territory.handleEvents([{ from: 'S', fromName: '出貨方', type: 'attack', data: { win: true, lossPct: 0.1 } }]);
-  assert(P.state.player.coins === 900, `玩家突襲成功會搶走金錢（${P.state.player.coins}）`);
+  const old = Game.newGame({ playerName: 'M', classId: 'warrior', lat: 25, lon: 121 });
+  const data = JSON.parse(JSON.stringify(old.state));
+  data.version = 17;
+  data.player.coins = 10;
+  data.demands = { list: [{ id: 'd1', key: 'nail', qty: 10, filled: 4, price: 5 }] };
+  const sv = data.survivors[0];
+  sv.status = 'exploring';
+  data.expeditions = [{ id: 'e1', kind: 'trade', memberIds: [sv.id], vehicleIds: [] }];
+  data.trader = { day: 1, active: true };
+  const m = SaveManager.migrate(data);
+  assert(m.player.coins === 40 && !m.demands && !m.trader, '收購保留的金錢退還、流浪商人資料移除');
+  assert(!m.expeditions.length && m.survivors[0].status === 'idle', '交易中的倖存者回到避難所');
 }
 
 // ---- 45. v8.34：區域安全程度影響夜間殭屍 ----
@@ -2394,51 +2358,6 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ga.research.invalidate();
   assert(ex.autoHopLimit() === 5 && ex.autoNext({ poiId: poi.id, autoHops: 4 }).ok, '研究「巡迴搜索」最多 5 次');
   ex.hasStock = orig;
-}
-
-// ---- 57. v8.52.3：伺服器拒絕交易事件時退回 ----
-{
-  const mk = (name, lat) => {
-    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat, lon: 121 });
-    gx.state.map.pois = fillPois([], lat, 121);
-    gx.shelter.establish(gx.state.map.pois[0]);
-    gx.shelter.primary().facilities.exchange.level = 1;
-    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }), provider: { worldSend: async () => { const e = new Error('x'); e.kind = 'invalid'; throw e; } } };
-    return gx;
-  };
-  const { WorldSync: WS2, cleanPlayer } = await import('../src/multiplayer/WorldSync.js');
-  const pres = (gx, id) => cleanPlayer({ id, ...JSON.parse(JSON.stringify(WS2.prototype.presence.call({ game: gx }))) });
-  const S = mk('S', 25);
-  const Bq = mk('Bq', 25.004);
-  Bq.state.player.coins = 500;
-  Bq.demand.post('nail', 10, 5);
-  S.world.others = [pres(Bq, 'Bq')];
-  S.state.supplies.nail = 30;
-  const lead = S.survivors.leader();
-  const dv = S.demand.deliver('Bq', S.world.others[0].demands[0].id, lead.id, 10);
-  assert(dv.ok, `可以出發交付（${dv.reason || ''}）`);
-  const sh = dv.exp.travelMs + 1000;
-  dv.exp.startAt -= sh; dv.exp.endAt -= sh;
-  S.demand.checkDeliveries();
-  await new Promise((r) => setTimeout(r, 10));
-  assert(lead.bag.nail === 10 && !dv.exp.deliver.handed, `通知失敗時物資放回背包帶回家（背包 ${lead.bag.nail}）`);
-  // 交易購買失敗：退錢、收回商品
-  S.exploration.update(dv.exp.endAt + 1, { silent: true });
-  S.state.supplies.nail = 30;
-  S.world.others = [pres(Bq, 'Bq')];
-  const tr = S.trade.start('Bq', lead.id, [{ key: 'nail', qty: 5, price: 4 }]);
-  assert(tr.ok, `交易隊出發（${tr.reason || ''}）`);
-  if (tr.ok) {
-    const s2 = tr.exp.travelMs + 1000;
-    tr.exp.startAt -= s2; tr.exp.endAt -= s2;
-    Bq.world.others = [pres(S, 'S')];
-    const trip = Bq.world.others[0].trips.find((t) => t.kind === 'trade');
-    const c0 = Bq.state.player.coins;
-    const n0 = Bq.state.supplies.nail || 0;
-    assert(Bq.trade.buy('S', trip.id, trip.stall[0].id, 5).ok, '購買');
-    await new Promise((r) => setTimeout(r, 10));
-    assert(Bq.state.player.coins === c0 && (Bq.state.supplies.nail || 0) === n0, `通知賣方失敗時取消購買並退錢（💰${Bq.state.player.coins}）`);
-  }
 }
 
 // ---- 58. v8.53：協防也參與 NPC 掠奪與玩家突襲的防守 ----

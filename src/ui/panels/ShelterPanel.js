@@ -115,7 +115,7 @@ export class ShelterPanel {
     const inv = ui.panels.inventory;
     const storeN = `${g.equipment.storeUsed()}/${g.equipment.storeCap()}`;
     const tabBtn = (id, label) => `<button class="seg-btn ${tab === id ? 'active' : ''}" data-action="shelterTab" data-t="${id}">${label}</button>`;
-    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('storage', `🗄️ 倉庫 ${storeN}`)}${tabBtn('garage', `🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`)}${tabBtn('exchange', `🏪 交易所${g.demand.list.length ? ` ${g.demand.list.length}` : ''}`)}${tabBtn('blackmarket', '🕶️ 黑市')}</div>`;
+    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('storage', `🗄️ 倉庫 ${storeN}`)}${tabBtn('garage', `🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`)}${tabBtn('exchange', `🏪 交易所${g.market.mine().length ? ` ${g.market.mine().length}` : ''}`)}${tabBtn('blackmarket', '🕶️ 黑市')}</div>`;
     const sections = {
       overview: `
         <div class="card row-between ${g.shelter.alert ? 'alert-on' : ''}"><span>${g.shelter.alert ? '🚨 <b>警戒中</b>：全部倖存者暫時為防禦駐守' : '🟢 正常：倖存者依指派的工作行動'}</span>${btn(g.shelter.alert ? '✅ 解除警戒' : '🚨 切換警戒', 'toggleAlert', {}, { cls: `btn-sm ${g.shelter.alert ? '' : 'btn-danger'}` })}</div>
@@ -201,8 +201,7 @@ export class ShelterPanel {
       this.ui.refresh(true);
       return;
     }
-    if (tab === 'exchange' && exchangeAction(this.ui, action, data, root)) {
-      if (action === 'exPost') this.exForm = null;
+    if (tab === 'exchange' && exchangeAction(this.ui, action, data, root, this.exForm || {}, (f) => { this.exForm = f; })) {
       this.ui.refresh(true);
       return;
     }
@@ -223,7 +222,7 @@ export class ShelterPanel {
     this.boundEl = el;
     const save = (e) => {
       if (e.target.id === 'inv-drop-qty') this.ui.panels.inventory.dropQty = Number(e.target.value) || 1;
-      if (e.target.closest?.('.demand-form')) this.exForm = exchangeForm(el);
+      if (e.target.closest?.('.demand-form') || e.target.classList?.contains('d-gear-price')) this.exForm = exchangeForm(el, this.exForm || {});
     };
     el.addEventListener('input', save);
     el.addEventListener('change', save);

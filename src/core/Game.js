@@ -29,8 +29,7 @@ import { MarkerSystem } from '../systems/MarkerSystem.js';
 import { InterceptSystem } from '../systems/InterceptSystem.js';
 import { BlackMarketSystem } from '../systems/BlackMarketSystem.js';
 import { SharedWorld } from '../multiplayer/SharedWorld.js';
-import { TradeSystem } from '../systems/TradeSystem.js';
-import { DemandSystem } from '../systems/DemandSystem.js';
+import { MarketSystem } from '../systems/MarketSystem.js';
 import { AssistSystem } from '../systems/AssistSystem.js';
 
 /**
@@ -64,8 +63,7 @@ export class Game {
     this.markers = new MarkerSystem(this);
     this.intercept = new InterceptSystem(this);
     this.blackMarket = new BlackMarketSystem(this);
-    this.trade = new TradeSystem(this);
-    this.demand = new DemandSystem(this);
+    this.market = new MarketSystem(this);
     this.assist = new AssistSystem(this);
 
     this.lastPhase = null;
@@ -135,7 +133,7 @@ export class Game {
     (this.world?.others || []).forEach((p) => (p.trips || []).forEach((t) => {
       // 友好玩家的隊伍靠近不算威脅
       if (this.territory.relation(p.id) === 'friend') return;
-      if (t.kind === 'trade' || t.kind === 'assist' || t.kind === 'deliver' || t.defeated || now >= t.startAt + (t.travelMs || 0)) return;
+      if (t.kind === 'assist' || t.defeated || now >= t.startAt + (t.travelMs || 0)) return;
       if (bases.some((b) => haversine(b.lat, b.lon, t.to.lat, t.to.lon) < 40)) out.push(`玩家「${p.name}」的隊伍`);
     }));
     bases.forEach((b) => {
@@ -228,9 +226,8 @@ export class Game {
     this.survivors.updateBoard(now);
     this.exploration.update(now, { silent });
     this.npcs.update(now);
-    this.trade.notifyArrivals(now);
     this.assist.update(now);
-    this.trade.prune(now);
+    this.market.update(now);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();

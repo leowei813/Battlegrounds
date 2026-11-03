@@ -16,20 +16,6 @@ const finite = (v) => Number.isFinite(v);
 const validPoint = (p) => p && finite(p.lat) && finite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180;
 
 /** 下載資料也要驗證（Supabase 後端不會替我們清理玩家上傳的內容） */
-/** 交易擺攤清單（數值在收下時另外驗證） */
-function cleanStall(list) {
-  return (Array.isArray(list) ? list : []).slice(0, 12).map((x) => {
-    if (!x || typeof x !== 'object') return null;
-    const qty = finite(x.qty) ? Math.min(999999, Math.max(0, Math.floor(x.qty))) : 0;
-    const sold = finite(x.sold) ? Math.min(qty, Math.max(0, Math.floor(x.sold))) : 0;
-    const price = finite(x.price) ? Math.min(100000, Math.max(0, Math.floor(x.price))) : 0;
-    const id = String(x.id || '').slice(0, 40);
-    if (!id || !qty) return null;
-    if (x.item && typeof x.item === 'object') return { id, qty: 1, sold: Math.min(1, sold), price, item: x.item };
-    return x.key ? { id, key: String(x.key).slice(0, 20), qty, sold, price } : null;
-  }).filter(Boolean);
-}
-
 /** 屍潮狀況（只有正在被攻擊時才有） */
 function cleanSiege(s) {
   if (!s || typeof s !== 'object') return null;
@@ -133,18 +119,10 @@ export function cleanPlayer(p) {
       members: finite(t.members) ? Math.min(10, Math.max(1, t.members)) : 1, target: String(t.target || '').slice(0, 40),
       id: String(t.id || '').slice(0, 40), level: finite(t.level) ? Math.min(60, Math.max(1, Math.round(t.level))) : 1,
       defeated: !!t.defeated,
-      ...(t.kind === 'trade' ? { kind: 'trade', targetId: String(t.targetId || '').slice(0, 40), stall: cleanStall(t.stall) } : {}),
-      ...(t.kind === 'deliver' ? { kind: 'deliver' } : {}),
       ...(t.kind === 'assist' ? { kind: 'assist' } : {}),
     }));
-  const demands = (Array.isArray(p.demands) ? p.demands : []).slice(0, 10).map((d) => ({
-    id: String(d?.id || '').slice(0, 40), key: String(d?.key || '').slice(0, 20),
-    qty: finite(d?.qty) ? Math.min(99999, Math.max(0, Math.floor(d.qty))) : 0,
-    price: finite(d?.price) ? Math.min(100000, Math.max(0, Math.floor(d.price))) : 0,
-  })).filter((d) => d.id && d.key && d.qty > 0);
   return {
     id: String(p.id || ''), name: String(p.name || '倖存者').slice(0, 16), civ: finite(p.civ) ? p.civ : 0, bases, trips,
-    exchange: finite(p.exchange) ? Math.min(20, Math.max(0, Math.floor(p.exchange))) : 0, demands,
     assist: cleanAssist(p.assist),
     // 最後一次上傳的時間（判斷對方是否開著遊戲）
     updatedAt: finite(p.updatedAt) ? p.updatedAt : 0,
@@ -259,8 +237,6 @@ export class WorldSync {
     return {
       name: g.state.player.name,
       civ: g.civilization.value(),
-      exchange: g.shelter.maxLevel('exchange'),
-      demands: g.demand.published(),
       assist: g.assist.published(),
       // 屍潮防禦範圍與可分出的防禦火力（涵蓋友好據點時自動協助）
       cover: g.assist.publishedCover(),
@@ -290,10 +266,6 @@ export class WorldSync {
           from: ex.from, to: { lat: poi.lat, lon: poi.lon }, startAt: ex.startAt, endAt: ex.endAt,
           travelMs: ex.travelMs, searchMs: ex.searchMs, members: ex.memberIds.length, target: poi.name,
           ...(ex.path?.length > 2 ? { path: ex.path.slice(0, 20) } : {}),
-          // 交易隊：對方玩家與擺攤商品
-          ...(ex.kind === 'trade' && ex.trade && !ex.recalled && !ex.tradeEnded && !ex.defeated
-            ? { kind: 'trade', targetId: ex.trade.playerId, stall: g.trade.stallOf(ex) } : {}),
-          ...(ex.kind === 'deliver' && !ex.defeated ? { kind: 'deliver' } : {}),
           ...(ex.kind === 'assist' && !ex.defeated ? { kind: 'assist' } : {}),
         };
       }).filter(Boolean),

@@ -47,7 +47,11 @@ export class SharedWorld {
 
   /** 目前使用的後端：伺服器（有登入身分時）或本機 */
   store() {
-    if (this.backend) return { b: this.backend, me: this.game.world?.myId || 'local', token: 'local' };
+    if (this.backend) {
+      let me = this.game.world?.myId;
+      try { me = me || this.game.world?.identity?.().id; } catch { /* 沒有身分 */ }
+      return { b: this.backend, me: me || 'local', token: 'local' };
+    }
     const w = this.game.world;
     if (w?.provider?.objPut) {
       const { id, token } = w.identity();
