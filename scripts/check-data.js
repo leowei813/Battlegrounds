@@ -683,7 +683,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const so0 = survivorRarityTable(0);
   const so10 = survivorRarityTable(15);
   assert(so0.legendary === 0 && Math.abs(so0.epic - 0.1) < 1e-9, '倖存者初始稀有 0%、罕見 0.1%');
-  assert(Math.abs(so10.legendary - 0.2) < 1e-9 && Math.abs(Object.values(so10).reduce((a2, b2) => a2 + b2, 0) - 100) < 1e-9, '招募技術滿級稀有 0.2%');
+  assert(Math.abs(so10.legendary - 3) < 1e-9 && Math.abs(Object.values(so10).reduce((a2, b2) => a2 + b2, 0) - 100) < 1e-9, '招募技術滿級傳奇 3%');
   gr.survivors.updateBoard(Date.now());
   assert(gr.state.recruitBoard.list.length === 2, '固定出現兩位可招募的倖存者');
   const firstIds = gr.state.recruitBoard.list.map((c) => c.id).join();

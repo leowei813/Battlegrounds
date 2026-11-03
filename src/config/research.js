@@ -144,7 +144,7 @@ export const RESEARCH = {
   c_bp: r('crafting', 3, '設計圖解析', '用設計圖製作時有機會提升一個品級', { craftBpBoost: 0.03 }, { req: [['c_tech', 3]] }),
   c_quality: r('crafting', 3, '品質控管', '製作裝備的素質提升', { craftQualityAdd: 0.03 }, { req: [['c_level', 2]] }),
   // ---- 招募 ----
-  r_tech: r('recruitment', 1, '招募技術', '招募到高品級倖存者的機率提升（滿級時傳奇 0.2%）', { recruitTech: 1 }),
+  r_tech: r('recruitment', 1, '招募技術', '招募到高品級倖存者的機率提升（滿級時傳奇 3%）', { recruitTech: 1 }),
   r_cost: r('recruitment', 1, '招募宣傳', '招募費用降低', { recruitCostReduce: 0.04 }),
   r_board: r('recruitment', 2, '情報網', '每小時出現的倖存者人數增加（每 5 級 +1）', { boardSlots: 0.2 }, { req: [['r_tech', 2]] }),
   r_train: r('recruitment', 2, '教練', '倖存者獲得的經驗提升', { xpPct: 0.04 }),
