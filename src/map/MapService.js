@@ -7,7 +7,18 @@ import { bus, EVT } from '../core/EventBus.js';
 import { escapeHtml } from '../utils/dom.js';
 import { SiegeMapLayer } from './SiegeMapLayer.js';
 import { PoiCanvasLayer } from './PoiCanvasLayer.js';
-import { ZoneLayer } from './ZoneLayer.js';
+import { ZoneLayer, ZONE_MODES, ZONE_MODE_ORDER } from './ZoneLayer.js';
+
+const ZONE_MODE_KEY = 'jdqs.zoneMode';
+/** 危險度圖層模式（每台裝置各自記住） */
+export function savedZoneMode() {
+  try {
+    const m = localStorage.getItem(ZONE_MODE_KEY);
+    return ZONE_MODES[m] ? m : 'strong';
+  } catch {
+    return 'strong';
+  }
+}
 import { dayKey } from '../systems/LootStock.js';
 import { npcAlert } from '../systems/TerritorySystem.js';
 import { GPS_RADIUS } from '../systems/GpsSystem.js';
@@ -39,9 +50,11 @@ export class MapService {
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+      className: 'base-tiles',
     }).addTo(this.map);
-    // v9：不再整片塗區域底色，區域顏色改畫在建築圖示的底色上
-    this.zoneLayer = new ZoneLayer();
+    // 區域危險度底色（清楚模式時底圖降低彩度，讓底色更明顯）
+    this.zoneLayer = new ZoneLayer(savedZoneMode()).addTo(this.map);
+    this.applyZoneMode(savedZoneMode());
     this.layers.range = L.layerGroup().addTo(this.map);
     this.poiLayer = new PoiCanvasLayer((poiId) => bus.emit(EVT.OPEN_POI, { poiId })).addTo(this.map);
     this.layers.routes = L.layerGroup().addTo(this.map);
@@ -142,6 +155,24 @@ export class MapService {
     L.circleMarker([gps.pos.lat, gps.pos.lon], {
       radius: 7, color: '#fff', weight: 2, fillColor: '#1e88e5', fillOpacity: 1, interactive: false,
     }).addTo(this.layers.gps);
+  }
+
+  /** 切換危險度圖層：清楚 → 淡 → 關閉 */
+  cycleZoneMode() {
+    const cur = this.zoneLayer?.mode || savedZoneMode();
+    const next = ZONE_MODE_ORDER[(ZONE_MODE_ORDER.indexOf(cur) + 1) % ZONE_MODE_ORDER.length];
+    try { localStorage.setItem(ZONE_MODE_KEY, next); } catch { /* 無法保存 */ }
+    this.applyZoneMode(next);
+    return ZONE_MODES[next].name;
+  }
+
+  applyZoneMode(mode) {
+    this.zoneLayer?.setMode(mode);
+    this.container?.classList?.toggle('zone-strong', mode === 'strong');
+  }
+
+  zoneMode() {
+    return this.zoneLayer?.mode || savedZoneMode();
   }
 
   /** NPC 據點（紅色骷髏旗，標示等級） */
