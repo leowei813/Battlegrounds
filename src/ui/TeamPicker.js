@@ -29,7 +29,7 @@ function vehicleHtml(game, cars, members, distanceM, squad = null) {
     : all.length && !st.seated ? '<span class="neg">座位不足，全隊仍以步行速度移動</span>' : '';
   const fuelWarn = st.fuel > game.state.resources.fuel ? '<span class="neg">（燃料不足）</span>' : '';
   const note = !squad ? '' : locked ? '<small class="block muted">🔒 這支小隊已指定載具，回到避難所後下一次出門時生效，無法取消或變更。</small>'
-    : '<small class="block muted">選擇的載具會在小隊回到避難所後、下一次出門時自動生效；確認後無法取消或變更，期間其他人不能選用，也不能拆解。</small>';
+    : '<small class="block muted">選擇的載具會在小隊回到避難所後、下一次出門時自動生效；確認後無法取消或變更，期間其他人不能選用，也不能維修或拆解；回程時損壞會自動解除指定。</small>';
   return `<div class="label">載具（選填）</div><div class="pick-list">${rows}</div>
     <p class="muted">速度 ×${st.speed}・運載量 <b>${st.cargo}</b>・耗油 ${st.fuel}${fuelWarn} ${warn}</p>${note}`;
 }
@@ -140,7 +140,6 @@ export function openTeamPicker(ui, opts) {
       } else if (action === 'dur') {
         duration = +data.d;
       } else if (action === 'confirm') {
-        if (squadId && cars.size && !confirm('指定的載具會在小隊回到避難所後、下一次出門時生效。確認後無法取消或變更，期間其他人不能選用，也不能拆解。確定要指定嗎？')) return;
         const res = opts.onConfirm(squadId ? [] : [...selected], duration, auto, [...cars], { avoidHostile, squadId });
         if (res?.ok !== false) m.close();
         return;

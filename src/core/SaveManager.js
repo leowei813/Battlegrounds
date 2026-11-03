@@ -7,6 +7,21 @@ import { RESEARCH, LEGACY_RESEARCH } from '../config/research.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 import { legacyToSupplies } from '../config/supplies.js';
 import { MAIN_QUESTS } from '../config/quests.js';
+import { rollQualities } from '../config/survivors.js';
+
+/** 依字串產生固定的亂數（同一位倖存者重新讀檔也得到相同素質） */
+function idRandom(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i += 1) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+  let a = h >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 /**
  * 地圖建築改以「欄位陣列」儲存（市區可達數千棟，物件格式體積約大一倍）：
@@ -278,6 +293,11 @@ export class SaveManager {
       (data.bases || []).forEach((b) => {
         if (b.facilities && !b.facilities.clinic) b.facilities.clinic = { level: b.kind === 'outpost' ? 0 : 1 };
       });
+    }
+    if (v < 21) {
+      // v9.9：倖存者能力素質（每項 0～100%）。所有非首領的倖存者與候選人重新隨機
+      const list = [...(data.survivors || []), ...(data.recruitPool || []), ...(data.recruitBoard?.list || []), ...(data.recruitOffer || [])];
+      list.forEach((sv) => { if (sv && !sv.isLeader) sv.quality = rollQualities(idRandom(`q:${sv.id}`)); });
     }
     if (v < 20) {
       // v9.6：全服聊天（封鎖名單、已讀位置）

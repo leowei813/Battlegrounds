@@ -89,6 +89,7 @@ export function sanitizePresence(body) {
   return {
     name: str(body.name, 16) || '倖存者',
     civ: num(body.civ, 0, 1e6) ?? 0,
+    epoch: num(body.epoch, 0, 1e14) ?? 0,
     bases,
     trips,
     exchange: num(body.exchange, 0, 20) ?? 0,

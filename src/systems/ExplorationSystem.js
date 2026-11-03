@@ -543,7 +543,9 @@ export class ExplorationSystem {
 
   /** 小隊下一次出門使用的載具：目前的載具 + 指定的載具 */
   nextVehicles(exp) {
-    return [...new Set([...(exp.vehicleIds || []), ...(exp.nextVehicleIds || [])])];
+    // 回程時損壞的載具（包含目前使用中的）這次不帶，回到車庫後可以維修
+    return [...new Set([...(exp.vehicleIds || []), ...(exp.nextVehicleIds || [])])]
+      .filter((id) => { const v = this.game.vehicles.get(id); return v && !this.game.vehicles.isBroken(v); });
   }
 
   /**

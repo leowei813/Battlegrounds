@@ -550,20 +550,30 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const gainedTotal = Object.entries(rep.resources).filter(([k]) => k in gc.state.resources).reduce((a2, [, v]) => a2 + v, 0);
   assert(gainedTotal <= 12 && Object.values(gc.state.resources).reduce((a2, b2) => a2 + b2, 0) - before <= 12 + 1, `運載量限制帶回的物資（${gainedTotal}）`);
 
-  // 放棄據點：退還 25%，搬家時超過運載量的物資被遺棄
+  // 搬遷避難所：取消研究與施工、防禦建築移除退 50%、設施保留、食物木材燃料只剩 10%
   const ga = Game.newGame({ playerName: 'A', classId: 'warrior', lat: 0, lon: 0 });
   ga.state.map.pois = fillPois([], 0, 0);
   ga.shelter.establish(ga.state.map.pois[0]);
   const home = ga.shelter.primary();
   home.facilities.farm.level = 3;
-  const built = ga.shelter.builtCost(home);
-  const preview = ga.shelter.abandonPreview(home.id);
-  assert(preview.refund.wood === Math.floor(built.wood * 0.25), '放棄據點退還 25% 建造資源');
+  home.facilities.researchCenter.level = 2;
+  home.defenses[0] = { slot: 0, type: 'machineGun', level: 2, garrisonId: null };
   Object.keys(ga.state.resources).forEach((k) => { ga.state.resources[k] = 1000; });
+  ga.state.research.active = { id: 'w_atk', level: 1, startAt: Date.now(), endAt: Date.now() + 3600e3, cost: { wood: 100 } };
+  home.buildQueue.push({ kind: 'facility', id: 'farm', targetLevel: 4, startAt: Date.now(), endAt: Date.now() + 3600e3, cost: { wood: 200 } });
+  const defCost = ga.shelter.defenseBuiltCost(home);
+  const preview = ga.shelter.abandonPreview(home.id);
+  assert(preview.relocate && preview.research && preview.builds === 1, '搬遷預覽列出要取消的研究與施工');
+  const expWood = Math.floor((1000 + (preview.cancelled.wood || 0) + Math.floor((defCost.wood || 0) * 0.5)) * 0.1);
   const ab = ga.shelter.abandon(home.id);
-  const left = Object.values(ga.state.resources).reduce((a2, b2) => a2 + b2, 0);
-  assert(ab.ok && !ga.shelter.hasShelter() && left <= preview.carry + 6, `搬家只能帶走運載量內的物資（剩 ${Math.round(left)} / 可搬 ${preview.carry}）`);
-  assert(ga.shelter.canEstablish(ga.state.map.pois[1]).ok && ga.shelter.establish(ga.state.map.pois[1]).base.kind === 'shelter', '放棄後可重新建立避難所');
+  assert(ab.ok && !ga.shelter.hasShelter() && !ga.state.research.active, '搬遷時取消進行中的研究');
+  assert(ga.state.resources.wood === expWood, `食物、木材、燃料（含退還）只剩 10%（${ga.state.resources.wood} / ${expWood}）`);
+  assert(ga.state.resources.food === 100 && ga.state.resources.fuel === Math.floor((1000 + (preview.cancelled.fuel || 0) + Math.floor((defCost.fuel || 0) * 0.5)) * 0.1), '搬遷後食物、燃料只剩 10%');
+  assert(ga.shelter.canEstablish(ga.state.map.pois[1]).ok, '搬遷後可重新建立避難所');
+  const nb = ga.shelter.establish(ga.state.map.pois[1]).base;
+  assert(nb.kind === 'shelter' && nb.facilities.farm.level === 3 && nb.facilities.researchCenter.level === 2, '搬遷後設施等級保留');
+  assert(nb.defenses.every((d) => !d.type), '搬遷後防禦建築不保留');
+  assert(!ga.state.relocation, '套用後清除搬遷資料');
 
   // NPC 據點：生成、升級、探索、掠奪、被攻陷後重生
   const gn = Game.newGame({ playerName: 'N', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
@@ -3035,6 +3045,97 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const d2 = JSON.parse(JSON.stringify(gv2.state));
   d2.vehicles[0].status = 'reserved'; d2.vehicles[0].reservedFor = 'gone';
   assert(SaveManager.migrate(d2).vehicles[0].status === 'idle', '讀檔時歸還失效的指定');
+}
+
+// ---- 68. 刪除進度時解除好友 ----
+{
+  const ga5 = Game.newGame({ playerName: 'A5', classId: 'warrior', lat: 25, lon: 121 });
+  const sent = [];
+  ga5.world = {
+    provider: { worldSend: async (from, _t, to, type) => { sent.push([to, type]); } },
+    identity: () => ({ id: 'me', token: 't' }),
+  };
+  ga5.state.relations.players = { f1: { status: 'friend', name: '好友1' }, h1: { status: 'hostile', name: '敵人' } };
+  ga5.state.relations.requestsOut = { r1: { name: '待回覆' } };
+  await ga5.territory.leaveAll();
+  assert(sent.length === 2 && sent.every(([, t]) => t === 'friendRemove') && sent.some(([to]) => to === 'f1') && sent.some(([to]) => to === 'r1'), '刪除進度時通知所有好友與送出過請求的玩家解除關係');
+  const gb5 = Game.newGame({ playerName: 'B5', classId: 'warrior', lat: 25, lon: 121 });
+  gb5.state.relations.requestsIn = { me: { name: 'A5' } };
+  gb5.territory.handleEvents([{ from: 'me', fromName: 'A5', type: 'friendRemove' }]);
+  assert(!gb5.state.relations.requestsIn.me, '對方刪除進度後，收到的友好請求也一併移除');
+  // 漏收通知：以對方的開局時間判斷是否已重新開始
+  gb5.state.relations.players = { me: { status: 'friend', name: 'A5' } };
+  gb5.territory.checkEpochs([{ id: 'me', name: 'A5', epoch: 1000 }]);
+  assert(gb5.territory.relation('me') === 'friend' && gb5.state.relations.players.me.epoch === 1000, '第一次看到對方時記下開局時間');
+  gb5.territory.checkEpochs([{ id: 'me', name: 'A5', epoch: 1000 }]);
+  assert(gb5.territory.relation('me') === 'friend', '同一個角色維持好友');
+  gb5.territory.checkEpochs([{ id: 'me', name: 'A5 新', epoch: 2000 }]);
+  assert(gb5.territory.relation('me') !== 'friend', '對方重新開始（開局時間不同）時自動解除好友');
+}
+
+// ---- 69. 瞭望塔也抵禦 NPC 與玩家 ----
+{
+  const gw5 = Game.newGame({ playerName: 'W5', classId: 'warrior', lat: 25, lon: 121 });
+  gw5.state.map.pois = fillPois([], 25, 121);
+  gw5.shelter.establish(gw5.state.map.pois[0]);
+  const b5 = gw5.shelter.primary();
+  b5.defenses[0] = { slot: 0, type: 'watchPost', level: 3, garrisonId: null };
+  gw5.survivors.leader().job = 'scavenge';
+  const sg = gw5.siege.of(b5.id);
+  const none = sg.defenseDps();
+  gw5.shelter.garrison(b5, 0, 'leader');
+  assert(sg.defenseDps() > none, '瞭望塔駐守人員計入守城火力（NPC 掠奪與玩家突襲破牆前都會射擊）');
+  assert(gw5.territory.garrison(b5).count === 1 && gw5.npcs.defenders(b5).some((x) => x.id === 'leader'), '瞭望塔駐守人員算在警戒範圍駐守人數，破牆後也會迎戰 NPC');
+  assert(gw5.world == null && gw5.npcs.baseDefense(b5) > 0, 'NPC 判斷防禦強度時計入瞭望塔');
+}
+
+// ---- 70. v9.9 倖存者能力素質 ----
+{
+  const { QUALITY_KEYS, qualityMul, rollQuality } = await import('../src/config/survivors.js');
+  const gq5 = Game.newGame({ playerName: 'Q5', classId: 'warrior', lat: 25, lon: 121 });
+  const cand = gq5.survivors.makeCandidate(5);
+  assert(QUALITY_KEYS.every((k) => Number.isInteger(cand.quality[k]) && cand.quality[k] >= 0 && cand.quality[k] <= 100), '新的倖存者每項能力都有 0～100% 素質');
+  assert(gq5.survivors.qualityOf(gq5.survivors.leader(), 'atk') === 100 && gq5.survivors.avgQuality(gq5.survivors.leader()) === 100, '首領素質一律 100%');
+  assert(qualityMul('atk', 0) === 0.85 && qualityMul('atk', 50) === 1 && Math.abs(qualityMul('atk', 100) - 1.15) < 1e-9 && Math.abs(qualityMul('atkSpeed', 100) - 1.1) < 1e-9, '素質倍率 0% ×0.85、50% ×1、100% ×1.15（攻速 ×0.9～×1.1）');
+  cand.quality = Object.fromEntries(QUALITY_KEYS.map((k) => [k, 0]));
+  const lo = gq5.survivors.stats(cand);
+  cand.quality = Object.fromEntries(QUALITY_KEYS.map((k) => [k, 100]));
+  const hi = gq5.survivors.stats(cand);
+  assert(hi.atk > lo.atk && hi.hp > lo.hp && hi.crit > lo.crit && hi.dodge > lo.dodge && hi.atkSpeed > lo.atkSpeed, '素質越高能力越好');
+  assert(gq5.survivors.growthPerLevel(cand, 'hp') > 0, '每級成長也套用素質');
+  const rolls = Array.from({ length: 4000 }, (_, i) => rollQuality(() => (i + 0.5) / 4000));
+  assert(rolls.filter((q) => q >= 90).length < rolls.filter((q) => q <= 10).length, '越接近 100% 越少見');
+  const old = JSON.parse(JSON.stringify(gq5.state));
+  old.version = 20;
+  old.survivors.push({ ...JSON.parse(JSON.stringify(cand)), id: 'sv_old', quality: undefined });
+  const m1 = SaveManager.migrate(JSON.parse(JSON.stringify(old)));
+  const m2 = SaveManager.migrate(JSON.parse(JSON.stringify(old)));
+  const s1 = m1.survivors.find((x) => x.id === 'sv_old');
+  assert(s1.quality && JSON.stringify(s1.quality) === JSON.stringify(m2.survivors.find((x) => x.id === 'sv_old').quality), '舊倖存者遷移時重新給素質（同一位每次相同）');
+  assert(!m1.survivors.find((x) => x.isLeader).quality, '首領不需要素質資料');
+}
+
+// ---- 71. v9.9 指定載具鎖定 ----
+{
+  const gv3 = Game.newGame({ playerName: 'V3', classId: 'scout', lat: 25, lon: 121 });
+  gv3.state.map.pois = fillPois([], 25, 121);
+  gv3.shelter.establish(gv3.state.map.pois[0]);
+  setHour(gv3, 10);
+  const simV3 = gv3.combat.simulate.bind(gv3.combat);
+  gv3.combat.simulate = (sv, _en, o) => simV3(sv, [], o);
+  gv3.state.resources.fuel = 9999;
+  const vs3 = gv3.vehicles;
+  const c3 = vs3.create(Object.keys(VEHICLES_CFG)[0], 0.5); vs3.add(c3);
+  const pois3 = gv3.state.map.pois.filter((p) => !gv3.shelter.baseAtPoi(p.id) && p.type === 'residential').slice(0, 2);
+  gv3.survivors.leader().level = 40;
+  const e3 = gv3.exploration.start(pois3[0].id, ['leader'], 5);
+  gv3.exploration.enqueue(e3.exp.id, pois3[1].id);
+  gv3.exploration.assignVehicles(e3.exp.id, [c3.id]);
+  assert(!vs3.repair(c3.id).ok, '指定給臨時小隊的載具不能維修');
+  c3.durability = 0;
+  gv3.exploration.update(e3.exp.endAt + 1, { silent: true });
+  const n3 = gv3.state.expeditions[0];
+  assert(n3 && !(n3.vehicleIds || []).includes(c3.id) && c3.status === 'idle', '損壞的指定載具回程後自動解除鎖定，不會跟著出門');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

@@ -60,6 +60,10 @@ export const MAX_OUTPOSTS = 3;
 export const MAX_BASES = 1 + MAX_OUTPOSTS;
 /** 放棄據點時退還的建造資源比例 */
 export const ABANDON_REFUND = 0.25;
+/** 搬遷避難所：防禦建築退還的建造材料比例 */
+export const RELOCATE_DEFENSE_REFUND = 0.5;
+/** 搬遷避難所：食物、木材、燃料保留的比例 */
+export const RELOCATE_KEEP = 0.1;
 
 /** 建立第 n 座前哨站的費用 */
 export const baseEstablishCost = (n) => materialize({

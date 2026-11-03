@@ -8,7 +8,7 @@ import { DEFENSES, DEFENSE_MAX_LEVEL, defenseBuildTime } from '../config/defense
 import { RESEARCH } from '../config/research.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import {
-  PRIMARY_DANGER_COEF, baseEstablishCost, BASE_SIZES, FACILITY_COUNT, baseSizeOf, ABANDON_REFUND, MAX_OUTPOSTS,
+  PRIMARY_DANGER_COEF, baseEstablishCost, BASE_SIZES, FACILITY_COUNT, baseSizeOf, ABANDON_REFUND, RELOCATE_DEFENSE_REFUND, RELOCATE_KEEP, MAX_OUTPOSTS,
 } from '../config/civilization.js';
 import { createBase } from '../core/GameState.js';
 import { canAfford, payCost, scaleCost } from './costUtils.js';
@@ -188,6 +188,15 @@ export class ShelterSystem {
     payCost(this.game.state, this.establishCost());
     const kind = this.nextKind();
     const base = createBase(poi, kind);
+    // 搬遷：保留原本避難所的設施等級
+    const reloc = kind === 'shelter' ? this.game.state.relocation : null;
+    if (reloc?.facilities) {
+      Object.entries(reloc.facilities).forEach(([fid, f]) => {
+        if (base.facilities[fid]) base.facilities[fid].level = Math.max(base.facilities[fid].level, Math.round(Number(f.level) || 0));
+      });
+      base.wallHp = null;
+      delete this.game.state.relocation;
+    }
     this.bases.push(base);
     if (kind === 'shelter') this.game.state.primaryBaseId = base.id;
     this.game.civilization.invalidate();
@@ -216,53 +225,88 @@ export class ShelterSystem {
     return total;
   }
 
+  /** 防禦建築的建造成本總和 */
+  defenseBuiltCost(base) {
+    const total = {};
+    base.defenses.forEach((d) => {
+      if (!d.type) return;
+      for (let lv = 1; lv <= d.level; lv += 1) {
+        Object.entries(DEFENSES[d.type].cost(lv)).forEach(([k, v]) => { total[k] = (total[k] || 0) + v; });
+      }
+    });
+    return total;
+  }
+
   /**
-   * 放棄據點的結果預覽。
-   * 放棄避難所＝搬家：所有資源只能帶走「人 + 有人駕駛的載具」載得動的量，其餘直接遺棄。
-   * @returns {{refund:object, carry?:number, keep?:object, lost?:object}}
+   * 放棄前哨站／搬遷避難所的結果預覽。
+   * 搬遷避難所：進行中的研究與施工先取消並退還材料；防禦建築全部移除並退還 50% 建造材料；
+   * 其他設施保留到新的避難所；食物、木材、燃料（含退還的部分）只剩 10%。
+   * 前哨站：所有建築消失，退還 25% 建造資源。
    */
-  abandonPreview(id) {
+  abandonPreview(id, now = Date.now()) {
     const base = this.base(id);
     if (!base) return null;
-    const refund = Object.fromEntries(Object.entries(this.builtCost(base))
-      .map(([k, v]) => [k, Math.floor(v * ABANDON_REFUND)]).filter(([, v]) => v > 0));
-    if (base.kind === 'outpost') return { refund };
+    if (base.kind === 'outpost') {
+      const refund = Object.fromEntries(Object.entries(this.builtCost(base))
+        .map(([k, v]) => [k, Math.floor(v * ABANDON_REFUND)]).filter(([, v]) => v > 0));
+      return { refund };
+    }
+    const add = (to, cost) => Object.entries(cost || {}).forEach(([k, v]) => { if (v > 0) to[k] = (to[k] || 0) + v; });
+    const cancelled = {};
+    const active = this.game.state.research.active;
+    const research = active ? cancelRefund(active, now, () => this.game.research.cost(active.id, active.level)).cost : null;
+    add(cancelled, research);
+    const builds = base.buildQueue.map((q) => cancelRefund(q, now, () => (q.kind === 'facility' ? this.discounted(FACILITIES[q.id].cost(q.targetLevel)) : this.defenseCost(q.id, q.targetLevel))).cost);
+    builds.forEach((c) => add(cancelled, c));
+    const defRefund = Object.fromEntries(Object.entries(this.defenseBuiltCost(base))
+      .map(([k, v]) => [k, Math.floor(v * RELOCATE_DEFENSE_REFUND)]).filter(([, v]) => v > 0));
     const res = this.game.state.resources;
-    const after = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, Math.floor(res[k] + (refund[k] || 0))]));
-    const total = RESOURCE_KEYS.reduce((s, k) => s + after[k], 0);
-    const cap = this.game.vehicles.relocationCapacity();
-    const ratio = total > cap.cargo ? cap.cargo / total : 1;
-    const keep = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, Math.floor(after[k] * ratio)]));
-    const lost = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, after[k] - keep[k]]).filter(([, v]) => v > 0));
+    const before = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, Math.floor(res[k] + (cancelled[k] || 0) + (defRefund[k] || 0))]));
+    const keep = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, Math.floor(before[k] * RELOCATE_KEEP)]));
+    const lost = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, before[k] - keep[k]]).filter(([, v]) => v > 0));
+    const facilities = Object.entries(base.facilities).filter(([, f]) => f.level > 0).map(([fid, f]) => ({ id: fid, level: f.level }));
+    const defenses = base.defenses.filter((d) => d.type).map((d) => ({ type: d.type, level: d.level }));
     return {
-      refund, carry: cap.cargo, people: cap.people, vehicles: cap.vehicles, keep, lost,
+      relocate: true, research: active ? { id: active.id, level: active.level, refund: research } : null,
+      builds: base.buildQueue.length, cancelled, defRefund, defenses, facilities, before, keep, lost,
     };
   }
 
   abandon(id) {
     const base = this.base(id);
     if (!base) return { ok: false, reason: '找不到據點' };
-    if (base.buildQueue.length) return { ok: false, reason: '施工中無法放棄' };
     const isShelter = base.kind !== 'outpost';
-    if (isShelter && this.game.state.expeditions.length) return { ok: false, reason: '有隊伍在外，無法放棄避難所' };
+    if (!isShelter && base.buildQueue.length) return { ok: false, reason: '施工中無法放棄' };
+    if (isShelter && this.game.state.expeditions.length) return { ok: false, reason: '有隊伍在外，無法搬遷避難所' };
     const preview = this.abandonPreview(id);
     base.defenses.forEach((d) => { d.garrisonId = null; });
-    this.game.state.bases = this.bases.filter((b) => b.id !== id);
     if (isShelter) {
-      // 搬家：資源只保留帶得走的部分（退還的建材也要搬）
-      Object.assign(this.game.state.resources, preview.keep);
-      // 退還的零件與布料放進物品倉庫（物品倉庫跟著搬家）
-      this.game.grant(Object.fromEntries(Object.entries(preview.refund).filter(([k]) => !RESOURCE_KEYS.includes(k))));
+      // 1. 進行中的研究與施工先取消並退還材料
+      if (this.game.state.research.active) this.game.research.cancel();
+      while (base.buildQueue.length) this.cancelBuild(base, 0);
+      // 2. 防禦建築全部移除，退還 50% 建造材料
+      this.game.grant(preview.defRefund);
+      // 3. 食物、木材、燃料只剩 10%
+      const res = this.game.state.resources;
+      RESOURCE_KEYS.forEach((k) => { res[k] = Math.floor(res[k] * RELOCATE_KEEP); });
+      // 4. 設施保留到新的避難所（防禦建築與圍牆耐久不保留）
+      this.game.state.relocation = {
+        facilities: Object.fromEntries(Object.entries(base.facilities).map(([fid, f]) => [fid, { level: f.level }])),
+        from: base.name, at: Date.now(),
+      };
+      this.game.state.bases = this.bases.filter((b) => b.id !== id);
       this.game.state.primaryBaseId = null;
     } else {
+      this.game.state.bases = this.bases.filter((b) => b.id !== id);
       this.game.grant(preview.refund);
     }
     this.game.civilization.invalidate();
-    const lostTotal = Object.values(preview.lost || {}).reduce((s, v) => s + v, 0);
-    this.game.log(`🏚️ 放棄${isShelter ? '避難所' : '前哨站'}「${base.name}」，退還 ${Math.round(ABANDON_REFUND * 100)}% 建造資源${lostTotal ? `，帶不走的 ${lostTotal} 單位物資被遺棄` : ''}`, 'danger');
+    this.game.log(isShelter
+      ? `🚚 搬遷避難所「${base.name}」：防禦建築拆除並退還 ${Math.round(RELOCATE_DEFENSE_REFUND * 100)}% 材料，設施保留，食物、木材、燃料只帶走 ${Math.round(RELOCATE_KEEP * 100)}%`
+      : `🏚️ 放棄前哨站「${base.name}」，退還 ${Math.round(ABANDON_REFUND * 100)}% 建造資源`, 'danger');
     this.game.bus.emit('shelter:changed');
     return {
-      ok: true, preview, msg: isShelter ? `已放棄避難所「${base.name}」，請在地圖上選擇新的避難所` : `已放棄前哨站「${base.name}」`,
+      ok: true, preview, msg: isShelter ? `已搬離「${base.name}」，請在地圖上選擇新的避難所（設施會保留）` : `已放棄前哨站「${base.name}」`,
     };
   }
 

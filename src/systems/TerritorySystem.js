@@ -266,6 +266,50 @@ export class TerritorySystem {
     return { ok: true, msg: '已解除友好，回到中立' };
   }
 
+  /** 刪除進度時：通知所有好友與提出過友好請求的玩家解除關係 */
+  async leaveAll() {
+    const r = this.rel;
+    if (!r) return;
+    const ids = new Set([
+      ...Object.entries(r.players || {}).filter(([, p]) => p.status === 'friend').map(([pid]) => pid),
+      ...Object.keys(r.requestsOut || {}),
+    ]);
+    await Promise.allSettled([...ids].map((pid) => this.send(pid, 'friendRemove')));
+  }
+
+  /**
+   * 對方刪除進度重新開始（同一帳號、不同開局時間）：舊角色的友好／敵對關係與請求一律解除。
+   * 第一次看到對方時記下開局時間。
+   */
+  checkEpochs(others = []) {
+    const r = this.rel;
+    if (!r) return;
+    let changed = false;
+    others.forEach((p) => {
+      if (!p?.id || !p.epoch) return;
+      const rel = r.players?.[p.id];
+      if (rel) {
+        if (!rel.epoch) {
+          rel.epoch = p.epoch;
+        } else if (rel.epoch !== p.epoch) {
+          delete r.players[p.id];
+          if (rel.status === 'friend') this.game.log(`「${rel.name || p.name}」已刪除進度重新開始，友好關係已解除`, 'info');
+          changed = true;
+        }
+      }
+      ['requestsIn', 'requestsOut'].forEach((k) => {
+        const q = r[k]?.[p.id];
+        if (!q) return;
+        if (!q.epoch) q.epoch = p.epoch;
+        else if (q.epoch !== p.epoch) {
+          delete r[k][p.id];
+          changed = true;
+        }
+      });
+    });
+    if (changed) this.game.bus.emit('relations:changed');
+  }
+
   /** 處理收到的事件（攻擊、友好請求…） */
   handleEvents(events = []) {
     const g = this.game;
@@ -317,8 +361,12 @@ export class TerritorySystem {
       } else if (e.type === 'plunder') {
         g.intercept.handlePlunder(e);
       } else if (e.type === 'friendRemove') {
-        if (this.relation(e.from) === 'friend') delete this.rel.players[e.from];
-        g.log(`「${name}」解除了友好關係`, 'info');
+        const wasFriend = this.relation(e.from) === 'friend';
+        if (wasFriend) delete this.rel.players[e.from];
+        // 對方取消請求（或刪除進度）：收到的友好請求也一併移除
+        delete this.rel.requestsIn[e.from];
+        delete this.rel.requestsOut[e.from];
+        if (wasFriend) g.log(`「${name}」解除了友好關係`, 'info');
       }
     });
     if (events.length) g.bus.emit('relations:changed');

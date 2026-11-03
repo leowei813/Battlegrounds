@@ -77,7 +77,7 @@ export class ShelterPanel {
       return `<button class="chip ${b.id === sh.id ? 'active' : ''}" data-action="viewBase" data-id="${b.id}">${g.shelter.isPrimary(b) ? '⭐' : '🏴'} ${escapeHtml(b.name)}</button>`;
     }).join('');
     const baseActions = g.shelter.isPrimary(sh)
-      ? `<small class="muted">⭐ 避難所：倖存者居住、生產、探索出發、駐守倖存者防衛於此。</small>${btn('🏚️ 放棄避難所（搬家）', 'abandon', {}, { cls: 'btn-sm btn-ghost' })}`
+      ? `<small class="muted">⭐ 避難所：倖存者居住、生產、探索出發、駐守倖存者防衛於此。</small>${btn('🚚 搬遷', 'abandon', {}, { cls: 'btn-sm btn-ghost' })}`
       : `<small class="muted">🏴 前哨站：只有防禦功能，不能生產。</small>${btn('🏚️ 放棄前哨站', 'abandon', {}, { cls: 'btn-sm btn-ghost' })}`;
     const queue = sh.buildQueue.map((q, i) => {
       const name = q.kind === 'facility' ? FACILITIES[q.id].name : `${DEFENSES[q.id].name}（槽位 ${q.slot + 1}）`;
@@ -176,7 +176,7 @@ export class ShelterPanel {
           ${this.renderCivilization(sh)}
         </div>
         ${queue ? queueBox : ''}
-        <div class="sh-foot"><small class="muted">${g.shelter.isPrimary(sh) ? '⭐ 避難所：倖存者居住、生產、探索出發、駐守倖存者防衛於此。' : '🏴 前哨站：只有防禦功能，不能生產。'}</small>${btn(g.shelter.isPrimary(sh) ? '🏚️ 放棄避難所（搬家）' : '🏚️ 放棄前哨站', 'abandon', {}, { cls: 'btn-xs btn-ghost' })}</div>`,
+        <div class="sh-foot"><small class="muted">${g.shelter.isPrimary(sh) ? '⭐ 避難所：倖存者居住、生產、探索出發、駐守倖存者防衛於此。' : '🏴 前哨站：只有防禦功能，不能生產。'}</small>${btn(g.shelter.isPrimary(sh) ? '🚚 搬遷' : '🏚️ 放棄前哨站', 'abandon', {}, { cls: 'btn-xs btn-ghost' })}</div>`,
       facilities: `<div class="sh-fac">
         <div class="sh-fac-main">
           <div class="chips fac-filter">${[['all', '全部'], ['ready', '可升級'], ['built', '已建造'], ['unbuilt', '未建造']].map(([k, l]) => `<button class="chip ${facFilter === k ? 'active' : ''}" data-action="facFilter" data-f="${k}">${l}</button>`).join('')}</div>

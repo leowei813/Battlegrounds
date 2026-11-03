@@ -2,10 +2,10 @@ import {
   SAVE_VERSION, STARTING_RESOURCES, STARTING_SUPPLIES, STARTING_COINS,
 } from '../config/constants.js';
 import { FACILITIES } from '../config/facilities.js';
-import { CLASSES } from '../config/survivors.js';
+import { CLASSES, rollQualities } from '../config/survivors.js';
 import { emptyEquipment } from '../config/equipment.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
-import { uid, newSeed } from '../utils/math.js';
+import { uid, newSeed, randFloat } from '../utils/math.js';
 
 /** 各類隨機結果的種子 */
 export const newSeeds = () => Object.fromEntries(['craft', 'recruit', 'explore', 'battle', 'npc'].map((k) => [k, newSeed()]));
@@ -73,6 +73,8 @@ export function createSurvivor(name, classId, level = 1, rarity = 'common') {
     xp: 0,
     isLeader: false,
     rarity,
+    // 能力素質 0～100%（每項各自隨機）
+    quality: rollQualities(() => randFloat(0, 1)),
     status: 'idle',
     job: 'scavenge',
     hp: null,
