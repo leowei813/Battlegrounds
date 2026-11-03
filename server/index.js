@@ -139,6 +139,22 @@ async function handleWorld(req, res, url) {
     return json(res, 200, { players: world.nearby(lat, lon, km, String(url.searchParams.get('exclude') || '')) });
   }
   // 玩家事件信箱：POST 送出（寄件者 token），GET 讀取並清空（本人 token）
+  // 共用世界物件
+  if (url.pathname === '/api/world/objects' && req.method === 'GET') {
+    const lat = Number(url.searchParams.get('lat'));
+    const lon = Number(url.searchParams.get('lon'));
+    const km = Math.min(20, Math.max(0.5, Number(url.searchParams.get('km')) || 5));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json(res, 400, { error: 'invalid position' });
+    return json(res, 200, { objects: world.objList(String(url.searchParams.get('kind') || ''), lat, lon, km) });
+  }
+  const om = /^\/api\/world\/objects\/([a-z]{2,12})\/([^/]+)$/.exec(url.pathname);
+  if (om && req.method === 'POST') {
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const body = await readBody(req);
+    const r = world.objPut(String(body?.from || ''), token, om[1], decodeURIComponent(om[2]), body);
+    const code = { ok: 200, conflict: 409, forbidden: 403, invalid: 400 }[r.status];
+    return json(res, code, r);
+  }
   const ev = /^\/api\/world\/players\/([^/]+)\/events$/.exec(url.pathname);
   if (ev && ID_RE.test(ev[1])) {
     const token = bearer(req);

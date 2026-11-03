@@ -281,6 +281,8 @@ export class SaveManager {
     }
     if (v < 18) {
       // v9：武器欄拆成遠程與近戰；新增彈藥欄與藥品欄
+      // 流浪商人改為全體共用的黑市
+      delete data.trader;
       const items = data.inventory?.items || [];
       (data.survivors || []).forEach((sv) => {
         sv.equipment = sv.equipment || {};

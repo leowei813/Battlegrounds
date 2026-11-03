@@ -75,3 +75,13 @@
 ## 進度備忘（給自己）
 - 存檔遷移 v9 時：重新計算所有裝備的 power（#14 戰力公式改變）
 - 上線前：把 src/config/constants.js 的 WORLD_EPOCH_MS 改成實際上線時間（＝2050/1/1 06:00）
+
+## 第 3 批設計（共用世界）
+- 共用物件表 `jdqs_objects(kind, id, lat, lon, data, ver, updated_at)`；RPC：`jdqs_obj_list(kind, lat, lon, km)`、`jdqs_obj_put(player, token, kind, id, lat, lon, data, ver)`（版本號 CAS：ver 不符回傳 conflict＋最新資料；ver=0 表示新建，已存在則 conflict）。自架伺服器同樣端點。
+- 前端 `SharedWorld`（src/multiplayer/SharedWorld.js）：快取、list、put(CAS)、update(kind,id,fn) 失敗自動重抓重試。
+- NPC：位置依 1km 格子＋世代號決定性產生（不依賴 POI）；共用物件 `npc:<cell>` 存等級、傷亡、物資、金錢、摧毀時間；掠奪行程仍由受害玩家本機模擬，結果寫回共用 NPC。
+- 夜晚殭屍群／Boss：依格子＋夜晚編號決定性產生（位置、種類、等級相同）；共用物件 `zk:<night>` 記錄被擊倒的群組。
+- 黑市：20 格，每 10 分鐘換一格（第 (tick % 20) 格），商品由 (格子, 換貨時間) 決定性產生；共用物件 `bm:sold` 記錄已售出。
+- 交易市場：共用物件 `mk:<id>`（賣單／買單、保管、成交紀錄、領取標記）。
+- 重度感染據點：每 2 平方公里 1 座，決定性位置；共用物件 `inf:<cell>`（淨化度、更新時間、消滅時間）。
+- 集結：共用物件 `rally:<id>`（發起人、目標、出發時間、參加隊伍與戰鬥單位、狀態、結果與分配）。

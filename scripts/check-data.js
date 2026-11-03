@@ -1385,59 +1385,119 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!raid.success ? raid.injured.length >= 0 : true, 'NPC 掠奪紀錄包含重傷名單');
 }
 
-// ---- 25. v8.7：流浪商人 ----
+// ---- 25. v9：黑市（全體共用、先到先得；取代流浪商人） ----
 {
-  const { TRADER } = await import('../src/systems/TraderSystem.js');
-  const gt = Game.newGame({ playerName: 'T', classId: 'warrior', lat: 25, lon: 121 });
-  gt.state.map.pois = fillPois([], 25, 121);
-  gt.shelter.establish(gt.state.map.pois[0]);
-  setHour(gt, 9);
-  gt.trader.update(Date.now());
-  assert(!gt.state.trader && !gt.trader.isHere(), '早上 11 點前商人不會出現');
-  // 找一個會出現的種子
-  let appeared = false;
-  for (let i = 0; i < 20 && !appeared; i += 1) {
-    gt.state.trader = null;
-    gt.state.rng.trader = 1000 + i;
-    setHour(gt, 12);
-    gt.trader.update(Date.now());
-    appeared = gt.trader.isHere();
+  const { BLACK_MARKET } = await import('../src/systems/BlackMarketSystem.js');
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon: 121 });
+    gx.state.map.pois = fillPois([], 25, 121);
+    gx.shelter.establish(gx.state.map.pois[0]);
+    return gx;
+  };
+  const gt = mk('T');
+  const gu = mk('U');
+  const store = new MemoryObjects();
+  gt.shared.backend = store;
+  gu.shared.backend = store;
+  const shelfT = gt.blackMarket.shelf();
+  const shelfU = gu.blackMarket.shelf();
+  assert(shelfT.length === BLACK_MARKET.slots, `黑市有 ${BLACK_MARKET.slots} 項商品`);
+  assert(JSON.stringify(shelfT.map((x) => [x.id, x.kind, x.key || x.item.model, x.qty || 1, x.price])) === JSON.stringify(shelfU.map((x) => [x.id, x.kind, x.key || x.item.model, x.qty || 1, x.price])), '所有玩家看到的黑市商品完全相同');
+  // 每 10 分鐘只換掉 1 格
+  const t0 = Date.now();
+  const later = gt.blackMarket.shelf(t0 + BLACK_MARKET.rotateMs).map((x) => x.id);
+  const diff = shelfT.filter((x, i) => x.id !== later[i]).length;
+  assert(diff === 1, `每 10 分鐘換掉 1 格（換了 ${diff} 格）`);
+  // 比例與品級：大量取樣
+  let gearN = 0;
+  let legend = 0;
+  let poor = 0;
+  const N = 3000;
+  for (let i = 0; i < N; i += 1) {
+    const x = gt.blackMarket.good(i % 20, 100000 + i);
+    if (x.kind === 'gear') gearN += 1;
+    const r = x.kind === 'gear' ? x.item.rarity : x.rarity;
+    if (r === 'legendary') legend += 1;
+    if (r === 'poor') poor += 1;
   }
-  assert(appeared && gt.state.trader.stock.length === TRADER.goods, `11:00～15:00 有機率出現，帶著 ${TRADER.goods} 項商品`);
-  const until = gt.state.trader.until;
-  const left = (until - Date.now()) / DAY_REAL_MS * 24;
-  assert(left > 2.9 && left < 3.1, `商人待到下午 3 點（剩 ${left.toFixed(2)} 小時）`);
-  const gear = gt.state.trader.stock.filter((x) => x.kind === 'gear');
-  const legendaryPrice = gt.trader.gearPrice(gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'legendary' }));
-  const poorPrice = gt.trader.gearPrice(gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'poor' }));
-  assert(legendaryPrice > poorPrice * 10 && gt.trader.supplyPrice('titanium') > gt.trader.supplyPrice('nail') && gt.trader.supplyPrice('largeKit') > gt.trader.supplyPrice('gauze'), '越稀有的商品越貴');
-  const good = gt.state.trader.stock[0];
+  assert(gearN / N > 0.11 && gearN / N < 0.19, `裝備約占 15%（${((gearN / N) * 100).toFixed(1)}%）`);
+  assert(poor / N > 0.35 && poor / N < 0.45 && legend / N < 0.015, `品級機率：劣質約 40%、傳奇約 0.5%（${((poor / N) * 100).toFixed(1)}% / ${((legend / N) * 100).toFixed(2)}%）`);
+  // 價格高於過去的流浪商人
+  const gx = shelfT.find((x) => x.kind === 'supply');
+  assert(gx.price >= Math.round(gt.blackMarket.supplyPrice(gx.key) * gx.qty * 1.5), '黑市價格高於過去的商人');
+  const legendaryPrice = gt.blackMarket.gearPrice(gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'legendary' }));
+  const poorPrice = gt.blackMarket.gearPrice(gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'poor' }));
+  assert(legendaryPrice > poorPrice * 10, '越稀有越貴');
+  // 購買：金錢不足、同時搶購只有一人成功、另一人退錢
+  const good = shelfT.find((x) => x.kind === 'supply');
   gt.state.player.coins = 0;
-  assert(!gt.trader.buy(good.id).ok, '金錢不足不能購買');
+  assert(!(await gt.blackMarket.buy(good.id)).ok && gt.state.player.coins === 0, '金錢不足不能購買');
   gt.state.player.coins = 1e6;
-  const coins0 = gt.state.player.coins;
-  assert(gt.trader.buy(good.id).ok && gt.state.player.coins === coins0 - good.price && gt.state.trader.stock.length === TRADER.goods - 1, '用金錢購買商品');
-  // 同一天不會重新出現；過了 15:00 離開
-  const stock = JSON.stringify(gt.state.trader.stock);
-  gt.trader.update(Date.now());
-  assert(JSON.stringify(gt.state.trader.stock) === stock, '同一天商品不會重新產生');
-  // 回收：約售價 1/8，越稀有比例越好
+  gu.state.player.coins = 1e6;
+  const before = gt.state.supplies[good.key] || 0;
+  const beforeU = gu.state.supplies[good.key] || 0;
+  const [rt, ru] = await Promise.all([gt.blackMarket.buy(good.id), gu.blackMarket.buy(good.id)]);
+  assert(rt.ok !== ru.ok, `兩人同時購買同一項只有一人成功（${rt.ok}/${ru.ok}）`);
+  const [win, lose] = rt.ok ? [gt, gu] : [gu, gt];
+  assert(win.state.player.coins === 1e6 - good.price && lose.state.player.coins === 1e6, '買到的人扣錢，沒買到的人全額退還');
+  assert((gt.state.supplies[good.key] || 0) + (gu.state.supplies[good.key] || 0) === before + beforeU + good.qty, '商品只交付一次');
+  await lose.blackMarket.refresh();
+  assert(lose.blackMarket.shelf().find((x) => x.id === good.id).soldTo, '另一位玩家立即看到已售出');
+  assert(!(await lose.blackMarket.buy(good.id)).ok, '已售出的商品不能再買');
+  // 離線玩家：關閉遊戲期間別人買走，回來後同步看到已售出（不會因為沒有快取而重複購買）
+  const go = mk('O');
+  go.shared.backend = store;
+  go.state.player.coins = 1e6;
+  const r2 = await go.blackMarket.buy(good.id);
+  assert(!r2.ok && go.state.player.coins === 1e6, '剛上線（沒有快取）的玩家也不能買到已售出的商品，金錢不變');
+  // 連線失敗：退錢
+  const gn = mk('N');
+  gn.shared.backend = { objList: async () => [], objPut: async () => { const e = new Error('x'); e.kind = 'network'; throw e; } };
+  gn.state.player.coins = 1e6;
+  const g2 = shelfT.find((x) => x.kind === 'supply' && x.id !== good.id);
+  const nBefore = gn.state.supplies[g2.key] || 0;
+  const rn = await gn.blackMarket.buy(g2.id);
+  assert(!rn.ok && gn.state.player.coins === 1e6 && (gn.state.supplies[g2.key] || 0) === nBefore, '連線失敗時購買取消並退錢');
+  // 回收：沿用商人回收價，不需要商人在場
   gt.state.supplies.nail = 100;
   gt.state.supplies.titanium = 10;
   const c1 = gt.state.player.coins;
-  assert(gt.trader.sell('nail', 100).ok && !gt.state.supplies.nail && gt.state.player.coins === c1 + gt.trader.buybackPrice('nail', 100), '可以把物資賣給商人');
-  const rN = gt.trader.buybackRate('nail');
-  const rT = gt.trader.buybackRate('titanium');
-  assert(rN >= 0.09 && rN <= 0.14 && rT > rN && rT <= 0.16, `回收價約為售價 1/8，稀有物資比例較好（${rN.toFixed(3)} / ${rT.toFixed(3)}）`);
-  assert(!gt.trader.sell('nail', 5).ok, '沒有的物資不能賣');
-  // 裝備只能賣給商人
+  assert(gt.blackMarket.sell('nail', 100).ok && !gt.state.supplies.nail && gt.state.player.coins === c1 + gt.blackMarket.buybackPrice('nail', 100), '可以把物資賣到黑市');
+  const rN = gt.blackMarket.buybackRate('nail');
+  const rT = gt.blackMarket.buybackRate('titanium');
+  assert(rN >= 0.09 && rN <= 0.14 && rT > rN && rT <= 0.16, `回收價比例（${rN.toFixed(3)} / ${rT.toFixed(3)}）`);
+  assert(!gt.blackMarket.sell('nail', 5).ok, '沒有的物資不能賣');
   const gi = gt.equipment.generate({ level: 5, model: 'm1911', rarity: 'rare' });
   gt.equipment.addItem(gi, 't');
   const c2 = gt.state.player.coins;
-  const gp = gt.trader.gearBuyback(gi);
-  assert(gp > 0 && gp < gt.trader.gearPrice(gi) / 5 && gt.trader.sellItem(gi.id).ok && gt.state.player.coins === c2 + gp && !gt.equipment.getItem(gi.id), `裝備可以賣給商人（約售價 1/8：💰${gp}）`);
-  assert(!gt.trader.isHere(until + 1000), '下午 3 點後商人離開');
-  void gear;
+  const gp = gt.blackMarket.gearBuyback(gi);
+  assert(gp > 0 && gt.blackMarket.sellItem(gi.id).ok && gt.state.player.coins === c2 + gp && !gt.equipment.getItem(gi.id), `裝備可以賣到黑市（💰${gp}）`);
+}
+
+// ---- 25b. v9：共用物件伺服器（版本號先到先得） ----
+{
+  const os = await import('node:os');
+  const fsm = await import('node:fs');
+  const pathm = await import('node:path');
+  const { WorldStore } = await import('../server/WorldStore.js');
+  const dir = fsm.mkdtempSync(pathm.join(os.tmpdir(), 'jdqs-obj-'));
+  const ws = new WorldStore(dir);
+  const tok = 'ab'.repeat(32);
+  const pres = { name: 'A', bases: [{ lat: 25, lon: 121, name: 'x' }], trips: [] };
+  assert(ws.put('a'.repeat(32), tok, pres) === 'ok', '伺服器：登記玩家');
+  assert(ws.objPut('b'.repeat(32), tok, 'bm', 'sold', { data: {}, ver: 0 }).status === 'forbidden', '伺服器：未登記的玩家不能寫入共用物件');
+  const r1 = ws.objPut('a'.repeat(32), tok, 'bm', 'sold', { data: { sold: { x: 1 } }, ver: 0 });
+  assert(r1.status === 'ok' && r1.obj.ver === 1, '伺服器：新建物件版本 1');
+  const r2 = ws.objPut('a'.repeat(32), tok, 'bm', 'sold', { data: { sold: {} }, ver: 0 });
+  assert(r2.status === 'conflict' && r2.obj.data.sold.x === 1, '伺服器：版本不符回傳衝突與最新資料');
+  assert(ws.objPut('a'.repeat(32), tok, 'bm', 'sold', { data: { sold: { y: 1 } }, ver: 1 }).status === 'ok', '伺服器：版本相符才寫入');
+  assert(ws.objList('bm', 0, 0, 1).length === 1 && ws.objList('npc', 25, 121, 1).length === 0, '伺服器：全域物件不受位置限制');
+  ws.objPut('a'.repeat(32), tok, 'npc', 'c1', { lat: 25, lon: 121, data: {}, ver: 0 });
+  assert(ws.objList('npc', 25, 121, 1).length === 1 && ws.objList('npc', 26, 121, 1).length === 0, '伺服器：依位置範圍查詢');
+  assert(ws.objPut('a'.repeat(32), tok, 'BAD', 'x', { data: {}, ver: 0 }).status === 'invalid', '伺服器：不合法的種類');
+  clearTimeout(ws.objTimer);
+  clearTimeout(ws.timer);
 }
 
 // ---- 26. v8.8：施工佇列 3 條、同時最多 5 支隊伍 ----

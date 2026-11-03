@@ -65,63 +65,6 @@ export class MapPanel {
     this.lastRender = Date.now();
     this.service.render(this.game.state);
     this.service.renderNpcs(this.game.npcs.list);
-    this.service.renderTrader(this.game.state.trader, this.game.trader.isHere());
-  }
-
-  /** 流浪商人：用金錢購買物品（越稀有越貴） */
-  openTrader() {
-    const g = this.game;
-    const body = () => {
-      if (!g.trader.isHere()) return '<p class="muted">流浪商人已經離開了。他會在遊戲時間早上 11 點有機率再出現。</p>';
-      const t = g.state.trader;
-      const rows = t.stock.map((x) => {
-        const afford = g.state.player.coins >= x.price;
-        if (x.kind === 'gear') {
-          return itemCard(x.item, { actions: btn(`💰${x.price} 購買`, 'buy', { id: x.id }, { cls: 'btn-xs btn-primary', disabled: !afford }) });
-        }
-        const sp = SUPPLIES[x.key];
-        return `<div class="card row-between"><div><b>${sp.icon} ${sp.name} ×${x.qty}</b>
-          <small class="muted block">${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier)}${sp.heal ? `・回復 ${Math.round(sp.heal * 100)}%` : ''}・倉庫有 ${g.state.supplies?.[x.key] || 0}</small></div>
-          ${btn(`💰${x.price} 購買`, 'buy', { id: x.id }, { cls: 'btn-xs btn-primary', disabled: !afford })}</div>`;
-      }).join('');
-      const tabs = `<div class="chips"><button class="chip ${this.traderTab !== 'sell' ? 'active' : ''}" data-action="traderTab" data-tab="buy">🛒 購買</button><button class="chip ${this.traderTab === 'sell' ? 'active' : ''}" data-action="traderTab" data-tab="sell">♻️ 回收</button></div>`;
-      const head = `<p class="muted">🧳 帶著稀奇物品四處流浪的商人，越稀有的東西越貴。距避難所 ${g.trader.distance()} 公尺・⏱ ${formatDuration(g.trader.remainingMs())}後離開（遊戲時間 15:00）。</p>
-        <p>💰 你的金錢：<b>${g.state.player.coins}</b></p>${tabs}`;
-      if (this.traderTab === 'sell') {
-        const sup = g.state.supplies || {};
-        const keys = Object.keys(sup).filter((k) => SUPPLIES[k] && sup[k] > 0)
-          .sort((a, b) => SUPPLIES[b].tier - SUPPLIES[a].tier || sup[b] - sup[a]);
-        const sells = keys.map((k) => {
-          const sp = SUPPLIES[k];
-          const ten = Math.min(10, sup[k]);
-          return `<div class="card row-between"><div><b>${sp.icon} ${sp.name}</b> <small class="muted">倉庫 ${sup[k]}</small>
-            <small class="muted block">${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier)}・回收價每個 💰${g.trader.buybackUnit(k).toFixed(g.trader.buybackUnit(k) < 1 ? 2 : 1)}（售價的 ${Math.round(g.trader.buybackRate(k) * 100)}%）</small></div>
-            <span>${btn(`賣 ${ten}（💰${g.trader.buybackPrice(k, ten)}）`, 'sell', { key: k, qty: ten }, { cls: 'btn-xs', disabled: g.trader.buybackPrice(k, ten) <= 0 })}${btn(`全賣（💰${g.trader.buybackPrice(k, sup[k])}）`, 'sell', { key: k, qty: sup[k] }, { cls: 'btn-xs btn-primary', disabled: g.trader.buybackPrice(k, sup[k]) <= 0 })}</span></div>`;
-        }).join('');
-        const gear = g.equipment.storeItems()
-          .sort((a, b) => RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) || b.power - a.power)
-          .map((it) => itemCard(it, { compact: true, actions: btn(`賣出 💰${g.trader.gearBuyback(it)}`, 'sellItem', { id: it.id }, { cls: 'btn-xs btn-primary', disabled: it.locked, title: it.locked ? '已上鎖' : '' }) })).join('');
-        return `${head}<p class="muted">商人是唯一的出售管道：收購倉庫裡的材料與裝備，價格約為他販售價的 1/8；越稀有回收比例越好（材料 1 階 10% → 5 階 15%；裝備劣質 10% → 傳奇 15%）。上鎖與穿戴中的裝備不會賣出。</p>
-          <h4>材料</h4><div class="grid">${sells || '<p class="muted">倉庫裡沒有可以回收的物資。</p>'}</div>
-          <div class="row-between"><h4>裝備</h4>${btn('一鍵賣出劣質/一般', 'sellCommonGear', {}, { cls: 'btn-sm btn-ghost' })}</div>
-          <div class="grid">${gear || '<p class="muted">倉庫裡沒有裝備。</p>'}</div>`;
-      }
-      return `${head}<div class="grid">${rows || '<p class="muted">商品都賣完了。</p>'}</div>`;
-    };
-    this.ui.modal.open({
-      title: '🧳 流浪商人',
-      wide: true,
-      body: body(),
-      live: body,
-      onAction: (action, data, m) => {
-        if (action === 'buy') this.ui.result(g.trader.buy(data.id));
-        if (action === 'sell') this.ui.result(g.trader.sell(data.key, Number(data.qty)));
-        if (action === 'sellItem') this.ui.result(g.trader.sellItem(data.id));
-        if (action === 'sellCommonGear' && confirm('確定賣出倉庫裡所有未上鎖的劣質與一般裝備？')) this.ui.result(g.trader.sellCommonGear());
-        if (action === 'traderTab') this.traderTab = data.tab;
-        m.update(body());
-      },
-    });
   }
 
   /** NPC 據點資訊與攻打 */

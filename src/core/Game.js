@@ -27,7 +27,8 @@ import { POI_THIN_VERSION } from '../config/constants.js';
 import { fillPois } from '../map/PoiGenerator.js';
 import { MarkerSystem } from '../systems/MarkerSystem.js';
 import { InterceptSystem } from '../systems/InterceptSystem.js';
-import { TraderSystem } from '../systems/TraderSystem.js';
+import { BlackMarketSystem } from '../systems/BlackMarketSystem.js';
+import { SharedWorld } from '../multiplayer/SharedWorld.js';
 import { TradeSystem } from '../systems/TradeSystem.js';
 import { DemandSystem } from '../systems/DemandSystem.js';
 import { AssistSystem } from '../systems/AssistSystem.js';
@@ -43,6 +44,7 @@ export class Game {
     this.bus = bus;
     this.started = false;
 
+    this.shared = new SharedWorld(this);
     this.time = new TimeSystem(this);
     this.research = new ResearchSystem(this);
     this.resources = new ResourceSystem(this);
@@ -61,7 +63,7 @@ export class Game {
     this.gps = new GpsSystem(this);
     this.markers = new MarkerSystem(this);
     this.intercept = new InterceptSystem(this);
-    this.trader = new TraderSystem(this);
+    this.blackMarket = new BlackMarketSystem(this);
     this.trade = new TradeSystem(this);
     this.demand = new DemandSystem(this);
     this.assist = new AssistSystem(this);
@@ -226,7 +228,6 @@ export class Game {
     this.survivors.updateBoard(now);
     this.exploration.update(now, { silent });
     this.npcs.update(now);
-    this.trader.update(now);
     this.trade.notifyArrivals(now);
     this.assist.update(now);
     this.trade.prune(now);

@@ -323,6 +323,8 @@ export class WorldSync {
         const events = await this.provider.worldInbox(id, token).catch(() => []);
         if (events.length) g.territory.handleEvents(events);
       }
+      // 共用世界物件（NPC、殭屍群、黑市、市場、集結…）
+      if (this.shared && g.shared) await g.shared.poll();
       this.status = 'online';
       this.lastSyncAt = Date.now();
     } catch (err) {

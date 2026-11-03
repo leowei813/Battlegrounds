@@ -98,6 +98,31 @@ export class SupabaseProvider {
     });
   }
 
+  /** 共用世界物件：範圍內某種類 */
+  async objList(kind, lat, lon, km) {
+    const body = await this.rpc('jdqs_obj_list', { p_kind: kind, p_lat: lat, p_lon: lon, p_km: km });
+    return body.objects || [];
+  }
+
+  /** 共用世界物件：以版本號寫入；回傳 { status: 'ok'|'conflict', obj }（conflict 不丟錯） */
+  async objPut(fromId, token, kind, id, { lat = null, lon = null, data, ver = 0 }) {
+    const { status, body } = await fetchJson(`${this.base}/rest/v1/rpc/jdqs_obj_put`, {
+      method: 'POST',
+      headers: {
+        apikey: this.key,
+        ...(this.key.startsWith('eyJ') ? { Authorization: `Bearer ${this.key}` } : {}),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_from: fromId, p_token: token, p_kind: kind, p_id: id, p_lat: lat, p_lon: lon, p_data: data, p_ver: ver }),
+      timeout: 15000,
+    });
+    if (status !== 200) throw new CloudError('server', `Supabase 錯誤（${status}）：${body?.message || ''}`);
+    if (body?.status === 'conflict') return { status: 'conflict', obj: body.obj || null };
+    if (body?.status === 'forbidden') throw new CloudError('forbidden', '帳號或密碼錯誤');
+    if (body?.status === 'invalid') throw new CloudError('invalid', '伺服器不接受這個操作（資料庫可能需要更新）');
+    return body;
+  }
+
   /** 讀取並清空自己的事件信箱 */
   async worldInbox(id, token) {
     const body = await this.rpc('jdqs_world_inbox', { p_id: id, p_token: token });

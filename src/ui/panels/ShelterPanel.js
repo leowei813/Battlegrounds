@@ -1,4 +1,5 @@
 import { exchangeBody, exchangeAction, exchangeForm } from '../ExchangeDialog.js';
+import { blackMarketBody, blackMarketAction } from '../BlackMarketView.js';
 import { FACILITIES, FACILITY_MAX_LEVEL, OUTPOST_FACILITIES } from '../../config/facilities.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL } from '../../config/defenses.js';
 import { CLASSES } from '../../config/survivors.js';
@@ -13,7 +14,7 @@ import {
  * 避難所分頁（側邊/底部抽屜）：設施升級、施工佇列、防禦建築、事件紀錄。
  */
 /** 避難所面板的分頁 */
-const SHELTER_TABS = ['overview', 'facilities', 'defense', 'storage', 'garage', 'exchange'];
+const SHELTER_TABS = ['overview', 'facilities', 'defense', 'storage', 'garage', 'exchange', 'blackmarket'];
 /** 避難所面板本身處理的操作（其餘在倉庫、車庫分頁時交給倉庫面板） */
 const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon', 'cancelBuild', 'toggleAlert'];
 
@@ -114,7 +115,7 @@ export class ShelterPanel {
     const inv = ui.panels.inventory;
     const storeN = `${g.equipment.storeUsed()}/${g.equipment.storeCap()}`;
     const tabBtn = (id, label) => `<button class="seg-btn ${tab === id ? 'active' : ''}" data-action="shelterTab" data-t="${id}">${label}</button>`;
-    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('storage', `🗄️ 倉庫 ${storeN}`)}${tabBtn('garage', `🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`)}${tabBtn('exchange', `🏪 交易所${g.demand.list.length ? ` ${g.demand.list.length}` : ''}`)}</div>`;
+    const tabs2 = `<div class="drawer-tabs">${tabBtn('overview', '🏠 總覽')}${tabBtn('facilities', `🏗️ 設施${queue ? ' 🔨' : ''}`)}${tabBtn('defense', '🛡️ 防禦')}${tabBtn('storage', `🗄️ 倉庫 ${storeN}`)}${tabBtn('garage', `🚗 車庫 ${st.vehicles.length}/${g.vehicles.garageSize()}`)}${tabBtn('exchange', `🏪 交易所${g.demand.list.length ? ` ${g.demand.list.length}` : ''}`)}${tabBtn('blackmarket', '🕶️ 黑市')}</div>`;
     const sections = {
       overview: `
         <div class="card row-between ${g.shelter.alert ? 'alert-on' : ''}"><span>${g.shelter.alert ? '🚨 <b>警戒中</b>：全部倖存者暫時為防禦駐守' : '🟢 正常：倖存者依指派的工作行動'}</span>${btn(g.shelter.alert ? '✅ 解除警戒' : '🚨 切換警戒', 'toggleAlert', {}, { cls: `btn-sm ${g.shelter.alert ? '' : 'btn-danger'}` })}</div>
@@ -139,6 +140,7 @@ export class ShelterPanel {
       storage: tab === 'storage' ? `<h4>🗄️ 物品倉庫（${storeN} 格）</h4>${inv.renderItems()}` : '',
       garage: tab === 'garage' ? inv.renderGarage() : '',
       exchange: tab === 'exchange' ? exchangeBody(ui, this.exForm || {}) : '',
+      blackmarket: tab === 'blackmarket' ? blackMarketBody(ui, ui.bmView) : '',
     };
     return `<div class="drawer-top">${head}${ui.drawerCollapsed ? '' : tabs2}</div>
       <div class="drawer-body">${sections[tab]}</div>`;
@@ -195,6 +197,10 @@ export class ShelterPanel {
     if (action === 'toggleAlert') this.ui.result(g.shelter.setAlert(!g.shelter.alert));
     const tab = this.ui.shelterTab;
     const root = this.ui.panelEl;
+    if (tab === 'blackmarket' && blackMarketAction(this.ui, action, data)) {
+      this.ui.refresh(true);
+      return;
+    }
     if (tab === 'exchange' && exchangeAction(this.ui, action, data, root)) {
       if (action === 'exPost') this.exForm = null;
       this.ui.refresh(true);
