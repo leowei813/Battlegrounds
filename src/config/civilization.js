@@ -29,17 +29,17 @@ export const CIV_TIERS = [
 export const SIEGE_SCALING = {
   civBaseline: 20, // 新手保護：低於此文明度不加成
   civPerLevel: 16, // 每 16 文明度，殭屍 +1 級
-  spawnPerCiv: 0.005, // 每點文明度，屍潮頻率 +0.5%
-  maxSpawnMul: 4, // 文明度造成的頻率倍率上限
-  hpPerCiv: 0.006, // 每點文明度，屍潮殭屍生命 +0.6%
-  atkPerCiv: 0.004, // 每點文明度，屍潮殭屍攻擊 +0.4%
-  dangerLevelMul: 0.5, // 每點據點危險度（超過 1 的部分），殭屍 +0.5 級
-  dangerSpawn: 0.08, // 每點據點危險度，屍潮頻率 +8%
+  spawnPerCiv: 0.0012, // 每點文明度，屍潮頻率 +0.12%
+  maxSpawnMul: 2.2, // 文明度造成的頻率倍率上限
+  hpPerCiv: 0.001, // 每點文明度，屍潮殭屍生命 +0.1%（等級已隨文明度提高，避免重複加成）
+  atkPerCiv: 0.0008, // 每點文明度，屍潮殭屍攻擊 +0.08%
+  dangerLevelMul: 0.25, // 每點據點危險度（超過 1 的部分），殭屍 +0.25 級
+  dangerSpawn: 0.04, // 每點據點危險度，屍潮頻率 +4%
   /** 每晚最多幾波屍潮（依文明度階級：廢墟／新手 1 波 → 新文明 6 波） */
   wavesByTier: [1, 2, 3, 4, 5, 6],
-  /** 文明度越低，每波殭屍越少（倍率從 0.45 到 1.2） */
+  /** 文明度越低，每波殭屍越少（倍率從 0.45 到 0.7） */
   waveSizeMin: 0.45,
-  waveSizeMax: 1.2,
+  waveSizeMax: 0.7,
   waveSizeCiv: 350, // 文明度達此值時每波數量達到上限
   /** 文明度越低，屍潮殭屍越弱（生命、攻擊從 0.6 倍起，文明度 100 時恢復正常） */
   weakMin: 0.6,
