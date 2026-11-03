@@ -114,6 +114,11 @@ const CAT_AMOUNT = {
 };
 /** 全部物資依比例調降（所有類別一起套用） */
 const LOOT_AMOUNT_MUL = 0.85;
+/**
+ * 依風險調整數量：越安全的地點調降越多，高風險地點保留較多（風險 = 建築危險度 + 區域危險度）。
+ * 風險 0 → ×0.45、風險 4 → ×0.69、風險 8 以上 → ×0.9
+ */
+export const riskAmountMul = (risk) => Math.min(0.9, Math.max(0.45, 0.45 + 0.06 * Math.max(0, risk)));
 
 /**
  * 今日物資。已被搜刮則回傳空物資；有殘留物資時回傳殘留的部分（並標記 partial）。
@@ -147,7 +152,7 @@ export function stockOf(poi, at = Date.now(), remainMap = null) {
     const cat = pickType();
     const key = RESOURCE_KEYS.includes(cat) ? cat : pickSupply(cat, rnd, danger);
     const tierMul = (cat === 'part' || cat === 'fabric' ? TIER_AMOUNT[SUPPLIES[key]?.tier || 1] : 1) * (pt.lootAmount?.[cat] ?? (cat.startsWith('med') ? pt.lootAmount?.med ?? 1 : 1));
-    const amount = Math.max(1, Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zone.lootMul * (pt.amountMul || 1) * CAT_AMOUNT[cat] * LOOT_AMOUNT_MUL * tierMul));
+    const amount = Math.max(1, Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zone.lootMul * (pt.amountMul || 1) * CAT_AMOUNT[cat] * LOOT_AMOUNT_MUL * riskAmountMul(danger) * tierMul));
     resources[key] = (resources[key] || 0) + amount;
     // 零件種類特別多：找到零件時，常常同時找到其他種類的零件
     if (cat === 'part') {
