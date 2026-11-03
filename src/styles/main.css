@@ -944,3 +944,21 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .sv-mini-top b { flex: 0 0 auto !important; max-width: 100%; }
 /* 可左右滑動的標籤列：不把滑動傳給整個頁面 */
 .sh-nav-list, .chips, .craft-kinds, .sv-tabs { overscroll-behavior-x: contain; }
+/* 候選人能力格：數值＋素質 */
+.ab-grid-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--muted); }
+.ab-avg b { color: var(--text); }
+.ab-avg.hi b { color: #6cc070; }
+.ab-avg.max b { color: #f2b134; }
+.ab-avg.lo b { color: #ff8f88; }
+.ab-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ab-cell { padding: 6px 8px; border-radius: 8px; background: var(--card2); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ab-cell small { color: var(--muted); font-size: 11px; }
+.ab-cell b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.ab-cell .ab-cq { color: var(--text); }
+.ab-cell.lo .ab-cq { color: #ff8f88; }
+.ab-cell.hi .ab-cq { color: #6cc070; }
+.ab-cell.max { box-shadow: inset 0 0 0 1px #f2b134; }
+.ab-cell.max .ab-cq { color: #f2b134; font-weight: 700; }
+.ab-legend { font-size: 11px; }
+.ab-cell .ab-bar { background: #0007; height: 5px; }
+.ab-legend { display: block; }
