@@ -1,14 +1,15 @@
 import { exchangeBody, exchangeAction, exchangeForm } from '../ExchangeDialog.js';
 import { blackMarketBody, blackMarketAction } from '../BlackMarketView.js';
 import { FACILITIES, FACILITY_MAX_LEVEL, OUTPOST_FACILITIES } from '../../config/facilities.js';
-import { DEFENSES, DEFENSE_MAX_LEVEL } from '../../config/defenses.js';
+import { DEFENSES, DEFENSE_MAX_LEVEL, defenseBuildTime } from '../../config/defenses.js';
 import { CLASSES } from '../../config/survivors.js';
 import { PRIMARY_DANGER_COEF, MAX_OUTPOSTS, BASE_SIZES } from '../../config/civilization.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { escapeHtml } from '../../utils/dom.js';
 import {
-  btn, costHtml, needHtml, timerBar, progressBar, metaOf,
+  btn, costHtml, needHtml, timerBar, progressBar, metaOf, affordable,
 } from '../components.js';
+import { formatDuration } from '../../utils/math.js';
 import { BUILD_QUEUE_SIZE } from '../../config/constants.js';
 
 /**
@@ -17,7 +18,7 @@ import { BUILD_QUEUE_SIZE } from '../../config/constants.js';
 /** 避難所面板的分頁 */
 const SHELTER_TABS = ['overview', 'facilities', 'defense', 'storage', 'garage', 'exchange', 'blackmarket'];
 /** 避難所面板本身處理的操作（其餘在倉庫、車庫分頁時交給倉庫面板） */
-const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon', 'cancelBuild', 'toggleAlert', 'facFilter', 'gotoTab'];
+const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon', 'cancelBuild', 'toggleAlert', 'facFilter', 'gotoTab', 'defBuild', 'defDemolish', 'defGarrison'];
 
 export class ShelterPanel {
   constructor(ui) {
@@ -108,13 +109,6 @@ export class ShelterPanel {
       </div>`;
     }).join('');
 
-    const defenses = sh.defenses.map((d, i) => {
-      const def = d.type ? DEFENSES[d.type] : null;
-      const gar = d.garrisonId ? g.survivors.get(d.garrisonId) : null;
-      return `<button class="slot-btn ${def ? '' : 'empty'}" data-action="slot" data-slot="${i}">
-        <span>${def ? def.icon : '➕'}</span><small>${def ? `${def.name} Lv${d.level}` : `空地 ${i + 1}`}</small>${gar ? `<small>👤${escapeHtml(gar.name)}</small>` : ''}
-      </button>`;
-    }).join('');
 
     const siege = g.siege.of(sh.id);
     const wallRatio = g.shelter.wallHp(sh) / g.shelter.wallMax(sh);
@@ -190,9 +184,9 @@ export class ShelterPanel {
         </div>
         <aside class="sh-fac-side">${queueBox}${ratesBox}</aside>
       </div>`,
-      defense: `<p class="muted">${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築。點空地建造，點已建造的防禦建築升級或派人駐守。</p>
-        <div class="slot-grid">${defenses}</div>
-        <div class="kpi-grid"><div class="kpi"><small>防禦 DPS</small><b class="big">${siege.defenseDps()}</b></div><div class="kpi"><small>屍潮</small><b>${this.waveText(siege)}</b></div></div>
+      defense: `<p class="muted">${z.name}據點・防禦欄位 ${z.slots}・共可建造 ${z.total} 棟建築。空地按「建造」選擇要蓋的防禦建築，已建造的可直接升級、拆除或派人駐守。</p>
+        <div class="kpi-grid def-kpis"><div class="kpi"><small>防禦 DPS</small><b class="big">${siege.defenseDps()}</b></div><div class="kpi"><small>欄位</small><b>${sh.defenses.filter((d) => d.type).length}/${sh.defenses.length}</b></div><div class="kpi"><small>屍潮</small><b>${this.waveText(siege)}</b></div></div>
+        <div class="fac-grid def-grid">${sh.defenses.map((d, i) => this.defCard(sh, i)).join('')}</div>
         ${queue ? queueBox : ''}`,
       storage: tab === 'storage' ? `<h3 class="sh-title">🗄️ 物品倉庫（${storeN} 格）</h3>${inv.renderItems()}` : '',
       garage: tab === 'garage' ? inv.renderGarage() : '',
@@ -249,6 +243,9 @@ export class ShelterPanel {
     if (action === 'upgrade') this.ui.result(g.shelter.upgradeFacility(base, data.id));
     if (action === 'cancelBuild' && confirm('取消施工？依完成度退還材料，完成度越高退得越少。')) this.ui.result(g.shelter.cancelBuild(base, +data.i));
     if (action === 'slot') this.openSlot(+data.slot);
+    if (action === 'defBuild') this.ui.result(g.shelter.buildDefense(base, +data.slot, data.type));
+    if (action === 'defDemolish' && confirm('確定拆除？（不退還資源）')) this.ui.result(g.shelter.demolish(base, +data.slot));
+    if (action === 'defGarrison') this.ui.result(g.shelter.garrison(base, +data.slot, data.id || null));
     if (action === 'viewBase') this.ui.setViewBase(data.id);
     if (action === 'abandon') openAbandonDialog(this.ui, base);
     if (action === 'toggleAlert') this.ui.result(g.shelter.setAlert(!g.shelter.alert));
@@ -293,12 +290,72 @@ export class ShelterPanel {
     el.querySelector('.civ-more')?.addEventListener('toggle', (e) => { this.civOpen = e.target.open; });
     if (this.boundEl === el) return;
     this.boundEl = el;
+    el.addEventListener('change', (e) => {
+      if (this.ui.tab !== 'shelter' || !e.target.classList?.contains('def-gar-sel')) return;
+      this.ui.result(this.game.shelter.garrison(this.ui.viewBase(), +e.target.dataset.slot, e.target.value || null));
+      this.game.changed?.();
+      this.ui.refresh(true);
+    });
     const save = (e) => {
       if (e.target.id === 'inv-drop-qty') this.ui.panels.inventory.dropQty = Number(e.target.value) || 1;
       if (e.target.closest?.('.demand-form') || e.target.classList?.contains('d-gear-price')) this.exForm = exchangeForm(el, this.exForm || {});
     };
     el.addEventListener('input', save);
     el.addEventListener('change', save);
+  }
+
+  /** 防禦槽位卡片：數值（目前→下一級）、升級材料、時間、升級／拆除／駐守都直接顯示 */
+  defCard(base, slot) {
+    const g = this.game;
+    const st = g.state;
+    const d = base.defenses[slot];
+    const busy = g.shelter.isSlotBusy(base, slot);
+    const q = busy ? base.buildQueue.find((x) => x.kind === 'defense' && x.slot === slot) : null;
+    if (!d.type && !q) {
+      const can = Object.keys(DEFENSES).filter((t) => !g.shelter.defenseLockReason(t)).map((t) => DEFENSES[t].name);
+      return `<div class="fac-card2 unbuilt def-card">
+        <div class="fac2-head"><span class="fac-icon">➕</span><b>空地</b><small class="muted">槽位 ${slot + 1}</small></div>
+        <small class="muted">${can.length ? `可建造：${can.join('、')}` : '目前沒有可建造的防禦建築'}</small>
+        <div class="row-between"><span></span>${btn('建造', 'slot', { slot }, { cls: 'btn-sm btn-primary' })}</div>
+      </div>`;
+    }
+    const type = d.type || q.id;
+    const def = DEFENSES[type];
+    const lv = d.level || 0;
+    const s = lv > 0 ? def.stats(lv) : null;
+    const max = lv >= DEFENSE_MAX_LEVEL;
+    const n = max ? null : def.stats(lv + 1);
+    const rows = [];
+    const row = (k, cur, next) => rows.push(`<div class="row-between"><span class="muted">${k}</span><span>${cur ?? '—'}${next != null && next !== cur ? ` <span class="pos">→ ${next}</span>` : ''}</span></div>`);
+    const pick = (o, f) => (o ? f(o) : null);
+    if ((s || n)?.damage) row('傷害', pick(s, (x) => x.damage), pick(n, (x) => x.damage));
+    if ((s || n)?.fireRate && !(s || n).garrison) row('攻速', pick(s, (x) => `${x.fireRate}/秒`), pick(n, (x) => `${x.fireRate}/秒`));
+    if ((s || n)?.wallBonus) row('圍牆', pick(s, (x) => `+${x.wallBonus}`), pick(n, (x) => `+${x.wallBonus}`));
+    if ((s || n)?.garrisonMul) row('駐守倍率', pick(s, (x) => `×${x.garrisonMul.toFixed(2)}`), pick(n, (x) => `×${x.garrisonMul.toFixed(2)}`));
+    const powered = g.siege.of(base.id).powered();
+    const power = def.power ? `<small class="${powered ? 'pos' : 'neg'}">⚡ ${powered ? '發電機運轉中，電網通電' : '沒有電！需要發電機運轉才會作用'}</small>` : '';
+    let garrison = '';
+    if (def.stats(1).garrison && lv > 0) {
+      const cur = d.garrisonId ? g.survivors.get(d.garrisonId) : null;
+      garrison = `<div class="def-gar"><small class="muted">👤 駐守：${cur ? `${CLASSES[cur.classId].icon} ${escapeHtml(cur.name)}（攻擊 ${g.survivors.stats(cur).atk}）` : '無人駐守'}</small>
+        <select class="def-gar-sel" data-slot="${slot}" aria-label="駐守人員"><option value="">${cur ? '撤回' : '選擇駐守人員'}</option>${st.survivors.filter((sv) => sv.status !== 'exploring' && !sv.severe).map((sv) => `<option value="${sv.id}" ${sv.id === d.garrisonId ? 'selected' : ''}>${CLASSES[sv.classId].icon} ${escapeHtml(sv.name)}</option>`).join('')}</select></div>`;
+    }
+    const cost = max ? null : g.shelter.defenseCost(type, lv + 1);
+    const lack = cost && !affordable(st, cost);
+    let foot;
+    if (q) foot = `<div class="fac2-cost"><small class="muted">🔨 施工中（Lv${q.targetLevel}）</small>${timerBar(q.startAt, q.endAt)}</div>`;
+    else if (max) foot = '<div class="row-between"><span class="tag tag-amber">MAX</span>' + btn('拆除', 'defDemolish', { slot }, { cls: 'btn-sm btn-ghost' }) + '</div>';
+    else {
+      foot = `<div class="fac2-cost"><div class="needs">${needHtml(st, cost)}</div>
+        <div class="row-between"><small class="muted">⏱ ${formatDuration(g.shelter.buildSeconds(defenseBuildTime(lv + 1)) * 1000)}</small>
+          <span class="btn-row">${btn('拆除', 'defDemolish', { slot }, { cls: 'btn-sm btn-ghost' })}${btn(lack ? '材料不足' : `升到 Lv${lv + 1}`, 'defBuild', { slot, type }, { cls: `btn-sm ${lack ? 'btn-lack' : 'btn-primary'}`, disabled: lack })}</span></div></div>`;
+    }
+    return `<div class="fac-card2 def-card">
+      <div class="fac2-head"><span class="fac-icon">${def.icon}</span><b>${def.name}</b>${lv ? `<span class="rs-lv on">Lv${lv}</span>` : ''}<small class="muted">槽位 ${slot + 1}</small></div>
+      <small class="muted">${def.desc}</small>
+      ${rows.length ? `<div class="def-stats">${rows.join('')}</div>` : ''}
+      ${power}${garrison}${foot}
+    </div>`;
   }
 
   slotBody(base, slot) {
