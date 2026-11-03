@@ -1768,7 +1768,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     gf.survivors.leader().severe = false;
     gf.survivors.setHp(gf.survivors.leader(), 1e6);
   }
-  assert(maxLeft <= (firstLeft[0] || 0) + 1, `加成不會重複套用在留下的物資上（第一次 ${firstLeft[0]}、最多 ${maxLeft}）`);
+  // 舊版每次再訪都 ×3，12 次後會變成天文數字；跨過 06:00／18:00 刷新時可能多一批新物資
+  assert(maxLeft <= (firstLeft[0] || 0) * 2 + 200, `加成不會重複套用在留下的物資上（第一次 ${firstLeft[0]}、最多 ${maxLeft}）`);
   const { remainOf } = await import('../src/systems/LootStock.js');
   const fake = { [forest.id]: { day: gf.state.map.remain?.[forest.id]?.day ?? '', res: { wood: 2417840409538 } } };
   const got = remainOf(forest, fake, Date.now());
