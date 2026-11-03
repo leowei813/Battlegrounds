@@ -7,19 +7,22 @@ const hhmm = (t) => { const d = new Date(t); return `${String(d.getHours()).padS
 /** 重要的避難所事件（計入未讀）：不含一般資訊訊息 */
 const IMPORTANT = new Set(['danger', 'success', 'loot', 'legendary']);
 
-/** 各分頁的未讀數：探索報告；避難所紀錄（遭襲紀錄＋重要事件） */
+/** 事件紀錄上次已讀的時間（舊存檔沿用避難所紀錄的已讀時間） */
+const eventsSeen = (seen) => seen.events ?? seen.base ?? 0;
+
+/** 各分頁的未讀數：探索報告、避難所紀錄（遭襲紀錄）、事件紀錄（重要事件） */
 export function unreadCounts(game) {
   const st = game.state;
   const seen = st.msgSeen || {};
   const reports = (st.reports || []).filter((r) => (r.at || 0) > (seen.reports || 0)).length;
-  const base = (st.defenseLog || []).filter((e) => (e.at || 0) > (seen.base || 0)).length
-    + (st.log || []).filter((l) => IMPORTANT.has(l.type) && (l.t || 0) > (seen.base || 0)).length;
-  return { reports, base };
+  const base = (st.defenseLog || []).filter((e) => (e.at || 0) > (seen.base || 0)).length;
+  const events = (st.log || []).filter((l) => IMPORTANT.has(l.type) && (l.t || 0) > eventsSeen(seen)).length;
+  return { reports, base, events };
 }
 
 export function unreadCount(game) {
   const c = unreadCounts(game);
-  return c.reports + c.base;
+  return c.reports + c.base + c.events;
 }
 
 const NEW = '<span class="tag tag-blue new-tag">未讀</span>';
@@ -58,8 +61,13 @@ function battlesHtml(game, openId) {
 }
 
 function baseHtml(ui, since) {
-  const logs = ui.game.state.log.slice(0, 40).map((l) => `<li class="log-${l.type} ${(l.t || 0) > since && IMPORTANT.has(l.type) ? 'unread' : ''}"><time>${hhmm(l.t)}</time>${(l.t || 0) > since && IMPORTANT.has(l.type) ? NEW : ''}${escapeHtml(l.msg)}</li>`).join('');
-  return `${ui.panels.shelter.defenseLogHtml(since)}<h4>📜 事件紀錄</h4><ul class="log-list">${logs || '<li class="muted">尚無紀錄</li>'}</ul>`;
+  return ui.panels.shelter.defenseLogHtml(since) || '<p class="muted">尚無避難所遭襲紀錄。</p>';
+}
+
+/** 事件紀錄：遊戲中發生的各種事件（最近 80 筆） */
+function eventsHtml(ui, since) {
+  const logs = ui.game.state.log.slice(0, 80).map((l) => `<li class="log-${l.type} ${(l.t || 0) > since && IMPORTANT.has(l.type) ? 'unread' : ''}"><time>${hhmm(l.t)}</time>${(l.t || 0) > since && IMPORTANT.has(l.type) ? NEW : ''}${escapeHtml(l.msg)}</li>`).join('');
+  return `<ul class="log-list">${logs || '<li class="muted">尚無紀錄</li>'}</ul>`;
 }
 
 /**
@@ -69,11 +77,11 @@ function baseHtml(ui, since) {
 export function openMessages(ui) {
   const g = ui.game;
   const first = unreadCounts(g);
-  let tab = first.reports || !first.base ? 'reports' : 'base';
+  let tab = first.reports ? 'reports' : first.base ? 'base' : first.events ? 'events' : 'reports';
   let openId = null;
   g.state.msgSeen = g.state.msgSeen || {};
   // 開啟分頁時記下上次已讀的時間，用來標示這次看到的未讀項目
-  const since = { reports: g.state.msgSeen.reports || 0, base: g.state.msgSeen.base || 0 };
+  const since = { reports: g.state.msgSeen.reports || 0, base: g.state.msgSeen.base || 0, events: eventsSeen(g.state.msgSeen) };
   const markRead = (t) => { g.state.msgSeen[t] = Date.now(); };
   const badge = (n) => (n ? ` <i class="msg-dot">${n}</i>` : '');
   const body = () => {
@@ -81,9 +89,10 @@ export function openMessages(ui) {
     const tabs = `<div class="seg">
       <button class="btn ${tab === 'reports' ? 'active' : ''}" data-action="msgTab" data-t="reports">🧭 探索報告${badge(c.reports)}</button>
       <button class="btn ${tab === 'base' ? 'active' : ''}" data-action="msgTab" data-t="base">🏠 避難所紀錄${badge(c.base)}</button>
+      <button class="btn ${tab === 'events' ? 'active' : ''}" data-action="msgTab" data-t="events">📜 事件紀錄${badge(c.events)}</button>
       <button class="btn ${tab === 'battles' ? 'active' : ''}" data-action="msgTab" data-t="battles">⚔️ 戰鬥紀錄</button></div>
       ${tab !== 'battles' && c[tab] ? `<div class="btn-row">${btn('✓ 這頁全部標為已讀', 'markRead', {}, { cls: 'btn-xs btn-ghost' })}</div>` : ''}`;
-    return `${tabs}${tab === 'reports' ? reportsHtml(g, openId, since.reports) : tab === 'battles' ? battlesHtml(g, openId) : baseHtml(ui, since.base)}`;
+    return `${tabs}${tab === 'reports' ? reportsHtml(g, openId, since.reports) : tab === 'battles' ? battlesHtml(g, openId) : tab === 'events' ? eventsHtml(ui, since.events) : baseHtml(ui, since.base)}`;
   };
   ui.modal.open({
     title: '💬 消息',

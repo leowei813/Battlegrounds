@@ -5,7 +5,6 @@ import { LOADOUT_MAX } from './SurvivorSystem.js';
 const REVISIT = { minFrac: 0.2, pickupMin: 0.3 };
 
 /** 自動探索換點次數上限 */
-export const AUTO_HOP_MAX = 5;
 import { COIN_GAIN_MUL, RAID_TRAVEL, POI_SCAN_RADIUS } from '../config/constants.js';
 import { RECRUIT_STAY_MS } from '../config/survivors.js';
 import {
@@ -229,44 +228,36 @@ export class ExplorationSystem {
     return { ok: true, msg: '已從佇列移除' };
   }
 
-  /** 自動探索可以換到其他地點的次數：基本 1 次，研究「巡迴搜索」每級 +1，最多 5 次 */
-  autoHopLimit() {
-    return Math.min(AUTO_HOP_MAX, 1 + Math.floor(this.game.research.bonus('autoHops')));
-  }
-
   /** 地點目前是否還有物資（今日物資或上次留下的） */
   hasStock(poi, at = Date.now()) {
     return !!poi && POI_TYPES[poi.type] && !stockOf(poi, at, this.game.state.map.remain).empty;
   }
 
   /**
-   * 自動探索的下一個目的地：原地點還有物資就再去一次；
-   * 沒有物資時換到附近還有物資、危險度不高於原地點的地點（換點次數有上限）。
-   * @returns {{ok:boolean, poiId?:string, hops?:number, note?:string, reason?:string}}
+   * 隊員背包都裝滿、倉庫也滿了：再出發也帶不回任何東西。
+   * @returns {string|null} 停止原因
    */
-  autoNext(exp, at = Date.now()) {
+  overloadReason(memberIds) {
     const g = this.game;
-    const poi = this.poi(exp.poiId);
-    const hops = exp.autoHops || 0;
-    if (this.hasStock(poi, at)) return { ok: true, poiId: exp.poiId, hops };
-    const limit = this.autoHopLimit();
-    if (hops >= limit) return { ok: false, reason: `「${poi?.name || '這裡'}」已經沒有物資，自動換點次數已用完（${limit} 次；研究「巡迴搜索」可以增加，最多 ${AUTO_HOP_MAX} 次）` };
-    const danger = POI_TYPES[poi?.type]?.danger ?? 1;
-    const busy = new Set([
-      ...this.list.map((e) => e.poiId), ...g.state.bases.map((b) => b.poiId), ...(g.state.npcs?.list || []).map((n) => n.poiId),
-    ]);
-    const sh = g.shelter.primary();
-    const origin = poi || sh;
-    const next = g.state.map.pois
-      .filter((p) => p.id !== exp.poiId && !busy.has(p.id) && POI_TYPES[p.type] && (POI_TYPES[p.type].danger ?? 1) <= danger
-        && (!sh || haversine(sh.lat, sh.lon, p.lat, p.lon) <= POI_SCAN_RADIUS) && this.hasStock(p, at))
-      .map((p) => ({ p, d: haversine(origin.lat, origin.lon, p.lat, p.lon) }))
-      .sort((a, b) => a.d - b.d)[0]?.p;
-    if (!next) return { ok: false, reason: `「${poi?.name || '這裡'}」已經沒有物資，附近也找不到還有物資的地點` };
-    return {
-      ok: true, poiId: next.id, hops: hops + 1,
-      note: `🔁 「${poi?.name || '這裡'}」已經沒有物資，自動前往附近的「${next.name}」（自動換點 ${hops + 1}/${limit}）`,
-    };
+    const members = memberIds.map((id) => g.survivors.get(id)).filter(Boolean);
+    if (!members.length) return null;
+    const bagsFull = members.every((m) => g.survivors.bagCap(m) - g.survivors.bagLoad(m) < 1);
+    const storeFull = g.equipment.storeUsed() >= g.equipment.storeCap();
+    return bagsFull && storeFull ? `隊員背包都已裝滿、倉庫也滿了（${g.equipment.storeUsed()}/${g.equipment.storeCap()} 格），再出發也帶不回物資` : null;
+  }
+
+  /** 停止所有臨時小隊的探索佇列與自動探索（記錄原因） */
+  stopAllQueues(reason) {
+    let n = 0;
+    this.list.forEach((e) => {
+      if (e.kind !== 'explore') return;
+      if ((e.queue || []).length || e.auto) n += 1;
+      e.queue = [];
+      e.auto = false;
+    });
+    this.game.log(`⏹️ 探索佇列全部停止：${reason}。請整理倉庫（出售、拆解或擴充）後再派出。`, 'danger');
+    this.game.toast('⏹️ 倉庫與背包都滿了，探索佇列已全部停止（詳見消息）', 'danger');
+    return n;
   }
 
   /**
@@ -588,32 +579,42 @@ export class ExplorationSystem {
           const m = this.game.survivors.get(id);
           return m && !m.severe;
         });
-        // 臨時小隊的探索佇列：完成後自動前往佇列中的下一個地點
-        if (exp.kind === 'explore' && !exp.defeated && !exp.recalled && (exp.queue || []).length && healthy && now - exp.endAt < OFFLINE_CAP_MS) {
-          const queue = [...exp.queue];
-          let started = null;
-          while (queue.length && !started) {
-            const poiId = queue.shift();
-            const r = this.start(poiId, exp.memberIds, exp.durationMin, exp.auto, exp.endAt, { vehicleIds: exp.vehicleIds || [] });
-            if (r.ok) started = r.exp;
-            else report.events.push(`⏭️ 佇列中的地點無法前往：${r.reason}`);
-          }
-          if (started) {
-            started.queue = queue;
-            report.events.push(`➡️ 依探索佇列前往下一個地點「${this.poi(started.poiId)?.name || ''}」${queue.length ? `（佇列還有 ${queue.length} 個）` : ''}`);
+        if (exp.kind !== 'explore' || exp.defeated || exp.recalled || !healthy || now - exp.endAt >= OFFLINE_CAP_MS) return;
+        const queue = [...(exp.queue || [])];
+        const autoOn = exp.auto && this.game.research.hasUnlock('autoExplore');
+        if (!queue.length && !autoOn) return;
+        // 隊員背包都滿、倉庫也滿：停止所有佇列並說明原因
+        const full = this.overloadReason(exp.memberIds);
+        if (full) {
+          report.events.push(`⏹️ 探索佇列停止：${full}`);
+          this.stopAllQueues(full);
+          return;
+        }
+        // 自動探索：同一個地點的物資拿光才前往下一個地點
+        const poiNow = this.poi(exp.poiId);
+        if (autoOn && this.hasStock(poiNow, exp.endAt)) {
+          const r = this.start(exp.poiId, exp.memberIds, exp.durationMin, true, exp.endAt, { vehicleIds: exp.vehicleIds || [], avoidHostile: exp.avoidHostile });
+          if (r.ok) {
+            r.exp.queue = queue;
+            report.events.push(`🔁 「${poiNow?.name || ''}」還有物資，自動再搜索一次`);
             return;
           }
+          report.events.push(`⏹️ 自動探索無法再出發：${r.reason}`);
         }
-        if (exp.kind === 'explore' && !exp.defeated && !exp.recalled && exp.auto && healthy && now - exp.endAt < OFFLINE_CAP_MS && this.game.research.hasUnlock('autoExplore')) {
-          const next = this.autoNext(exp, exp.endAt);
-          if (!next.ok) report.events.push(`⏹️ 自動探索停止：${next.reason}`);
-          else {
-            if (next.note) report.events.push(next.note);
-            const r = this.start(next.poiId, exp.memberIds, exp.durationMin, true, exp.endAt, { vehicleIds: exp.vehicleIds || [], avoidHostile: exp.avoidHostile });
-            if (!r.ok) report.events.push(`⏹️ 自動探索停止：${r.reason}`);
-            else r.exp.autoHops = next.hops;
-          }
+        // 臨時小隊的探索佇列：前往佇列中的下一個地點
+        let started = null;
+        while (queue.length && !started) {
+          const poiId = queue.shift();
+          const r = this.start(poiId, exp.memberIds, exp.durationMin, exp.auto, exp.endAt, { vehicleIds: exp.vehicleIds || [] });
+          if (r.ok) started = r.exp;
+          else report.events.push(`⏭️ 佇列中的地點無法前往：${r.reason}`);
         }
+        if (started) {
+          started.queue = queue;
+          report.events.push(`➡️ 依探索佇列前往下一個地點「${this.poi(started.poiId)?.name || ''}」${queue.length ? `（佇列還有 ${queue.length} 個）` : ''}`);
+          return;
+        }
+        if (autoOn) report.events.push(`⏹️ 自動探索結束：「${poiNow?.name || '這裡'}」的物資已經拿光，佇列中也沒有下一個地點`);
       });
       due = this.list.filter((e) => e.endAt <= now);
     }

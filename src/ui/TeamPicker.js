@@ -87,7 +87,7 @@ export function openTeamPicker(ui, opts) {
     const durs = opts.withDuration
       ? `${opts.fixedDuration ? '' : `<div class="label">探索時長</div><div class="chips">${EXPLORE_DURATIONS.map((d) => `<button class="chip ${d === duration ? 'active' : ''}" data-action="dur" data-d="${d}">${d} 分鐘</button>`).join('')}</div>`}
          <label class="toggle ${autoUnlocked ? '' : 'disabled'}"><input type="checkbox" data-role="auto" ${auto ? 'checked' : ''} ${autoUnlocked ? '' : 'disabled'}> 🔁 自動探索（完成後自動再出發）${autoUnlocked ? '' : '<small>（需研究「斥候訓練」）</small>'}</label>
-         ${autoUnlocked ? `<small class="muted block">這裡還有物資就再來一次；搜空後自動換到附近還有物資的地點（危險度不高於這裡），最多換 ${game.exploration.autoHopLimit()} 次（研究「巡迴搜索」可增加，最多 5 次）。隊員重傷或戰敗時停止。</small>` : ''}`
+         ${autoUnlocked ? '<small class="muted block">同一個地點的物資拿光才結束；有探索佇列時接著前往下一個地點。隊員重傷、戰敗，或背包與倉庫都滿了時停止。</small>' : ''}`
       : '';
     const squadRows = squads.map((e) => {
       const names = e.memberIds.map((id) => game.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
@@ -106,7 +106,7 @@ export function openTeamPicker(ui, opts) {
       ${opts.routeOption ? '<small class="muted block">🛡️ 路線會自動繞開 NPC、敵對與中立玩家據點的警戒範圍；友好玩家的範圍可以直接通過。</small>' : ''}
       ${timeHtml(game, opts.trip, ids, vids, avoidHostile)}
       ${durs}
-      <div class="btn-row end"><button class="btn btn-primary" data-action="confirm" ${ids.length ? '' : 'disabled'}>${opts.confirmLabel}</button></div>`;
+      <div class="btn-row end"><button class="btn btn-primary" data-action="confirm" ${ids.length || squadId ? '' : 'disabled'}>${squadId ? '加入小隊佇列' : opts.confirmLabel}</button></div>`;
   };
 
   const modal = ui.modal.open({
