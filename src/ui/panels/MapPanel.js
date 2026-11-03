@@ -638,6 +638,7 @@ export class MapPanel {
         if (action === 'recall') {
           const r = this.ui.result(g.exploration.recall(expId));
           if (r.ok) this.renderMap(true);
+        }
       },
     });
   }

@@ -2261,7 +2261,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const early = e4.cp.overweight && e4.cp.done < e4.cp.total;
   assert(!early || (e4.cp.stopped && e4.endAt < end0), `背包提早裝滿就停止探索、直接回家（${e4.cp.done}/${e4.cp.total}）`);
   ge.exploration.update(e4.endAt + 1, { silent: true });
-  assert(!early || ge.state.map.remain[big3.id]?.hidden, '提早負重回家時不顯示剩餘物資');
+  assert(!early || !ge.state.map.remain[big3.id] || ge.state.map.remain[big3.id].hidden, '提早負重回家時不顯示剩餘物資');
 }
 
 // ---- 41. v8.25：地圖密度上限 ----
