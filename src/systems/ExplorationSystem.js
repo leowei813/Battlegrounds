@@ -780,6 +780,10 @@ export class ExplorationSystem {
       level: this.game.zombies.nightLevel(poi, phase),
       zoneMul: phase.zombies ? this.game.zombies.encounterMul(poi.lat, poi.lon) : 1,
       phase,
+      // 不含日夜的物資倍率（日夜依每段搜索的實際時間另外套用，見 atPhase）
+      lootBase: (1 + this.game.research.bonus('lootPct'))
+        * (1 + Math.max(0, ...fx.map((f) => f.lootPct || 0)))
+        * (1 + memberStats.reduce((sum, x) => sum + (x.lootBonus || 0), 0)),
       lootMul: phase.lootMul * (1 + this.game.research.bonus('lootPct'))
         * (1 + Math.max(0, ...fx.map((f) => f.lootPct || 0)))
         * (1 + memberStats.reduce((sum, x) => sum + (x.lootBonus || 0), 0)),
@@ -818,13 +822,27 @@ export class ExplorationSystem {
     });
   }
 
-  /** 一個檢核點：搜刮一部分物資、可能遭遇事件，並檢查負重 */
-  checkpoint(exp, ctx, k) {
+  /** 依實際搜索時間的日夜：殭屍等級、遭遇倍率與物資倍率 */
+  atPhase(ctx, at) {
+    const phase = this.game.time.phase(at);
+    const { poi } = ctx;
+    return {
+      ...ctx,
+      phase,
+      level: this.game.zombies.nightLevel(poi, phase),
+      zoneMul: phase.zombies ? this.game.zombies.encounterMul(poi.lat, poi.lon) : 1,
+      lootMul: phase.lootMul * ctx.lootBase,
+    };
+  }
+
+  /** 一個檢核點：搜刮一部分物資、可能遭遇事件，並檢查負重（日夜依這一段搜索的實際時間判定） */
+  checkpoint(exp, ctx0, k) {
     const cp = exp.cp;
+    const at = this.checkpointAt(exp, k);
+    const ctx = this.atPhase(ctx0, at);
     const {
       poi, members, pt, zone, danger, level, phase,
     } = ctx;
-    const at = this.checkpointAt(exp, k);
     cp.done = k;
     const tag = cp.total > 1 ? `［搜索 ${k}/${cp.total}］` : '';
     const last = k === cp.total;
