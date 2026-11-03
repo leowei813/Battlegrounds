@@ -8,7 +8,7 @@ import { DEFENSES, DEFENSE_MAX_LEVEL, defenseBuildTime } from '../config/defense
 import { RESEARCH } from '../config/research.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import {
-  PRIMARY_DANGER_COEF, baseEstablishCost, BASE_SIZES, FACILITY_COUNT, baseSizeOf, ABANDON_REFUND, RELOCATE_DEFENSE_REFUND, RELOCATE_KEEP, MAX_OUTPOSTS,
+  PRIMARY_DANGER_COEF, baseEstablishCost, BASE_SIZES, FACILITY_COUNT, baseSizeOf, ABANDON_REFUND, RELOCATE_DEFENSE_REFUND, RELOCATE_KEEP, FACILITY_CAP_REFUND, MAX_OUTPOSTS,
 } from '../config/civilization.js';
 import { createBase } from '../core/GameState.js';
 import { canAfford, payCost, scaleCost } from './costUtils.js';
@@ -199,6 +199,13 @@ export class ShelterSystem {
     }
     this.bases.push(base);
     if (kind === 'shelter') this.game.state.primaryBaseId = base.id;
+    // 新地點較小：超過上限的設施降級並退還 50% 材料
+    if (reloc?.facilities) {
+      const capped = this.capFacilities(base);
+      if (capped.changes.length) {
+        this.game.log(`🏗️ 新避難所規模較小，${capped.changes.map((c) => `${FACILITIES[c.id].name} Lv${c.from}→Lv${c.to}`).join('、')}，退還 ${Math.round(FACILITY_CAP_REFUND * 100)}% 建造材料`, 'info');
+      }
+    }
     this.game.civilization.invalidate();
     this.game.log(`🏠 ${kind === 'shelter' ? '建立避難所' : '建立前哨站'}於「${poi.name}」`, 'success');
     this.game.bus.emit('shelter:changed');
@@ -451,6 +458,57 @@ export class ShelterSystem {
     return this.discounted(FACILITIES[id].cost(lv));
   }
 
+  /** 設施最高等級：依據點規模（小型 Lv8、中型 Lv11、大型 Lv13、巨型 Lv15） */
+  facilityCap(b) {
+    const base = this.resolve(b);
+    return Math.min(FACILITY_MAX_LEVEL, BASE_SIZES[base?.size]?.facMax ?? FACILITY_MAX_LEVEL);
+  }
+
+  /**
+   * 超過據點規模上限的設施降到上限，降掉的等級退還 50% 建造材料。
+   * @returns {{changes:{id:string, from:number, to:number}[], refund:object}}
+   */
+  capFacilities(b, { apply = true } = {}) {
+    const base = this.resolve(b);
+    const cap = this.facilityCap(base);
+    const refund = {};
+    const changes = [];
+    Object.entries(base.facilities).forEach(([id, f]) => {
+      if (f.level <= cap) return;
+      for (let lv = cap + 1; lv <= f.level; lv += 1) {
+        Object.entries(FACILITIES[id].cost(lv)).forEach(([k, v]) => { refund[k] = (refund[k] || 0) + v; });
+      }
+      changes.push({ id, from: f.level, to: cap });
+      if (apply) f.level = cap;
+    });
+    Object.keys(refund).forEach((k) => { refund[k] = Math.floor(refund[k] * FACILITY_CAP_REFUND); if (!refund[k]) delete refund[k]; });
+    if (apply && changes.length) {
+      this.game.grant(refund);
+      base.wallHp = null;
+      this.game.civilization.invalidate();
+    }
+    return { changes, refund };
+  }
+
+  /** 搬遷到某個地點時，會被降級的設施（預覽） */
+  relocationCapPreview(poi) {
+    const reloc = this.game.state.relocation;
+    if (!reloc?.facilities) return { changes: [], refund: {} };
+    const cap = Math.min(FACILITY_MAX_LEVEL, BASE_SIZES[baseSizeOf(poi)]?.facMax ?? FACILITY_MAX_LEVEL);
+    const base = { size: baseSizeOf(poi), facilities: JSON.parse(JSON.stringify(reloc.facilities)) };
+    const changes = [];
+    const refund = {};
+    Object.entries(base.facilities).forEach(([id, f]) => {
+      if (!FACILITIES[id] || f.level <= cap) return;
+      for (let lv = cap + 1; lv <= f.level; lv += 1) {
+        Object.entries(FACILITIES[id].cost(lv)).forEach(([k, v]) => { refund[k] = (refund[k] || 0) + v; });
+      }
+      changes.push({ id, from: f.level, to: cap });
+    });
+    Object.keys(refund).forEach((k) => { refund[k] = Math.floor(refund[k] * FACILITY_CAP_REFUND); if (!refund[k]) delete refund[k]; });
+    return { changes, refund, cap };
+  }
+
   canUpgradeFacility(b, id) {
     const base = this.resolve(b);
     if (!base) return { ok: false, reason: '尚未建立避難所' };
@@ -458,6 +516,8 @@ export class ShelterSystem {
     if (!fac) return { ok: false, reason: '未知設施' };
     if (base.kind === 'outpost' && !OUTPOST_FACILITIES.includes(id)) return { ok: false, reason: '前哨站只有防禦功能，無法建造此設施' };
     if (fac.level >= FACILITY_MAX_LEVEL) return { ok: false, reason: '已達最高等級' };
+    const cap = this.facilityCap(base);
+    if (fac.level >= cap) return { ok: false, reason: `${BASE_SIZES[base.size]?.name || ''}據點設施最高 Lv${cap}（需要更大的據點）` };
     if (this.isFacilityBusy(base, id)) return { ok: false, reason: '施工中' };
     if (this.queueFull(base)) return { ok: false, reason: `施工佇列已滿（${BUILD_QUEUE_SIZE}）` };
     if (!canAfford(this.game.state, this.facilityCost(base, id))) return { ok: false, reason: '資源不足' };
