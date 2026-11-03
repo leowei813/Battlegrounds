@@ -881,3 +881,38 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .med-btn .overflow { color: #ff6b61; font-weight: 700; }
 .bt-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .bt-wrap .battle-table td, .bt-wrap .battle-table th { white-space: nowrap; }
+
+/* ---------- v9.8 研究頁：左側分支＋依階段排列的卡片 ---------- */
+.rs-layout .sh-nav-item.rs-branch { flex-wrap: wrap; row-gap: 4px; padding: 6px 12px; }
+.rs-bar { display: block; width: 100%; height: 4px; border-radius: 2px; background: var(--card2); overflow: hidden; }
+.rs-bar > i { display: block; height: 100%; border-radius: 2px; background: var(--primary); }
+.rs-branch .rs-bar > i { background: #6b6b6b; }
+.rs-branch.active .rs-bar > i { background: var(--accent); }
+.rs-lv { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--card2); color: var(--muted); white-space: nowrap; }
+.rs-lv.on { background: #ffb30022; color: var(--accent); }
+.rs-card.rs-active { border-color: #5a4614; background: #2a2414; }
+.rs-tier { margin: 4px 0 0; color: var(--accent); }
+.rs-now { border-color: #5a4614; }
+.rs-now h3 { color: var(--accent); }
+.rs-rules { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+.rs-next { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border: 0; border-top: 1px solid var(--line); background: none; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+@media (max-width: 899px) {
+  .desk-only { display: none !important; }
+  .rs-layout .sh-nav-item.rs-branch { padding: 0 14px; flex-wrap: nowrap; }
+  .rs-layout .sh-base { font-size: 13px; }
+  .rs-layout .sh-base small:last-child { display: none; }
+}
+/* 防禦卡片（v9.8）：不需開視窗即可升級、拆除、派人駐守 */
+.def-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.def-stats { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-radius: 8px; background: var(--bg2); font-size: 13px; }
+.def-gar { display: flex; flex-direction: column; gap: 4px; }
+.def-gar-sel { min-height: 36px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg2); color: var(--text); font: inherit; }
+.def-card .btn-row { display: inline-flex; gap: 6px; }
+@media (max-width: 899px) {
+  .def-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .def-card .btn-row { flex: 1; justify-content: flex-end; }
+  .def-gar-sel { min-height: 44px; }
+}
+@media (max-width: 899px) {
+  .rs-layout .sh-fac-side, .rs-layout .sh-fac-main { align-self: stretch; }
+}
