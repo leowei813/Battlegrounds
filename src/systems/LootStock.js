@@ -65,11 +65,14 @@ const BASIC_BUILD_BOOST = 1.4;
 const isBasicBuild = (k) => SUPPLIES[k]?.tag === 'struct' && SUPPLIES[k].tier <= 2;
 /** 第 1 階（基礎消耗性）零件與布料的出現機率倍率 */
 const BASIC_TIER_BOOST = 1.6;
+/** 找到零件時額外多找到 1、2 種零件的機率 */
+const PART_EXTRA_KINDS = [0.6, 0.3];
+
 /** 零件與布料依階級的數量倍率：基礎材料較多，階級越高越少 */
 const TIER_AMOUNT = [1, 1.3, 0.9, 0.7, 0.5, 0.35];
 
 /** 依類別與危險度挑出具體的材料物品 */
-function pickSupply(cat, rnd, danger) {
+export function pickSupply(cat, rnd, danger) {
   let keys;
   let weight;
   if (cat === 'medLow') {
@@ -141,6 +144,15 @@ export function stockOf(poi, at = Date.now(), remainMap = null) {
     const tierMul = (cat === 'part' || cat === 'fabric' ? TIER_AMOUNT[SUPPLIES[key]?.tier || 1] : 1) * (pt.lootAmount?.[cat] ?? (cat.startsWith('med') ? pt.lootAmount?.med ?? 1 : 1));
     const amount = Math.max(1, Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zone.lootMul * (pt.amountMul || 1) * CAT_AMOUNT[cat] * LOOT_AMOUNT_MUL * tierMul));
     resources[key] = (resources[key] || 0) + amount;
+    // 零件種類特別多：找到零件時，常常同時找到其他種類的零件
+    if (cat === 'part') {
+      const extra = (rnd() < PART_EXTRA_KINDS[0] ? 1 : 0) + (rnd() < PART_EXTRA_KINDS[1] ? 1 : 0);
+      for (let j = 0; j < extra; j += 1) {
+        const k2 = pickSupply('part', rnd, danger);
+        const a2 = Math.max(1, Math.round(amount * (0.4 + rnd() * 0.5) * (TIER_AMOUNT[SUPPLIES[k2]?.tier || 1] / tierMul || 1)));
+        resources[k2] = (resources[k2] || 0) + a2;
+      }
+    }
   }
   return {
     resources, itemMul: 0.5 + rnd(), empty: false, gear: pt.itemChance > 0, vehicle: !!pt.loot.vehicle,

@@ -1,5 +1,8 @@
 import { ASSIST_TRAVEL_MUL } from './AssistSystem.js';
 
+/** 再次探索同一地點：剩餘搜索時間的下限比例、回去拿帶不走物資的時間（分鐘） */
+const REVISIT = { minFrac: 0.2, pickupMin: 0.3 };
+
 /** 自動探索換點次數上限 */
 export const AUTO_HOP_MAX = 5;
 import { COIN_GAIN_MUL, RAID_TRAVEL, POI_SCAN_RADIUS } from '../config/constants.js';
@@ -20,7 +23,9 @@ import {
 import {
   ALL_ENEMIES, ZOMBIE_VS_SURVIVOR, NIGHT_MUL, mulOf,
 } from '../config/enemies.js';
-import { stockOf, dayKey } from './LootStock.js';
+import {
+  stockOf, dayKey, pickSupply, remainOf,
+} from './LootStock.js';
 import { zoneAt } from '../config/zones.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 import { pathLength, pointAlong } from '../map/routing.js';
@@ -155,7 +160,14 @@ export class ExplorationSystem {
     if (!poi || poi.npc) return 2;
     const size = BASE_SIZES[baseSizeOf(poi)];
     const danger = this.game.zombies.areaDanger(poi);
-    return Math.max(1, Math.round(size.searchMin * (0.6 + 0.4 * Math.min(1, (danger - 1) / 5))));
+    const full = Math.max(1, Math.round(size.searchMin * (0.6 + 0.4 * Math.min(1, (danger - 1) / 5))));
+    // 上次沒搜索完：只需剩餘的搜索時間；已經搜完、只是帶不走回來拿：只需很短的時間
+    const r = this.game.state.map.remain?.[poi.id];
+    if (r && remainOf(poi, this.game.state.map.remain)) {
+      if (!r.hidden) return REVISIT.pickupMin;
+      return Math.max(REVISIT.pickupMin, +(full * Math.max(REVISIT.minFrac, r.leftFrac ?? 1)).toFixed(2));
+    }
+    return full;
   }
 
   /** 計算實際探索時間（毫秒） */
@@ -638,11 +650,11 @@ export class ExplorationSystem {
   }
 
   /** 記錄建築內殘留的物資（地圖會顯示剩餘數量）；沒有殘留則清除 */
-  setRemain(poi, res, at = Date.now(), { hidden = false } = {}) {
+  setRemain(poi, res, at = Date.now(), { hidden = false, leftFrac = 1 } = {}) {
     const map = this.game.state.map;
     map.remain = map.remain || {};
     const left = Object.fromEntries(Object.entries(res || {}).filter(([, v]) => v > 0));
-    if (Object.keys(left).length) map.remain[poi.id] = { day: dayKey(at), res: left, ...(hidden ? { hidden: true } : {}) };
+    if (Object.keys(left).length) map.remain[poi.id] = { day: dayKey(at), res: left, ...(hidden ? { hidden: true, leftFrac } : {}) };
     else delete map.remain[poi.id];
     // 過期的殘留紀錄一併清掉
     const today = dayKey(at);
@@ -706,6 +718,13 @@ export class ExplorationSystem {
       if (!ctx) return;
       if (!exp.cp) {
         const stock = stockOf(ctx.poi, ctx.arriveAt, this.game.state.map.remain);
+        // 研究「零件辨識」：有機率在建築裡多找到一種零件
+        const pk = this.game.research.bonus('partKindPct');
+        if (pk > 0 && !stock.partial && !stock.empty && Object.keys(stock.resources).some((k) => SUPPLIES[k]?.cat === 'part') && chance(pk)) {
+          const zone = zoneAt(ctx.poi.lat, ctx.poi.lon);
+          const k = pickSupply('part', Math.random, ctx.pt.danger + Math.max(0, zone.danger || 0));
+          stock.resources[k] = (stock.resources[k] || 0) + randInt(2, 6);
+        }
         exp.cp = {
           total: this.checkpointCount(ctx.poi), done: 0, searchMs: exp.searchMs || 0,
           stock: { resources: { ...stock.resources }, itemMul: stock.itemMul, gear: stock.gear, vehicle: stock.vehicle, empty: stock.empty, partial: !!stock.partial },
@@ -908,7 +927,8 @@ export class ExplorationSystem {
     else {
       const rest = { ...overflow };
       Object.entries(cp.remaining).forEach(([k, v]) => { const n = Math.floor(v); if (n > 0) rest[k] = (rest[k] || 0) + n; });
-      this.setRemain(poi, rest, arriveAt, { hidden: true });
+      // 記下還沒搜索的比例：下次再來只需剩餘的搜索時間
+      this.setRemain(poi, rest, arriveAt, { hidden: true, leftFrac: Math.max(0, 1 - cp.done / Math.max(1, cp.total)) });
     }
     delete poi.depletion;
     poi.lastVisit = exp.endAt;

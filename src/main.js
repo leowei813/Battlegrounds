@@ -1,3 +1,4 @@
+import { APP_VERSION } from './config/version.js';
 import Phaser from 'phaser';
 import './styles/main.css';
 import { Game } from './core/Game.js';
@@ -79,6 +80,40 @@ function showWelcome(ui) {
  * 登入帳號並讀取雲端進度（遊戲進度只存在雲端）。
  * @returns {Promise<{state:object|null, meta?:object, legacy?:object}>}
  */
+/** 每 5 分鐘檢查網站是否有新版本；有的話提醒重新整理 */
+function watchForUpdate(ui) {
+  let told = false;
+  const check = async () => {
+    if (told || import.meta.env.DEV) return;
+    try {
+      const res = await fetch(`./version.json?t=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const { version } = await res.json();
+      if (version && version !== APP_VERSION && isNewer(version, APP_VERSION)) {
+        told = true;
+        ui.modal.open({
+          title: '🔔 有新版本',
+          body: `<p>遊戲已更新到 <b>v${version}</b>（你目前是 v${APP_VERSION}）。</p><p class="muted">重新整理後就會使用新版本，進度已自動存檔。</p>
+            <div class="btn-row"><button class="btn btn-primary" data-action="reload">🔄 立即更新</button></div>`,
+          onAction: (action) => { if (action === 'reload') window.location.reload(); },
+        });
+      }
+    } catch { /* 離線時略過 */ }
+  };
+  setTimeout(check, 15000);
+  setInterval(check, 5 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+}
+
+function isNewer(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i += 1) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
+}
+
 async function signIn(cloud) {
   const auth = new AuthScreen($('#setup-root'), cloud);
   let message = '';
@@ -154,6 +189,7 @@ async function boot() {
   const phaser = createPhaser(game);
   const report = game.start();
   const ui = new UIManager(game, phaser, cloud);
+  watchForUpdate(ui);
   ui.init();
   game.save();
   cloud.attach(game);

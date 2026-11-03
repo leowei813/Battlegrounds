@@ -89,8 +89,7 @@ export function openTeamPicker(ui, opts) {
       <div class="label">選擇隊員（最多 ${MAX_TEAM_SIZE} 人）・隊伍戰力 <b>${power}</b></div>
       <div class="pick-list">${rows || '<p class="muted">沒有倖存者</p>'}</div>
       ${vehicles}
-      ${opts.routeOption ? `<label class="toggle"><input type="checkbox" data-role="avoid" ${avoidHostile ? 'checked' : ''}> 🛡️ 也繞開敵對據點的警戒範圍（路程較長，但不會遭到駐守人員攻擊）</label>
-        <small class="muted block">預設會繞開中立與友好據點的警戒範圍；NPC 一律敵對。</small>` : ''}
+      ${opts.routeOption ? '<small class="muted block">🛡️ 路線會自動繞開 NPC、敵對與中立玩家據點的警戒範圍；友好玩家的範圍可以直接通過。</small>' : ''}
       ${timeHtml(game, opts.trip, ids, vids, avoidHostile)}
       ${durs}
       <div class="btn-row end"><button class="btn btn-primary" data-action="confirm" ${ids.length ? '' : 'disabled'}>${opts.confirmLabel}</button></div>`;

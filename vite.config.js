@@ -3,7 +3,16 @@ import { defineConfig } from 'vite';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
+/** 建置時輸出 version.json，讓已開啟的舊版頁面偵測到有新版本 */
+const versionFile = () => ({
+  name: 'version-file',
+  generateBundle() {
+    this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: pkg.version }) });
+  },
+});
+
 export default defineConfig({
+  plugins: [versionFile()],
   // 版本號注入前端（顯示於首頁、狀態列與更新內容）
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),

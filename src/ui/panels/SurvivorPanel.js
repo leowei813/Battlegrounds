@@ -68,7 +68,7 @@ export class SurvivorPanel {
     const { net } = g.resources.rates();
     return `<div class="panel-inner">
       <h2>👥 倖存者 <small>${st.survivors.length}/${g.survivors.housing()} 人（上限 ${cap.max}）</small></h2>
-      <p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 5（${cap.leader}）+ 各據點等級（${cap.bases}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級（${g.shelter.maxLevel('clinic') ? `Lv${g.shelter.maxLevel('clinic')}` : '<b class="neg">尚未建造，不會自然回復</b>'}），主要仍需藥品治療。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），等級越高吃得越多（每高 1 級 +${Math.round(FOOD_LEVEL_STEP * 100)}%），目前食物淨收入 <b class="${net.food < 0 ? 'neg' : 'pos'}">${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時</b>。</p>
+      <p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 3（${cap.leader}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級（${g.shelter.maxLevel('clinic') ? `Lv${g.shelter.maxLevel('clinic')}` : '<b class="neg">尚未建造，不會自然回復</b>'}），主要仍需藥品治療。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），等級越高吃得越多（每高 1 級 +${Math.round(FOOD_LEVEL_STEP * 100)}%），目前食物淨收入 <b class="${net.food < 0 ? 'neg' : 'pos'}">${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時</b>。</p>
       <div class="grid">${list}</div>
       ${oddsCard}
       ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷，飢餓時無法治療。重傷且持續飢餓滿遊戲內 3 天的隊員會永久死亡（領袖除外）。</div>' : ''}
@@ -134,7 +134,7 @@ export class SurvivorPanel {
       const item = g.equipment.getItem(sv.equipment[slot]);
       return `<div class="equip-slot">
         <div class="row-between"><small>${SLOTS[slot].icon} ${SLOTS[slot].name}</small>
-        <span>${btn('更換', 'pickItem', { slot }, { cls: 'btn-xs', disabled: !this.candidates(sv.id, slot).length, title: this.candidates(sv.id, slot).length ? '' : '沒有可以裝備的物品' })}${item ? btn('卸下', 'unequip', { slot }, { cls: 'btn-xs btn-ghost' }) : ''}</span></div>
+        <span>${sv.status !== 'idle' ? '<small class="muted">已派出，無法更換</small>' : `${btn('更換', 'pickItem', { slot }, { cls: 'btn-xs', disabled: !this.candidates(sv.id, slot).length, title: this.candidates(sv.id, slot).length ? '' : '沒有可以裝備的物品' })}${item ? btn('卸下', 'unequip', { slot }, { cls: 'btn-xs btn-ghost' }) : ''}`}</span></div>
         ${item ? itemCard(item, { compact: true }) : '<div class="muted">— 空 —</div>'}
       </div>`;
     }).join('');
@@ -245,7 +245,7 @@ export class SurvivorPanel {
       ...eq.bagItems(sv).map((it) => `
         <div class="slot-cell item" style="--rc:${RARITIES[it.rarity].color}">
           <div class="slot-main"><span class="slot-icon">${ITEM_MODELS[it.model]?.icon || ITEM_TYPES[it.type]?.icon || '❔'}</span><b>${escapeHtml(it.name)}</b><small class="muted">戰力 ${it.power}・⚖️${itemWeight(it)}</small></div>
-          <div class="slot-ctrl">${btn('裝備', 'equipBag', { item: it.id }, { cls: 'btn-xs btn-primary' })}${home ? btn('存入倉庫', 'itemToStore', { item: it.id }, { cls: 'btn-xs' }) : ''}${btn('🗑️ 丟棄', 'bagDropItem', { item: it.id }, { cls: 'btn-xs btn-danger', disabled: it.locked })}</div>
+          <div class="slot-ctrl">${sv.status === 'idle' ? btn('裝備', 'equipBag', { item: it.id }, { cls: 'btn-xs btn-primary' }) : ''}${home ? btn('存入倉庫', 'itemToStore', { item: it.id }, { cls: 'btn-xs' }) : ''}${btn('🔨 拆解', 'bagDismantle', { item: it.id }, { cls: 'btn-xs', disabled: it.locked, title: it.locked ? '已上鎖' : `拆解可得：${Object.entries(eq.dismantleValue(it)).map(([k, v]) => `${metaOf(k).name}×${v}`).join('、')}` })}${btn('🗑️ 丟棄', 'bagDropItem', { item: it.id }, { cls: 'btn-xs btn-danger', disabled: it.locked })}</div>
         </div>`),
     ];
     while (cells.length < slots) cells.push('<div class="slot-cell empty">空</div>');
@@ -280,6 +280,10 @@ export class SurvivorPanel {
           const n = Math.max(1, Math.floor(+el.closest('.slot-cell').querySelector('input').value || 1));
           const name = metaOf(data.key).name;
           if (confirm(`確定丟棄 ${name}×${n}？丟棄後無法復原。`)) this.ui.result(g.survivors.discardBag(id, data.key, n));
+        }
+        if (action === 'bagDismantle') {
+          const it = g.equipment.getItem(data.item);
+          if (it && confirm(`確定拆解「${it.name}」？`)) this.ui.result(g.equipment.dismantle(data.item));
         }
         if (action === 'bagDropItem') {
           const it = g.equipment.getItem(data.item);

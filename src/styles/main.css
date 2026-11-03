@@ -608,3 +608,4 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 /* 避難所面板分頁較多：手機與網頁版都排成兩列（每列三個） */
 .drawer-tabs { flex-wrap: wrap; }
 .drawer-tabs .seg-btn { flex: 1 1 30%; }
+.unread { border-left: 3px solid #42a5f5; }

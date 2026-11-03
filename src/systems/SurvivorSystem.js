@@ -41,11 +41,10 @@ export class SurvivorSystem {
     return Math.min(this.rankCap(), this.dormCap());
   }
 
-  /** 領袖等級與據點規模決定的上限 */
+  /** 領袖等級決定的上限（不再依據點數量） */
   rankCap() {
     const leaderLv = this.leader()?.level || 1;
-    const baseLv = this.game.state.bases.reduce((s, b) => s + this.game.shelter.baseLevel(b), 0);
-    return Math.min(MAX_SURVIVORS, BASE_SURVIVOR_CAP + Math.floor(leaderLv / LEADER_LEVELS_PER_SLOT) + baseLv);
+    return Math.min(MAX_SURVIVORS, BASE_SURVIVOR_CAP + Math.floor(leaderLv / LEADER_LEVELS_PER_SLOT));
   }
 
   /** 宿舍可住人數（避難所的宿舍） */
@@ -59,7 +58,7 @@ export class SurvivorSystem {
     if (this.dormCap() <= this.rankCap()) {
       return dorm ? `宿舍只能住 ${this.dormCap()} 人，請升級宿舍` : `沒有宿舍最多只能有 ${this.dormCap()} 人，請在避難所建造宿舍`;
     }
-    return `人數已達上限（${this.housing()} 人），提升領袖等級或據點等級可增加上限`;
+    return `人數已達上限（${this.housing()} 人），提升領袖等級可增加上限`;
   }
 
   /** 上限明細（UI 說明用） */
@@ -68,7 +67,6 @@ export class SurvivorSystem {
     return {
       base: BASE_SURVIVOR_CAP,
       leader: Math.floor(leaderLv / LEADER_LEVELS_PER_SLOT),
-      bases: this.game.state.bases.reduce((s, b) => s + this.game.shelter.baseLevel(b), 0),
       max: MAX_SURVIVORS,
       rank: this.rankCap(),
       dorm: this.dormCap(),
@@ -167,7 +165,8 @@ export class SurvivorSystem {
     s.dodge = clamp(s.dodge, 0, 0.6);
     s.atkSpeed = clamp(+s.atkSpeed.toFixed(2), 0.3, 3);
     s.critDmg = +s.critDmg.toFixed(2);
-    s.power = Math.round(s.atk * s.atkSpeed * (1 + s.crit * (s.critDmg - 1)) * 4 + s.hp * 0.4 + s.def * 3);
+    // 戰力：輸出（含暴擊、吸血）＋生存（含閃避）
+    s.power = Math.round(s.atk * s.atkSpeed * (1 + s.crit * (s.critDmg - 1)) * (1 + (s.lifeSteal || 0)) * 4 + (s.hp * 0.4) / Math.max(0.4, 1 - (s.dodge || 0)) + s.def * 3);
     s.skills = fx;
     return s;
   }

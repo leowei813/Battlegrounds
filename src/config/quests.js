@@ -45,7 +45,7 @@ export const MAIN_QUESTS = [
   { id: 'm11', name: '屠龍者', desc: '擊敗 1 隻 Boss', cond: { type: 'stat', key: 'bossKills', value: 1 }, reward: { coins: 500, parts: 8, item: 'epic' } },
   { id: 'm11b', name: '攔路虎', desc: '攔截並擊敗 1 支野外隊伍（NPC 或其他玩家）', cond: { type: 'stat', key: 'intercepts', value: 1 }, reward: { coins: 400, ammo9: 60, smallKit: 2 } },
   { id: 'm12', name: '一週生還', desc: '存活 7 天', cond: { type: 'stat', key: 'daysSurvived', value: 7 }, reward: { coins: 600, parts: 10 } },
-  { id: 'm12b', name: '開疆拓土', desc: '擁有 2 個據點', cond: { type: 'bases', value: 2 }, reward: { coins: 600, wood: 400, ironPlate: 20, hinge: 15, rebar: 15 } },
+  { id: 'm12b', name: '安身立命', desc: '將宿舍升到 Lv3', cond: { type: 'facility', id: 'dormitory', value: 3 }, reward: { coins: 600, wood: 400, ironPlate: 20, hinge: 15, rebar: 15 } },
   { id: 'm12c', name: '文明的火種', desc: '文明度達到 200（城鎮）', cond: { type: 'civilization', value: 200 }, reward: { coins: 800, parts: 12 } },
   { id: 'm13', name: '重建文明', desc: '科技總等級達 30', cond: { type: 'research', value: 30 }, reward: { coins: 1500, parts: 25, item: 'legendary' } },
 ].map(scaleReward(false));
@@ -90,7 +90,7 @@ export const ACHIEVEMENTS = [
   { id: 'a_research', name: '末日學者', desc: '科技總等級達 200', cond: { type: 'research', value: 200 }, reward: { coins: 5000, item: 'legendary' } },
   { id: 'a_civ100', name: '聚落成形', desc: '文明度達到 100', cond: { type: 'civilization', value: 100 }, reward: { coins: 300 } },
   { id: 'a_civ550', name: '新文明', desc: '文明度達到 550', cond: { type: 'civilization', value: 550 }, reward: { coins: 5000, item: 'legendary' } },
-  { id: 'a_bases5', name: '據點網路', desc: '擁有 5 個據點', cond: { type: 'bases', value: 5 }, reward: { coins: 2000, parts: 20 } },
+  { id: 'a_bases5', name: '安居樂業', desc: '將宿舍升到 Lv8', cond: { type: 'facility', id: 'dormitory', value: 8 }, reward: { coins: 2000, parts: 20 } },
   { id: 'a_heal50', name: '戰地醫師', desc: '使用藥品治療 50 次', cond: { type: 'stat', key: 'healed', value: 50 }, reward: { coins: 800, mediumKit: 3 } },
   { id: 'a_ammo20', name: '軍火工匠', desc: '製作 20 批彈藥或箭矢', cond: { type: 'stat', key: 'ammoCrafted', value: 20 }, reward: { coins: 800, firingPin: 10, barrel: 2 } },
   { id: 'a_icpt5', name: '荒野獵人', desc: '攔截並擊敗 5 支野外隊伍', cond: { type: 'stat', key: 'intercepts', value: 5 }, reward: { coins: 1000, item: 'rare' } },

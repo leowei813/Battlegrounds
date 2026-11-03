@@ -1,3 +1,4 @@
+import { cancelRefund } from './ShelterSystem.js';
 import {
   RESEARCH, labLevelFor, researchCost, researchTime,
 } from '../config/research.js';
@@ -85,12 +86,24 @@ export class ResearchSystem {
     const check = this.canStart(id);
     if (!check.ok) return check;
     const level = this.level(id) + 1;
-    payCost(this.game.state, this.cost(id, level));
+    const cost = this.cost(id, level);
+    payCost(this.game.state, cost);
     this.state.active = {
-      id, level, startAt: Date.now(), endAt: Date.now() + this.researchTime(id, level) * 1000,
+      id, level, startAt: Date.now(), endAt: Date.now() + this.researchTime(id, level) * 1000, cost,
     };
     this.game.log(`開始研究「${RESEARCH[id].name}」Lv${level}`, 'info');
     return { ok: true, msg: `開始研究「${RESEARCH[id].name}」Lv${level}` };
+  }
+
+  /** 取消研究：依完成度退還材料（完成度越高退得越少） */
+  cancel(now = Date.now()) {
+    const a = this.state.active;
+    if (!a) return { ok: false, reason: '目前沒有研究' };
+    const refund = cancelRefund(a, now, () => this.cost(a.id, a.level));
+    this.state.active = null;
+    this.game.grant(refund.cost);
+    this.game.log(`🚫 取消研究「${RESEARCH[a.id].name}」Lv${a.level}，退還 ${Math.round(refund.ratio * 100)}% 材料`, 'info');
+    return { ok: true, msg: `已取消研究，退還約 ${Math.round(refund.ratio * 100)}% 材料` };
   }
 
   update(now) {

@@ -143,8 +143,9 @@ export const RECRUIT_STAY_MS = 60 * 60 * 1000;
 
 /** 人員上限：3 + 領袖等級 ÷ 5 + 各據點等級總和，最多 10 人（含領袖） */
 export const MAX_SURVIVORS = 10;
-export const BASE_SURVIVOR_CAP = 3;
-export const LEADER_LEVELS_PER_SLOT = 5;
+/** 人數上限 = 基本 5 + 領袖等級 ÷ 3（最多 10 人），且不能超過宿舍可住人數 */
+export const BASE_SURVIVOR_CAP = 5;
+export const LEADER_LEVELS_PER_SLOT = 3;
 /** 一次招募出現的候選人數 */
 export const RECRUIT_CHOICES = 3;
 

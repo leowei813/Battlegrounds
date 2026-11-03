@@ -242,12 +242,14 @@ export class EquipmentSystem {
   }
 
   itemPower(item) {
+    // 裝備戰力：基本數值加上所有附加詞條（百分比詞條依裝備等級換算成實際效果）
     const s = this.itemStats(item);
+    const lv = item.level || 1;
     return Math.round(
-      (s.atk || 0) * 3 + (s.def || 0) * 4 + (s.hp || 0) * 0.5 +
-      ((s.crit || 0) + (s.dodge || 0)) * 300 + (s.critDmg || 0) * 100 +
-      (s.atkSpeed || 0) * 120 + ((s.atkPct || 0) + (s.hpPct || 0) + (s.defPct || 0)) * 400 + (s.lootBonus || 0) * 200
-      + (s.lifeSteal || 0) * 500 + (s.exploreSpeed || 0) * 250 + (s.carry || 0) * 2,
+      (s.atk || 0) * 3 + (s.def || 0) * 4 + (s.hp || 0) * 0.5
+      + (s.crit || 0) * 1000 + (s.dodge || 0) * 1000 + (s.critDmg || 0) * 250 + (s.atkSpeed || 0) * 300
+      + (s.atkPct || 0) * (800 + lv * 40) + ((s.hpPct || 0) + (s.defPct || 0)) * (600 + lv * 30)
+      + (s.lifeSteal || 0) * 1200 + (s.exploreSpeed || 0) * 500 + (s.lootBonus || 0) * 500 + (s.carry || 0) * 2,
     );
   }
 
@@ -394,7 +396,11 @@ export class EquipmentSystem {
     const sv = this.game.survivors.get(survivorId);
     const item = this.getItem(itemId);
     if (!sv || !item) return { ok: false, reason: '找不到目標' };
-    if (sv.status === 'exploring') return { ok: false, reason: '探索中無法更換裝備' };
+    if (sv.status !== 'idle') return { ok: false, reason: '已派出的倖存者無法更換裝備' };
+    // 不能拿走已派出的人身上或背包裡的裝備
+    const holder = this.game.state.survivors.find((s) => s.id !== sv.id && (SLOT_KEYS.some((slot) => s.equipment[slot] === itemId) || item.loc === s.id));
+    if (holder && holder.status !== 'idle') return { ok: false, reason: `「${holder.name}」已派出，無法拿取他的裝備` };
+    if (item.loc && item.loc !== 'store' && item.loc !== sv.id && !holder) return { ok: false, reason: '這件裝備不在避難所' };
     const prevLoc = item.loc || 'store';
     const old = this.getItem(sv.equipment[item.slot]);
     const owners = [];
@@ -425,6 +431,7 @@ export class EquipmentSystem {
   unequip(survivorId, slot) {
     const sv = this.game.survivors.get(survivorId);
     if (!sv) return { ok: false, reason: '找不到倖存者' };
+    if (sv.status !== 'idle') return { ok: false, reason: '已派出的倖存者無法更換裝備' };
     const item = this.getItem(sv.equipment[slot]);
     if (item) {
       sv.equipment[slot] = null;
@@ -502,10 +509,21 @@ export class EquipmentSystem {
 
   dismantle(itemId) {
     const item = this.getItem(itemId);
+    const owner = item && item.loc && item.loc !== 'store' ? this.game.survivors.get(item.loc) : null;
     const res = this.removeItem(itemId);
     if (!res.ok) return res;
     const gain = this.dismantleValue(item);
-    const got = this.game.grant(gain);
+    // 背包裡的裝備：人在避難所時材料放進倉庫；在外面時材料放進他的背包
+    let got;
+    if (owner && !this.game.survivors.atShelter(owner)) {
+      got = {};
+      owner.bag = owner.bag || {};
+      Object.entries(gain).forEach(([k, v]) => {
+        if (k === 'parts') { this.game.state.player.parts += v; got[k] = v; return; }
+        owner.bag[k] = (owner.bag[k] || 0) + v;
+        got[k] = v;
+      });
+    } else got = this.game.grant(gain);
     const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || '稀有材料'}×${v}`).join('、');
     return { ok: true, msg: `拆解獲得 ${text || '（倉庫已滿，沒有回收到材料）'}` };
   }

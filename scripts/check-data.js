@@ -879,20 +879,16 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   gt.territory.handleEvents([{ from: 'p1', fromName: '鄰居', type: 'attack', data: { win: true, lossPct: 0.1 } }]);
   assert(gt.territory.relation('p1') === 'hostile' && gt.state.resources.wood === 900, '被其他玩家攻擊後變成敵對並損失資源');
   const ph = gt.territory.route(home, target);
-  const th = gt.territory.threats(ph);
-  assert(th.length === 1 && th[0].kind === 'player', '敵對據點的警戒範圍不會自動繞開，經過時會遭到駐守人員攻擊');
-  assert(crossings(gt.territory.route(home, target, { avoidHostile: true }), [zoneCircle]).length === 0, '可選擇連敵對範圍也繞開');
-  // 實際派隊：經過敵對範圍時發生戰鬥（打輸會撤退）
-  setHour(gt, 10);
+  assert(crossings(ph, [zoneCircle]).length === 0 && gt.territory.threats(ph).length === 0, 'v9：敵對據點的警戒範圍也一律繞開，不會遭到攻擊');
   const lead = gt.survivors.leader();
-  Object.assign(lead, { status: 'idle', severe: false, hp: null, level: 1 });
-  gt.world.others[0].bases[0].guards = 6;
-  gt.world.others[0].bases[0].guardLevel = 40;
-  gt.territory.noticed = () => true;
-  const ex = gt.exploration.start(target.id, ['leader'], 10);
-  assert(ex.ok && ex.exp.threats.length === 2, '出發時算出去程與返程會經過的敵對範圍');
-  const [rep] = gt.exploration.update(ex.exp.endAt + 1, { silent: true });
-  assert(!gt.state.expeditions.length && rep && !rep.success && rep.events.some((e) => e.includes('警戒範圍')), `在敵對範圍被駐守人員擊退後撤退（${JSON.stringify(rep?.events)}）`);
+  // 友好玩家的範圍不需要繞開
+  gt.state.relations.players.p1 = { status: 'friend', name: '鄰居' };
+  const pf = gt.territory.route(home, target);
+  assert(crossings(pf, [zoneCircle]).length === 1, '友好玩家的警戒範圍不需要繞開');
+  gt.world.others[0].trips = [{ id: 'tf', from: { lat: home.lat, lon: home.lon + 0.006 }, to: { lat: home.lat, lon: home.lon }, startAt: Date.now(), endAt: Date.now() + 600000, travelMs: 300000, searchMs: 0, members: 1 }];
+  assert(!gt.threats().some((t) => t.includes('鄰居')), '友好玩家的隊伍靠近不顯示威脅');
+  gt.world.others[0].trips = [];
+  gt.state.relations.players.p1 = { status: 'hostile', name: '鄰居' };
   // 友好
   gt.territory.handleEvents([{ from: 'p2', fromName: '阿美', type: 'friendRequest' }]);
   assert(gt.territory.rel.requestsIn.p2, '收到友好請求');

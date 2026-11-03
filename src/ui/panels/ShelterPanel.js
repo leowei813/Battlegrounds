@@ -15,7 +15,7 @@ import {
 /** 避難所面板的分頁 */
 const SHELTER_TABS = ['overview', 'facilities', 'defense', 'storage', 'garage', 'exchange'];
 /** 避難所面板本身處理的操作（其餘在倉庫、車庫分頁時交給倉庫面板） */
-const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon'];
+const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon', 'cancelBuild'];
 
 export class ShelterPanel {
   constructor(ui) {
@@ -39,7 +39,7 @@ export class ShelterPanel {
       <div class="civ-card">
         <div class="row-between"><b>${tier.icon} 文明度 ${b.total}</b><span class="tag tag-amber">${tier.name}</span></div>
         ${progressBar(ratio, 'civ', next ? `距「${next.name}」${next.min - b.total}` : '已達最高階段')}
-        <div class="civ-parts"><span>🏗️ 建築 ${b.buildings}</span><span>👑 玩家等級 ${b.player}</span><span>🎒 裝備 ${b.equipment}</span></div>
+        <div class="civ-parts"><span>🏗️ 建築 ${b.buildings}</span><span>👑 玩家等級 ${b.player}</span><span>🎒 裝備 ${b.equipment}</span><span>🔬 科技 ${b.research}</span></div>
         <small class="muted block">屍潮強度隨文明度提升（殭屍 +${civ.levelBonus()} 級、頻率 ×${civ.spawnMul().toFixed(2)}），與天數無關。</small>
         <div class="row-between danger-row">
           <span>☠ 據點危險度 <b>${danger}</b>・<span class="zone-tag" style="--zc:${siege.zone().color}">${siege.zone().name}</span></span>
@@ -78,9 +78,10 @@ export class ShelterPanel {
     const baseActions = g.shelter.isPrimary(sh)
       ? `<small class="muted">⭐ 避難所：倖存者居住、生產、探索出發、駐守倖存者防衛於此。</small>${btn('🏚️ 放棄避難所（搬家）', 'abandon', {}, { cls: 'btn-sm btn-ghost' })}`
       : `<small class="muted">🏴 前哨站：只有防禦功能，不能生產。</small>${btn('🏚️ 放棄前哨站', 'abandon', {}, { cls: 'btn-sm btn-ghost' })}`;
-    const queue = sh.buildQueue.map((q) => {
+    const queue = sh.buildQueue.map((q, i) => {
       const name = q.kind === 'facility' ? FACILITIES[q.id].name : `${DEFENSES[q.id].name}（槽位 ${q.slot + 1}）`;
-      return `<div class="queue-item">🔨 ${name} → Lv${q.targetLevel}${timerBar(q.startAt || now, q.endAt, now)}</div>`;
+      const done = Math.min(1, Math.max(0, (now - (q.startAt || now)) / Math.max(1, q.endAt - (q.startAt || now))));
+      return `<div class="queue-item"><div class="row-between"><span>🔨 ${name} → Lv${q.targetLevel}</span>${btn(`取消（退 ${Math.round(90 * (1 - done))}%）`, 'cancelBuild', { i }, { cls: 'btn-xs btn-ghost' })}</div>${timerBar(q.startAt || now, q.endAt, now)}</div>`;
     }).join('');
 
     const outpost = g.shelter.isOutpost(sh);
@@ -155,7 +156,7 @@ export class ShelterPanel {
   }
 
   /** 據點遭襲紀錄：防禦成功或失敗、損失資源、毀損建築、受重傷的人 */
-  defenseLogHtml() {
+  defenseLogHtml(since = Infinity) {
     const list = this.game.state.defenseLog || [];
     const rows = list.slice(0, 15).map((e) => {
       const t = new Date(e.at);
@@ -169,7 +170,7 @@ export class ShelterPanel {
         e.wallLost ? `🧱 圍牆 −${e.wallLost}` : '',
       ].filter(Boolean).join('・');
       return `<div class="card defense-log ${e.success ? 'ok' : 'fail'}">
-        <div class="row-between"><b>${e.success ? '🛡️ 防禦成功' : '💥 防禦失敗'}</b><small class="muted">${when}</small></div>
+        <div class="row-between"><b>${(e.at || 0) > since ? '<span class="tag tag-blue">未讀</span>' : ''}${e.success ? '🛡️ 防禦成功' : '💥 防禦失敗'}</b><small class="muted">${when}</small></div>
         <div>「${escapeHtml(e.baseName)}」遭 ${escapeHtml(e.attacker)} 攻擊</div>
         ${lines ? `<small class="muted block">${lines}</small>` : ''}
         ${lost.length ? `<div class="neg">損失資源：${lost.join('、')}</div>` : (e.success ? '<div class="pos">沒有損失資源</div>' : '')}
@@ -186,6 +187,7 @@ export class ShelterPanel {
     if (action === 'gotoMap') this.ui.switchTab('map');
     const base = this.ui.viewBase();
     if (action === 'upgrade') this.ui.result(g.shelter.upgradeFacility(base, data.id));
+    if (action === 'cancelBuild' && confirm('取消施工？依完成度退還材料，完成度越高退得越少。')) this.ui.result(g.shelter.cancelBuild(base, +data.i));
     if (action === 'slot') this.openSlot(+data.slot);
     if (action === 'viewBase') this.ui.setViewBase(data.id);
     if (action === 'abandon') openAbandonDialog(this.ui, base);

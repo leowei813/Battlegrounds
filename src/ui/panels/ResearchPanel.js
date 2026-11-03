@@ -53,7 +53,7 @@ export class ResearchPanel {
     return `<div class="panel-inner">
       <h2>🔬 研究 <small>${Object.keys(RESEARCH).length} 項・總等級 ${done}/${total}</small></h2>
       ${lab < 1 ? `<div class="card warn">需要先在避難所建造「研究中心」。${btn('前往避難所', 'gotoShelter', {}, { cls: 'btn-sm' })}</div>` : `<p class="muted">研究中心 Lv${lab}：研究速度 +${lab * 10}%。同時只能進行一項研究；科技第 L 級需要研究中心 Lv L 以上。</p>`}
-      ${active ? `<div class="card">⏳ 研究中：<b>${RESEARCH[active.id].name} Lv${active.level}</b>${timerBar(active.startAt, active.endAt)}</div>` : ''}
+      ${active ? `<div class="card"><div class="row-between"><span>⏳ 研究中：<b>${RESEARCH[active.id].name} Lv${active.level}</b></span>${btn(`取消（退 ${Math.round(90 * (1 - Math.min(1, (Date.now() - active.startAt) / Math.max(1, active.endAt - active.startAt))))}%）`, 'cancelResearch', {}, { cls: 'btn-xs btn-ghost' })}</div>${timerBar(active.startAt, active.endAt)}</div>` : ''}
       <div class="chips">${tabs}</div>
       <div class="rs-tree single">${nodes}</div>
     </div>`;
@@ -61,6 +61,7 @@ export class ResearchPanel {
 
   onAction(action, data) {
     if (action === 'start') this.ui.result(this.game.research.start(data.id));
+    if (action === 'cancelResearch' && confirm('取消研究？依完成度退還材料，完成度越高退得越少。')) this.ui.result(this.game.research.cancel());
     if (action === 'branch') this.branch = data.b;
     if (action === 'gotoShelter') this.ui.switchTab('shelter');
   }
