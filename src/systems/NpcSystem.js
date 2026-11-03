@@ -106,6 +106,8 @@ export class NpcSystem {
   slotNpc(cellKey, slot, now = Date.now()) {
     const [i, j] = cellKey.split(':').map(Number);
     const sid = `${cellKey}:${slot}`;
+    // 密度：部分名額固定沒有 NPC（依種子決定，所有玩家相同）
+    if (seeded(`npc-keep:${sid}`, () => randFloat(0, 1)) >= (NPC_CONFIG.keepRatio ?? 1)) return null;
     const offset = seeded(`npc-off:${sid}`, () => randFloat(0, SHARED_NPC.lifeMs));
     const gen = Math.floor((now + offset) / SHARED_NPC.lifeMs);
     const genStart = gen * SHARED_NPC.lifeMs - offset;
