@@ -4,7 +4,7 @@ import { STAT_KEYS, newSeeds } from './GameState.js';
 import { POI_KEYS } from '../config/poiTypes.js';
 import { SLOT_KEYS, ITEM_MODELS } from '../config/equipment.js';
 import { RESEARCH, LEGACY_RESEARCH } from '../config/research.js';
-import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
+import { BASE_SIZES, baseSizeOf, FACILITY_CAP_REFUND } from '../config/civilization.js';
 import { legacyToSupplies } from '../config/supplies.js';
 import { MAIN_QUESTS } from '../config/quests.js';
 import { rollQualities } from '../config/survivors.js';
@@ -361,6 +361,40 @@ export class SaveManager {
     if (data.map) {
       data.map.markers = data.map.markers || [];
       data.map.remain = data.map.remain || {};
+    }
+    if (v < 22) {
+      // v9.10：設施等級依據點規模設上限（小型 Lv8、中型 Lv11、大型 Lv13、巨型 Lv15）。
+      // 超過的設施降到上限，降掉的等級退還 50% 建造材料；目標超過上限的施工取消並全額退還
+      const give = (k, n) => {
+        if (!(n > 0)) return;
+        if (k === 'coins') { data.player.coins = (data.player.coins || 0) + n; return; }
+        const pool = data.resources && k in data.resources ? data.resources : (data.supplies = data.supplies || {});
+        pool[k] = (pool[k] || 0) + n;
+      };
+      const notes = [];
+      (data.bases || []).forEach((b) => {
+        const cap = BASE_SIZES[b.size]?.facMax;
+        if (!cap || !b.facilities) return;
+        b.buildQueue = (b.buildQueue || []).filter((q) => {
+          if (q.kind !== 'facility' || q.targetLevel <= cap) return true;
+          Object.entries(q.cost || {}).forEach(([k, n]) => give(k, n));
+          return false;
+        });
+        Object.entries(b.facilities).forEach(([id, f]) => {
+          if (!FACILITIES[id] || !(f.level > cap)) return;
+          const refund = {};
+          for (let lv = cap + 1; lv <= f.level; lv += 1) {
+            Object.entries(FACILITIES[id].cost(lv)).forEach(([k, n]) => { refund[k] = (refund[k] || 0) + n; });
+          }
+          Object.entries(refund).forEach(([k, n]) => give(k, Math.floor(n * FACILITY_CAP_REFUND)));
+          notes.push(`${FACILITIES[id].name} Lv${f.level}→Lv${cap}`);
+          f.level = cap;
+          b.wallHp = null;
+        });
+      });
+      if (notes.length && Array.isArray(data.log)) {
+        data.log.unshift({ t: Date.now(), msg: `🏗️ 設施等級改為依據點規模設上限：${notes.join('、')}，已退還 ${Math.round(FACILITY_CAP_REFUND * 100)}% 建造材料`, type: 'info' });
+      }
     }
     // 指定給臨時小隊的載具：小隊已不存在時歸還車庫
     (data.vehicles || []).forEach((v) => {

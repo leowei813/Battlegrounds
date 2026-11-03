@@ -3138,6 +3138,39 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(n3 && !(n3.vehicleIds || []).includes(c3.id) && c3.status === 'idle', '損壞的指定載具回程後自動解除鎖定，不會跟著出門');
 }
 
+// ---- 72. v9.10 設施等級依據點規模設上限 ----
+{
+  const { BASE_SIZES: BS } = await import('../src/config/civilization.js');
+  const { baseSizeOf: bso } = await import('../src/config/civilization.js');
+  assert(BS.small.facMax === 8 && BS.medium.facMax === 11 && BS.large.facMax === 13 && BS.huge.facMax === 15, '設施上限：小型 Lv8、中型 Lv11、大型 Lv13、巨型 Lv15');
+  const gc6 = Game.newGame({ playerName: 'C6', classId: 'warrior', lat: 25, lon: 121 });
+  gc6.state.map.pois = fillPois([], 25, 121);
+  const big = gc6.state.map.pois.find((p) => bso(p) === 'large') || gc6.state.map.pois.find((p) => bso(p) === 'medium');
+  const small = gc6.state.map.pois.find((p) => bso(p) === 'small');
+  gc6.shelter.establish(big);
+  const hb = gc6.shelter.primary();
+  hb.facilities.farm.level = gc6.shelter.facilityCap(hb);
+  Object.keys(gc6.state.resources).forEach((k) => { gc6.state.resources[k] = 1e7; });
+  const up = gc6.shelter.canUpgradeFacility(hb, 'farm');
+  assert(!up.ok && /需要更大的據點/.test(up.reason), '設施達到據點規模上限時不能再升級');
+  hb.facilities.farm.level = 12;
+  hb.facilities.workbench.level = 5;
+  gc6.shelter.abandon(hb.id);
+  const pv = gc6.shelter.relocationCapPreview(small);
+  assert(pv.changes.some((c) => c.id === 'farm' && c.from === 12 && c.to === 8) && !pv.changes.some((c) => c.id === 'workbench'), '搬遷前可預覽小地點會降級的設施');
+  const before6 = JSON.stringify(gc6.state.supplies) + JSON.stringify(gc6.state.resources);
+  const nb6 = gc6.shelter.establish(small).base;
+  assert(nb6.facilities.farm.level === 8 && nb6.facilities.workbench.level === 5, '搬到較小的地點：超過上限的設施降到上限，其他不變');
+  assert(JSON.stringify(gc6.state.supplies) + JSON.stringify(gc6.state.resources) !== before6, '降掉的等級退還建造材料');
+  // 舊存檔：超過上限的設施降級並退還
+  const od = JSON.parse(JSON.stringify(gc6.state));
+  od.version = 21;
+  od.bases[0].facilities.farm.level = 12;
+  const supBefore = JSON.stringify(od.supplies);
+  const md = SaveManager.migrate(od);
+  assert(md.bases[0].facilities.farm.level === 8 && JSON.stringify(md.supplies) !== supBefore, '舊存檔超過上限的設施降到上限並退還材料');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

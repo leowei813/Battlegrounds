@@ -1,3 +1,4 @@
+import { FACILITIES } from '../../config/facilities.js';
 import { RARITY_ORDER } from '../../config/equipment.js';
 import { MapService } from '../../map/MapService.js';
 import { POI_TYPES, LOOT_CATS } from '../../config/poiTypes.js';
@@ -748,13 +749,17 @@ export class MapPanel {
     const actions = [];
     let establish = '';
     const z = g.shelter.sizeInfo(poi);
-    const sizeLine = `<small class="muted block"><span class="size-chip" style="--sc:${BASE_SIZES[z.id].color}">${BASE_SIZES[z.id].icon} ${z.name}</span>據點：可建造 ${z.total} 棟建築（防禦欄位 ${z.slots}）・屍潮 ×${BASE_SIZES[z.id].siegeMul}</small>`;
+    const sizeLine = `<small class="muted block"><span class="size-chip" style="--sc:${BASE_SIZES[z.id].color}">${BASE_SIZES[z.id].icon} ${z.name}</span>據點：防禦欄位 ${z.slots}・設施最高 Lv${BASE_SIZES[z.id].facMax}・屍潮 ×${BASE_SIZES[z.id].siegeMul}</small>`;
     if (base) {
       actions.push(btn('🏠 進入據點', 'enterShelter', {}, { cls: 'btn-primary' }));
-      actions.push(btn('🏚️ 放棄', 'abandon', {}, { cls: 'btn-ghost' }));
+      actions.push(btn(base.kind === 'outpost' ? '🏚️ 放棄' : '🚚 搬遷', 'abandon', {}, { cls: 'btn-ghost' }));
     } else if (!g.shelter.hasShelter()) {
       actions.push(btn('🏠 設為避難所', 'setShelter', {}, { cls: 'btn-primary' }));
-      establish = sizeLine;
+      // 搬遷中：這個地點較小時，超過上限的設施會降級
+      const cp = g.shelter.relocationCapPreview(poi);
+      establish = `${sizeLine}${g.state.relocation ? (cp.changes.length
+        ? `<small class="block neg">⚠️ 這裡設施最高 Lv${cp.cap}：${cp.changes.map((c) => `${FACILITIES[c.id].name} Lv${c.from}→Lv${c.to}`).join('、')}，降掉的等級退還 50% 建造材料</small>`
+        : '<small class="block pos">✅ 搬遷保留的設施都不會降級</small>') : ''}`;
     } else {
       const check = g.shelter.canEstablish(poi);
       actions.push(btn('🧭 派遣探索', 'explore', {}, { cls: 'btn-primary' }));
