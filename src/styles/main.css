@@ -942,3 +942,5 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .reloc-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; line-height: 1.6; }
 .sv-mini-top { flex-wrap: wrap; row-gap: 4px; }
 .sv-mini-top b { flex: 0 0 auto !important; max-width: 100%; }
+/* 可左右滑動的標籤列：不把滑動傳給整個頁面 */
+.sh-nav-list, .chips, .craft-kinds, .sv-tabs { overscroll-behavior-x: contain; }
