@@ -1594,6 +1594,142 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!C.state.map.zombieGroups.some((z) => z.id === gr.id), '當晚才開啟遊戲的玩家也看不到已被擊倒的殭屍群');
 }
 
+// ---- 25e. v9：重度感染據點（共用淨化度、緩慢回復、消滅獎勵只發一次） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const { INFECTED } = await import('../src/systems/InfectedSystem.js');
+  const store = new MemoryObjects();
+  const pois = fillPois([], 25.1, 121.1);
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.1, lon: 121.1 });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    return gx;
+  };
+  const A = mk('A');
+  const B = mk('B');
+  const la = A.infected.list();
+  assert(la.length > 0 && la.map((x) => `${x.id}${x.lat}${x.level}`).join() === B.infected.list().map((x) => `${x.id}${x.lat}${x.level}`).join(), `重度感染據點位置與強度所有玩家相同（${la.length} 座）`);
+  const s = la[0];
+  const t0 = Date.now();
+  const r1 = await A.infected.addPurity(s, 30, t0);
+  assert(r1.ok && Math.round(r1.purity) === 30, '淨化度累積');
+  await B.shared.poll();
+  assert(Math.round(B.infected.purity(s, t0)) === 30, '其他玩家（包含之前離線的）同步看到淨化度');
+  assert(Math.abs(B.infected.purity(s, t0 + 600000) - (30 - INFECTED.decayPerHour / 6)) < 0.01 || B.infected.siteDay(t0 + 600000) !== B.infected.siteDay(t0), '未清除時淨化度緩慢回復感染');
+  // 單一隊伍很難清除
+  const one = A.infected.battle(A.infected.get(s.id, t0), A.state.survivors, [], t0);
+  assert(!one.result.victory && one.gain < 40, `單人隊伍無法一次清除（淨化 +${one.gain.toFixed(1)}%）`);
+  // 兩人同時把淨化度推到 100%：只有一人負責發獎勵
+  const [ka, kb] = await Promise.all([A.infected.addPurity(s, 80, t0), B.infected.addPurity(s, 80, t0)]);
+  assert((ka.killed ? 1 : 0) + (kb.killed ? 1 : 0) === 1, '同時淨化到 100% 時只有一人取得消滅獎勵');
+  await A.shared.poll();
+  await B.shared.poll();
+  assert(!A.infected.get(s.id, t0) && !B.infected.get(s.id, t0), '消滅後所有玩家的地圖上都消失');
+  const next = A.infected.nextRefresh(t0);
+  assert(A.infected.list(next + 1000).some((x) => x.id === s.id), '下一個中午 12:00 重新出現');
+  // 獎勵：1 人 3～4 種，每多 1 人上下限 +2，最低優良
+  const rw1 = A.infected.rewards(s, 1);
+  const n1 = rw1.items.length + Object.keys(rw1.mats).length;
+  const rw3 = A.infected.rewards(s, 3);
+  const n3 = rw3.items.length + Object.values(rw3.mats).length;
+  assert(n1 >= 2 && n1 <= 4 && rw3.items.every((it) => ['uncommon', 'rare', 'epic', 'legendary'].includes(it.rarity)), `消滅獎勵數量與品級（1 人 ${n1} 種）`);
+  void n3;
+  // 偵查等級可得知更多情報
+  assert(!A.infected.intelView(s).boss, '偵查 0 級不知道首領');
+  A.state.research.levels = { ...(A.state.research.levels || {}), s_recon: 6 };
+  const iv = A.infected.intelView(s);
+  assert(iv.boss && iv.roster && iv.power > 0, '偵查等級越高情報越完整');
+}
+
+// ---- 25f. v9：集結（廣播塔、好友參加、發起人離線也能結算） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const store = new MemoryObjects();
+  const pois = fillPois([], 25.15, 121.15);
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.15, lon: 121.15 });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    setHour(gx, 10);
+    gx.survivors.leader().level = 60;
+    return gx;
+  };
+  const A = mk('A');
+  const B = mk('B');
+  A.state.relations.players.B = { status: 'friend', name: 'B' };
+  B.state.relations.players.A = { status: 'friend', name: 'A' };
+  A.npcs.update(Date.now());
+  B.npcs.update(Date.now());
+  const n = [...A.npcs.list].filter((x) => x.sid).sort((x, y) => x.level - y.level)[0];
+  n.baseLevel = 1; n.levelLoss = 0; n.level = 1; n.wounded = n.wounded || 0;
+  const target = { kind: 'npc', id: n.id, ident: n.ident, name: n.name, lat: n.lat, lon: n.lon };
+  assert(!A.rally.canStart(target).ok, '沒有廣播塔不能發起集結');
+  A.shelter.primary().facilities.broadcast.level = 1;
+  assert(A.rally.maxTeams() === 2, '廣播塔 Lv1 可集結 2 支隊伍');
+  const lead = A.survivors.leader();
+  const st = await A.rally.start(target, 5, [lead.id]);
+  assert(st.ok && lead.status === 'exploring', `發起集結，自己的隊伍加入（${st.reason || ''}）`);
+  assert(!(await A.rally.start(target, 5, [])).ok, '同時只能發起一個集結');
+  await B.shared.poll();
+  B.rally.lastAt = 0;
+  B.rally.update(Date.now());
+  assert(B.rally.invites().length === 1 && B.state.log.some((l) => l.msg.includes('發起集結')), '好友收到集結通知');
+  const C = mk('C');
+  await C.shared.poll();
+  assert(!C.rally.invites().length && !(await C.rally.join(st.id, [C.survivors.leader().id])).ok, '不是好友不能參加');
+  const jb = await B.rally.join(st.id, [B.survivors.leader().id]);
+  assert(jb.ok, `好友參加集結（${jb.reason || ''}）`);
+  // 滿員立即出發；A 之後離線
+  await A.shared.poll();
+  await A.rally.step(A.rally.trips()[0], Date.now());
+  await B.shared.poll();
+  const d1 = B.rally.get(st.id);
+  assert(d1.status === 'departed' && d1.fightAt >= Date.now() - 1000, '滿員時立即出發');
+  // 發起人 A 離線（不再執行）；B 到時間自己結算
+  await B.rally.step(B.rally.trips()[0], d1.fightAt + 1);
+  await B.shared.poll();
+  const d2 = B.rally.get(st.id);
+  assert(d2.status === 'done' && d2.result, `發起人離線時，其他參加者也能結算（${d2.status}）`);
+  await B.rally.step(B.rally.trips()[0], d1.fightAt + 2);
+  const eb = B.rally.trips()[0];
+  const cb0 = B.state.player.coins;
+  const reps = B.exploration.update(eb.endAt + 1, { silent: true });
+  assert(reps.some((r) => r.poiName.includes('集結')) && !B.rally.trips().length, 'B 的隊伍帶著結果回家');
+  // A 之後上線：同步並收到自己的那一份
+  await A.shared.poll();
+  await A.rally.step(A.rally.trips()[0], d1.fightAt + 5);
+  const ea = A.rally.trips()[0];
+  const ca0 = A.state.player.coins;
+  A.exploration.update(ea.endAt + 1, { silent: true });
+  assert(!A.rally.trips().length && lead.status === 'idle', '離線的發起人上線後隊伍回家並結算');
+  assert(d2.result.victory, `強大的集結隊伍攻陷弱小的 NPC（${d2.result.summary}）`);
+  {
+    assert(A.state.player.coins - ca0 === B.state.player.coins - cb0 && A.state.player.coins > ca0, `勝利時金錢平分（${A.state.player.coins - ca0} / ${B.state.player.coins - cb0}）`);
+    await B.shared.poll();
+    assert(!B.npcs.get(n.id), '集結攻陷的 NPC 據點在所有人地圖上消失');
+  }
+  // 取消：出發前發起人取消，參加者的隊員留在家裡
+  const n2 = [...A.npcs.list].find((x) => x.sid && x.id !== n.id);
+  const t2 = { kind: 'npc', id: n2.id, ident: n2.ident, name: n2.name, lat: n2.lat, lon: n2.lon };
+  A.shelter.primary().facilities.broadcast.level = 3;
+  lead.severe = false;
+  A.survivors.setHp(lead, 99999);
+  B.survivors.leader().severe = false;
+  const s2 = await A.rally.start(t2, 10, [lead.id]);
+  await B.shared.poll();
+  const j2 = await B.rally.join(s2.id, [B.survivors.leader().id]);
+  assert(s2.ok && j2.ok, `第二次集結（${s2.reason || j2.reason || ''}）`);
+  assert((await A.rally.leave(s2.id)).ok && lead.status === 'idle', '發起人可以在出發前取消');
+  await B.shared.poll();
+  await B.rally.step(B.rally.trips()[0], Date.now());
+  assert(!B.rally.trips().length && B.survivors.leader().status === 'idle', '集結取消後參加者的隊員留在避難所');
+}
+
 // ---- 25b. v9：共用物件伺服器（版本號先到先得） ----
 {
   const os = await import('node:os');

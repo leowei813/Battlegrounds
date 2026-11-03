@@ -465,6 +465,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .zone-tag { display: inline-block; padding: 0 6px; border-radius: 8px; border: 1px solid var(--zc); background: color-mix(in srgb, var(--zc) 22%, transparent); color: #fff; font-size: 12px; }
 .npc-pin { position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; font-size: 18px; border-radius: 30%; background: #3e2723e6; border: 2px solid #e53935; box-shadow: 0 0 10px #e5393588; }
 .npc-lv { position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); font-style: normal; font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 6px; background: #b71c1c; color: #fff; white-space: nowrap; }
+.inf-pin { position: relative; width: var(--d); height: var(--d); display: flex; align-items: center; justify-content: center; font-size: 26px; border-radius: 50%; background: radial-gradient(#4a148c, #1a0033); border: 3px solid #aeea00; box-shadow: 0 0 14px #aeea00aa; }
+.inf-pur { position: absolute; bottom: -9px; left: 50%; transform: translateX(-50%); font-style: normal; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 6px; background: #33691e; color: #fff; white-space: nowrap; }
 .vehicle-card.broken { opacity: .75; border-color: var(--danger); }
 /* 倖存者背包與倉庫（固定格子） */
 .bag-head { margin: 6px 0 2px; color: var(--muted); }

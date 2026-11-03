@@ -30,6 +30,8 @@ import { InterceptSystem } from '../systems/InterceptSystem.js';
 import { BlackMarketSystem } from '../systems/BlackMarketSystem.js';
 import { SharedWorld } from '../multiplayer/SharedWorld.js';
 import { MarketSystem } from '../systems/MarketSystem.js';
+import { InfectedSystem } from '../systems/InfectedSystem.js';
+import { RallySystem } from '../systems/RallySystem.js';
 import { AssistSystem } from '../systems/AssistSystem.js';
 
 /**
@@ -64,6 +66,8 @@ export class Game {
     this.intercept = new InterceptSystem(this);
     this.blackMarket = new BlackMarketSystem(this);
     this.market = new MarketSystem(this);
+    this.infected = new InfectedSystem(this);
+    this.rally = new RallySystem(this);
     this.assist = new AssistSystem(this);
 
     this.lastPhase = null;
@@ -229,6 +233,7 @@ export class Game {
     this.assist.update(now);
     this.market.update(now);
     this.shared.tick(now);
+    this.rally.update(now);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();

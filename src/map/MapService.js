@@ -49,6 +49,7 @@ export class MapService {
     this.layers.shelter = L.layerGroup().addTo(this.map);
     this.layers.others = L.layerGroup().addTo(this.map);
     this.layers.npcs = L.layerGroup().addTo(this.map);
+    this.layers.infected = L.layerGroup().addTo(this.map);
     this.layers.gps = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
     this.poiLayer.teamHit = (pt) => {
@@ -165,6 +166,23 @@ export class MapService {
     });
   }
 
+
+  /** 重度感染據點（比巨型據點略大，標示淨化度） */
+  renderInfected(list = [], pin = 48) {
+    if (!this.map) return;
+    const key = list.map((s) => `${s.id}:${Math.floor(s.purity)}`).join('|');
+    if (key === this.infKey) return;
+    this.infKey = key;
+    this.layers.infected.clearLayers();
+    list.forEach((s) => {
+      L.marker([s.lat, s.lon], {
+        icon: this.icon(`<div class="inf-pin" style="--d:${pin}px">☣️<i class="inf-pur">${Math.floor(s.purity)}%</i></div>`, 'shelter-icon', pin),
+        zIndexOffset: 860,
+      }).on('click', () => bus.emit('ui:openInfected', { id: s.id }))
+        .bindTooltip(`☣️ 重度感染據點「${escapeHtml(s.name)}」・淨化 ${Math.floor(s.purity)}%`, { direction: 'top', offset: [0, -pin / 2] })
+        .addTo(this.layers.infected);
+    });
+  }
 
   /** 其他玩家公開的據點（多人互動） */
   renderOthers(players = [], relationOf = () => 'neutral') {

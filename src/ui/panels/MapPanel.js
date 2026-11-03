@@ -8,11 +8,12 @@ import { haversine, formatDuration } from '../../utils/math.js';
 import { isLooted, msToReset, stockOf } from '../../systems/LootStock.js';
 import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
 import {
-  btn, costHtml, metaOf, itemCard,
+  btn, costHtml, metaOf, itemCard, progressBar,
 } from '../components.js';
 import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { remainOf } from '../../systems/LootStock.js';
 import { MAX_MARKERS } from '../../systems/MarkerSystem.js';
+import { INFECTED } from '../../systems/InfectedSystem.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { openMessages, unreadCount } from '../MessageDialog.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
@@ -63,6 +64,63 @@ export class MapPanel {
     this.lastRender = Date.now();
     this.service.render(this.game.state);
     this.service.renderNpcs(this.game.npcs.list);
+    this.service.renderInfected(this.game.infected.list(), INFECTED.pin);
+  }
+
+  /** 重度感染據點資訊、派隊淨化、發起集結 */
+  infectedBody(s) {
+    const g = this.game;
+    const now = Date.now();
+    const v = g.infected.intelView(s);
+    const sh = g.shelter.primary();
+    const dist = sh ? Math.round(haversine(sh.lat, sh.lon, s.lat, s.lon)) : null;
+    const zone = zoneAt(s.lat, s.lon);
+    const unknown = '<span class="muted">？？？（需提升偵查）</span>';
+    const rally = g.rally?.canStart?.({ kind: 'inf', id: s.id }) || { ok: false, reason: '需要建造📡廣播塔' };
+    return `<p>☣️ <b>${escapeHtml(s.name)}</b>・${v.level}・<span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span>${dist != null ? `・距避難所 ${dist} 公尺` : ''}</p>
+      <div><small>淨化度</small>${progressBar(s.purity / 100, 'pos', `${s.purity.toFixed(1)}%`)}</div>
+      <p class="muted">🔭 偵查 Lv${v.lv}（研究「偵查」取得更多情報）</p>
+      <p>首領：${v.boss ? escapeHtml(v.boss) : unknown}</p>
+      <p>守軍：${v.roster || unknown}</p>
+      ${v.decay != null ? `<p class="muted">未清除時每小時回復 ${v.decay}% 感染</p>` : ''}
+      ${v.power != null ? `<p class="muted">⚔️ 守軍總戰力約 ${v.power}（建議多人集結）</p>` : ''}
+      <p class="muted">Boss、精英與大量殭屍盤據，一支隊伍很難單獨清除：每場戰鬥打到全員倒下或淨化 100%，淨化度會累積（所有倖存者共用）。淨化 100% 時消滅據點，依最後一場的參戰人數發放獎勵（1 人 3～4 種高階物品，每多 1 人上下限 +2，最低優良品級）。被消滅後在下一個中午 12:00 重新出現（約 ${formatDuration(g.infected.nextRefresh(now) - now)} 後）。</p>
+      <div class="btn-row">${btn('☣️ 派隊淨化', 'attackInf', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${btn('📡 發起集結', 'rallyInf', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' })}</div>`;
+  }
+
+  openInfected(id) {
+    const g = this.game;
+    const s = g.infected.get(id);
+    if (!s) return;
+    this.ui.modal.open({
+      title: `☣️ 重度感染據點：${s.name}`,
+      body: this.infectedBody(s),
+      live: () => { const x = g.infected.get(id); return x ? this.infectedBody(x) : '<p>這個據點已經被淨化了。</p>'; },
+      onAction: (action, _d, m) => {
+        if (action === 'rallyInf') {
+          this.openRallySetup({ kind: 'inf', id: s.id, name: s.name, lat: s.lat, lon: s.lon });
+          return;
+        }
+        if (action !== 'attackInf') return;
+        const sh = g.shelter.primary();
+        openTeamPicker(this.ui, {
+          title: `☣️ 淨化：${s.name}`,
+          intro: '<p class="muted">戰鬥會持續到全員倒下或淨化 100%，倒下的隊員會重傷。</p>',
+          vehicles: true,
+          distanceM: sh ? haversine(sh.lat, sh.lon, s.lat, s.lon) : 0,
+          trip: { poi: g.infected.asPoi(s.id), searchMin: 2, searchLabel: '淨化' },
+          confirmLabel: '出發淨化！',
+          onConfirm: (ids, _dur, _auto, vids, opts) => {
+            const r = this.ui.result(g.exploration.start(s.id, ids, 5, false, Date.now(), { vehicleIds: vids, kind: 'infect', ...opts }));
+            if (r.ok) {
+              m.close();
+              this.renderMap(true);
+            }
+            return r;
+          },
+        });
+      },
+    });
   }
 
   /** NPC 據點資訊與攻打 */

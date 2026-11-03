@@ -131,6 +131,16 @@ export class NpcSystem {
     });
   }
 
+  /** 依識別碼找回共用 NPC（不在自己附近時也能重建，例如集結時） */
+  byIdent(ident, now = Date.now()) {
+    if (!ident) return null;
+    const hit = this.list.find((n) => n.ident === ident);
+    if (hit) return hit;
+    const [i, j, slot] = ident.split(':');
+    const s = this.slotNpc(`${i}:${j}`, Number(slot), now);
+    return s && s.ident === ident ? this.materialize(s, now) : null;
+  }
+
   /** 共用資料（不是同一世代的舊資料視為沒有） */
   sharedOf(sid, gen) {
     const d = this.game.shared?.get('npc', sid);

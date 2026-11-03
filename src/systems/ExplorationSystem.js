@@ -114,7 +114,7 @@ export class ExplorationSystem {
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   poi(id) {
     return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id)
-      || this.game.intercept?.asPoi(id) || this.game.assist?.asPoi(id) || this.huntPoi(id) || null;
+      || this.game.intercept?.asPoi(id) || this.game.assist?.asPoi(id) || this.game.infected?.asPoi(id) || this.game.rally?.asPoi(id) || this.huntPoi(id) || null;
   }
 
   /**
@@ -278,7 +278,7 @@ export class ExplorationSystem {
     if (!v.ok) return v;
     if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' ? 0 : kind === 'raid' || kind === 'pvp' ? 2 : this.searchMinutes(v.poi);
+    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' || kind === 'rally' ? 0 : kind === 'raid' || kind === 'pvp' || kind === 'infect' ? 2 : this.searchMinutes(v.poi);
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
@@ -478,7 +478,7 @@ export class ExplorationSystem {
 
   /** 是否還能召回：已經在返程（或被擊敗撤回中）的隊伍不需要召回 */
   canRecall(exp, now = Date.now()) {
-    if (!exp || exp.defeated || exp.recalled) return false;
+    if (!exp || exp.defeated || exp.recalled || exp.kind === 'rally') return false;
     return this.progress(exp, now)?.phase !== 'returning';
   }
 
@@ -571,12 +571,14 @@ export class ExplorationSystem {
           return;
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
-        const report = exp.kind === 'assist' && !exp.defeated && !exp.recalled ? this.game.assist.report(exp)
+        const report = exp.kind === 'rally' ? this.game.rally.report(exp)
+          : exp.kind === 'assist' && !exp.defeated && !exp.recalled ? this.game.assist.report(exp)
           : exp.recalled ? (exp.kind === 'explore' ? this.finishExplore(exp, { recalled: true }) : this.recalledReport(exp))
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)
             : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
+            : exp.kind === 'infect' ? this.game.infected.resolveAttack(exp)
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp);
         report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
         reports.push(report);

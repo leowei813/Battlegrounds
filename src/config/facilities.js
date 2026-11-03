@@ -90,9 +90,15 @@ export const FACILITIES = {
   },
   exchange: {
     name: '交易所', icon: '🏪', startLevel: 0,
-    desc: '建好才能和其他玩家交易：派人擺攤、發布收購需求、交付別人的收購。每一級可以同時掛 1 項收購需求。',
+    desc: '建好才能使用交易市場：刊登賣出或收購，與其他玩家即時成交。Lv1 可同時刊登賣出、收購各 2 筆，每升一級各 +1。',
     cost: (lv) => mat('exchange', ['struct', 'elec'], { wood: 110, metal: 50, cloth: 30 }, lv),
-    effectText: (lv) => `可交易，同時掛 ${lv} 項收購需求`,
+    effectText: (lv) => (lv > 0 ? `賣出、收購各可刊登 ${lv + 1} 筆` : '尚未建造'),
+  },
+  broadcast: {
+    name: '廣播塔', icon: '📡', startLevel: 0,
+    desc: '可以對 NPC 據點或重度感染據點發起集結，好友會收到通知並派隊參加。Lv1 可集結 2 支隊伍（含自己），每升一級 +1。',
+    cost: (lv) => mat('broadcast', ['elec', 'struct'], { wood: 90, metal: 80, cloth: 20 }, lv),
+    effectText: (lv) => (lv > 0 ? `集結最多 ${lv + 1} 支隊伍` : '尚未建造'),
   },
   cellar: {
     name: '地窖', icon: '🕳️', startLevel: 0,
