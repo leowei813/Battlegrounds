@@ -1,5 +1,5 @@
 import { DEFENSES } from '../config/defenses.js';
-import { ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR } from '../config/enemies.js';
+import { ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR, defReduce } from '../config/enemies.js';
 import { RESOURCE_KEYS, COIN_GAIN_MUL } from '../config/constants.js';
 import {
   SIEGE_SCALING, BREACH_LOSS, BASE_SIZES,
@@ -377,7 +377,7 @@ export class BaseSiege {
         this.pushFx({ type: 'shot', kind: atk.ranged ? 'guard' : 'melee', x1: 0, y1: 0, x2: t.x, y2: t.y });
         // 近戰防守的人會被貼在牆邊的殭屍反擊受傷（即使圍牆還在）
         if (!atk.ranged && t.hp > 0) {
-          const hurt = Math.max(1, t.atk * MELEE_COUNTER * (100 / (100 + stats.def * 2)) * (chance(stats.dodge) ? 0 : 1));
+          const hurt = Math.max(1, t.atk * MELEE_COUNTER * defReduce(stats.def) * (chance(stats.dodge) ? 0 : 1));
           if (hurt > 0) this.game.survivors.damage(sv, hurt, '近戰防守屍潮時受傷');
         }
       });
