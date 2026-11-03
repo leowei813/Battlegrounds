@@ -591,6 +591,8 @@ export class SurvivorSystem {
   /** 背包內容（資源） */
   bagOf(sv) {
     if (!sv.bag) sv.bag = {};
+    // 不足 1 個的零頭（例如資源的小數）視為沒有：不佔格子、不顯示 ×0
+    Object.keys(sv.bag).forEach((k) => { if (!(sv.bag[k] >= 1)) delete sv.bag[k]; });
     return sv.bag;
   }
 

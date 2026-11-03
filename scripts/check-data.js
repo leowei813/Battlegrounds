@@ -1776,6 +1776,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!got || got.wood <= 2000, '舊存檔中異常的殘留數量會被限制');
 }
 
+// ---- 25h. v9.2.1：背包裡不足 1 個的零頭不顯示、不佔格子 ----
+{
+  const gb = Game.newGame({ playerName: 'B', classId: 'warrior', lat: 25, lon: 121 });
+  const sv = gb.survivors.leader();
+  sv.bag = { wood: 3.4, nail: 2 };
+  const used0 = gb.equipment.bagSlotsUsed(sv);
+  sv.bag.wood -= 3; // 例如建造時扣掉 3 個，剩下 0.4
+  assert(gb.equipment.bagSlotsUsed(sv) === used0 - 1 && !('wood' in gb.survivors.bagOf(sv)), '消耗後只剩零頭的物資會從背包消失，不佔格子');
+  sv.bag.nail = 0;
+  assert(!('nail' in gb.survivors.bagOf(sv)), '數量為 0 的物資從背包移除');
+}
+
 // ---- 25b. v9：共用物件伺服器（版本號先到先得） ----
 {
   const os = await import('node:os');
