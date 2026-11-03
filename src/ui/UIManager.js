@@ -20,6 +20,9 @@ import { APP_VERSION } from '../config/version.js';
 import { showChangelog } from './ChangelogView.js';
 import { ChatView } from './ChatView.js';
 
+/** 可左右捲動的分頁列與標籤列（重畫時保留捲動位置） */
+const H_SCROLL = '.sh-nav-list, .chips, .craft-kinds, .sv-tabs, .bt-wrap';
+
 const TABS = [
   { id: 'map', icon: '🗺️', name: '地圖' },
   { id: 'shelter', icon: '🏠', name: '避難所' },
@@ -99,6 +102,23 @@ export class UIManager {
     });
     document.addEventListener('click', (e) => { if (!this.nav.contains(e.target)) this.toggleMore(false); });
 
+    // 記錄左右捲動與觸控狀態（見 refresh）
+    this.panelEl.addEventListener('scroll', (e) => {
+      if (e.target !== this.panelEl && e.target.scrollLeft !== undefined && e.target.matches?.(H_SCROLL)) this.hScrollAt = Date.now();
+    }, { capture: true, passive: true });
+    this.panelEl.addEventListener('touchstart', (e) => {
+      if (!e.target.closest?.(H_SCROLL)) return;
+      this.touching = true;
+      this.touchAt = Date.now();
+    }, { passive: true });
+    const endTouch = () => {
+      if (!this.touching) return;
+      this.touching = false;
+      this.hScrollAt = Date.now();
+    };
+    // 綁在 document：觸控中的元素被重畫移除時仍收得到
+    document.addEventListener('touchend', endTouch, { passive: true });
+    document.addEventListener('touchcancel', endTouch, { passive: true });
     delegateActions(this.panelEl, (action, data, el) => {
       if (action === 'toggleDrawer') {
         this.drawerCollapsed = !this.drawerCollapsed;
@@ -261,12 +281,21 @@ export class UIManager {
     // 正在輸入（輸入框、下拉選單有焦點）時不重新繪製，避免打斷輸入
     const active = document.activeElement;
     if (!force && active && this.panelEl.contains(active) && ['INPUT', 'SELECT', 'TEXTAREA'].includes(active.tagName)) return;
+    // 手指正在滑動（或剛滑完）左右捲動的分頁列時先不重畫，避免打斷滑動
+    if (this.touching && Date.now() - (this.touchAt || 0) > 8000) this.touching = false; // 保險：最多暫停 8 秒
+    if (!force && (this.touching || Date.now() - (this.hScrollAt || 0) < 1200)) return;
     const html = panel.render();
     if (!force && html === this.lastHtml) return;
     this.lastHtml = html;
     const top = this.panelEl.scrollTop;
+    // 保留可左右捲動的分頁列、標籤列的位置（面板每秒重新繪製）
+    const keep = [...this.panelEl.querySelectorAll(H_SCROLL)].map((el) => el.scrollLeft);
     this.panelEl.innerHTML = html;
     this.panelEl.scrollTop = top;
+    if (this.hScrollTab === this.tab) {
+      this.panelEl.querySelectorAll(H_SCROLL).forEach((el, i) => { if (keep[i]) el.scrollLeft = keep[i]; });
+    }
+    this.hScrollTab = this.tab;
     panel.afterRender?.(this.panelEl);
   }
 
