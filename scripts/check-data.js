@@ -1908,8 +1908,8 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   // NPC 掠奪：圍牆守住就不會被搶
   const base = gw.shelter.primary();
   const n = gw.npcs.spawnAt(gw.state.map.pois.find((p) => !gw.shelter.baseAtPoi(p.id)), 'x', Date.now(), true);
-  n.level = 3;
-  base.facilities.wall.level = 10;
+  n.level = 1;
+  base.facilities.wall.level = 15;
   base.wallHp = null;
   gw.state.resources.food = 500;
   n.trip = { kind: 'raid', baseId: base.id, startAt: Date.now() - 1000, travelMs: 0, endAt: Date.now() + 1000 };
@@ -2061,7 +2061,7 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(MAX_RESEARCH_LEVEL === 15 && FACILITY_MAX_LEVEL === 15 && DEFENSE_MAX_LEVEL === 15, '研究、設施、防禦最高 15 級');
   const day = 86400;
   const longest = Math.max(...Object.keys(RS).map((id) => rt(id, 15)));
-  assert(Math.abs(longest / day - 10) < 0.6, `最難的研究 Lv15 約 10 天（${(longest / day).toFixed(1)} 天）`);
+  assert(Math.abs(longest / day - 5) < 0.4, `最難的研究 Lv15 約 5 天（${(longest / day).toFixed(1)} 天）`);
   assert(Math.abs(facilityBuildTime(15) / day - 20) < 1 && Math.abs(defenseBuildTime(15) / day - 20) < 1, `建築 Lv15 約 20 天（設施 ${(facilityBuildTime(15) / day).toFixed(1)}、防禦 ${(defenseBuildTime(15) / day).toFixed(1)} 天）`);
   // Lv4 以後升級難度大幅提高：費用與經驗
   const { FACILITIES: FC, storageCap: sc } = await import('../src/config/facilities.js');
@@ -2412,6 +2412,29 @@ assert(migrated.version === 17 && migrated.bases.length === 1 && migrated.bases[
   assert(rep.events.some((e) => e.includes('協防隊員')) && sent?.helpers?.H, `突襲結算包含協防隊員並回報給對方（${rep.events.slice(-2).join(' / ')}）`);
   V.territory.handleEvents([{ from: 'C', fromName: 'C', type: 'attack', data: sent }]);
   assert(V.state.defenseLog[0].note.includes('友好協防'), `被突襲方的防守紀錄寫入協防（${V.state.defenseLog[0].note}）`);
+}
+
+// ---- 59. v9：NPC 據點大幅增強 ----
+{
+  const { createSurvivor: cs } = await import('../src/core/GameState.js');
+  let wins = 0;
+  for (let t = 0; t < 8; t += 1) {
+    const gn = Game.newGame({ playerName: 'N', classId: 'warrior', lat: 25, lon: 121 });
+    gn.state.map.pois = fillPois([], 25, 121);
+    gn.shelter.establish(gn.state.map.pois[0]);
+    gn.survivors.leader().level = 10;
+    ['scout', 'medic', 'warrior'].forEach((c) => gn.state.survivors.push(cs(`x${c}`, c, 8, 'rare')));
+    gn.state.survivors.forEach((m) => ['weapon', 'armor', 'helmet', 'legs', 'boots', 'gloves'].forEach((slot) => {
+      const it = gn.equipment.generate({ level: m.level + 2, rarity: 'epic', slot });
+      gn.equipment.addItem(it, 't');
+      try { gn.equipment.equip(m.id, it.id); } catch { /* 部位不符 */ }
+    }));
+    const n = gn.npcs.spawnAt(gn.state.map.pois[5], 'x', Date.now(), true);
+    n.level = 21;
+    const rep = gn.npcs.resolveRaid({ poiId: n.id, memberIds: gn.state.survivors.map((m) => m.id), endAt: Date.now(), travelEvents: [], cargo: 200 });
+    if (rep.success) wins += 1;
+  }
+  assert(wins <= 1, `Lv10＋三名 Lv8 打 Lv21 NPC 據點不再輕鬆獲勝（8 場勝 ${wins}）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

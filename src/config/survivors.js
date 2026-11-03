@@ -114,7 +114,7 @@ export const SURVIVOR_RARITY = {
 };
 
 /**
- * 倖存者品級機率（%）：初始稀有 0%、罕見 0.1%；研究「招募技術」每級提升，滿級稀有 0.2%。
+ * 倖存者品級機率（%）：初始傳奇 0%、罕見 0.1%；研究「招募技術」每級提升，滿級傳奇 0.2%。
  * @param {number} tech 招募技術等級 0～15（換算成 0～10 的進度）
  */
 export function survivorRarityTable(tech = 0) {

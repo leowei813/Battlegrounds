@@ -337,7 +337,10 @@ export class ShelterSystem {
   }
 
   wallReduction(b) {
-    return Math.min(0.6, this.resolve(b).facilities.wall.level * 0.03 + this.game.research.bonus('wallReduceAdd'));
+    // 圍牆硬度：基本 10% 減傷，每級 +3%，加上「減傷結構」與「強化牆體」研究（上限 75%）
+    const r = this.game.research;
+    const reduce = 0.1 + this.resolve(b).facilities.wall.level * 0.03 + r.bonus('wallReduceAdd');
+    return Math.min(0.75, 1 - (1 - reduce) * Math.max(0.4, 1 - r.bonus('wallHardPct')));
   }
 
   towerDamageMul(b) {
@@ -515,7 +518,8 @@ export class ShelterSystem {
 
   /** 每點耐久的修繕材料（研究「快速修補」減少） */
   repairCostPerHp() {
-    const mul = Math.max(0.5, 1 - this.game.research.bonus('repairPct') * 0.3);
+    // 「快速修補」與「修補材料學」：每單位材料修復更多耐久
+    const mul = Math.max(0.5, 1 - this.game.research.bonus('repairPct') * 0.3) / (1 + this.game.research.bonus('repairEffPct'));
     return Object.fromEntries(Object.entries(REPAIR.cost).map(([k, v]) => [k, v * mul]));
   }
 

@@ -77,7 +77,7 @@ export class SurvivorSystem {
   }
 
   growthMul(sv) {
-    // 主角沒有品級，成長比照最高品級「稀有」
+    // 主角沒有品級，成長比照最高品級「傳奇」
     if (sv.isLeader) return SURVIVOR_RARITY.legendary.growth;
     return SURVIVOR_RARITY[sv.rarity]?.growth ?? 1;
   }
@@ -87,7 +87,7 @@ export class SurvivorSystem {
     return sv.isLeader ? SURVIVOR_RARITY.legendary : SURVIVOR_RARITY[sv.rarity] || SURVIVOR_RARITY.common;
   }
 
-  /** 可解放的技能數：依品級（劣質 1 → 稀有 6） */
+  /** 可解放的技能數：依品級（劣質 1 → 傳奇 6） */
   skillSlots(sv) {
     return this.rarityDef(sv).skills;
   }

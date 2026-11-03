@@ -20,6 +20,9 @@ const rand = ([a, b]) => randFloat(a, b);
  * 玩家可以派隊攻打 NPC 據點搶奪資源；據點被摧毀後會在別處重新出現。
  * 夜晚屍潮期間 NPC 不會出動掠奪。
  */
+/** 攻陷 NPC 據點時能搶到的金錢比例 */
+const NPC_COIN_LOOT = 0.35;
+
 export class NpcSystem {
   constructor(game) {
     this.game = game;
@@ -47,7 +50,12 @@ export class NpcSystem {
 
   /** 滿編時的掠奪者人數（不含首領） */
   fullCount(n) {
-    return Math.min(6, 2 + Math.floor(n.level / 5));
+    return Math.min(8, 3 + Math.floor(n.level / 4));
+  }
+
+  /** NPC 據點的防禦：圍牆耐久與防禦火力（攻打時要先破牆） */
+  defense(n) {
+    return { wall: Math.round(400 + n.level * 160), dps: Math.round(10 + n.level * 5) };
   }
 
   /** 據點守備：掠奪者人數（扣除傷亡）與等級 */
@@ -541,8 +549,24 @@ export class NpcSystem {
     }
     const enemies = this.garrison(n);
     report.events.push(`⚔️ 攻打「${n.name}」（Lv${n.level}）：守軍 ${enemies.length} 人${n.wounded ? `（另有 ${n.wounded} 人傷亡中）` : ''}`);
-    const result = g.combat.simulate(members, enemies);
-    g.combat.applyOutcome(members, result, exp.endAt);
+    // 1. 先打破 NPC 據點的圍牆：期間據點的防禦火力持續射擊，被擊倒的隊員重傷
+    const df = this.defense(n);
+    const attackers = members.map((m) => ({ sv: m, maxHp: Math.max(1, g.survivors.hpOf(m)), atk: g.survivors.stats(m).atk }));
+    const as = g.combat.wallAssault(attackers, df.wall, df.dps);
+    attackers.forEach((a) => {
+      if (!as.alive.includes(a)) g.survivors.becomeSevere(a.sv, '在攻打 NPC 據點時被防禦火力擊倒', exp.endAt);
+      else g.survivors.setHp(a.sv, a.hp);
+    });
+    report.events.push(`🧱 攻擊圍牆 ${as.sec} 秒（耐久 ${df.wall}）${as.killed ? `，${as.killed} 名隊員被防禦火力擊倒` : ''}`);
+    const fighters = as.alive.map((a) => a.sv);
+    if (!as.breached || !fighters.length) {
+      g.state.stats.battlesLost += 1;
+      report.events.push(fighters.length ? '🧱 圍牆太堅固，久攻不下只好撤退' : '💀 隊員全被防禦火力擊倒，攻打失敗');
+      return report;
+    }
+    // 2. 破牆後與守軍交戰
+    const result = g.combat.simulate(fighters, enemies);
+    g.combat.applyOutcome(fighters, result, exp.endAt);
     report.kills += result.kills.length;
     report.xp += result.xp;
     if (!result.victory) {
@@ -558,7 +582,8 @@ export class NpcSystem {
     const total = Object.entries(n.resources).reduce((s, [k, v]) => s + (v || 0) * unitWeight(k), 0);
     const ratio = total > carry ? carry / total : 1;
     const loot = Object.fromEntries(Object.entries(n.resources).map(([k, v]) => [k, Math.floor((v || 0) * ratio)]));
-    report.resources = g.grant({ ...loot, coins: n.coins });
+    // 據點的金錢只搶得到一部分
+    report.resources = g.grant({ ...loot, coins: Math.round(n.coins * NPC_COIN_LOOT) });
     if (ratio < 1) report.events.push(`🎒 帶不走全部物資（運載量 ${carry}），留下約 ${Math.round(total - carry)} 重量的物資`);
     if (chance(0.6)) {
       const item = g.equipment.generate({ level: n.level, boost: 0.3 + zoneAt(n.lat, n.lon).rarityBoost });

@@ -50,7 +50,8 @@ export class CombatSystem {
     };
   }
 
-  createEnemy(enemyId, level = 1, elite = false) {
+  /** @param {{hp?:number, atk?:number}} [mul] 額外強度倍率（夜晚、地圖殭屍群等） */
+  createEnemy(enemyId, level = 1, elite = false, mul = null) {
     const def = ALL_ENEMIES[enemyId];
     const l = Math.max(1, level) - 1;
     const e = {
@@ -78,6 +79,10 @@ export class CombatSystem {
       e.def = Math.round(e.def * ELITE_MUL.def);
       e.xp *= ELITE_MUL.xp;
       e.coins *= ELITE_MUL.coins;
+    }
+    if (mul) {
+      e.maxHp = Math.round(e.maxHp * (mul.hp || 1));
+      e.atk = Math.round(e.atk * (mul.atk || 1));
     }
     return e;
   }

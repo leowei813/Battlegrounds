@@ -1,7 +1,10 @@
+import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { ZOMBIE_REFRESH_MS, ZOMBIE_MAX_GROUPS, MAX_TEAM_SIZE } from '../config/constants.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import { zoneAt } from '../config/zones.js';
-import { ALL_ENEMIES, BOSSES } from '../config/enemies.js';
+import {
+  ALL_ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR, NIGHT_MUL, MAP_GROUP_MUL, mulOf,
+} from '../config/enemies.js';
 import {
   withSeed,
   chance, pick, randInt, uid, weightedPick, haversine, offsetLatLon, randFloat,
@@ -131,6 +134,14 @@ export class ZombieSpawnSystem {
     };
   }
 
+  /** 夜晚地圖殭屍群的強度：一般、精英、Boss 依序更強，夜晚更危險的區域再加強 */
+  groupMul(g) {
+    const poi = this.game.state.map.pois.find((p) => p.id === g.poiId);
+    const z = poi ? zoneAt(poi.lat, poi.lon) : { danger: 0 };
+    const night = { hp: NIGHT_MUL.hp + NIGHT_MUL.perDanger * Math.max(0, z.danger), atk: NIGHT_MUL.atk + NIGHT_MUL.perDanger * Math.max(0, z.danger) };
+    return mulOf(ZOMBIE_VS_SURVIVOR, night, MAP_GROUP_MUL[g.boss ? 'boss' : g.elite ? 'elite' : 'normal']);
+  }
+
   groupLabel(g) {
     const e = ALL_ENEMIES[g.enemyId];
     return `${g.elite ? '精英' : ''}${e.name} ×${g.count}（Lv${g.level}）`;
@@ -157,7 +168,7 @@ export class ZombieSpawnSystem {
     if (members.length > MAX_TEAM_SIZE) return { ok: false, reason: `隊伍最多 ${MAX_TEAM_SIZE} 人` };
     if (!arrived && members.some((m) => !this.game.survivors.isAvailable(m))) return { ok: false, reason: '有隊員無法出戰' };
 
-    const enemies = Array.from({ length: g.count }, () => this.game.combat.createEnemy(g.enemyId, g.level, g.elite));
+    const enemies = Array.from({ length: g.count }, () => this.game.combat.createEnemy(g.enemyId, g.level, g.elite, this.groupMul(g)));
     const firstStrike = this.game.shelter.primary().facilities.watchtower.level * 0.04;
     const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: firstStrike });
     this.game.combat.applyOutcome(members, result, at);
@@ -178,8 +189,23 @@ export class ZombieSpawnSystem {
         this.game.equipment.addItem(item, '戰鬥');
         loot.items.push(item);
       }
-      // 殭屍身上的零碎物品：少量零件與布料
+      // Boss 額外掉落：多件裝備與多種高階材料
+      if (g.boss) {
+        const extra = randInt(1, 2);
+        for (let i = 0; i < extra; i += 1) {
+          const it = this.game.equipment.generate({ level: g.level, boost: 0.4 + (poi ? zoneAt(poi.lat, poi.lon).rarityBoost : 0), minRarity: 'uncommon' });
+          if (this.game.equipment.addItem(it, 'Boss')) loot.items.push(it);
+        }
+      }
+      // 殭屍身上的零碎物品：少量零件與布料（Boss 掉落多種高階材料與藥品）
       const mats = { scrap: randInt(0, 2) * g.count, coarse: randInt(0, 1) * g.count, ...(chance(0.15) ? { bandage: 1 } : {}) };
+      if (g.boss) {
+        const pool = SUPPLY_KEYS.filter((k) => ['part', 'fabric', 'med'].includes(SUPPLIES[k].cat) && SUPPLIES[k].tier >= 2);
+        for (let i = 0; i < randInt(4, 6); i += 1) {
+          const k = pick(pool);
+          mats[k] = (mats[k] || 0) + (SUPPLIES[k].cat === 'med' ? randInt(1, 2) : randInt(3, 8));
+        }
+      }
       loot.resources = this.game.grant(mats);
     } else {
       this.game.state.stats.battlesLost += 1;

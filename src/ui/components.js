@@ -155,6 +155,12 @@ export function survivorCard(game, sv, { actions = '', selected = false } = {}) 
     <div class="sv-status">${survivorStatus(game, sv)}</div>
     ${hpBar(game, sv)}
     ${progressBar(sv.xp / xpToNext(sv.level), 'xp', `XP ${sv.xp}/${xpToNext(sv.level)}`)}
+    ${(() => {
+    // 負重狀況
+    const load = Math.floor(game.survivors.bagLoad(sv));
+    const cap = game.survivors.bagCap(sv);
+    return progressBar(cap ? load / cap : 0, load >= cap ? 'danger' : 'load', `🎒 負重 ${load}/${cap}・格子 ${game.equipment.bagSlotsUsed(sv)}/${game.equipment.bagSlotCap(sv)}`);
+  })()}
     <div class="stat-line">${statLine({ hp: s.hp, atk: s.atk, def: s.def, crit: s.crit, dodge: s.dodge })}<span>攻速 ${s.atkSpeed}</span></div>
     ${actions ? `<div class="btn-row">${actions}</div>` : ''}
   </div>`;

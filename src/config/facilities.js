@@ -28,12 +28,13 @@ const mat = (key, tags, base, lv) => {
 /** 生產設施每級的每小時產量（生產只是輔助，主要物資需靠探索） */
 export const FARM_FOOD = 7;
 /** 伐木場每級每小時產出木材（產量低，比不上直接探索樹林） */
-export const LUMBER_WOOD = 3;
+export const LUMBER_WOOD = 4;
 /** 工作台每級每小時產出（木材，以及少量基礎零件） */
 export const WORKBENCH = { wood: 3, nail: 0.5, screw: 0.5 };
 
 /** 修繕圍牆：每名修繕人員每秒修復的耐久，與每點耐久消耗的材料 */
-export const REPAIR = { hpPerSec: 1.5, cost: { wood: 0.09, nail: 0.006, scrap: 0.003 } };
+/** 圍牆修繕：每點耐久的材料（每單位材料修復量比以前多約 30%） */
+export const REPAIR = { hpPerSec: 1.8, cost: { wood: 0.07, nail: 0.0045, scrap: 0.0023 } };
 
 /** 前哨站只有防禦功能，只能建造這些設施 */
 export const OUTPOST_FACILITIES = ['wall', 'watchtower'];
@@ -43,7 +44,7 @@ export const FACILITIES = {
     name: '圍牆', icon: '🧱', startLevel: 1,
     desc: '避難所的生命線。提升耐久與減傷。',
     cost: (lv) => mat('wall', ['struct'], { wood: 80, metal: 40 }, lv),
-    effectText: (lv) => `耐久 ${wallMaxHp(lv)}，減傷 ${Math.round(lv * 3)}%`,
+    effectText: (lv) => `耐久 ${wallMaxHp(lv)}，減傷 ${Math.round(10 + lv * 3)}%`,
   },
   warehouse: {
     name: '消耗品倉庫', icon: '📦', startLevel: 1,

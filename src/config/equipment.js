@@ -11,7 +11,7 @@ export const RARITIES = {
   uncommon: { name: '優良', color: '#4caf50', min: 1.0, max: 1.2, affixes: 1, weight: 22, sell: 12 },
   rare: { name: '精良', color: '#2196f3', min: 1.2, max: 1.45, affixes: 2, weight: 10, sell: 30 },
   epic: { name: '罕見', color: '#ab47bc', min: 1.45, max: 1.75, affixes: 3, weight: 3.4, sell: 80 },
-  legendary: { name: '稀有', color: '#ff9800', min: 1.75, max: 2.2, affixes: 4, weight: 0.6, sell: 250 },
+  legendary: { name: '傳奇', color: '#ff9800', min: 1.75, max: 2.2, affixes: 4, weight: 0.6, sell: 250 },
 };
 export const RARITY_ORDER = Object.keys(RARITIES);
 export const rarityIndex = (r) => RARITY_ORDER.indexOf(r);
@@ -258,7 +258,7 @@ export const tierMul = (tier) => 1 + (tier - 1) * 0.25;
 export const benchFor = (model) => (model.simple ? 0 : model.tier);
 
 /**
- * 製作的品級機率（%）：初始稀有 0%、罕見 0.1%；研究「製作技術」每級提升，滿級稀有 0.2%。
+ * 製作的品級機率（%）：初始傳奇 0%、罕見 0.1%；研究「製作技術」每級提升，滿級傳奇 0.2%。
  * @param {number} tech 製作技術等級 0～15（換算成 0～10 的進度）
  */
 export function craftRarityTable(tech = 0) {

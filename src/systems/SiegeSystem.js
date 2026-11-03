@@ -1,5 +1,5 @@
 import { DEFENSES } from '../config/defenses.js';
-import { ENEMIES, BOSSES } from '../config/enemies.js';
+import { ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR } from '../config/enemies.js';
 import { RESOURCE_KEYS, COIN_GAIN_MUL } from '../config/constants.js';
 import {
   SIEGE_SCALING, BREACH_LOSS, BASE_SIZES,
@@ -28,7 +28,7 @@ const BREACH_GRACE = 90;
 const MELEE_REACH = WORLD.WALL_R + 8;
 const MELEE_REACH_POST = 14;
 /** 殭屍對圍牆的傷害係數（放置遊戲節奏：讓防線有時間反應） */
-const WALL_DMG_MUL = 0.3;
+const WALL_DMG_MUL = 0.25;
 /** 圍牆被打破後，每隔幾秒與衝進來的殭屍交戰一次 */
 const GATE_FIGHT_EVERY = 3;
 /** 防守失敗時 1 棟防禦設施損毀（降 1 級）的機率 */
@@ -598,7 +598,7 @@ export class BaseSiege {
       return;
     }
     const foes = zombies.map((z) => {
-      const e = g.combat.createEnemy(z.enemyId, this.zombieLevel());
+      const e = g.combat.createEnemy(z.enemyId, this.zombieLevel(), false, ZOMBIE_VS_SURVIVOR);
       return { ...e, id: `z${z.id}`, maxHp: Math.max(1, Math.round(z.hp)), atk: z.atk, xp: 0, coins: 0, partsChance: 0 };
     });
     const result = g.combat.simulate(defenders, foes, { allies });

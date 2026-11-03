@@ -101,7 +101,7 @@ export class MapPanel {
         const gear = g.equipment.storeItems()
           .sort((a, b) => RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) || b.power - a.power)
           .map((it) => itemCard(it, { compact: true, actions: btn(`賣出 💰${g.trader.gearBuyback(it)}`, 'sellItem', { id: it.id }, { cls: 'btn-xs btn-primary', disabled: it.locked, title: it.locked ? '已上鎖' : '' }) })).join('');
-        return `${head}<p class="muted">商人是唯一的出售管道：收購倉庫裡的材料與裝備，價格約為他販售價的 1/8；越稀有回收比例越好（材料 1 階 10% → 5 階 15%；裝備劣質 10% → 稀有 15%）。上鎖與穿戴中的裝備不會賣出。</p>
+        return `${head}<p class="muted">商人是唯一的出售管道：收購倉庫裡的材料與裝備，價格約為他販售價的 1/8；越稀有回收比例越好（材料 1 階 10% → 5 階 15%；裝備劣質 10% → 傳奇 15%）。上鎖與穿戴中的裝備不會賣出。</p>
           <h4>材料</h4><div class="grid">${sells || '<p class="muted">倉庫裡沒有可以回收的物資。</p>'}</div>
           <div class="row-between"><h4>裝備</h4>${btn('一鍵賣出劣質/一般', 'sellCommonGear', {}, { cls: 'btn-sm btn-ghost' })}</div>
           <div class="grid">${gear || '<p class="muted">倉庫裡沒有裝備。</p>'}</div>`;

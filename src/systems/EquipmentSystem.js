@@ -382,7 +382,7 @@ export class EquipmentSystem {
     if (rarityIndex(item.rarity) >= rarityIndex('rare')) st.rareItems += 1;
     if (item.rarity === 'legendary') {
       st.legendaryItems += 1;
-      this.game.toast(`🌟 獲得稀有（橘色）裝備「${item.name}」！`, 'legendary');
+      this.game.toast(`🌟 獲得傳奇（橘色）裝備「${item.name}」！`, 'legendary');
     }
     if (rarityIndex(item.rarity) >= rarityIndex('epic')) {
       this.game.log(`${source}獲得 ${RARITIES[item.rarity].name}裝備「${item.name}」`, 'loot');

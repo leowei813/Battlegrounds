@@ -4,7 +4,7 @@ import {
 import { CLASSES } from '../../config/survivors.js';
 import { escapeHtml } from '../../utils/dom.js';
 import {
-  btn, itemCard, costHtml, progressBar, statRangeLine,
+  btn, itemCard, costHtml, progressBar, statRangeLine, affordable,
 } from '../components.js';
 import { VEHICLES } from '../../config/vehicles.js';
 import {
@@ -102,10 +102,15 @@ export class InventoryPanel {
         <small class="muted block">🪑 ${def.seats} 座・🏎️ 速度 ×${def.speed}・📦 運載 ${def.cargo}・⛽ ${def.fuelPerKm ? `${def.fuelPerKm}/公里` : '不耗油'}</small>
         ${progressBar(ratio, ratio < 0.3 ? 'danger' : '', `耐久 ${v.durability}/${max}`)}
         <div class="row-between">${Object.keys(cost).length ? `<div class="costs">${costHtml(g.state, cost)}</div>` : '<span></span>'}
-          <span>${btn('🔧 維修', 'repair', { id: v.id }, { cls: 'btn-xs btn-primary', disabled: !Object.keys(cost).length || v.status !== 'idle' })}${btn('拆解', 'scrap', { id: v.id }, { cls: 'btn-xs btn-ghost', disabled: v.status !== 'idle' })}</span></div>
+          <span>${btn('🔧 維修', 'repair', { id: v.id }, {
+    cls: 'btn-xs btn-primary',
+    disabled: !Object.keys(cost).length || v.status !== 'idle' || !affordable(g.state, cost),
+    title: !Object.keys(cost).length ? '耐久已滿' : v.status !== 'idle' ? '出勤中不能維修' : !affordable(g.state, cost) ? '材料不足' : '',
+  })}${btn('拆解', 'scrap', { id: v.id }, { cls: 'btn-xs btn-ghost', disabled: v.status !== 'idle' })}</span></div>
       </div>`;
     }).join('');
     return `
+      <p class="muted">🔧 維修：載具耐久會因行駛與遇襲下降，耐久歸零就不能出車。按「維修」會一次修到滿，需要的材料列在每台載具下方（缺少的會標紅），材料足夠時按鈕才會亮起；出勤中的載具不能維修。研究「維修技術」可降低維修費用。</p>
       <p class="muted">探索時可帶載具：所有隊員都有座位時全隊以載具速度移動；運載量讓隊伍帶回更多物資（每人徒步 ${g.vehicles.personCarry()}，背包可再增加）。每台至少一人駕駛，除滑板車與腳踏車外都會耗油，行駛與遇襲會磨損耐久。更多載具主要在探索修車廠時找到（需要維修），或到「製作」頁製作。</p>
       <div class="grid">${cards || '<p class="muted">車庫是空的。</p>'}</div>`;
   }

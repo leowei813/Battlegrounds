@@ -45,14 +45,15 @@ export const POI_TYPES = {
   },
   hospital: {
     name: '醫院', icon: '🏥', color: '#f44336', danger: 4, special: true,
-    loot: { med: 7, food: 2 },
+    loot: { med: 7, fabric: 4 },
+    lootAmount: { med: 0.6 }, // 醫療物品數量較少
     itemChance: 0, blueprintChance: 0.05,
     itemBias: { armor: 2, helmet: 2, backpack: 1, gloves: 2, accessory: 2, melee: 1 },
     enemies: { infected: 5, mutant: 3, berserker: 2 },
   },
   school: {
     name: '學校', icon: '🏫', color: '#03a9f4', danger: 2,
-    loot: { food: 3, wood: 5, fabric: 3, medLow: 1 },
+    loot: { part: 4, wood: 5, fabric: 3, medLow: 1 },
     itemChance: 0.12, blueprintChance: 0.06,
     itemBias: { backpack: 3, helmet: 1, legs: 2, crossbow: 2, melee: 2, boots: 2, accessory: 2 },
     enemies: { walker: 7, infected: 3 },
@@ -134,5 +135,5 @@ export const POI_KEYS = Object.keys(POI_TYPES);
 /** 若 OSM 查不到某類型，每類程序化補足的最小數量（樹林全部隨機生成） */
 export const POI_MIN_PER_TYPE = {
   residential: 250, shop: 150, hospital: 30, school: 50, factory: 60,
-  gasStation: 50, police: 30, military: 20, warehouse: 60, garage: 30, supermarket: 15, forest: 95, pharmacy: 35, recycling: 20, bakery: 30,
+  gasStation: 50, police: 30, military: 20, warehouse: 60, garage: 30, supermarket: 15, forest: 120, pharmacy: 35, recycling: 20, bakery: 30,
 };

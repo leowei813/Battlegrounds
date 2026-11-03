@@ -82,7 +82,7 @@ export const ACHIEVEMENTS = [
   { id: 'a_exp100', name: '廢土行者', desc: '完成 100 次探索', cond: { type: 'stat', key: 'explorations', value: 100 }, reward: { coins: 1500, parts: 15 } },
   { id: 'a_boss1', name: '巨人殺手', desc: '擊敗 1 隻 Boss', cond: { type: 'stat', key: 'bossKills', value: 1 }, reward: { coins: 300 } },
   { id: 'a_boss10', name: '傳奇獵手', desc: '擊敗 10 隻 Boss', cond: { type: 'stat', key: 'bossKills', value: 10 }, reward: { coins: 2000, item: 'legendary' } },
-  { id: 'a_legend', name: '天選之人', desc: '獲得 1 件稀有（橘色）裝備', cond: { type: 'stat', key: 'legendaryItems', value: 1 }, reward: { coins: 500, parts: 10 } },
+  { id: 'a_legend', name: '天選之人', desc: '獲得 1 件傳奇（橘色）裝備', cond: { type: 'stat', key: 'legendaryItems', value: 1 }, reward: { coins: 500, parts: 10 } },
   { id: 'a_day10', name: '老練倖存者', desc: '存活 10 天', cond: { type: 'stat', key: 'daysSurvived', value: 10 }, reward: { coins: 500 } },
   { id: 'a_day30', name: '末日之王', desc: '存活 30 天', cond: { type: 'stat', key: 'daysSurvived', value: 30 }, reward: { coins: 3000, parts: 30 } },
   { id: 'a_team5', name: '小隊成形', desc: '擁有 5 名倖存者', cond: { type: 'survivors', value: 5 }, reward: { coins: 300 } },

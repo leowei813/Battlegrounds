@@ -138,7 +138,7 @@ export function stockOf(poi, at = Date.now(), remainMap = null) {
   for (let i = 0; i < kinds; i += 1) {
     const cat = pickType();
     const key = RESOURCE_KEYS.includes(cat) ? cat : pickSupply(cat, rnd, danger);
-    const tierMul = cat === 'part' || cat === 'fabric' ? TIER_AMOUNT[SUPPLIES[key]?.tier || 1] : 1;
+    const tierMul = (cat === 'part' || cat === 'fabric' ? TIER_AMOUNT[SUPPLIES[key]?.tier || 1] : 1) * (pt.lootAmount?.[cat] ?? (cat.startsWith('med') ? pt.lootAmount?.med ?? 1 : 1));
     const amount = Math.max(1, Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zone.lootMul * (pt.amountMul || 1) * CAT_AMOUNT[cat] * LOOT_AMOUNT_MUL * tierMul));
     resources[key] = (resources[key] || 0) + amount;
   }

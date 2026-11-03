@@ -150,7 +150,7 @@ export class TraderSystem {
     return this.baseSupplyPrice(key) * this.buybackRate(key) * (1 + this.game.research.bonus('sellPct'));
   }
 
-  /** 裝備回收價：約為商人賣價的 1/8，品級越高比例越好（劣質 10% → 稀有 15%） */
+  /** 裝備回收價：約為商人賣價的 1/8，品級越高比例越好（劣質 10% → 傳奇 15%） */
   gearBuyback(item) {
     const idx = Math.max(0, RARITY_ORDER.indexOf(item.rarity));
     const rate = (0.8 + 0.08 * idx) / 8;
