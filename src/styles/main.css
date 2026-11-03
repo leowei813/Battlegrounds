@@ -879,3 +879,5 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .chat-more { opacity: .6; }
 }
 .med-btn .overflow { color: #ff6b61; font-weight: 700; }
+.bt-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.bt-wrap .battle-table td, .bt-wrap .battle-table th { white-space: nowrap; }
