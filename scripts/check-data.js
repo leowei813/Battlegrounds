@@ -1558,6 +1558,26 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!S2.npcs.list.some((n) => n.sid === ns.sid), '單機時共用狀態存在存檔中');
 }
 
+// ---- 25c2. v9.4.1：NPC 只依真實建築（OpenStreetMap）決定，各自隨機補上的建築不影響 ----
+{
+  const base = fillPois([], 25.04, 121.53).map((p, i) => ({ ...p, id: `osm_n${i}` }));
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.04, lon: 121.53 });
+    // 每位玩家另外有各自隨機補上的建築
+    gx.state.map.pois = [...JSON.parse(JSON.stringify(base)), ...fillPois([], 25.04, 121.53).slice(0, 80)];
+    gx.shelter.establish(gx.state.map.pois[0]);
+    setHour(gx, 10);
+    return gx;
+  };
+  const A = mk('A');
+  const B = mk('B');
+  const t0 = Date.now();
+  A.npcs.update(t0);
+  B.npcs.update(t0);
+  const ids = (gx) => gx.npcs.list.filter((n) => n.sid).map((n) => n.id).sort().join('|');
+  assert(A.npcs.list.length > 0 && ids(A) === ids(B), `各自隨機補上的建築不同，看到的 NPC 仍然相同（${A.npcs.list.length} / ${B.npcs.list.length}）`);
+}
+
 // ---- 25d. v9：夜晚殭屍群與 Boss 所有玩家共用、擊倒同步（含對方離線） ----
 {
   const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');

@@ -809,3 +809,27 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .bag-act .btn, .bag-qty-row .bag-qty { min-height: 44px; }
   .bag-act-btns { display: grid; grid-template-columns: 2fr 1fr; }
 }
+
+/* ---------- v9.5 製作頁：網頁版左側分類選單；手機版上方分頁＋類別標籤 ---------- */
+.craft-kinds { display: none; }
+.nav-label2 { padding: 6px 12px 2px; font-size: 12px; }
+.craft-nav .sh-nav-item { min-height: 34px; }
+.bp-row { gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+@media (max-width: 899px) {
+  .craft-kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+  .craft-kinds .sv-tab { min-height: 44px; }
+  .craft-nav .craft-cats { display: none; }
+  .craft-cat-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .craft-cat-chips::-webkit-scrollbar { display: none; }
+  .craft-cat-chips .chip { flex-shrink: 0; }
+  .craft-layout .sh-fac-side { order: 2; }
+}
+@media (min-width: 900px) {
+  .craft-cat-chips { display: none; }
+}
+/* 製作卡片在手機上不超出畫面 */
+.sh-fac-main, .fac-grid, .fac-card2 { min-width: 0; max-width: 100%; }
+.fac-card2 .stat-line span { white-space: normal; }
+@media (max-width: 899px) {
+  .craft-layout, .craft-layout .sh-main { max-width: 100vw; overflow-x: hidden; }
+}

@@ -4,7 +4,7 @@ import {
 import { CLASSES } from '../../config/survivors.js';
 import { escapeHtml } from '../../utils/dom.js';
 import {
-  btn, itemCard, costHtml, progressBar, statRangeLine, affordable,
+  btn, itemCard, costHtml, needHtml, progressBar, statRangeLine, affordable,
 } from '../components.js';
 import { VEHICLES } from '../../config/vehicles.js';
 import {
@@ -28,10 +28,72 @@ export class InventoryPanel {
 
   /** 製作分頁：只有裝備製作與載具製作 */
   render() {
-    const view = ['vehicles', 'ammo'].includes(this.view) ? this.view : 'craft';
-    const tabs = `<div class="seg">${btn('🛠️ 裝備製作', 'view', { v: 'craft' }, { cls: view === 'craft' ? 'active' : '' })}${btn('🎯 彈藥製作', 'view', { v: 'ammo' }, { cls: view === 'ammo' ? 'active' : '' })}${btn('🚗 載具製作', 'view', { v: 'vehicles' }, { cls: view === 'vehicles' ? 'active' : '' })}</div>`;
-    const body = view === 'craft' ? this.renderCraft() : view === 'ammo' ? this.renderAmmoCraft() : this.renderVehicleCraft();
-    return `<div class="panel-inner"><h2>🛠️ 製作</h2>${tabs}${body}</div>`;
+    const g = this.game;
+    const eq = g.equipment;
+    const view = ['vehicles', 'ammo', 'blueprints'].includes(this.view) ? this.view : 'craft';
+    if (!ITEM_TYPES[this.craftCat]) this.craftCat = Object.keys(ITEM_TYPES)[0];
+    const bpN = g.state.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model]).length;
+    const count = (type) => Object.values(ITEM_MODELS).filter((md) => md.type === type).length;
+    // 分類選單：網頁版在左側直排，手機版改為上方分頁＋可左右滑動的類別
+    const item = (v, cat, label, extra = '') => {
+      const on = view === v && (!cat || this.craftCat === cat);
+      return `<button class="sh-nav-item ${on ? 'active' : ''}" data-action="${cat ? 'craftCat' : 'view'}" data-${cat ? 'c' : 'v'}="${cat || v}" ${cat ? 'data-v="craft"' : ''}><span>${label}</span>${extra ? `<small>${extra}</small>` : ''}</button>`;
+    };
+    const nav = `<nav class="sh-nav craft-nav" aria-label="製作分類">
+      <div class="sh-base"><b>🛠️ 工作台 Lv ${eq.workbench()}</b><small class="muted">製作技術 Lv ${eq.craftTech()}・倉庫 ${eq.storeUsed()}/${eq.storeCap()}</small></div>
+      <div class="craft-kinds">${[['craft', '裝備'], ['ammo', '彈藥'], ['vehicles', '載具'], ['blueprints', `設計圖${bpN ? ` ${bpN}` : ''}`]].map(([v, l]) => `<button class="sv-tab ${view === v ? 'active' : ''}" data-action="view" data-v="${v}">${l}</button>`).join('')}</div>
+      <div class="sh-nav-list craft-cats ${view === 'craft' ? '' : 'desk-only'}">
+        <small class="muted nav-label2">裝備</small>
+        ${Object.entries(ITEM_TYPES).map(([id, t]) => item('craft', id, `${t.icon} ${t.name}`, count(id))).join('')}
+        <i class="sh-nav-sep"></i>
+        ${item('ammo', null, '🎯 彈藥與箭矢', Object.keys(AMMO_RECIPES).length)}
+        ${item('vehicles', null, '🚗 載具', Object.values(VEHICLES).filter((d) => d.craft).length)}
+        ${item('blueprints', null, '📜 設計圖', bpN || '')}
+      </div>
+    </nav>`;
+    const body = view === 'craft' ? this.renderCraft() : view === 'ammo' ? this.renderAmmoCraft() : view === 'vehicles' ? this.renderVehicleCraft() : this.renderBlueprints();
+    return `<div class="sh-layout craft-layout">${nav}<div class="sh-main">${body}</div></div>`;
+  }
+
+  /** 製作卡片的狀態：未解鎖／材料不足／可製作 */
+  craftState(check, cost) {
+    if (!check.ok) return 'lock';
+    return affordable(this.game.state, cost) ? 'ok' : 'lack';
+  }
+
+  /** 製作按鈕 */
+  craftBtn(state, label, action, data, reason = '') {
+    if (state === 'lock') return `<span class="tag">🔒 ${escapeHtml(reason)}</span>`;
+    if (state === 'lack') return btn('材料不足', action, data, { cls: 'btn-sm btn-lack', disabled: true });
+    return btn(label, action, data, { cls: 'btn-sm btn-primary' });
+  }
+
+  /** 篩選：全部／可製作／材料不足／未解鎖 */
+  filterChips() {
+    const f = this.craftFilter || 'all';
+    return `<div class="chips fac-filter">${[['all', '全部'], ['ok', '可製作'], ['lack', '材料不足'], ['lock', '未解鎖']].map(([k, l]) => `<button class="chip ${f === k ? 'active' : ''}" data-action="craftFilter" data-f="${k}">${l}</button>`).join('')}</div>`;
+  }
+
+  passFilter(state) {
+    const f = this.craftFilter || 'all';
+    return f === 'all' || f === state;
+  }
+
+  /** 右側：製作品級機率與設計圖 */
+  craftSide() {
+    const g = this.game;
+    const eq = g.equipment;
+    const odds = Object.entries(eq.rarityOdds())
+      .map(([r, p]) => `<div class="row-between"><span style="color:${RARITIES[r].color}">${RARITIES[r].name}</span><span>${(p * 100).toFixed(p < 0.01 ? 2 : 1)}%</span></div>`).join('');
+    const bps = g.state.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model]);
+    return `<aside class="sh-fac-side">
+      <section class="sh-card"><h3>製作品級機率</h3>${odds}<small class="muted">研究「製作技術」可提高高品級機率（Lv${eq.craftTech()}/15）</small></section>
+      <section class="sh-card sh-rates"><h3>設計圖 ${bps.length}</h3>${bps.slice(0, 6).map((bp) => {
+        const md = ITEM_MODELS[bp.model];
+        const st = this.craftState(eq.canCraftModel(bp.model, true), eq.craftCost(bp.model, true));
+        return `<div class="row-between bp-row"><span><b>${md.name}</b><small class="block" style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</small></span>${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, eq.canCraftModel(bp.model, true).reason)}</div>`;
+      }).join('') || '<p class="muted">探索時有機會找到設計圖（製作時保底品級）。</p>'}${bps.length > 6 ? btn('查看全部', 'view', { v: 'blueprints' }, { cls: 'btn-xs' }) : ''}</section>
+    </aside>`;
   }
 
   /** 彈藥與箭矢製作：槍械需要彈藥、弓弩需要箭矢 */
@@ -42,14 +104,22 @@ export class InventoryPanel {
     const cards = Object.entries(AMMO_RECIPES).map(([key, rc]) => {
       const sp = SUPPLIES[key];
       const check = eq.canCraftAmmo(key);
-      return `<div class="card row-between"><div><b>${sp.icon} ${sp.name} ×${rc.batch}</b>
-        <small class="muted block">用於：${users(key)}・${rc.bench ? `工作台 Lv${rc.bench}` : '不需工作台'}・倉庫有 ${g.state.supplies?.[key] || 0}</small>
-        <div class="costs">${costHtml(g.state, rc.cost)}</div></div>
-        ${check.ok ? btn('製作', 'craftAmmo', { key }, { cls: 'btn-sm btn-primary' }) : `<span class="tag tag-red">🔒 ${check.reason}</span>`}</div>`;
+      const st = check.ok ? 'ok' : affordable(g.state, rc.cost) ? 'lock' : 'lack';
+      if (!this.passFilter(st)) return '';
+      return `<div class="fac-card2 ${st === 'lock' ? 'unbuilt' : ''}">
+        <div class="fac2-head"><span class="fac-icon">${sp.icon}</span><b>${sp.name} ×${rc.batch}</b><span class="muted">倉庫 ${g.state.supplies?.[key] || 0}</span></div>
+        <div class="fac2-effect"><small class="muted">用於：${users(key)}・${rc.bench ? `工作台 Lv${rc.bench}` : '不需工作台'}</small></div>
+        <div class="fac2-cost"><small class="muted">所需材料（擁有/需要）</small><div class="needs">${needHtml(g.state, rc.cost)}</div>
+          <div class="row-between"><span></span>${this.craftBtn(st, '製作', 'craftAmmo', { key }, check.reason)}</div></div>
+      </div>`;
     }).join('');
     const per = Object.entries(AMMO_FOR).map(([t, a]) => `${ITEM_TYPES[t].name} ${a.perFight}`).join('、');
-    return `<p class="muted">槍械需要彈藥、弓弩需要箭矢才能使用；沒有彈藥時只能徒手作戰。每場戰鬥消耗：${per}。出發探索時，使用槍械或弓弩的隊員會自動從倉庫補充約 4 場戰鬥的彈藥。彈藥也能在警察局、軍事基地、商店探索時找到。</p>
-      <div class="grid">${cards}</div>`;
+    return `<div class="sh-fac"><div class="sh-fac-main">
+      <h3 class="sh-title">🎯 彈藥與箭矢</h3>
+      <details class="civ-more"><summary>說明</summary><p class="muted">槍械需要彈藥、弓弩需要箭矢；沒有彈藥時改用近戰武器。每場戰鬥消耗：${per}。也能在警察局、軍事基地、商店探索時找到。</p></details>
+      ${this.filterChips()}
+      <div class="fac-grid">${cards || '<p class="muted">沒有符合的項目。</p>'}</div>
+    </div>${this.craftSide()}</div>`;
   }
 
   /** 倉庫裝備（從避難所頁開啟） */
@@ -121,11 +191,44 @@ export class InventoryPanel {
     const vs = g.vehicles;
     const crafts = Object.entries(VEHICLES).filter(([, d]) => d.craft).map(([type, d]) => {
       const check = vs.canCraft(type);
-      return `<div class="card row-between"><div><b>${d.icon} ${d.name}</b><small class="muted block">工作台 Lv${d.craft.workbench}・🪑${d.seats}・速度 ×${d.speed}・運載 ${d.cargo}</small><div class="costs">${costHtml(g.state, d.craft.cost)}</div></div>
-        ${btn('製作', 'craftVehicle', { type }, { cls: 'btn-sm btn-primary', disabled: !check.ok, title: check.reason || '' })}</div>`;
+      const st = check.ok ? 'ok' : affordable(g.state, d.craft.cost) ? 'lock' : 'lack';
+      if (!this.passFilter(st)) return '';
+      return `<div class="fac-card2 ${st === 'lock' ? 'unbuilt' : ''}">
+        <div class="fac2-head"><span class="fac-icon">${d.icon}</span><b>${d.name}</b><span class="muted">工作台 Lv${d.craft.workbench}</span></div>
+        <div class="fac2-effect"><small class="muted">🪑 ${d.seats} 人・速度 ×${d.speed}・運載 ${d.cargo}</small></div>
+        <div class="fac2-cost"><small class="muted">所需材料（擁有/需要）</small><div class="needs">${needHtml(g.state, d.craft.cost)}</div>
+          <div class="row-between"><small class="muted">${check.ok ? '' : escapeHtml(check.reason || '')}</small>${this.craftBtn(st, '製作', 'craftVehicle', { type }, check.reason)}</div></div>
+      </div>`;
     }).join('');
-    return `<p class="muted">車庫 ${g.state.vehicles.length}/${vs.garageSize()}（到避難所頁「🚗 車庫」管理、維修載具）。其他載具只能在探索時找到。</p>
-      <div class="grid">${crafts}</div>`;
+    return `<div class="sh-fac"><div class="sh-fac-main">
+      <h3 class="sh-title">🚗 載具 <small class="muted">車庫 ${g.state.vehicles.length}/${vs.garageSize()}（到避難所「車庫」管理、維修）</small></h3>
+      ${this.filterChips()}
+      <div class="fac-grid">${crafts || '<p class="muted">沒有符合的項目。</p>'}</div>
+    </div>${this.craftSide()}</div>`;
+  }
+
+  /** 設計圖：製作時保底品級 */
+  renderBlueprints() {
+    const g = this.game;
+    const eq = g.equipment;
+    const cards = g.state.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model]).map((bp) => {
+      const md = ITEM_MODELS[bp.model];
+      const check = eq.canCraftModel(bp.model, true);
+      const cost = eq.craftCost(bp.model, true);
+      const st = this.craftState(check, cost);
+      if (!this.passFilter(st)) return '';
+      return `<div class="fac-card2 ${st === 'lock' ? 'unbuilt' : ''}">
+        <div class="fac2-head"><span class="fac-icon">📜</span><b>${md.name}</b><span style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</span></div>
+        <div class="stat-line range">${statRangeLine(eq.craftStatRange(bp.model, bp.rarity))}</div>
+        <div class="fac2-cost"><small class="muted">所需材料（擁有/需要）</small><div class="needs">${needHtml(g.state, cost)}</div>
+          <div class="row-between"><span></span>${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, check.reason)}</div></div>
+      </div>`;
+    }).join('');
+    return `<div class="sh-fac"><div class="sh-fac-main">
+      <h3 class="sh-title">📜 設計圖</h3>
+      ${this.filterChips()}
+      <div class="fac-grid">${cards || '<p class="muted">沒有設計圖。探索時有機會找到，用設計圖製作時保底品級。</p>'}</div>
+    </div>${this.craftSide()}</div>`;
   }
 
   /** 倉庫頁顯示的裝備：不含隊員身上已裝備的物品 */
@@ -226,48 +329,41 @@ export class InventoryPanel {
     const g = this.game;
     const st = g.state;
     const eq = g.equipment;
-    const wb = eq.workbench();
-    const cats = Object.entries(ITEM_TYPES).map(([id, t]) => `<button class="chip ${this.craftCat === id ? 'active' : ''}" data-action="craftCat" data-c="${id}">${t.icon} ${t.name}</button>`).join('');
+    const t = ITEM_TYPES[this.craftCat];
+    // 手機版：類別改為可左右滑動的標籤
+    const catChips = `<div class="chips craft-cat-chips mobile-only">${Object.entries(ITEM_TYPES).map(([id, it]) => `<button class="chip ${this.craftCat === id ? 'active' : ''}" data-action="craftCat" data-c="${id}">${it.icon} ${it.name}</button>`).join('')}</div>`;
     const models = Object.entries(ITEM_MODELS).filter(([, md]) => md.type === this.craftCat).sort((a, b) => a[1].tier - b[1].tier);
     const cards = models.map(([id, md]) => {
       const check = eq.canCraftModel(id);
+      const cost = eq.craftCost(id);
+      const s2 = this.craftState(check, cost);
+      if (!this.passFilter(s2)) return '';
       const bench = benchFor(md);
-      const extra = md.extra?.carry ? `・📦 運載 +${md.extra.carry}` : md.fuel ? `・⛽ 每場戰鬥耗油 ${md.fuel}` : '';
-      return `<div class="fac-card ${check.ok ? '' : 'locked'}">
-        <div class="fac-head"><span class="fac-icon">${md.icon || ITEM_TYPES[md.type].icon}</span><div><b>${md.name}</b> <span class="tier">${'★'.repeat(Math.ceil(md.tier / 2))}</span>
-          <small class="muted block">強度 T${md.tier}・${bench ? `工作台 Lv${bench}` : '簡易製作（不需工作台）'}・裝備等級 Lv${eq.craftLevel(id)}${extra}</small></div></div>
+      const extra = md.extra?.carry ? `・運載 +${md.extra.carry}` : md.fuel ? `・每場耗油 ${md.fuel}` : '';
+      return `<div class="fac-card2 ${s2 === 'lock' ? 'unbuilt' : ''}">
+        <div class="fac2-head"><span class="fac-icon">${md.icon || t.icon}</span><b>${md.name}</b><span class="tier">${'★'.repeat(Math.ceil(md.tier / 2))}</span></div>
+        <small class="muted">強度 T${md.tier}・${bench ? `工作台 Lv${bench}` : '不需工作台'}・裝備 Lv${eq.craftLevel(id)}${extra}</small>
         <div class="stat-line range">${statRangeLine(eq.craftStatRange(id))}</div>
-        <div class="row-between"><div class="costs">${costHtml(st, eq.craftCost(id))}</div>
-        ${check.ok ? btn('製作', 'craft', { type: id }, { cls: 'btn-sm btn-primary' }) : `<span class="tag tag-red">🔒 ${check.reason}</span>`}</div>
+        <div class="fac2-cost"><small class="muted">所需材料（擁有/需要）</small><div class="needs">${needHtml(st, cost)}</div>
+          <div class="row-between"><small class="muted">${s2 === 'lack' ? '材料不足' : ''}</small>${this.craftBtn(s2, '製作', 'craft', { type: id }, check.reason)}</div></div>
       </div>`;
     }).join('');
-    const bps = st.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model]).map((bp) => {
-      const md = ITEM_MODELS[bp.model];
-      const check = eq.canCraftModel(bp.model, true);
-      return `<div class="card row-between">
-        <div>📜 <b>${md.name}設計圖</b> <span class="rarity" style="--rc:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</span>
-        <div class="stat-line range">${statRangeLine(eq.craftStatRange(bp.model, bp.rarity))}</div>
-        <div class="costs">${costHtml(st, eq.craftCost(bp.model, true))}</div></div>
-        ${btn('製作', 'craftBp', { id: bp.id, type: bp.model }, { cls: 'btn-sm btn-primary', disabled: !check.ok, title: check.reason || '' })}
-      </div>`;
-    }).join('');
-    const odds = Object.entries(eq.rarityOdds())
-      .map(([r, p]) => `<span class="odd" style="--rc:${RARITIES[r].color}">${RARITIES[r].name} ${(p * 100).toFixed(p < 0.01 ? 2 : 1)}%</span>`).join('');
-    return `
-      <p>📦 倉庫空間 <b>${eq.storeUsed()} / ${eq.storeCap()}</b> 格（空間不足時無法製作）</p>
-      <p class="muted">工作台 Lv${wb}：簡易製作不需要工作台；其餘裝備需要對應等級的工作台，工作台等級越高<b>可製作的型號越多</b>。槍械另需研究「槍械製造」。製作品級只受研究「製作技術」影響（Lv${eq.craftTech()}/15）。</p>
-      <div class="odds"><small class="muted">製作品級機率：</small>${odds}</div>
-      <p class="muted">每件裝備下方為製作出來的能力範圍（最低～最高，已含品級差異；另有依品級隨機出現的詞綴）。</p>
-      ${bps ? `<h3>設計圖</h3>${bps}` : ''}
-      <div class="chips">${cats}</div>
-      <div class="grid">${cards}</div>`;
+    return `<div class="sh-fac"><div class="sh-fac-main">
+      ${catChips}
+      <h3 class="sh-title">${t.icon} ${t.name}</h3>
+      ${this.filterChips()}
+      <div class="fac-grid">${cards || '<p class="muted">沒有符合的型號。</p>'}</div>
+      <small class="muted">能力為製作出來的範圍（最低～最高，已含品級差異；另有依品級隨機出現的詞綴）。槍械另需研究「槍械製造」。空間不足時無法製作。</small>
+    </div>${this.craftSide()}</div>`;
   }
+
 
   onAction(action, data) {
     const g = this.game;
     switch (action) {
       case 'view': this.view = data.v; break;
-      case 'craftCat': this.craftCat = data.c; break;
+      case 'craftCat': this.craftCat = data.c; this.view = 'craft'; break;
+      case 'craftFilter': this.craftFilter = data.f; break;
       case 'filter': this.filter = data.f; break;
       case 'selSupply':
         this.sel = this.sel?.kind === 'supply' && this.sel.key === data.key ? null : { kind: 'supply', key: data.key };

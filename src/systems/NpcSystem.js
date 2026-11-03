@@ -233,21 +233,25 @@ export class NpcSystem {
   fillCells(now = Date.now(), { silent = false } = {}) {
     const o = this.origin();
     if (!o) return 0;
-    const zones = this.playerZones();
+    // 玩家據點附近（警戒範圍，或至少 300 公尺）不會有 NPC：所有玩家據點都一樣
+    const zones = this.playerZones().map((z) => ({ ...z, r: Math.max(z.r, NPC_CONFIG.minFromShelterM) }));
     const inAlert = (p) => zones.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r);
+    // 哪些格子有 NPC：只看 OpenStreetMap 的真實建築（所有玩家相同），不看各自隨機補上的建築；
+    // 完全沒有真實建築資料時（離線、程序生成地圖）才用全部建築
+    const pois = this.game.state.map.pois;
+    const real = pois.filter((p) => String(p.id).startsWith('osm_'));
     const cells = new Set();
-    this.game.state.map.pois.forEach((p) => {
-      if (POI_TYPES[p.type]?.danger >= 2) cells.add(this.cellOf(p.lat, p.lon));
-    });
+    (real.length ? real : pois).forEach((p) => cells.add(this.cellOf(p.lat, p.lon)));
     const want = [];
     cells.forEach((key) => {
       const inCell = [];
       for (let slot = 0; slot < NPC_CONFIG.perCell; slot += 1) {
         const s = this.slotNpc(key, slot, now);
         if (!s) continue;
-        if (haversine(o.lat, o.lon, s.lat, s.lon) < NPC_CONFIG.minFromShelterM || inAlert(s)) continue;
+        // 同一格裡靠太近的 NPC 只保留編號小的：只依格子本身判斷，與各玩家看到的範圍無關（所有玩家相同）
         if (inCell.some((x) => haversine(x.lat, x.lon, s.lat, s.lon) < 120)) continue;
         inCell.push(s);
+        if (haversine(o.lat, o.lon, s.lat, s.lon) < NPC_CONFIG.minFromShelterM || inAlert(s)) continue;
         want.push(s);
       }
     });
