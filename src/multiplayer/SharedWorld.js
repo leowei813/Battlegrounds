@@ -37,6 +37,12 @@ export class MemoryObjects {
       && (o.lat == null || (Math.abs(o.lat - lat) <= dLat && Math.abs(o.lon - lon) <= dLon))).map(clone);
   }
 
+  async objListMany(list, lat, lon) {
+    const out = [];
+    for (const { kind, km } of list) out.push(...(await this.objList(kind, lat, lon, km)));
+    return out;
+  }
+
   async objPut(_from, _token, kind, id, { lat = null, lon = null, data, ver = 0 }) {
     const key = `${kind}:${id}`;
     const cur = this.map.get(key);
@@ -133,11 +139,34 @@ export class SharedWorld {
   /** 同步所有定期同步的種類（WorldSync 每次同步時呼叫） */
   async poll() {
     const kinds = [...this.watched.entries()];
-    for (const [kind, { km }] of kinds) {
-      // eslint-disable-next-line no-await-in-loop
-      await this.list(kind, km).catch(() => {});
+    const { b } = this.store();
+    if (b.objListMany && kinds.length) {
+      // 一次查詢所有種類（減少請求數）
+      try {
+        const at = this.center();
+        const list = await b.objListMany(kinds.map(([kind, { km }]) => ({ kind, km })), at.lat, at.lon);
+        this.replace(kinds.map(([k]) => k), list);
+      } catch { /* 下次再試 */ }
+    } else {
+      for (const [kind, { km }] of kinds) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.list(kind, km).catch(() => {});
+      }
     }
     this.game.bus.emit('shared:changed');
+  }
+
+  /** 以查詢結果取代這些種類的快取 */
+  replace(kinds, list) {
+    const now = Date.now();
+    const set = new Set(kinds);
+    [...this.cache.entries()].forEach(([k, o]) => { if (set.has(o.kind)) this.cache.delete(k); });
+    (Array.isArray(list) ? list : []).forEach((o) => {
+      if (!o || typeof o !== 'object' || !set.has(o.kind) || !o.id) return;
+      if (o.updatedAt && now - o.updatedAt > OBJ_KEEP_MS) return;
+      this.cache.set(this.key(o.kind, o.id), o);
+    });
+    kinds.forEach((k) => { this.listedAt[k] = now; });
   }
 
   /**

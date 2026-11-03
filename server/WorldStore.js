@@ -215,7 +215,13 @@ export class WorldStore {
     const dLat = km / 111.32;
     const dLon = km / (111.32 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
     const out = [];
-    this.objs().forEach((o) => {
+    const now = Date.now();
+    this.objs().forEach((o, key) => {
+      // 14 天沒有更新的物件清除
+      if (now - (o.updatedAt || 0) > 14 * 24 * 3600 * 1000) {
+        this.objs().delete(key);
+        return;
+      }
       if (o.kind !== kind) return;
       if (o.lat != null && (Math.abs(o.lat - lat) > dLat || Math.abs(o.lon - lon) > dLon)) return;
       out.push(o);

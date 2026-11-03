@@ -14,6 +14,7 @@ import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { remainOf } from '../../systems/LootStock.js';
 import { MAX_MARKERS } from '../../systems/MarkerSystem.js';
 import { INFECTED } from '../../systems/InfectedSystem.js';
+import { RALLY_DELAYS } from '../../systems/RallySystem.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { openMessages, unreadCount } from '../MessageDialog.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
@@ -65,6 +66,100 @@ export class MapPanel {
     this.service.render(this.game.state);
     this.service.renderNpcs(this.game.npcs.list);
     this.service.renderInfected(this.game.infected.list(), INFECTED.pin);
+  }
+
+  /** 發起集結：選擇出發倒數與自己的隊伍 */
+  openRallySetup(target) {
+    const g = this.game;
+    let delay = RALLY_DELAYS[1];
+    const body = () => `<p>📡 目標：<b>${escapeHtml(target.name)}</b>・距避難所 ${g.rally.distanceTo(target)} 公尺</p>
+      <p class="muted">發起後好友會收到通知，可以派隊參加（最多 ${g.rally.maxTeams()} 支隊伍，含你自己）。倒數結束或滿員時一起出發；出發前可以取消。成功後金錢平分，其他物品隨機分配給參加的隊伍。</p>
+      <div class="label">出發倒數</div><div class="chips">${RALLY_DELAYS.map((d) => `<button class="chip ${d === delay ? 'active' : ''}" data-action="delay" data-d="${d}">${d} 分鐘</button>`).join('')}</div>
+      <div class="btn-row">${btn('選擇隊伍', 'pick', {}, { cls: 'btn-primary' })}</div>`;
+    this.ui.modal.open({
+      title: '📡 發起集結',
+      body: body(),
+      onAction: (action, data, m) => {
+        if (action === 'delay') {
+          delay = Number(data.d);
+          m.update(body());
+          return;
+        }
+        if (action !== 'pick') return;
+        openTeamPicker(this.ui, {
+          title: `📡 集結：${target.name}`,
+          intro: `<p class="muted">${delay} 分鐘後（或滿員時）出發。</p>`,
+          vehicles: true,
+          distanceM: g.rally.distanceTo(target),
+          confirmLabel: '發起集結',
+          onConfirm: (ids, _dur, _auto, vids) => {
+            g.rally.start(target, delay, ids, vids).then((r) => {
+              this.ui.result(r);
+              if (r.ok) m.close();
+              this.ui.refresh(true);
+            });
+            return { ok: true };
+          },
+        });
+      },
+    });
+  }
+
+  /** 集結狀況：隊伍、倒數、結果；可參加、退出或取消 */
+  rallyBody(id) {
+    const g = this.game;
+    const now = Date.now();
+    const d = g.rally.get(id);
+    if (!d) return '<p class="muted">找不到這個集結（可能已經結束）。</p>';
+    const me = g.rally.myId();
+    const joined = (d.teams || []).some((t) => t.player === me);
+    const status = {
+      gathering: `⏳ 集結中・${formatDuration(Math.max(0, d.departAt - now))}後出發`,
+      departed: `🚶 行軍中・約 ${formatDuration(Math.max(0, (d.fightAt || now) - now))}後抵達`,
+      resolving: '⚔️ 交戰中',
+      done: d.result?.summary || '已結束',
+      cancelled: '已取消',
+    }[d.status] || d.status;
+    const teams = (d.teams || []).map((t) => `<li>${t.player === d.owner ? '⭐' : '🛡️'} ${escapeHtml(t.name)}・${(t.units || []).length} 人・戰力 ${(t.units || []).reduce((s, u) => s + (u.atk || 0) + (u.maxHp || 0) * 0.1, 0).toFixed(0)}</li>`).join('');
+    const canJoin = d.status === 'gathering' && !joined && d.owner !== me && g.territory.relation(d.owner) === 'friend' && (d.teams || []).length < d.maxTeams;
+    return `<p>📡 「${escapeHtml(d.ownerName)}」發起的集結・目標 <b>${escapeHtml(d.target.name)}</b>（${d.target.kind === 'inf' ? '☣️ 重度感染據點' : '🏴‍☠️ NPC 據點'}）</p>
+      <p><b>${status}</b></p>
+      <div class="label">隊伍 ${(d.teams || []).length}/${d.maxTeams}</div><ul class="event-list">${teams}</ul>
+      <div class="btn-row">${canJoin ? btn('🛡️ 派隊參加', 'join', {}, { cls: 'btn-primary' }) : ''}${d.status === 'gathering' && joined ? btn(d.owner === me ? '取消集結' : '退出集結', 'leave', {}, { cls: 'btn-ghost' }) : ''}${btn('📍 查看目標', 'fly', {}, { cls: 'btn-ghost' })}</div>`;
+  }
+
+  openRally(id) {
+    const g = this.game;
+    g.shared.list('rally', 20).then(() => this.ui.refresh(true)).catch(() => {});
+    this.ui.modal.open({
+      title: '📡 集結',
+      body: this.rallyBody(id),
+      live: () => this.rallyBody(id),
+      onAction: (action, _d, m) => {
+        const d = g.rally.get(id);
+        if (!d) return;
+        if (action === 'fly') {
+          m.close();
+          this.service.focus(d.target.lat, d.target.lon, 17);
+        }
+        if (action === 'leave' && confirm(d.owner === g.rally.myId() ? '取消這次集結？' : '退出這次集結？')) {
+          g.rally.leave(id).then((r) => { this.ui.result(r); m.update(this.rallyBody(id)); });
+        }
+        if (action === 'join') {
+          openTeamPicker(this.ui, {
+            title: `📡 參加集結：${d.target.name}`,
+            intro: `<p class="muted">和「${escapeHtml(d.ownerName)}」一起出發攻打。</p>`,
+            vehicles: true,
+            distanceM: g.rally.distanceTo(d.target),
+            confirmLabel: '參加',
+            onConfirm: (ids, _dur, _auto, vids) => {
+              g.rally.join(id, ids, vids).then((r) => { this.ui.result(r); m.update(this.rallyBody(id)); });
+              return { ok: true };
+            },
+          });
+        }
+      },
+    });
   }
 
   /** 重度感染據點資訊、派隊淨化、發起集結 */
@@ -149,7 +244,10 @@ export class MapPanel {
       <p class="muted">積極度 ${Math.round(aggr * 100)}%（你的文明度越高，NPC 越常來掠奪）。夜晚屍潮期間 NPC 不會出動，也要抵禦屍群。</p>
       ${trip ? `<p class="${trip.kind === 'raid' ? 'neg' : 'muted'}">${trip.kind === 'raid' ? `⚔️ 掠奪隊正前往「${escapeHtml(trip.target)}」` : `🔍 正在搜刮「${escapeHtml(trip.target)}」`}・剩 ${formatDuration(trip.endAt - now)}</p>` : ''}
       <p class="muted">攻陷後可搶走據點的物資與金錢（受隊伍運載量限制），據點會被摧毀，一段時間後別處會出現新的勢力。</p>
-      <div class="btn-row">${btn('⚔️ 派隊攻打', 'attackNpc', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}</div>`;
+      <div class="btn-row">${btn('⚔️ 派隊攻打', 'attackNpc', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${(() => {
+    const c = g.rally.canStart({ kind: 'npc', id: n.id });
+    return btn('📡 發起集結', 'rallyNpc', {}, { cls: 'btn-primary', disabled: !c.ok || !n.sid, title: c.reason || (n.sid ? '' : '這個據點不能集結') });
+  })()}</div>`;
   }
 
   openNpc(npcId) {
@@ -161,6 +259,12 @@ export class MapPanel {
       body: this.npcBody(n),
       live: () => (g.npcs.get(npcId) ? this.npcBody(n) : '<p>這個據點已經消失了。</p>'),
       onAction: (action, _d, m) => {
+        if (action === 'rallyNpc') {
+          this.openRallySetup({
+            kind: 'npc', id: n.id, ident: n.ident, name: n.name, lat: n.lat, lon: n.lon,
+          });
+          return;
+        }
         if (action !== 'attackNpc') return;
         const sh = g.shelter.primary();
         openTeamPicker(this.ui, {
@@ -405,9 +509,17 @@ export class MapPanel {
       const sent = g.assist.trips().some((e) => e.assistTarget?.playerId === p.id);
       rows.push(`<button class="feed-chip friend" data-action="feedAssist" data-id="${p.id}">🆘 好友「${escapeHtml(p.name)}」${text}${sent ? '・🛡️ 已派隊' : '・點擊增援'}</button>`);
     });
+    // 集結：發起中／參加中（倒數），以及好友發起的集結（點擊參加）
+    const rallyText = { gathering: '集結中・出發倒數', departed: '行軍中・約', resolving: '交戰中', done: '已結束' };
+    g.rally.feed(now).forEach((r) => {
+      rows.push(`<button class="feed-chip rally" data-action="feedRally" data-id="${r.id}">📡 ${r.mine ? '發起' : '參加'}集結「${escapeHtml(r.target.name)}」・${r.teams}/${r.maxTeams} 隊・${rallyText[r.status] || ''}${r.left ? ` ${formatDuration(r.left)}` : ''}</button>`);
+    });
+    g.rally.invites(now).forEach((d) => {
+      rows.push(`<button class="feed-chip friend" data-action="feedRally" data-id="${d.id}">📡 好友「${escapeHtml(d.ownerName)}」集結「${escapeHtml(d.target.name)}」・${(d.teams || []).length}/${d.maxTeams} 隊・${formatDuration(d.departAt - now)}後出發・點擊參加</button>`);
+    });
     // 探索佇列：類型、距離、剩餘時間
     const sh = g.shelter.primary();
-    g.state.expeditions.forEach((ex) => {
+    g.state.expeditions.filter((ex) => ex.kind !== 'rally').forEach((ex) => {
       const poi = g.exploration.poi(ex.poiId);
       const p = g.exploration.progress(ex, now);
       const type = poi ? (POI_TYPES[poi.type]?.icon || poi.icon || '📍') : '📍';
@@ -450,6 +562,7 @@ export class MapPanel {
     if (action === 'gpsFocus' && this.game.gps.pos) this.service.focus(this.game.gps.pos.lat, this.game.gps.pos.lon, 18);
     if (action === 'worldSettings') this.ui.switchTab('settings');
     if (action === 'feedTeam') this.openOwnTeam(data.id);
+    if (action === 'feedRally') this.openRally(data.id);
     if (action === 'feedAssist') {
       const p = this.game.world?.others.find((x) => x.id === data.id);
       if (p) {

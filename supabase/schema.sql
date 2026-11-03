@@ -228,6 +228,23 @@ returns json language sql security definer set search_path = public as $$
   ) o;
 $$;
 
+-- 一次查詢多種物件（每種各自的範圍）
+create or replace function public.jdqs_obj_list_many(p_kinds text[], p_kms double precision[], p_lat double precision, p_lon double precision)
+returns json language sql security definer set search_path = public as $$
+  select json_build_object('status', 'ok', 'objects', coalesce(json_agg(json_build_object(
+    'kind', o.kind, 'id', o.id, 'lat', o.lat, 'lon', o.lon, 'data', o.data, 'ver', o.ver, 'updatedAt', o.updated_at)), '[]'::json))
+  from (
+    select x.* from unnest(p_kinds[1:10], p_kms[1:10]) as q(kind, km)
+    cross join lateral (
+      select * from public.jdqs_objects o
+      where o.kind = q.kind
+        and (o.lat is null or (abs(o.lat - p_lat) <= least(q.km, 20) / 111.32
+          and abs(o.lon - p_lon) <= least(q.km, 20) / (111.32 * greatest(cos(radians(p_lat)), 0.1))))
+      limit 500
+    ) x
+  ) o;
+$$;
+
 -- 以版本號寫入：p_ver 必須等於目前版本（新建時為 0），否則回傳 conflict 與最新資料
 create or replace function public.jdqs_obj_put(p_from text, p_token text, p_kind text, p_id text,
   p_lat double precision, p_lon double precision, p_data jsonb, p_ver integer)
@@ -240,6 +257,10 @@ begin
   if not found or s.token_hash <> p_token then return json_build_object('status', 'forbidden'); end if;
   if p_kind !~ '^[a-z]{2,12}$' or p_id is null or length(p_id) > 80 then return json_build_object('status', 'invalid'); end if;
   if octet_length(coalesce(p_data, 'null'::jsonb)::text) > 16000 then return json_build_object('status', 'invalid'); end if;
+  -- 偶爾清除 14 天沒有更新的物件
+  if random() < 0.02 then
+    delete from public.jdqs_objects where updated_at < now_ms - 14::bigint * 86400000;
+  end if;
   select * into cur from public.jdqs_objects where kind = p_kind and id = p_id for update;
   if coalesce(cur.ver, 0) <> coalesce(p_ver, 0) then
     return json_build_object('status', 'conflict', 'obj', case when cur.id is null then null else json_build_object(
@@ -266,4 +287,6 @@ end $$;
 revoke all on function public.jdqs_obj_list(text, double precision, double precision, double precision) from public;
 revoke all on function public.jdqs_obj_put(text, text, text, text, double precision, double precision, jsonb, integer) from public;
 grant execute on function public.jdqs_obj_list(text, double precision, double precision, double precision) to anon, authenticated;
+revoke all on function public.jdqs_obj_list_many(text[], double precision[], double precision, double precision) from public;
+grant execute on function public.jdqs_obj_list_many(text[], double precision[], double precision, double precision) to anon, authenticated;
 grant execute on function public.jdqs_obj_put(text, text, text, text, double precision, double precision, jsonb, integer) to anon, authenticated;

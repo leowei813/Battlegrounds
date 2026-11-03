@@ -104,6 +104,14 @@ export class SupabaseProvider {
     return body.objects || [];
   }
 
+  /** 共用世界物件：一次查詢多種（[{kind, km}]） */
+  async objListMany(list, lat, lon) {
+    const body = await this.rpc('jdqs_obj_list_many', {
+      p_kinds: list.map((x) => x.kind), p_kms: list.map((x) => x.km), p_lat: lat, p_lon: lon,
+    });
+    return body.objects || [];
+  }
+
   /** 共用世界物件：以版本號寫入；回傳 { status: 'ok'|'conflict', obj }（conflict 不丟錯） */
   async objPut(fromId, token, kind, id, { lat = null, lon = null, data, ver = 0 }) {
     const { status, body } = await fetchJson(`${this.base}/rest/v1/rpc/jdqs_obj_put`, {

@@ -109,6 +109,17 @@ async function run() {
   await expectError(api.worldSend(pB.id, pB.token, pA.id, 'plunder', { pad: 'x'.repeat(3000) }), 'server', '超過 2KB 的事件被拒');
   const inbox2 = await api.worldInbox(pA.id, pA.token);
   assert(inbox2.length === 2 && inbox2[0].type === 'intercept' && inbox2[1].data.resources.nail === 5, '攔截與戰利品事件可以傳遞');
+  // ---- 共用世界物件（版本號先到先得） ----
+  const o1 = await api.objPut(pA.id, pA.token, 'bm', 'sold', { data: { sold: { x: 'A' } }, ver: 0 });
+  assert(o1.status === 'ok' && o1.obj.ver === 1, '共用物件：新建');
+  const o2 = await api.objPut(pB.id, pB.token, 'bm', 'sold', { data: { sold: {} }, ver: 0 });
+  assert(o2.status === 'conflict' && o2.obj?.data?.sold?.x === 'A', '共用物件：版本不符回傳衝突與最新資料');
+  const o3 = await api.objPut(pB.id, pB.token, 'bm', 'sold', { data: { sold: { x: 'A', y: 'B' } }, ver: 1 });
+  assert(o3.status === 'ok' && o3.obj.ver === 2, '共用物件：版本相符時寫入');
+  await expectError(api.objPut(pA.id, pB.token, 'bm', 'sold', { data: {}, ver: 2 }), 'forbidden', '共用物件：無法冒用他人身分');
+  await api.objPut(pA.id, pA.token, 'npc', 'c1', { lat: 25.04, lon: 121.56, data: { w: 1 }, ver: 0 });
+  assert((await api.objList('npc', 25.04, 121.56, 2)).length === 1 && (await api.objList('npc', 35, 139, 2)).length === 0, '共用物件：依位置查詢');
+  assert((await api.objList('bm', 0, 0, 1)).some((o) => o.id === 'sold'), '共用物件：全域物件不受位置限制');
   await api.worldDelete(pA.id, pA.token);
   assert((await api.worldNearby(25.04, 121.56, 5, pB.id)).length === 0, '停止公開後立即從世界移除');
 }
