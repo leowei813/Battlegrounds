@@ -66,7 +66,7 @@ export const NIGHT_MUL = { hp: 1.2, atk: 1.25, perDanger: 0.12 };
  */
 export const BUILDING_ZONE = {
   extraLevel: { 1: 6, 2: 15, 3: 28 },
-  statMul: { 1: 2.0, 2: 3.5, 3: 2.3 },
+  statMul: { 1: 1.9, 2: 3.2, 3: 2.15 },
 };
 /** 夜晚地圖上的殭屍群：一般、精英、Boss 的額外強度 */
 export const MAP_GROUP_MUL = {
