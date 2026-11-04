@@ -4011,6 +4011,40 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(maxLv <= 5 + 3, `隊伍 Lv5 時，探索遇到的倖存者最多約 Lv${maxLv}（不會出現 Lv40）`);
 }
 
+// ---- 95. 黑市專屬保留區：每位玩家自己的格子、研究加格、每小時只補貨 1 格 ----
+{
+  const { BM_VIP } = await import('../src/systems/BlackMarketSystem.js');
+  const gv = Game.newGame({ playerName: 'A95', classId: 'warrior', lat: 25, lon: 121 });
+  gv.state.map.pois = fillPois([], 25, 121);
+  gv.shelter.establish(gv.state.map.pois[0]);
+  const bm = gv.blackMarket;
+  const H = BM_VIP.refreshMs;
+  const t0 = Math.floor(Date.now() / H) * H + 1000;
+  assert(bm.vipCount() === 1 && bm.updateVip(t0).length === 1, '專屬保留區基本 1 格');
+  gv.state.research.levels.t_bm_vip = 4;
+  gv.research.invalidate();
+  assert(bm.vipCount() === 5 && bm.updateVip(t0).length === 5, '研究「黑市商人的厚愛」Lv4：共 5 格');
+  const ids0 = gv.state.bmVip.slots.map((x) => x.good.id);
+  gv.state.player.coins = 1e7;
+  (gv.state.survivors || []).forEach((sv) => { sv.bag = {}; });
+  gv.equipment.storeCap = () => 999;
+  const r = bm.buyVip(2, t0);
+  assert(r.ok && gv.state.bmVip.slots[2].sold && !bm.buyVip(2, t0).ok, `可以購買專屬商品，買過的格子不能重複買（${r.reason || ''}）`);
+  bm.updateVip(t0 + H * 0.5);
+  assert(gv.state.bmVip.slots[2].sold, '未滿一小時不會補貨');
+  bm.updateVip(t0 + H);
+  const ids1 = gv.state.bmVip.slots.map((x) => x.good.id);
+  assert(ids1.filter((id, i) => id !== ids0[i]).length === 1 && ids1[2] !== ids0[2] && !gv.state.bmVip.slots[2].sold, '一小時只補貨 1 格，優先補已買走的那一格');
+  bm.updateVip(t0 + H * 2);
+  const ids2 = gv.state.bmVip.slots.map((x) => x.good.id);
+  assert(ids2.filter((id, i) => id !== ids1[i]).length === 1, '沒有買走的格子時，每小時換掉最舊的一格');
+  bm.updateVip(t0 + H * 30);
+  const ids3 = gv.state.bmVip.slots.map((x) => x.good.id);
+  assert(ids3.every((id, i) => id !== ids2[i]), '離線很久回來：最多補滿全部格子');
+  const mig = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gv.state)), version: 23, bmVip: undefined });
+  assert(mig.bmVip && Array.isArray(mig.bmVip.slots), '舊存檔遷移：建立專屬保留區');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

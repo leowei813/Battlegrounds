@@ -402,6 +402,10 @@ export class SaveManager {
         data.log.unshift({ t: Date.now(), msg: `🏗️ 設施等級改為依據點規模設上限：${notes.join('、')}，已退還 ${Math.round(FACILITY_CAP_REFUND * 100)}% 建造材料`, type: 'info' });
       }
     }
+    if (v < 24) {
+      // v9.24：黑市專屬保留區（第一次開啟黑市時補滿格子）
+      data.bmVip = data.bmVip && Array.isArray(data.bmVip.slots) ? data.bmVip : { slots: [], hour: 0 };
+    }
     if (v < 23 && data.research?.levels?.r_board) {
       // v9.17：情報網改為 3 級（每級 +1）：舊等級每 5 級 +1 換算成新等級，效果不變
       const old = data.research.levels.r_board;
