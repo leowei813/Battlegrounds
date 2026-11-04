@@ -111,6 +111,13 @@ export class ExplorationSystem {
   }
 
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
+  /** 探索報告記下目的地所在區域的危險等級（安全區～深淵區） */
+  tagZone(report, exp) {
+    if (!report || report.zone) return;
+    const p = this.poi(exp?.poiId) || this.game.npcs.get?.(exp?.poiId);
+    if (p && Number.isFinite(p.lat)) report.zone = zoneAt(p.lat, p.lon).id;
+  }
+
   poi(id) {
     return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id)
       || this.game.intercept?.asPoi(id) || this.game.assist?.asPoi(id) || this.game.infected?.asPoi(id) || this.game.rally?.asPoi(id) || this.huntPoi(id) || null;
@@ -414,6 +421,7 @@ export class ExplorationSystem {
       members: members.map((m) => m.name),
     };
     report.retreated = true;
+    this.tagZone(report, exp);
     this.game.state.reports = [report, ...(this.game.state.reports || [])].slice(0, 20);
     this.game.bus.emit('expedition:done', [report]);
     return report;
@@ -464,6 +472,7 @@ export class ExplorationSystem {
       resources: {}, items: [], blueprints: [], kills: exp.travelKills, xp: exp.travelXp, success: false,
       members: members.map((m) => m.name),
     };
+    this.tagZone(report, exp);
     this.game.state.reports = [report, ...(this.game.state.reports || [])].slice(0, 20);
     this.game.bus.emit('expedition:done', [report]);
     return { exp, group: g, result, aborted: true };
@@ -603,6 +612,7 @@ export class ExplorationSystem {
             : exp.kind === 'infect' ? this.game.infected.resolveAttack(exp)
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp);
         report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
+        this.tagZone(report, exp);
         reports.push(report);
         this.free(exp);
         // 自動探索：隊員健康且未超過離線上限則再次出發（燃料不足或載具損壞則停止）

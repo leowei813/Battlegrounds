@@ -19,6 +19,28 @@ export class ResearchPanel {
     this.game = ui.game;
     this.branch = 'weapons';
     this.filter = 'all';
+    /** 這次瀏覽看過的剛完成科技（離開分支或研究頁時清除 NEW） */
+    this.seen = new Set();
+    this.seenBranch = null;
+  }
+
+  fresh() {
+    return this.game.state.research.fresh || {};
+  }
+
+  /** 離開分支或研究頁：看過的 NEW 標示消失 */
+  clearSeen() {
+    const f = this.game.state.research.fresh;
+    if (f && this.seen.size) {
+      this.seen.forEach((id) => { delete f[id]; });
+      this.game.requestSave();
+    }
+    this.seen.clear();
+  }
+
+  onLeave() {
+    this.clearSeen();
+    this.seenBranch = null;
   }
 
   /** 科技狀態：max 已滿級／active 研究中／lock 未解鎖／lack 材料不足／ok 可研究 */
@@ -56,11 +78,20 @@ export class ResearchPanel {
       const busy = !!active;
       action = btn(`${lv ? `升到 Lv${lv + 1}` : '研究'}`, 'start', { id }, { cls: `btn-sm ${busy ? '' : 'btn-primary'}`, disabled: busy, title: busy ? '已有研究進行中' : '' });
     }
-    return `<div class="fac-card2 rs-card ${state === 'lock' ? 'unbuilt' : ''} ${state === 'active' ? 'rs-active' : ''}">
+    const isNew = !!this.fresh()[id];
+    if (isNew) this.seen.add(id);
+    void pct;
+    const pips = `<span class="rs-pips" title="Lv ${lv}/${r.maxLevel}">${'●'.repeat(lv)}<i>${'●'.repeat(Math.max(0, r.maxLevel - lv))}</i></span>`;
+    const effect = state === 'max'
+      ? `<div class="fac2-effect">目前：${effectText(id, lv)}</div>`
+      : `<div class="fac2-effect">${lv ? `目前：${effectText(id, lv)}` : '目前：尚未研究'}</div>
+        <div class="fac2-effect"><span class="muted">${lv ? '下一級' : '第 1 級'}：</span><span class="pos">${lv ? `${effectText(id, lv)} → ` : ''}${effectText(id, lv + 1)}</span></div>`;
+    return `<div class="fac-card2 rs-card ${state === 'lock' ? 'unbuilt' : ''} ${state === 'active' ? 'rs-active' : ''} ${isNew ? 'rs-new' : ''}">
+      ${isNew ? '<span class="rs-new-tag">NEW 剛完成</span>' : ''}
       <div class="fac2-head"><b>${r.name}</b><span class="rs-lv ${lv ? 'on' : ''}">Lv ${lv}/${r.maxLevel}</span></div>
-      <span class="rs-bar"><i style="width:${pct}%"></i></span>
+      ${pips}
       <small class="muted">${r.desc}${r.unlock.length ? '（第 1 級解鎖）' : ''}</small>
-      <div class="fac2-effect">${lv ? effectText(id, lv) : '尚未研究'}${state === 'max' ? '' : ` <span class="pos">→ ${effectText(id, lv + 1)}</span>`}</div>
+      ${effect}
       ${state === 'lock' ? `<small class="neg">🔒 ${reason}</small>` : req ? `<small class="muted">前置：${req}</small>` : ''}
       ${state === 'max' ? '' : `<div class="fac2-cost">
         ${state === 'active' ? timerBar(active.startAt, active.endAt) : `<div class="needs">${needHtml(st, g.research.cost(id))}</div>`}
@@ -109,13 +140,20 @@ export class ResearchPanel {
     const total = Object.values(RESEARCH).reduce((s, r) => s + r.maxLevel, 0);
     const done = Object.values(st.research.levels).reduce((s, v) => s + v, 0);
     if (!RESEARCH_BRANCHES[this.branch]) this.branch = 'weapons';
+    // 換分支：上一個分支看過的 NEW 消失
+    if (this.seenBranch !== this.branch) {
+      this.clearSeen();
+      this.seenBranch = this.branch;
+    }
+    const fresh = this.fresh();
     const items = Object.entries(RESEARCH).filter(([, r]) => r.branch === this.branch);
     const branchNav = Object.entries(RESEARCH_BRANCHES).map(([bid, b]) => {
       const n = Object.values(RESEARCH).filter((r) => r.branch === bid);
       const lv = Object.entries(RESEARCH).filter(([, r]) => r.branch === bid).reduce((s, [id]) => s + g.research.level(id), 0);
       const max = n.reduce((s, r) => s + r.maxLevel, 0);
+      const nNew = Object.keys(fresh).filter((id) => RESEARCH[id]?.branch === bid).length;
       return `<button class="sh-nav-item rs-branch ${this.branch === bid ? 'active' : ''}" data-action="branch" data-b="${bid}">
-        <span>${b.icon} ${b.name}</span><small>${lv}/${max}</small><i class="rs-bar desk-only"><i style="width:${Math.round((lv / Math.max(1, max)) * 100)}%"></i></i></button>`;
+        <span>${b.icon} ${b.name}${nNew ? ` <i class="rs-new-dot">NEW ${nNew}</i>` : ''}</span><small>${lv}/${max}</small><i class="rs-bar desk-only"><i style="width:${Math.round((lv / Math.max(1, max)) * 100)}%"></i></i></button>`;
     }).join('');
     const nav = `<nav class="sh-nav" aria-label="科技分支">
       <div class="sh-base"><b>🔬 研究中心 Lv ${lab}</b><small class="muted">${lab ? `研究速度 +${lab * 10}%・可研究到各項 Lv${lab}` : '尚未建造'}</small><small class="muted">總等級 ${done}/${total}</small></div>

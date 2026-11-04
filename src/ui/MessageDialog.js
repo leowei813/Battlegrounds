@@ -1,6 +1,7 @@
 import { escapeHtml } from '../utils/dom.js';
 import { RARITIES } from '../config/equipment.js';
 import { gainsHtml, btn } from './components.js';
+import { ZONES } from '../config/zones.js';
 
 const hhmm = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
@@ -27,13 +28,21 @@ export function unreadCount(game) {
 
 const NEW = '<span class="tag tag-blue new-tag">未讀</span>';
 
+/** 探索地點的危險等級標籤（依區域顏色） */
+function zoneTag(id) {
+  const z = ZONES.find((x) => x.id === id);
+  if (!z) return '';
+  const color = z.id === 'abyss' ? '#9e9e9e' : z.color;
+  return ` <span class="zone-tag" style="--zc:${color}">${z.danger >= 2 ? '☠️' : z.danger >= 1 ? '⚠️' : '🟢'} ${z.name}</span>`;
+}
+
 function reportsHtml(game, openId, since) {
   const list = (game.state.reports || []).map((r) => {
     const open = openId === r.id;
     const fresh = (r.at || 0) > since;
     return `<div class="card report ${r.success ? '' : 'fail'} ${fresh ? 'unread' : ''}">
       <div class="row-between" data-action="toggleReport" data-id="${r.id}">
-        <b>${fresh ? NEW : ''}${r.success ? '✅' : '⚠️'} ${escapeHtml(r.poiName)}</b><small class="muted">${hhmm(r.at)} ${open ? '▲' : '▼'}</small>
+        <b>${fresh ? NEW : ''}${r.success ? '✅' : '⚠️'} ${escapeHtml(r.poiName)}${zoneTag(r.zone)}</b><small class="muted">${hhmm(r.at)} ${open ? '▲' : '▼'}</small>
       </div>
       <div class="gains">${gainsHtml(r.resources)} ${r.items.map((it) => `<span class="rarity" style="--rc:${RARITIES[it.rarity].color}">${escapeHtml(it.name)}</span>`).join('')}${r.blueprints.length ? `<span class="tag">📜×${r.blueprints.length}</span>` : ''}</div>
       ${open ? `<ul class="event-list">${r.events.map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul><small class="muted">隊員：${r.members.map(escapeHtml).join('、')}・擊殺 ${r.kills}</small>` : ''}

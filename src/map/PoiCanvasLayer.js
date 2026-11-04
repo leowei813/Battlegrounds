@@ -122,20 +122,6 @@ export const PoiCanvasLayer = L.Layer.extend({
         if (r >= 12) this.sizeTag(ctx, pt.x + rr * 0.8, pt.y + rr * 0.8, bs);
       }
       ctx.globalAlpha = 1;
-      // GPS 偵測過的建築：青色外圈
-      if (this.detected?.[poi.id] === today) {
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, rr + 3, 0, Math.PI * 2);
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#26c6da';
-        ctx.stroke();
-      }
-      // 標記的地點：右上角插上圖釘
-      if (this.marked?.has(poi.id)) {
-        ctx.font = `${Math.round(Math.max(12, r * 1.1))}px sans-serif`;
-        ctx.fillText('📌', pt.x + rr * 0.7, pt.y - rr * 0.9);
-        ctx.font = `${Math.round(r * 1.15)}px sans-serif`;
-      }
       this.drawn.push({ poi, x: pt.x, y: pt.y, r: rr });
     });
   },
