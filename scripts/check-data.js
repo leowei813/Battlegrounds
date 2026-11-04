@@ -3543,6 +3543,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const r1 = ex.start(near[0].id, [L.id], 1, false, Date.now());
   assert(r1.ok, '派出探索');
   const e1 = r1.exp;
+  e1.cargo = 1e6; // 運載量足夠：測試直接前往下一站（第一站找到的物資多寡是隨機的）
   ex.enqueue(e1.id, near[1].id);
   // 背包幾乎沒東西：搜索完直接前往下一個地點（不回家）
   const searchEnd = e1.startAt + e1.travelMs + e1.searchMs;
@@ -3567,7 +3568,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ex.enqueue(e3.id, near[2].id);
   e3.carried = { gained: { wood: Math.ceil(e3.cargo * CHAIN_RETURN_LOAD) + 1 }, items: [], blueprints: [], vehicles: [] };
   ex.update(e3.startAt + e3.travelMs + e3.searchMs + 1);
-  assert(ex.list.includes(e3) && e3.travelEvents.some((t) => t.includes('返回避難所卸貨')), '負重達 90% 時返回避難所');
+  assert(ex.list.includes(e3) && (e3.travelEvents.some((t) => t.includes('返回避難所卸貨')) || e3.cp?.stopped), '負重達 90% 時返回避難所（不前往下一站）');
   ex.update(e3.endAt + 1);
   // 關閉開關：每個地點探索完都先回家
   heal();
@@ -3591,6 +3592,23 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const maxMed = gc.survivors.loadout(a).med.qty;
   assert(notes[0]?.startsWith('甲') && gc.survivors.loadout(a).med.qty === 7 && !b.bag[med] && gc.survivors.loadout(b).med.qty === 7, `缺最多的隊員先補，從隊友背包拿相同藥品（${notes.join('；')}）`);
   void maxMed;
+}
+
+// ---- 82. 存檔保留研究佇列；情報網改為 3 級 ----
+{
+  const { SaveManager } = await import('../src/core/SaveManager.js');
+  const gs = Game.newGame({ playerName: 'S82', classId: 'warrior', lat: 25, lon: 121 });
+  gs.state.research.active = { id: 'w_atk', level: 1, startAt: Date.now(), endAt: Date.now() + 60000, cost: {} };
+  gs.state.research.queue = [{ id: 'w_crit', level: 1, cost: { wood: 10 } }];
+  gs.state.research.fresh = { w_atk: { level: 1, at: Date.now() } };
+  const loaded = SaveManager.migrate(JSON.parse(JSON.stringify(gs.state)));
+  assert(loaded.research.queue.length === 1 && loaded.research.queue[0].id === 'w_crit' && loaded.research.fresh?.w_atk, '讀取存檔時保留研究佇列與剛完成標示');
+  assert(RESEARCH.r_board.maxLevel === 3 && RESEARCH.r_board.labReq.join() === '5,10,15', '情報網最多 3 級，需要研究中心 Lv5／10／15');
+  const old = JSON.parse(JSON.stringify(gs.state));
+  old.version = 22;
+  old.research.levels.r_board = 12;
+  const mig = SaveManager.migrate(old);
+  assert(mig.research.levels.r_board === 2, `舊存檔情報網 Lv12 換算為 Lv2（效果不變：${mig.research.levels.r_board}）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

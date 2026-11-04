@@ -146,7 +146,7 @@ export const RESEARCH = {
   // ---- 招募 ----
   r_tech: r('recruitment', 1, '招募技術', '招募到高品級倖存者的機率提升（滿級時傳奇 3%）', { recruitTech: 1 }),
   r_cost: r('recruitment', 1, '招募宣傳', '招募費用降低', { recruitCostReduce: 0.04 }),
-  r_board: r('recruitment', 2, '情報網', '每小時出現的倖存者人數增加（每 5 級 +1）', { boardSlots: 0.2 }, { req: [['r_tech', 2]] }),
+  r_board: r('recruitment', 2, '情報網', '每小時出現的倖存者人數 +1（最多 3 級）；Lv1 需要研究中心 Lv5、Lv2 需要 Lv10、Lv3 需要 Lv15', { boardSlots: 1 }, { req: [['r_tech', 2]], max: 3, labReq: [5, 10, 15] }),
   r_train: r('recruitment', 2, '教練', '倖存者獲得的經驗提升', { xpPct: 0.04 }),
   r_level: r('recruitment', 3, '老手', '招募到的倖存者等級提升', { recruitLevelAdd: 0.3 }, { req: [['r_tech', 3]] }),
   // ---- 擴張 ----

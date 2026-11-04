@@ -171,7 +171,11 @@ export class SaveManager {
       delete rs.completed;
     }
     if (rs.active && (!RESEARCH[rs.active.id] || !rs.active.level)) rs.active = null;
-    data.research = { levels: rs.levels, active: rs.active || null };
+    // 研究佇列與剛完成標示也要保留（之前載入時被清掉，排隊中的研究與已扣的材料會消失）
+    const queue = (Array.isArray(rs.queue) ? rs.queue : []).filter((q) => q && RESEARCH[q.id] && q.level > 0);
+    data.research = {
+      levels: rs.levels, active: rs.active || null, queue, ...(rs.fresh && typeof rs.fresh === 'object' ? { fresh: rs.fresh } : {}),
+    };
     (data.inventory?.items || []).forEach((it) => {
       if (it.model && ITEM_MODELS[it.model]) return;
       const candidates = Object.entries(ITEM_MODELS).filter(([, md]) => md.type === it.type);
@@ -395,6 +399,24 @@ export class SaveManager {
       if (notes.length && Array.isArray(data.log)) {
         data.log.unshift({ t: Date.now(), msg: `🏗️ 設施等級改為依據點規模設上限：${notes.join('、')}，已退還 ${Math.round(FACILITY_CAP_REFUND * 100)}% 建造材料`, type: 'info' });
       }
+    }
+    if (v < 23 && data.research?.levels?.r_board) {
+      // v9.17：情報網改為 3 級（每級 +1）：舊等級每 5 級 +1 換算成新等級，效果不變
+      const old = data.research.levels.r_board;
+      data.research.levels.r_board = Math.min(3, Math.floor(old / 5));
+      if (!data.research.levels.r_board) delete data.research.levels.r_board;
+      if (data.research.active?.id === 'r_board') {
+        // 研究中的情報網：取消並全額退還（新的等級規則不同）
+        Object.entries(data.research.active.cost || {}).forEach(([k, n]) => {
+          const pool = data.resources && k in data.resources ? data.resources : (data.supplies = data.supplies || {});
+          if (k === 'coins') data.player.coins = (data.player.coins || 0) + n;
+          else pool[k] = (pool[k] || 0) + n;
+        });
+        data.research.active = null;
+      }
+      if (Array.isArray(data.research.queue)) data.research.queue = data.research.queue.filter((q) => q.id !== 'r_board');
+      data.log = data.log || [];
+      data.log.unshift({ t: Date.now(), msg: `🔬 情報網改為 3 級（每級每小時倖存者 +1）：原本 Lv${old} 換算為 Lv${Math.min(3, Math.floor(old / 5))}，效果不變`, type: 'info' });
     }
     // 指定給臨時小隊的載具：小隊已不存在時歸還車庫
     (data.vehicles || []).forEach((v) => {
