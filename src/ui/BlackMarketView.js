@@ -1,6 +1,7 @@
 import { SUPPLIES, SUPPLY_CATS } from '../config/supplies.js';
 import { RARITIES, RARITY_ORDER } from '../config/equipment.js';
-import { BLACK_MARKET } from '../systems/BlackMarketSystem.js';
+import { BLACK_MARKET, BM_VIP } from '../systems/BlackMarketSystem.js';
+import { RESEARCH } from '../config/research.js';
 import { escapeHtml } from '../utils/dom.js';
 import { formatDuration } from '../utils/math.js';
 import { btn, itemCard } from './components.js';
@@ -52,7 +53,36 @@ export function blackMarketBody(ui, view = 'buy') {
       <small class="muted block">${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier)}${sp.heal ? `・回復 ${Math.round(sp.heal * 100)}%` : ''}・倉庫有 ${g.state.supplies?.[x.key] || 0}</small>${soldTag}</div>
       ${buyBtn}</div>`;
   }).join('');
-  return `${head}<div class="grid">${rows}</div>`;
+  return `${head}${vipHtml(ui, now)}<h4>🕶️ 全服共用（${BLACK_MARKET.slots} 格・先搶先贏）</h4><div class="grid">${rows}</div>`;
+}
+
+/** 專屬保留區：只有自己看得到、只有自己能買；每小時補貨 1 格 */
+function vipHtml(ui, now) {
+  const g = ui.game;
+  const bm = g.blackMarket;
+  const slots = bm.updateVip(now);
+  const count = bm.vipCount();
+  const maxSlots = BM_VIP.baseSlots + (RESEARCH.t_bm_vip?.maxLevel || 4);
+  const next = bm.nextVip();
+  const t = new Date(next.at);
+  const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+  const cards = Array.from({ length: maxSlots }, (_, i) => {
+    if (i >= count) return `<div class="card vip-lock"><b>🔒 第 ${i + 1} 格</b><small class="muted block">研究「${RESEARCH.t_bm_vip?.name || '黑市商人的厚愛'}」Lv${i}</small></div>`;
+    const x = slots[i];
+    if (!x) return '';
+    const gd = x.good;
+    const nextTag = i === next.slot ? '<span class="vip-next">下次補貨</span>' : '';
+    const afford = g.state.player.coins >= gd.price;
+    const action = x.sold ? '<small class="muted">✅ 已購買・等待補貨</small>' : btn(`💰${gd.price} 購買`, 'bmVipBuy', { i }, { cls: 'btn-xs btn-primary', disabled: !afford });
+    if (gd.kind === 'gear') return `<div class="vip-card ${x.sold ? 'sold-out' : ''}">${nextTag}${itemCard(gd.item, { actions: action })}</div>`;
+    const sp = SUPPLIES[gd.key];
+    const r = RARITIES[gd.rarity];
+    return `<div class="card row-between vip-card ${x.sold ? 'sold-out' : ''}">${nextTag}<div><b style="color:${r?.color || ''}">${sp.icon} ${sp.name} ×${gd.qty}</b>
+      <small class="muted block">${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier)}${sp.heal ? `・回復 ${Math.round(sp.heal * 100)}%` : ''}・倉庫有 ${g.state.supplies?.[gd.key] || 0}</small></div>${action}</div>`;
+  }).join('');
+  return `<section class="bm-vip"><div class="row-between"><h4>🎩 專屬保留區</h4><span class="vip-badge">只有你看得到・只有你能買</span></div>
+    <p class="muted">每小時補貨 1 格・下次 <b>${hm}</b>（約 ${formatDuration(Math.max(0, next.at - now))}）更新第 ${next.slot + 1} 格・目前 ${count}/${maxSlots} 格</p>
+    <div class="grid">${cards}</div></section>`;
 }
 
 /** 黑市分頁的操作；處理了回傳 true */
@@ -70,6 +100,7 @@ export function blackMarketAction(ui, action, data) {
     bm.buy(data.id).then((r) => { ui.bmBusy = null; ui.result(r); ui.refresh(true); });
     return true;
   }
+  if (action === 'bmVipBuy') { ui.result(bm.buyVip(Number(data.i))); g.requestSave?.(); return true; }
   if (action === 'bmSell') { ui.result(bm.sell(data.key, Number(data.qty))); return true; }
   if (action === 'bmSellItem') { ui.result(bm.sellItem(data.id)); return true; }
   if (action === 'bmSellCommon') {

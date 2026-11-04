@@ -24,6 +24,7 @@ export const RESEARCH_BRANCHES = {
   crafting: { name: '製作科技', icon: '🛠️' },
   recruitment: { name: '招募科技', icon: '📻' },
   expansion: { name: '擴張科技', icon: '🏴' },
+  trade: { name: '交易科技', icon: '🤝' },
 };
 
 export const MAX_RESEARCH_LEVEL = MAX_LEVEL;
@@ -40,6 +41,7 @@ const BRANCH_COST = {
   crafting: { metal: 0.8, cloth: 0.6, wood: 0.6 },
   recruitment: { coins: 1, food: 0.8 },
   expansion: { wood: 1.4, metal: 1, cloth: 0.6 },
+  trade: { coins: 1.2, cloth: 0.6 },
 };
 /** 各分支研究使用的零件種類 */
 const BRANCH_TAGS = {
@@ -111,7 +113,8 @@ export const RESEARCH = {
   i_storage: r('industry', 1, '消耗品倉儲', '消耗品倉庫的上限提升', { storagePct: 0.05 }),
   i_shelves: r('industry', 1, '物品倉儲', '物品倉庫的格子增加', { storeSlots: 7 }),
   i_salvage: r('industry', 1, '拆解回收', '拆解裝備獲得的材料提升', { dismantlePct: 0.08 }),
-  i_trade: r('industry', 1, '以物易物', '賣給流浪商人獲得的金錢提升', { sellPct: 0.05 }),
+  i_trade: r('trade', 1, '以物易物', '賣給黑市獲得的金錢提升', { sellPct: 0.05 }),
+  t_bm_vip: r('trade', 2, '黑市商人的厚愛', '黑市專屬保留區格子 +1（只有你看得到、只有你能買）', { bmVipSlots: 1 }, { max: 4, req: [['i_trade', 1]] }),
   i_gen: r('industry', 2, '發電效率', '發電機的生產加成提升', { generatorPct: 0.05 }, { req: [['i_work', 2]] }),
   i_genfuel: r('industry', 2, '節能', '發電機耗油減少', { generatorFuelReduce: 0.05 }, { req: [['i_gen', 1]] }),
   i_build: r('industry', 2, '建築學', '建造與升級費用降低', { buildCostReduce: 0.02 }),
@@ -198,7 +201,7 @@ const LABELS = {
   starveResist: (v) => `飢餓扣血 −${pct(v)}`, foodPct: (v) => `食物 +${pct(v)}`, lumberPct: (v) => `伐木場產量 +${pct(v)}`, lumberFlat: (v) => `每級伐木場木材 +${v.toFixed(1)}/時`,
   foodUpkeepReduce: (v) => `食物消耗 −${pct(v)}`, forageAdd: (v) => `探索食物 +${pct(v)}`, fuelPerHour: (v) => `燃料 +${v.toFixed(1)}/時`,
   farmFlat: (v) => `每級農場食物 +${v.toFixed(1)}/時`, workbenchPct: (v) => `工作台產量 +${pct(v)}`, storagePct: (v) => `消耗品上限 +${pct(v)}`,
-  dismantlePct: (v) => `拆解材料 +${pct(v)}`, sellPct: (v) => `商人回收價 +${pct(v)}`, generatorPct: (v) => `發電加成 +${pct(v)}`,
+  bmVipSlots: (v) => `專屬保留區 +${Math.floor(v)} 格`, dismantlePct: (v) => `拆解材料 +${pct(v)}`, sellPct: (v) => `商人回收價 +${pct(v)}`, generatorPct: (v) => `發電加成 +${pct(v)}`,
   generatorFuelReduce: (v) => `發電耗油 −${pct(v)}`, buildCostReduce: (v) => `建造費用 −${pct(v)}`, buildTimeReduce: (v) => `建造時間 −${pct(v)}`,
   queueSlots: (v) => `探索佇列 +${Math.round(v)}`, partKindPct: (v) => `多找到一種零件 ${pct(v)}`, exploreSpeed: (v) => `探索速度 +${pct(v)}`, lootPct: (v) => `探索物資 +${pct(v)}`, carryPct: (v) => `徒步運載 +${pct(v)}`,
   nightPenaltyReduce: (v) => `夜間懲罰 −${pct(v)}`, ambushReduce: (v) => `遇襲機率 −${pct(v)}`, itemFindPct: (v) => `裝備掉落 +${pct(v)}`,
