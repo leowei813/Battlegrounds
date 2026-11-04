@@ -3962,6 +3962,23 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(ok, '每種藥品配方都划算：投入藥品的回復量不超過產出 6 成');
 }
 
+// ---- 92. 自然回復：每秒更新也會累積（不會被四捨五入吃掉） ----
+{
+  const gr = Game.newGame({ playerName: 'A92', classId: 'warrior', lat: 25, lon: 121 });
+  gr.state.map.pois = fillPois([], 25, 121);
+  gr.shelter.establish(gr.state.map.pois[0]);
+  gr.shelter.primary().facilities.clinic.level = 1;
+  gr.state.resources.food = 99999;
+  gr.state.starving = false;
+  const sv = gr.survivors.leader();
+  gr.survivors.setHp(sv, 3);
+  const t0 = Date.now();
+  for (let i = 1; i <= 600; i += 1) gr.survivors.updateVitals(t0 + i * 1000, 1000, 0);
+  const hp = gr.survivors.hpOf(sv);
+  const expect = 3 + gr.survivors.maxHp(sv) * gr.survivors.healRate(sv) * gr.survivors.regenMul() * 10;
+  assert(hp > 3.5 && Math.abs(hp - expect) < 0.2, `診療室 Lv1 每秒回復 10 分鐘後生命會增加（3 → ${hp.toFixed(2)}，預期約 ${expect.toFixed(2)}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

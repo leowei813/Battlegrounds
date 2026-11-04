@@ -243,7 +243,8 @@ export class SurvivorSystem {
 
   setHp(sv, value) {
     const max = this.maxHp(sv);
-    sv.hp = value >= max ? null : Math.max(0, Math.round(value * 10) / 10);
+    // 保留到小數 4 位：每秒的自然回復量很小（例如 0.007），四捨五入到 0.1 會讓生命永遠不增加
+    sv.hp = value >= max ? null : Math.max(0, Math.round(value * 10000) / 10000);
   }
 
   isStarving() {
