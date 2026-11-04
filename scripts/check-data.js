@@ -3540,6 +3540,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 這裡測試路線與物資，不讓建築內的戰鬥造成重傷
   L.level = 60;
   gc.survivors.becomeSevere = () => {};
+  // 建築內遭遇的勝負是隨機的，這裡固定勝利（戰敗撤退另有測試）
+  const sim81 = gc.combat.simulate.bind(gc.combat);
+  gc.combat.simulate = (...a) => ({ ...sim81(...a), victory: true });
   const r1 = ex.start(near[0].id, [L.id], 1, false, Date.now());
   assert(r1.ok, '派出探索');
   const e1 = r1.exp;
