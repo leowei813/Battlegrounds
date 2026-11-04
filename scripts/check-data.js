@@ -195,6 +195,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 戰敗：探索提前結束
   leader.level = 1;
   Object.assign(leader, { severe: false, hp: null });
+  // 這裡只測回程遇襲：建築內的搜索視為已結束（避免 Lv1 首領先在建築內戰敗撤退）
+  if (ex.cp) ex.cp.stopped = true;
   let aborted = false;
   for (let i = 0; i < 20 && !aborted; i += 1) {
     ex.encountered = [];
@@ -398,7 +400,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gv.shelter.sizeInfo(base).total === 20 && base.defenses.length === 11, '最大（巨型）據點可建造 20 棟建築');
   const small = gv.shelter.sizeInfo(gv.state.map.pois.find((p) => p.type === 'gasStation'));
   assert(small.total < 20, `其他規模可建造數較少（${small.name} ${small.total} 棟）`);
-  // 突破：資源 -50%，建築可能降級或被拆毀，當晚不再來襲
+  // 突破：第 1 波就被突破損失 55% 資源，建築可能降級或被拆毀，當晚不再來襲
   Object.keys(gv.state.resources).forEach((k) => { gv.state.resources[k] = 1000; });
   base.defenses.forEach((d) => Object.assign(d, { type: 'trap', level: 1 }));
   const siege = gv.siege.of(base.id);
@@ -407,7 +409,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   base.facilities.cellar.level = 0;
   siege.breach();
   base.facilities.cellar.level = cellarLv;
-  assert(Math.round(gv.state.resources.wood) === 500, `突破損失 50% 資源（木材 1000 → ${Math.round(gv.state.resources.wood)}）`);
+  assert(Math.round(gv.state.resources.wood) === 450, `第 1 波就被突破損失 55% 資源（木材 1000 → ${Math.round(gv.state.resources.wood)}）`);
   setHour(gv, 22);
   assert(siege.quiet() && !siege.active() && base.quietUntil > Date.now(), '防線被突破後當晚不再有屍潮');
   assert(!siege.quiet(base.quietUntil + 1), '天亮後恢復');
@@ -683,7 +685,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const so0 = survivorRarityTable(0);
   const so10 = survivorRarityTable(15);
   assert(so0.legendary === 0 && Math.abs(so0.epic - 0.1) < 1e-9, '倖存者初始稀有 0%、罕見 0.1%');
-  assert(Math.abs(so10.legendary - 0.2) < 1e-9 && Math.abs(Object.values(so10).reduce((a2, b2) => a2 + b2, 0) - 100) < 1e-9, '招募技術滿級稀有 0.2%');
+  assert(Math.abs(so10.legendary - 3) < 1e-9 && Math.abs(Object.values(so10).reduce((a2, b2) => a2 + b2, 0) - 100) < 1e-9, '招募技術滿級傳奇 3%');
   gr.survivors.updateBoard(Date.now());
   assert(gr.state.recruitBoard.list.length === 2, '固定出現兩位可招募的倖存者');
   const firstIds = gr.state.recruitBoard.list.map((c) => c.id).join();
@@ -1372,7 +1374,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gl.state.survivors.forEach((sv) => { sv.severe = false; });
   const fail = gl.state.defenseLog[0];
   assert((fail?.damaged || []).length <= 2, `被攻破時最多損毀 2 棟建築（${(fail?.damaged || []).length}）`);
-  assert(fail && !fail.success && fail.attacker === '屍潮' && fail.lost.food === 500, `屍潮突破時記錄防禦失敗與損失（${JSON.stringify(fail)}）`);
+  assert(fail && !fail.success && fail.attacker === '屍潮' && fail.lost.food === 550 && fail.siege?.lossPct === 55, `屍潮突破時記錄防禦失敗與損失（${JSON.stringify(fail)}）`);
   // 撐過一夜 → 防禦成功
   const gl2 = Game.newGame({ playerName: 'L2', classId: 'warrior', lat: 25, lon: 121 });
   gl2.state.map.pois = fillPois([], 25, 121);
@@ -1507,15 +1509,33 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   setHour(A, 10);
   setHour(B, 10);
   const t0 = Date.now();
+  // 連線到伺服器時：先讀到共用 NPC 資料才會顯示（避免先顯示沒扣等級損失的較高等級）
+  {
+    const gw = Game.newGame({ playerName: 'W', classId: 'warrior', lat: 25.02, lon: 121.02 });
+    gw.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gw.shelter.establish(gw.state.map.pois[0]);
+    gw.world = { myId: 'W', identity: () => ({ id: 'W', token: 't' }), provider: { objPut: store.objPut.bind(store), objList: store.objList.bind(store), objListMany: store.objListMany.bind(store) } };
+    setHour(gw, 10); // 白天：避免結算 NPC 抵禦屍群而改到共用資料
+    gw.npcs.update(t0);
+    assert(gw.npcs.list.length === 0, '連線中尚未讀到共用 NPC 資料前不顯示 NPC');
+    await gw.shared.poll();
+    gw.npcs.update(t0);
+    assert(gw.npcs.list.length > 0, '讀到共用資料後才顯示 NPC');
+  }
+  await A.shared.poll();
+  await B.shared.poll();
   A.npcs.update(t0);
   B.npcs.update(t0);
   const ids = (gx) => gx.npcs.list.filter((n) => n.sid).map((n) => `${n.id}@${n.lat.toFixed(5)},${n.lon.toFixed(5)}:${n.level}:${n.name}`).sort().join('|');
   assert(A.npcs.list.length > 0 && ids(A) === ids(B), `兩位玩家看到相同的 NPC 據點（位置、名稱、等級）（${A.npcs.list.length} 個）`);
   // 其他玩家的據點警戒範圍內不會有 NPC
-  const nA = A.npcs.list[0];
+  const nA = A.npcs.list.find((n) => A.npcs.fullCount(n) >= 5) || A.npcs.list[0];
   const C = mk('C', 0);
   C.world.others = [{ id: 'X', bases: [{ lat: nA.lat, lon: nA.lon, alert: 120 }], trips: [] }];
+  setHour(C, 10);
+  await C.shared.poll();
   C.npcs.update(t0);
+  assert(C.npcs.list.length > 0, '同步後會顯示 NPC 據點');
   assert(!C.npcs.list.some((n) => n.id === nA.id), '任何玩家的警戒範圍內不會出現 NPC 據點（避免與玩家重疊）');
   // A 讓 NPC 受傷、等級下降；B 同步後相同
   A.npcs.wound(nA, 2, t0);
@@ -1883,6 +1903,16 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const ph = tally('pharmacy'); const shop = tally('shop'); const hosp = tally('hospital');
   assert([...ph.cats].every((c) => c === 'med') && ph.medTier <= 3 && hosp.medTier > ph.medTier, `藥局只有藥品，種類比醫院少（最高 ${ph.medTier} 階，醫院 ${hosp.medTier} 階）`);
   assert(ph.med > shop.med * 3, `藥局的低階藥品比商店多很多（${ph.med} vs ${shop.med}）`);
+  assert(hosp.med > ph.med, `醫院的藥品數量比藥局多（${hosp.med} vs ${ph.med}）`);
+  {
+    // 醫院一定有藥品、藥品種類比藥局多；區域越危險，高階藥品越容易出現
+    const { pickSupply } = await import('../src/systems/LootStock.js');
+    const kindsOf = (type) => { const ks = new Set(); days.forEach((d, i) => Object.keys(stock({ id: `k_${type}_${i}`, type, lat: 25, lon: 121 }, d).resources).forEach((k) => { if (sup.SUPPLIES[k]?.cat === 'med') ks.add(k); })); return ks.size; };
+    assert(kindsOf('hospital') > kindsOf('pharmacy'), '醫院的藥品種類比藥局多');
+    assert(days.every((d, i) => Object.keys(stock({ id: `g_${i}`, type: 'hospital', lat: 25, lon: 121 }, d).resources).some((k) => sup.SUPPLIES[k]?.cat === 'med')), '醫院每次刷新一定有藥品');
+    const highRate = (danger) => { let a = 0; let s0 = 7; const rnd = () => { s0 = (s0 * 16807) % 2147483647; return s0 / 2147483647; }; for (let i = 0; i < 4000; i += 1) if (sup.SUPPLIES[pickSupply('med', rnd, danger)].tier >= 4) a += 1; return a / 4000; };
+    assert(highRate(9) > highRate(4) * 1.5, `危險度越高越容易找到中大型醫藥箱（${highRate(4)} → ${highRate(9)}）`);
+  }
   const rc = tally('recycling');
   assert([...rc.cats].every((c) => c === 'part' || c === 'fabric') && rc.cats.size === 2, `回收站可搜到布料與零件（${[...rc.cats]}）`);
   const bk = tally('bakery'); const res = tally('residential');
@@ -3195,18 +3225,156 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { COMBAT_TUNING, defReduce, BUILDING_ZONE } = await import('../src/config/enemies.js');
   const { AMMO_RECIPES: AR, SUPPLIES: SP } = await import('../src/config/supplies.js');
   assert(COMBAT_TUNING.defFactor === 0.5 && Math.abs(defReduce(302) - 100 / 251) < 1e-9, '防禦減傷：攻擊 × 100 ÷（100 + 防禦 × 0.5）');
-  assert(BUILDING_ZONE.extraLevel[3] === 28 && BUILDING_ZONE.statMul[3] === 2.4 && !BUILDING_ZONE.extraLevel[0] && !BUILDING_ZONE.statMul[-1], '只有警戒區以上的建築殭屍加強');
+  assert(BUILDING_ZONE.extraLevel[3] === 28 && BUILDING_ZONE.statMul[2] === 3.2 && BUILDING_ZONE.statMul[3] === 2.15 && !BUILDING_ZONE.extraLevel[0] && !BUILDING_ZONE.statMul[-1], '只有警戒區以上的建築殭屍加強');
   const gz9 = Game.newGame({ playerName: 'Z9', classId: 'warrior', lat: 25, lon: 121 });
   const ex9 = gz9.exploration;
   const m0 = ex9.encounterMul({ phase: { zombies: false }, zone: { danger: 0 } });
   const m3 = ex9.encounterMul({ phase: { zombies: false }, zone: { danger: 3 } });
-  assert(Math.abs(m3.hp / m0.hp - 2.4) < 1e-9 && Math.abs(m3.atk / m0.atk - 2.4) < 1e-9, '致死區建築殭屍生命、攻擊 ×2.4');
+  assert(Math.abs(m3.hp / m0.hp - 2.15) < 1e-9 && Math.abs(m3.atk / m0.atk - 2.15) < 1e-9, '致死區建築殭屍生命、攻擊 ×2.15');
   const bullets = Object.entries(AR).filter(([k]) => k !== 'arrow');
   assert(bullets.every(([, r]) => r.bench === 3 && r.gun === 1), '所有子彈只需要「槍械製造」Lv1 與工作台 Lv3');
   const bm = gz9.blackMarket;
   const prices = Object.keys(AR).map((k) => bm.supplyPrice(k));
   assert(Math.max(...prices) <= 6 && Math.min(...prices) >= 4, `彈藥售價不再依階級大幅提高（${prices.join('/')}）`);
   assert(bm.supplyPrice('ammo308') < 85 && SP.ammo308.cat === 'ammo', '.308 狙擊彈不再是高價');
+}
+
+// ---- 75. 同一晚多位玩家都結算 NPC 抵禦屍群：不重複扣等級 ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const store = new MemoryObjects();
+  const pois = fillPois([], 25.3, 121.3);
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.3, lon: 121.3 });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    gx.npcs.fillCells(Date.now(), { silent: true });
+    return gx;
+  };
+  const A = mk('A');
+  const B = mk('B');
+  let night = null;
+  let nA = null;
+  for (let k = 0; k < 300 && !night; k += 1) {
+    nA = A.npcs.list[k % A.npcs.list.length];
+    const save = JSON.parse(JSON.stringify(nA));
+    const before = nA.levelLoss || 0;
+    A.npcs.nightSiege(nA, `t${k}`, Date.now());
+    await new Promise((r) => setTimeout(r, 2));
+    if ((nA.levelLoss || 0) > before && A.npcs.list.includes(nA)) night = `t${k}`;
+    else Object.assign(nA, save);
+  }
+  assert(!!night, '找到 NPC 被屍群突破而降級的夜晚');
+  const nB = B.npcs.list.find((x) => x.ident === nA.ident);
+  // B 還沒同步到 A 的結算就自己也結算了同一晚
+  B.npcs.nightSiege(nB, night, Date.now());
+  await new Promise((r) => setTimeout(r, 20));
+  const server = store.map.get(`npc:${nA.sid}`)?.data?.levelLoss;
+  assert(nB.levelLoss === server && nA.levelLoss === server, `別人已經結算過的夜晚不會在本機重複扣等級（A ${nA.levelLoss}／B ${nB.levelLoss}／伺服器 ${server}）`);
+}
+
+// ---- 76. 屍潮平衡：前期加強、駐守倍率；天亮結算獎勵與突破懲罰 ----
+{
+  const { SIEGE_SCALING: SS, SIEGE_REWARD: SR, SIEGE_PENALTY: SPN } = await import('../src/config/civilization.js');
+  const { SUPPLIES: SP } = await import('../src/config/supplies.js');
+  const { xpToNext: xpn } = await import('../src/config/survivors.js');
+  const { BOSSES } = await import('../src/config/enemies.js');
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const gs = Game.newGame({ playerName: 'S76', classId: 'warrior', lat: 25, lon: 121 });
+  gs.state.map.pois = fillPois([], 25, 121);
+  gs.shelter.establish(gs.state.map.pois.find((p) => !gs.shelter.baseAtPoi(p.id)));
+  const b = gs.shelter.primary();
+  const s = gs.siege.of(b.id);
+  // 前期固定加強：文明 150（超過基準 130）時加滿
+  gs.civilization.value = () => 150;
+  const hp150 = gs.civilization.siegeHpMul();
+  assert(Math.abs(hp150 - (1 + 130 * SS.hpPerCiv + SS.hpEarly)) < 1e-9, `文明 150 屍潮生命倍率含前期加強（${hp150.toFixed(3)}）`);
+  gs.civilization.value = () => 566;
+  assert(Math.abs(gs.civilization.siegeHpMul() - (1 + 546 * 0.0042)) < 0.01, '文明 566 屍潮生命倍率維持預計強度');
+  // 駐守倍率只作用在屍潮；NPC／玩家攻打用原始火力
+  const sv = gs.survivors.leader();
+  sv.job = 'guard';
+  const dSiege = s.defenseDps();
+  const dRaw = s.defenseDps({ raw: true });
+  assert(s.guardMul() === s.guardMul(true) * SS.guardDmgMul && dSiege > dRaw, `屍潮中駐守人員傷害 ×${SS.guardDmgMul}（${dSiege} > 原始 ${dRaw}）`);
+  b.defenses[0] = { slot: 0, type: 'machineGun', level: 3, garrisonId: null };
+  sv.job = 'farm';
+  assert(Math.abs(s.defenseDps() / s.defenseDps({ raw: true }) - SS.towerDmgMul) < 0.02, '屍潮中防禦設施傷害 ×0.7');
+  // Boss 生命、攻擊 ×0.5
+  s.spawn('walker');
+  s.spawn(Object.keys(BOSSES)[0], true);
+  const bz = s.zombies[s.zombies.length - 1];
+  const be = gs.combat.createEnemy(bz.enemyId, s.zombieLevel() + 3);
+  assert(Math.abs(bz.maxHp / Math.round(be.maxHp * gs.civilization.siegeHpMul() * SS.bossMul) - 1) < 0.01, '屍潮 Boss 生命另乘 0.5');
+  s.zombies = [];
+  // 天亮結算：城牆 90% → 優秀 ×1.5
+  sv.job = 'guard';
+  s.startNight();
+  s.wave = 4; s.nightKills = 50;
+  b.wallHp = gs.shelter.wallMax(b) * 0.9;
+  const coins0 = gs.state.player.coins;
+  const xp0 = sv.xp; const lv0 = sv.level;
+  s.endNight();
+  const ok = gs.state.defenseLog[0];
+  assert(ok.success && ok.siege?.grade === 'excellent' && ok.siege.coins === Math.round(50 * SR.coinsPerKill * 1.5), `天亮守住：評價優秀，金幣 擊殺×2×1.5（${ok.siege?.coins}）`);
+  assert(gs.state.player.coins - coins0 >= ok.siege.coins, '天亮結算的金幣已入帳');
+  const nParts = Object.entries(ok.siege.items).filter(([k]) => SP[k].cat === 'part').reduce((a, [, v]) => a + v, 0);
+  const nAmmo = Object.entries(ok.siege.items).filter(([k]) => SP[k].cat === 'ammo').reduce((a, [, v]) => a + v, 0);
+  assert(nParts === Math.round(4 * SR.partsPerWave * 1.5) && nAmmo === Math.round(4 * SR.ammoPerWave * 1.5), `物資箱：零件 ${nParts}、彈藥 ${nAmmo}`);
+  assert(ok.siege.xp.length === 1 && ok.siege.xp[0].xp === Math.round(xpn(lv0) * SR.guardXpPct) && (sv.level > lv0 || sv.xp > xp0), '整晚駐守的人獲得升級所需 5% 經驗');
+  // 城牆 30% → 普通 ×1.0
+  s.startNight(); s.wave = 2; s.nightKills = 10;
+  b.wallHp = gs.shelter.wallMax(b) * 0.3;
+  s.endNight();
+  assert(gs.state.defenseLog[0].siege.grade === 'normal' && gs.state.defenseLog[0].siege.coins === 20, '城牆剩 30%：評價普通 ×1.0');
+  // 中途才開始駐守的人沒有駐守經驗
+  s.startNight(); s.wave = 1; s.nightKills = 1;
+  const late = createSurvivor('晚到', 'scout', 5, 'common');
+  gs.state.survivors.push(late);
+  late.job = 'guard';
+  s.endNight();
+  assert(!gs.state.defenseLog[0].siege.xp.some((x) => x.name === '晚到'), '中途才開始駐守的人不給駐守經驗');
+  // Boss 戰利品：必得 8 個高階零件
+  s.startNight();
+  gs.state.supplies = {}; // 倉庫有空間
+  s.bossLoot({ enemyId: Object.keys(BOSSES)[0] });
+  const bossParts = Object.values(s.nightBoss.items).reduce((a, v) => a + v, 0);
+  assert(bossParts === SR.boss.parts && Object.keys(s.nightBoss.items).every((k) => SP[k].tier >= 3), `擊殺 Boss 必得 ${SR.boss.parts} 個高階零件`);
+  // 突破：撐到最後一波損失較少，並記錄材料與傷勢
+  Object.keys(gs.state.resources).forEach((k) => { gs.state.resources[k] = 1000; });
+  gs.state.supplies = { ...(gs.state.supplies || {}), nail: 200, screw: 200, linen: 200, bolt: 200, ironPlate: 200, gear: 200 };
+  const cellar = b.facilities.cellar?.level || 0;
+  if (b.facilities.cellar) b.facilities.cellar.level = 0;
+  s.startNight();
+  const max = s.maxWaves();
+  s.wave = max;
+  let matLost = 0;
+  let tries = 0;
+  s.breach();
+  const late1 = gs.state.defenseLog[0];
+  const expect = Math.round((SPN.lossMax - SPN.lossSpan * ((max - 1) / max)) * 100);
+  assert(!late1.success && late1.siege.lossPct === expect && late1.siege.wave === max, `最後一波才被突破：資源損失 ${late1.siege.lossPct}%（預期 ${expect}%）`);
+  assert(Array.isArray(late1.siege.injuries) && late1.siege.injuries.length >= 1, '突破時記錄駐守人員傷勢');
+  matLost += Object.keys(late1.siege.materials).length;
+  // 材料損失有機率：多試幾次一定會發生，且只扣零件與布料、每種最多 15%
+  while (!matLost && tries < 20) {
+    tries += 1;
+    gs.state.survivors.forEach((x) => { x.severe = false; x.hp = null; });
+    s.startNight(); s.wave = 1; s.breach();
+    matLost += Object.keys(gs.state.defenseLog[0].siege.materials).length;
+  }
+  const mats = gs.state.defenseLog[0].siege.materials;
+  assert(matLost > 0 && Object.entries(mats).every(([k, v]) => ['part', 'fabric'].includes(SP[k].cat) && v <= Math.ceil(200 * SPN.materialMax)), '突破時有機率損失少量零件、布料');
+  if (b.facilities.cellar) b.facilities.cellar.level = cellar;
+  // 紀錄與結算視窗顯示獎勵與損失
+  const { siegeDetailHtml } = await import('../src/ui/SiegeResult.js');
+  const okHtml = siegeDetailHtml(ok);
+  const failHtml = siegeDetailHtml(late1);
+  assert(okHtml.includes('防守物資箱') && okHtml.includes('駐守經驗') && siegeDetailHtml(ok, true).includes('評價'), '紀錄顯示守住的獎勵');
+  assert(failHtml.includes('資源損失') && failHtml.includes('駐守人員傷勢') && siegeDetailHtml(late1, true).includes('資源 −'), '紀錄顯示被突破的損失');
+  gs.state.survivors.forEach((x) => { x.severe = false; });
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

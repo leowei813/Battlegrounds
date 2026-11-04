@@ -80,12 +80,14 @@ export class CivilizationSystem {
 
   /** 屍潮殭屍的生命倍率 */
   siegeHpMul() {
-    return this.weakMul() * (1 + this.effective() * SIEGE_SCALING.hpPerCiv);
+    const S = SIEGE_SCALING;
+    return this.weakMul() * (1 + this.effective() * S.hpPerCiv + (S.hpEarly || 0) * Math.min(1, this.effective() / (S.earlyCiv || 1)));
   }
 
   /** 屍潮殭屍的攻擊倍率 */
   siegeAtkMul() {
-    return this.weakMul() * (1 + this.effective() * SIEGE_SCALING.atkPerCiv);
+    const S = SIEGE_SCALING;
+    return this.weakMul() * (1 + this.effective() * S.atkPerCiv + (S.atkEarly || 0) * Math.min(1, this.effective() / (S.earlyCiv || 1)));
   }
 
   /** 每晚最多幾波屍潮：新手（文明度未達門檻）只有 1 波，文明度階級越高波數越多 */

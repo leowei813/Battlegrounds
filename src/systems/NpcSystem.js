@@ -106,6 +106,8 @@ export class NpcSystem {
   slotNpc(cellKey, slot, now = Date.now()) {
     const [i, j] = cellKey.split(':').map(Number);
     const sid = `${cellKey}:${slot}`;
+    // 密度：部分名額固定沒有 NPC（依種子決定，所有玩家相同）
+    if (seeded(`npc-keep:${sid}`, () => randFloat(0, 1)) >= (NPC_CONFIG.keepRatio ?? 1)) return null;
     const offset = seeded(`npc-off:${sid}`, () => randFloat(0, SHARED_NPC.lifeMs));
     const gen = Math.floor((now + offset) / SHARED_NPC.lifeMs);
     const genStart = gen * SHARED_NPC.lifeMs - offset;
@@ -196,8 +198,9 @@ export class NpcSystem {
       if (fn(d) === false) return { fail: 'skip' };
       return { data: d };
     }, cellBox(...n.cell.split(':').map(Number), NPC_CONFIG.cellKm)).then((r) => {
-      if (r.ok) {
-        // 套用伺服器上合併後的結果（包含別人同時造成的變化）
+      if (r.ok || ['stale', 'skip'].includes(r.reason)) {
+        // 套用伺服器上合併後的結果（包含別人同時造成的變化）；
+        // 別人已經結算過（skip）時也要改回伺服器的值，避免本機重複扣等級、傷亡與物資
         n.sharedVer = null;
         this.applySharedTo(n);
       } else if (r.reason && !['stale', 'skip'].includes(r.reason) && this.pending.length < 30) this.pending.push(run);
@@ -370,6 +373,9 @@ export class NpcSystem {
 
   updateNow(now = Date.now()) {
     if (!this.game.state.map.pois.length || !this.game.shelter.hasShelter()) return;
+    // 連線中：等第一次讀到共用 NPC 資料再顯示與結算（否則會先顯示沒扣掉等級損失的較高等級，同步後又變低）
+    const sh = this.game.shared;
+    if (sh?.online && !sh.backend && !sh.listedAt?.npc) return;
     const st = this.state;
     if (now >= (st.nextSpawnAt || 0)) {
       // 第一次（或重新掃描後）一次補齊，不逐一記錄
@@ -543,7 +549,7 @@ export class NpcSystem {
   baseDefense(base) {
     const g = this.game;
     const guards = g.territory.garrison(base).list.reduce((s, sv) => s + g.survivors.stats(sv, sv.equipment?.weapon ? 'ranged' : 'melee').power, 0);
-    return g.siege.of(base.id).defenseDps({ apparent: true }) * 8 + guards;
+    return g.siege.of(base.id).defenseDps({ apparent: true, raw: true }) * 8 + guards;
   }
 
   /**
@@ -702,7 +708,7 @@ export class NpcSystem {
     const allies = isHome ? g.assist.allyUnits() : [];
     const helpDps = helpers.reduce((s, h) => s + (h.dps || 0), 0);
     const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));
-    const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps() * (1 + g.research.bonus('raidDefensePct')) + helpDps);
+    const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps({ raw: true }) * (1 + g.research.bonus('raidDefensePct')) + helpDps);
     base.wallHp = Math.max(0, as.wallLeft);
     // 守城時：近戰防守的人會受傷，對方有遠程武器時遠程防守的人也可能中彈
     const wallGuards = [...siege.guards().map((x) => x.sv), ...base.defenses.map((d) => g.survivors.get(d.garrisonId)).filter(Boolean)];

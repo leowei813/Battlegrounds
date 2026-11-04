@@ -329,7 +329,6 @@ export class AssistSystem {
       if (this.notified.has(key)) return;
       this.notified.set(key, true);
       const cover = this.covers(base) ? '，你的防禦範圍涵蓋那裡，防禦設施會自動協助' : '';
-      g.toast(`🧟 友好玩家「${player.name}」的據點正遭到屍潮攻擊，可以派隊協防${cover}`, 'danger');
       g.log(`🧟 友好玩家「${player.name}」的「${base.name}」正遭到屍潮攻擊（第 ${base.siege.wave}/${base.siege.maxWaves} 波）${cover}`, 'danger');
     });
     this.friendRaids(now).forEach(({ player, base, raid }) => {

@@ -340,6 +340,7 @@ export class ShelterSystem {
       waves: e.waves || 0,
       wallLost: Math.round(e.wallLost || 0),
       note: e.note || '',
+      ...(e.siege ? { siege: e.siege } : {}),
     };
     st.defenseLog = [entry, ...(st.defenseLog || [])].slice(0, 30);
     const parts = [entry.success ? '防禦成功' : '防禦失敗'];

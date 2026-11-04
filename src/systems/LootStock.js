@@ -76,19 +76,23 @@ const PART_EXTRA_KINDS = [0.6, 0.3];
 /** 零件與布料依階級的數量倍率：基礎材料較多，階級越高越少 */
 const TIER_AMOUNT = [1, 1.3, 0.9, 0.7, 0.5, 0.35];
 
+/** 藥品依風險提高高階藥品的權重：每點風險讓每高一階的權重多 MED_RISK_GROWTH 倍 */
+const MED_RISK_GROWTH = 0.1;
+const medRiskWeight = (k, danger) => medWeight(k) * (1 + MED_RISK_GROWTH * Math.max(0, danger)) ** (SUPPLIES[k].tier - 1);
+
 /** 依類別與危險度挑出具體的材料物品 */
 export function pickSupply(cat, rnd, danger) {
   let keys;
   let weight;
   if (cat === 'medLow') {
     keys = suppliesOf('med', 2);
-    weight = (k) => medWeight(k);
+    weight = (k) => medRiskWeight(k, danger);
   } else if (cat === 'medMid') {
     keys = suppliesOf('med', 3);
-    weight = (k) => medWeight(k);
+    weight = (k) => medRiskWeight(k, danger);
   } else if (cat === 'med') {
     keys = suppliesOf('med');
-    weight = (k) => medWeight(k);
+    weight = (k) => medRiskWeight(k, danger);
   } else if (cat === 'ammo') {
     keys = suppliesOf('ammo');
     weight = (k) => (k === 'arrow' ? 3 : 2) * 0.6 ** Math.max(0, SUPPLIES[k].tier - danger);
@@ -143,13 +147,13 @@ export function stockOf(poi, at = Date.now(), remainMap = null) {
     }
     return pool[0][0];
   };
-  const kinds = 1 + Math.floor(rnd() * 3) + (pt.amountMul > 1.5 ? 1 : 0);
+  const kinds = 1 + Math.floor(rnd() * 3) + (pt.amountMul > 1.5 ? 1 : 0) + (pt.extraKinds || 0);
   const resources = {};
   // 區域越危險物資越豐富
   const zone = zoneAt(poi.lat, poi.lon);
   const danger = pt.danger + Math.max(0, zone.danger || 0);
   for (let i = 0; i < kinds; i += 1) {
-    const cat = pickType();
+    const cat = i === 0 && pt.lootFirst ? pt.lootFirst : pickType();
     const key = RESOURCE_KEYS.includes(cat) ? cat : pickSupply(cat, rnd, danger);
     const tierMul = (cat === 'part' || cat === 'fabric' ? TIER_AMOUNT[SUPPLIES[key]?.tier || 1] : 1) * (pt.lootAmount?.[cat] ?? (cat.startsWith('med') ? pt.lootAmount?.med ?? 1 : 1));
     const amount = Math.max(1, Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zone.lootMul * (pt.amountMul || 1) * CAT_AMOUNT[cat] * LOOT_AMOUNT_MUL * riskAmountMul(danger) * tierMul));

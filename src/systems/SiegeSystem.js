@@ -2,10 +2,12 @@ import { DEFENSES } from '../config/defenses.js';
 import { ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR, defReduce } from '../config/enemies.js';
 import { RESOURCE_KEYS, COIN_GAIN_MUL } from '../config/constants.js';
 import {
-  SIEGE_SCALING, BREACH_LOSS, BASE_SIZES,
+  SIEGE_SCALING, BREACH_LOSS, BASE_SIZES, SIEGE_REWARD, SIEGE_PENALTY,
 } from '../config/civilization.js';
 import { zoneAt } from '../config/zones.js';
-import { SUPPLIES, AMMO_FOR, ammoPerShot } from '../config/supplies.js';
+import { SUPPLIES, AMMO_FOR, ammoPerShot, suppliesOf } from '../config/supplies.js';
+import { ITEM_MODELS } from '../config/equipment.js';
+import { xpToNext } from '../config/survivors.js';
 import { FACILITIES } from '../config/facilities.js';
 import { TIME_PHASES, ZOMBIE_HOURS_FRACTION } from '../config/timePhases.js';
 import {
@@ -59,6 +61,9 @@ export class BaseSiege {
     this.nightWallStart = 0;
     this.breachedTonight = false;
     this.gateLogged = false;
+    // 整晚駐守的人（入夜時就在駐守，天亮時仍在駐守）才拿得到駐守經驗
+    this.nightGuards = this.guards().map(({ sv }) => sv.id);
+    this.nightBoss = null;
   }
 
   /** 今晚的編號（夜晚跨過午夜，以入夜那天計） */
@@ -101,11 +106,99 @@ export class BaseSiege {
   /** 天亮：今晚有屍潮來襲且沒有被突破 → 記錄防禦成功 */
   endNight() {
     if (this.wave > 0 && !this.breachedTonight && this.base) {
-      this.game.shelter.recordDefense({
+      const reward = this.dawnReward();
+      const entry = this.game.shelter.recordDefense({
         base: this.base, attacker: '屍潮', success: true, waves: this.wave, kills: this.nightKills,
         wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)), note: this.assistNote('ok'),
+        siege: reward,
       });
+      this.game.bus.emit('siege:result', entry);
     }
+    this.nightBoss = null;
+  }
+
+  /** 零件的品階範圍（依文明度） */
+  partTiers() {
+    const max = clamp(1 + Math.floor(this.game.civilization.value() / 150), 1, 5);
+    return { max, min: Math.max(1, max - 2) };
+  }
+
+  /** 從清單隨機分配 n 個材料 */
+  rollSupplies(keys, n) {
+    const out = {};
+    if (!keys.length) return out;
+    for (let i = 0; i < n; i += 1) {
+      const k = pick(keys);
+      out[k] = (out[k] || 0) + 1;
+    }
+    return out;
+  }
+
+  /**
+   * 天亮守住的結算：依城牆剩餘給評價倍率，發放金幣、零件、彈藥（優秀時有機率得到設計圖），
+   * 整晚駐守的人額外獲得經驗；今晚擊殺 Boss 另有戰利品。
+   */
+  dawnReward() {
+    const g = this.game;
+    const R = SIEGE_REWARD;
+    const base = this.base;
+    const wallPct = clamp(g.shelter.wallHp(base) / Math.max(1, g.shelter.wallMax(base)), 0, 1);
+    const grade = R.grades.find((x) => wallPct >= x.min) || R.grades[R.grades.length - 1];
+    const waves = this.wave;
+    const coins = Math.round(this.nightKills * R.coinsPerKill * grade.mul);
+    const { min, max } = this.partTiers();
+    const parts = this.rollSupplies(suppliesOf('part', max, min), Math.round(waves * R.partsPerWave * grade.mul));
+    // 彈藥：依駐守人員使用的子彈種類（沒有槍的話給 9mm）
+    const guards = this.guards().map(({ sv }) => sv);
+    const ammoKeys = [...new Set(guards.map((sv) => g.survivors.ammoNeed(sv)?.ammo).filter(Boolean))];
+    const ammo = this.rollSupplies(ammoKeys.length ? ammoKeys : ['ammo9'], Math.round(waves * R.ammoPerWave * grade.mul));
+    const blueprints = [];
+    if (grade.id === 'excellent' && chance(R.blueprintChance)) blueprints.push(g.equipment.makeBlueprint(this.zombieLevel()));
+    const items = { ...parts };
+    Object.entries(ammo).forEach(([k, v]) => { items[k] = (items[k] || 0) + v; });
+    const got = g.grant({ coins, ...items }, true);
+    const gained = Object.fromEntries(Object.entries(items).map(([k]) => [k, got[k] || 0]).filter(([, v]) => v > 0));
+    g.state.inventory.blueprints.push(...blueprints);
+    // 整晚駐守的經驗
+    const stay = new Set(this.nightGuards || []);
+    const xp = guards.filter((sv) => stay.has(sv.id)).map((sv) => {
+      const amount = Math.round(xpToNext(sv.level) * R.guardXpPct);
+      g.survivors.gainXp(sv, amount);
+      return { name: sv.name, level: sv.level, xp: amount };
+    });
+    const out = {
+      grade: grade.id, gradeName: grade.name, mul: grade.mul, wallPct: Math.round(wallPct * 100),
+      coins, items: gained, blueprints: blueprints.map((b) => ITEM_MODELS[b.model]?.name || '設計圖'), xp,
+      boss: this.nightBoss,
+    };
+    const list = [`💰${coins}`, ...Object.entries(gained).map(([k, v]) => `${SUPPLIES[k].icon}${SUPPLIES[k].name}×${v}`)];
+    if (out.blueprints.length) list.push(`📜${out.blueprints.join('、')}`);
+    g.log(`🌅 「${base.name}」守住屍潮（評價 ${grade.name} ×${grade.mul}）：獲得 ${list.join('、')}${xp.length ? `；${xp.length} 名駐守人員獲得經驗` : ''}`, 'success');
+    return out;
+  }
+
+  /** 擊殺 Boss 的戰利品：高階零件，並有機率掉落罕見以上裝備或設計圖 */
+  bossLoot(z) {
+    const g = this.game;
+    const B = SIEGE_REWARD.boss;
+    const { max } = this.partTiers();
+    const items = this.rollSupplies(suppliesOf('part', 5, Math.max(3, max)), B.parts);
+    const got = g.grant(items, true);
+    const loot = { name: BOSSES[z.enemyId]?.name || 'Boss', items: Object.fromEntries(Object.entries(got).filter(([k, v]) => SUPPLIES[k] && v > 0)), gear: null, blueprint: null };
+    if (chance(B.gearChance)) {
+      const item = g.equipment.generate({ level: this.zombieLevel(), minRarity: 'epic' });
+      if (g.equipment.addItem(item, 'Boss 戰利品')) loot.gear = { name: item.name, rarity: item.rarity };
+    }
+    if (chance(B.blueprintChance)) {
+      const bp = g.equipment.makeBlueprint(this.zombieLevel());
+      g.state.inventory.blueprints.push(bp);
+      loot.blueprint = ITEM_MODELS[bp.model]?.name || '設計圖';
+    }
+    this.nightBoss = loot;
+    const list = Object.entries(loot.items).map(([k, v]) => `${SUPPLIES[k].icon}${SUPPLIES[k].name}×${v}`);
+    if (loot.gear) list.push(`🎁${loot.gear.name}`);
+    if (loot.blueprint) list.push(`📜${loot.blueprint}`);
+    g.log(`👑 Boss「${loot.name}」的戰利品：${list.join('、')}`, 'loot');
   }
 
   slotPos(slot, total = this.base?.defenses.length || 8) {
@@ -152,7 +245,7 @@ export class BaseSiege {
   /** 每波殭屍數：讓整晚的平均強度等同「每 spawnInterval 秒一隻」 */
   waveSize() {
     // 文明度越低每波越少（新手只有一小波）
-    const n = (WAVE_LULL / this.spawnInterval()) * (1 + Math.min(0.6, this.wave * 0.08)) * this.game.civilization.waveSizeMul();
+    const n = (WAVE_LULL / this.spawnInterval()) * (1 + Math.min(0.6, this.wave * (SIEGE_SCALING.waveGrowth ?? 0.08))) * this.game.civilization.waveSizeMul();
     return Math.max(2, Math.round(n * randFloat(0.85, 1.15)));
   }
 
@@ -212,8 +305,10 @@ export class BaseSiege {
     const e = this.game.combat.createEnemy(enemyId, this.zombieLevel() + (isBoss ? 3 : 0));
     const a = randFloat(0, Math.PI * 2);
     // 屍潮殭屍額外受文明度強化（地圖戰鬥的敵人不受此影響）
-    const hpMul = this.game.civilization.siegeHpMul();
-    const atkMul = this.game.civilization.siegeAtkMul();
+    // Boss 另乘 bossMul，抵銷文明度加成，維持原本強度
+    const bossMul = isBoss ? (SIEGE_SCALING.bossMul ?? 1) : 1;
+    const hpMul = this.game.civilization.siegeHpMul() * bossMul;
+    const atkMul = this.game.civilization.siegeAtkMul() * bossMul;
     this.zombies.push({
       id: this.nextId++,
       enemyId,
@@ -334,7 +429,7 @@ export class BaseSiege {
     }
 
     // 防禦塔
-    const dmgMul = sh.towerDamageMul(base);
+    const dmgMul = sh.towerDamageMul(base) * (SIEGE_SCALING.towerDmgMul ?? 1);
     defenses.forEach((d) => {
       const def = DEFENSES[d.type];
       const st = def.stats(d.level);
@@ -432,8 +527,9 @@ export class BaseSiege {
     return 1 + this.game.research.bonus(`defDmg_${type}`);
   }
 
-  guardMul() {
-    return 1 + this.game.research.bonus('guardDmgPct');
+  /** 駐守人員的傷害倍率（研究加成 × 屍潮駐守倍率；raw：不含屍潮倍率，用於 NPC／玩家攻打） */
+  guardMul(raw = false) {
+    return (1 + this.game.research.bonus('guardDmgPct')) * (raw ? 1 : (SIEGE_SCALING.guardDmgMul ?? 1));
   }
 
   fire(d, st, pos, target, inRange, dmgMul) {
@@ -564,9 +660,12 @@ export class BaseSiege {
       if (z.boss) st.bossKills += 1;
       coins += Math.ceil(z.coins * 0.5);
       xp += z.xp;
-      if (chance(z.partsChance * 0.5)) parts += z.boss ? 5 : 1;
+      if (!z.boss && chance(z.partsChance * 0.5)) parts += 1;
       this.pushFx({ type: 'death', x: z.x, y: z.y, color: z.color, boss: z.boss });
-      if (z.boss) this.game.log(`👑 「${this.base.name}」防線擊殺了 Boss！`, 'success');
+      if (z.boss) {
+        this.game.log(`👑 「${this.base.name}」防線擊殺了 Boss！`, 'success');
+        this.bossLoot(z);
+      }
     });
     this.game.grant({ coins: Math.round(coins * COIN_GAIN_MUL), parts });
     // 經驗分給防守人員
@@ -623,7 +722,11 @@ export class BaseSiege {
   breach(note = '防線被突破，圍牆耐久歸零') {
     const sh = this.game.shelter;
     const base = this.base;
-    const rate = sh.isPrimary(base) ? BREACH_LOSS.primary : BREACH_LOSS.outpost;
+    const P = SIEGE_PENALTY;
+    // 越早被突破損失越重：撐過的波數比例越高，資源損失越少（55% → 約 26%）
+    const progress = clamp((this.wave - 1) / Math.max(1, this.maxWaves()), 0, 1);
+    const rate = P.lossMax - P.lossSpan * progress;
+    void BREACH_LOSS;
     const pct = Math.round(rate * 100);
     const res = this.game.state.resources;
     const lost = {};
@@ -640,17 +743,60 @@ export class BaseSiege {
     // 防線被突破後，殭屍散去，當晚不再來襲
     base.quietUntil = this.game.time.nextDawn();
     this.game.state.stats.breaches += 1;
-    const damaged = this.damageBuildings(base);
+    const damaged = this.damageBuildings(base, P.defenseBase + P.defenseSpan * (1 - progress));
+    const materials = this.loseMaterials();
+    const injuries = this.injureGuards();
     this.breachedTonight = true;
-    sh.recordDefense({
-      base, attacker: '屍潮', success: false, lost, damaged, kills: this.nightKills, waves: this.wave,
+    const entry = sh.recordDefense({
+      base, attacker: '屍潮', success: false, lost, damaged, kills: this.nightKills, waves: Math.max(0, this.wave - 1),
+      injured: injuries.filter((x) => x.severe).map((x) => x.name),
       wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note: [note, this.assistNote('breached')].filter(Boolean).join('。'),
+      siege: {
+        lossPct: pct, wave: this.wave, maxWaves: this.maxWaves(), materials, injuries, boss: this.nightBoss,
+      },
     });
     const dmgText = damaged.length ? `，${damaged.length} 棟建築損毀` : '';
     damaged.forEach((d) => this.game.log(`🏚️ ${base.name}：${d}`, 'danger'));
-    this.game.toast(`💥 「${base.name}」防線被突破！損失 ${pct}% 資源${dmgText}，請強化圍牆與防禦塔`, 'danger');
+    const matList = Object.entries(materials).map(([k, v]) => `${SUPPLIES[k].icon}${SUPPLIES[k].name}−${v}`);
+    if (matList.length) this.game.log(`🧰 「${base.name}」的材料被奪走或損壞：${matList.join('、')}`, 'danger');
+    injuries.forEach((x) => this.game.log(`🩹 ${x.name}在防線被突破時${x.severe ? '受了重傷，需要醫療站治療' : '受了輕傷'}`, 'danger'));
+    this.game.toast(`💥 「${base.name}」防線在第 ${this.wave}/${this.maxWaves()} 波被突破！損失 ${pct}% 資源${dmgText}，請強化圍牆與防禦塔`, 'danger');
     this.game.bus.emit('siege:breach', { baseId: base.id, lost, damaged });
+    this.game.bus.emit('siege:result', entry);
     this.game.bus.emit('shelter:changed');
+  }
+
+  /** 突破時：倉庫裡每種零件、布料各有機率被奪走或損壞一部分 */
+  loseMaterials() {
+    const P = SIEGE_PENALTY;
+    const sup = this.game.state.supplies || {};
+    const out = {};
+    Object.keys(sup).forEach((k) => {
+      const def = SUPPLIES[k];
+      if (!def || (def.cat !== 'part' && def.cat !== 'fabric') || !(sup[k] > 0) || !chance(P.materialChance)) return;
+      const n = Math.min(sup[k], Math.max(1, Math.floor(sup[k] * randFloat(P.materialMin, P.materialMax))));
+      sup[k] -= n;
+      out[k] = n;
+    });
+    return out;
+  }
+
+  /** 突破時：駐守人員有機率輕傷或重傷（已重傷的不重複計算） */
+  injureGuards() {
+    const P = SIEGE_PENALTY;
+    const g = this.game;
+    return this.guards().map(({ sv }) => {
+      const r = Math.random();
+      if (r < P.severeChance) {
+        g.survivors.becomeSevere(sv, '防線被突破時受傷', Date.now());
+        return { name: sv.name, severe: true };
+      }
+      if (r < P.severeChance + P.lightChance) {
+        g.survivors.damage(sv, g.survivors.maxHp(sv) * P.lightHpPct, '防線被突破時受傷');
+        return { name: sv.name, severe: !!sv.severe, light: !sv.severe };
+      }
+      return { name: sv.name, ok: true };
+    });
   }
 
   /**
@@ -658,10 +804,10 @@ export class BaseSiege {
    * @returns {string[]} 損毀描述
    */
   /** 防守失敗：有機率讓 1 棟防禦設施降 1 級（1 級的會被拆毀；一般設施不受影響） */
-  damageBuildings(base) {
+  damageBuildings(base, prob = BREACH_DAMAGE.chance) {
     const out = [];
     const list = base.defenses.filter((d) => d.type && d.level >= 1);
-    if (!list.length || !chance(BREACH_DAMAGE.chance)) return out;
+    if (!list.length || !chance(prob)) return out;
     // 降 1 級；原本只有 1 級的才會被拆毀
     const d = pick(list);
     const name = DEFENSES[d.type].name;
@@ -685,11 +831,13 @@ export class BaseSiege {
     return !!this.base && (this.base.facilities.generator?.level || 0) > 0 && this.game.resources.generatorActive();
   }
 
-  defenseDps({ apparent = false, towersOnly = false } = {}) {
+  defenseDps({ apparent = false, towersOnly = false, raw = false } = {}) {
     const sh = this.game.shelter;
     const base = this.base;
     if (!base) return 0;
-    const mul = sh.towerDamageMul(base);
+    // raw：NPC／玩家攻打與協防範圍用的原始火力（不含屍潮專用的設施、駐守倍率）
+    const mul = sh.towerDamageMul(base) * (raw ? 1 : (SIEGE_SCALING.towerDmgMul ?? 1));
+    const gm = this.guardMul(raw);
     let dps = 0;
     base.defenses.forEach((d) => {
       if (!d.type || d.level < 1) return;
@@ -697,12 +845,12 @@ export class BaseSiege {
       const st = DEFENSES[d.type].stats(d.level);
       if (d.type === 'watchPost') {
         const sv = this.game.survivors.get(d.garrisonId);
-        if (sv) dps += this.meleeOrRangedAtk(sv, apparent) * st.garrisonMul * st.fireRate * mul * this.guardMul();
+        if (sv) dps += this.meleeOrRangedAtk(sv, apparent) * st.garrisonMul * st.fireRate * mul * gm;
       } else {
         dps += st.damage * st.fireRate * mul * this.typeMul(d.type) * (st.aoe ? 1.8 : 1) * (st.chain ? 2 : 1);
       }
     });
-    if (!towersOnly) this.guards().forEach(({ sv }) => { dps += this.meleeOrRangedAtk(sv, apparent) * 0.6 * this.guardMul(); });
+    if (!towersOnly) this.guards().forEach(({ sv }) => { dps += this.meleeOrRangedAtk(sv, apparent) * 0.6 * gm; });
     return Math.round(dps);
   }
 

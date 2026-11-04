@@ -129,16 +129,24 @@ export const SURVIVOR_RARITY = {
 };
 
 /**
- * 倖存者品級機率（%）：初始傳奇 0%、罕見 0.1%；研究「招募技術」每級提升，滿級傳奇 0.2%。
- * @param {number} tech 招募技術等級 0～15（換算成 0～10 的進度）
+ * 倖存者品級機率（%）：研究「招募技術」每級提升，滿級時傳奇 3%。
+ * 0 級：劣質 32／一般 53.9／優良 12／精良 2／罕見 0.1／傳奇 0；
+ * 滿級：劣質 10／一般 33／優良 28／精良 18／罕見 8／傳奇 3（中間依等級線性變化）。
+ * @param {number} tech 招募技術等級 0～15
  */
+export const SURVIVOR_RARITY_ODDS = {
+  min: { poor: 32, uncommon: 12, rare: 2, epic: 0.1, legendary: 0 },
+  max: { poor: 10, uncommon: 28, rare: 18, epic: 8, legendary: 3 },
+};
 export function survivorRarityTable(tech = 0) {
-  const t = (Math.max(0, Math.min(15, tech)) * 10) / 15;
-  const legendary = 0.02 * t;
-  const epic = 0.1 + 0.05 * t;
-  const rare = 2 + 0.3 * t;
-  const uncommon = 12 + t;
-  const poor = 32 - 1.5 * t;
+  const t = Math.max(0, Math.min(15, tech)) / 15;
+  const { min, max } = SURVIVOR_RARITY_ODDS;
+  const at = (k) => min[k] + (max[k] - min[k]) * t;
+  const legendary = at('legendary');
+  const epic = at('epic');
+  const rare = at('rare');
+  const uncommon = at('uncommon');
+  const poor = at('poor');
   return {
     poor, common: 100 - legendary - epic - rare - uncommon - poor, uncommon, rare, epic, legendary,
   };
