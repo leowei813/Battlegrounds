@@ -557,6 +557,32 @@ export class EquipmentSystem {
     return { ok: true, msg: `拆解獲得 ${text || '（倉庫已滿，沒有回收到材料）'}` };
   }
 
+  /** 預計拆解回收（多件合計，不含上鎖或穿戴中的） */
+  dismantlePreview(ids) {
+    const total = {};
+    ids.map((id) => this.getItem(id)).filter((it) => it && !it.locked && !this.equippedBy(it.id)).forEach((it) => {
+      Object.entries(this.dismantleValue(it)).forEach(([k, v]) => { total[k] = (total[k] || 0) + v; });
+    });
+    return total;
+  }
+
+  /** 一次拆解多件倉庫裝備（上鎖、穿戴中或不在倉庫的會略過） */
+  dismantleMany(ids) {
+    const store = new Set(this.storeItems().map((i) => i.id));
+    const list = [...new Set(ids)].map((id) => this.getItem(id)).filter((it) => it && store.has(it.id) && !it.locked && !this.equippedBy(it.id));
+    if (!list.length) return { ok: false, reason: '沒有可拆解的裝備' };
+    const gain = {};
+    list.forEach((it) => {
+      this.removeItem(it.id);
+      Object.entries(this.dismantleValue(it)).forEach(([k, v]) => { gain[k] = (gain[k] || 0) + v; });
+    });
+    const got = this.game.grant(gain);
+    const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || '稀有材料'}×${v}`).join('、');
+    const lost = Object.entries(gain).reduce((s, [k, v]) => s + Math.max(0, v - (got[k] || 0)), 0);
+    this.game.log(`🔨 快速拆解 ${list.length} 件裝備：${text || '（倉庫已滿）'}`, 'info');
+    return { ok: true, n: list.length, got, msg: `拆解 ${list.length} 件裝備，獲得 ${text || '（倉庫已滿，沒有回收到材料）'}${lost ? `（倉庫放不下 ${lost} 個材料）` : ''}` };
+  }
+
   toggleLock(itemId) {
     const item = this.getItem(itemId);
     if (item) item.locked = !item.locked;
