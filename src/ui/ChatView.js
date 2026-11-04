@@ -19,6 +19,24 @@ function dayOf(at) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/** 只在內容不同時才更新，避免每半秒重畫造成手機畫面閃爍 */
+function setText(el, text) {
+  if (el && el.textContent !== text) el.textContent = text;
+}
+function setProp(el, key, value) {
+  if (el && el[key] !== value) el[key] = value;
+}
+
+/** 一則訊息的 HTML */
+function msgHtml(m) {
+  return `
+        <div class="chat-msg ${m.mine ? 'mine' : ''}" data-msg="${m.id}" data-mine="${m.mine ? 1 : 0}">
+          <div class="chat-meta"><b>${m.mine ? '我' : escapeHtml(m.name)}</b> <span>${m.mine ? '' : `文明 ${m.civ}・`}${timeOf(m.at)}</span>
+            ${m.mine ? '' : `<button class="chat-more" data-chat="menu" data-id="${m.id}" aria-label="更多">⋯</button>`}</div>
+          ${shareCardHtml(m.text) || `<div class="chat-bubble">${escapeHtml(m.text)}</div>`}
+        </div>`;
+}
+
 /**
  * 全服聊天面板：網頁版在地圖右側滑出，手機版佔滿畫面。
  * 訊息列表只在有變化時重畫，輸入框不會因為重畫而清空。
@@ -93,6 +111,13 @@ export class ChatView {
     this.isOpen = true;
     this.el.classList.remove('hidden');
     document.body.classList.add('chat-open');
+    // 手機：聊天佔滿畫面，暫停並隱藏底下的地圖（地圖標記很多時，iPhone 會因繪圖記憶體不足而黑畫面、閃爍）
+    this.coverMap = !window.matchMedia?.('(min-width: 900px)').matches;
+    if (this.coverMap) {
+      document.body.classList.add('chat-full');
+      this.ui.mapCovered = true;
+      this.ui.panels.map.onHide();
+    }
     this.chat.setOpen(true);
     this.lastKey = '';
     this.renderList(true);
@@ -108,6 +133,12 @@ export class ChatView {
     this.closeSheet();
     this.el.classList.add('hidden');
     document.body.classList.remove('chat-open');
+    if (this.coverMap) {
+      this.coverMap = false;
+      document.body.classList.remove('chat-full');
+      this.ui.mapCovered = false;
+      if (this.ui.tab === 'map') this.ui.panels.map.onShow();
+    }
     this.chat.setOpen(false);
     this.ui.panels.map.lastOverlay = '';
     this.ui.refresh(true);
@@ -141,27 +172,45 @@ export class ChatView {
     const prevLast = Number(this.lastKey.split(':')[1]) || 0;
     this.lastKey = key;
     const stick = force || this.atBottom();
-    let html = '';
-    let day = '';
-    msgs.forEach((m) => {
-      const d = dayOf(m.at);
-      if (d !== day) {
-        day = d;
-        html += `<div class="chat-day">— ${d} —</div>`;
+    const ids = msgs.map((m) => m.id);
+    const prev = this.renderedIds || [];
+    const sameBase = !force && msgs.length && prev.length && prev.length <= ids.length
+      && this.renderedBlocked === this.chat.st.blocked.length && prev.every((id, i) => ids[i] === id);
+    if (sameBase && ids.length > prev.length) {
+      // 只有新訊息：接在後面，不重畫整個列表（重畫 200 則在手機上會閃）
+      let html = '';
+      let day = this.renderedDay;
+      msgs.slice(prev.length).forEach((m) => {
+        const d = dayOf(m.at);
+        if (d !== day) {
+          day = d;
+          html += `<div class="chat-day">— ${d} —</div>`;
+        }
+        html += msgHtml(m);
+      });
+      this.list.insertAdjacentHTML('beforeend', html);
+      this.renderedDay = day;
+    } else if (!sameBase) {
+      let html = '';
+      let day = '';
+      msgs.forEach((m) => {
+        const d = dayOf(m.at);
+        if (d !== day) {
+          day = d;
+          html += `<div class="chat-day">— ${d} —</div>`;
+        }
+        html += msgHtml(m);
+      });
+      if (!msgs.length) {
+        html = `<div class="chat-empty muted">${this.chat.online
+          ? (this.chat.status === 'error' ? '聊天伺服器尚未啟用或暫時無法使用' : '還沒有人說話，打聲招呼吧！')
+          : '離線中：連上伺服器後才能看到其他玩家的訊息'}</div>`;
       }
-      html += `
-        <div class="chat-msg ${m.mine ? 'mine' : ''}" data-msg="${m.id}" data-mine="${m.mine ? 1 : 0}">
-          <div class="chat-meta"><b>${m.mine ? '我' : escapeHtml(m.name)}</b> <span>${m.mine ? '' : `文明 ${m.civ}・`}${timeOf(m.at)}</span>
-            ${m.mine ? '' : `<button class="chat-more" data-chat="menu" data-id="${m.id}" aria-label="更多">⋯</button>`}</div>
-          ${shareCardHtml(m.text) || `<div class="chat-bubble">${escapeHtml(m.text)}</div>`}
-        </div>`;
-    });
-    if (!msgs.length) {
-      html = `<div class="chat-empty muted">${this.chat.online
-        ? (this.chat.status === 'error' ? '聊天伺服器尚未啟用或暫時無法使用' : '還沒有人說話，打聲招呼吧！')
-        : '離線中：連上伺服器後才能看到其他玩家的訊息'}</div>`;
+      this.list.innerHTML = html;
+      this.renderedDay = day;
     }
-    this.list.innerHTML = html;
+    this.renderedIds = ids;
+    this.renderedBlocked = this.chat.st.blocked.length;
     if (stick) {
       this.list.scrollTop = this.list.scrollHeight;
       this.setNew(0);
@@ -174,23 +223,23 @@ export class ChatView {
   renderForm() {
     if (!this.el) return;
     const len = [...this.input.value].length;
-    this.el.querySelector('.chat-len').textContent = `${len}/${CHAT_MAX_LEN}`;
+    setText(this.el.querySelector('.chat-len'), `${len}/${CHAT_MAX_LEN}`);
     const why = this.chat.blockReason();
     const wait = this.chat.cooldown();
     const tip = this.el.querySelector('.chat-tip');
-    this.input.disabled = !!why;
+    setProp(this.input, 'disabled', !!why);
     if (why) {
-      tip.textContent = why;
-      this.sendBtn.disabled = true;
-      this.sendBtn.textContent = '送出';
+      setText(tip, why);
+      setProp(this.sendBtn, 'disabled', true);
+      setText(this.sendBtn, '送出');
     } else if (wait > 0) {
-      tip.textContent = `剛送出，冷卻中・每 ${CHAT_COOLDOWN_MS / 1000} 秒最多 1 則`;
-      this.sendBtn.disabled = true;
-      this.sendBtn.textContent = `${Math.ceil(wait / 1000)} 秒`;
+      setText(tip, `剛送出，冷卻中・每 ${CHAT_COOLDOWN_MS / 1000} 秒最多 1 則`);
+      setProp(this.sendBtn, 'disabled', true);
+      setText(this.sendBtn, `${Math.ceil(wait / 1000)} 秒`);
     } else {
-      tip.textContent = `Enter 送出・每 ${CHAT_COOLDOWN_MS / 1000} 秒最多 1 則・保留最近 200 則`;
-      this.sendBtn.disabled = this.sending || !this.input.value.trim();
-      this.sendBtn.textContent = '送出';
+      setText(tip, `Enter 送出・每 ${CHAT_COOLDOWN_MS / 1000} 秒最多 1 則・保留最近 200 則`);
+      setProp(this.sendBtn, 'disabled', this.sending || !this.input.value.trim());
+      setText(this.sendBtn, '送出');
     }
   }
 
