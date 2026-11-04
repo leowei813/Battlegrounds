@@ -174,6 +174,12 @@ export function itemCard(item, {
   </div>`;
 }
 
+/** 瞭望塔標示：在塔上（棕色）或設定了但待命（灰色） */
+export function towerTag(game, sv) {
+  if (!game.shelter.garrisonOf(sv.id)) return '';
+  return game.shelter.onTower(sv.id) ? '<span class="tag tw-tag">🛖 瞭望塔</span>' : '<span class="tag tw-tag off">🛖 瞭望塔待命</span>';
+}
+
 export function survivorStatus(game, sv, now = Date.now()) {
   const tags = [];
   const death = game.survivors.deathCountdown(sv, now);
@@ -181,8 +187,9 @@ export function survivorStatus(game, sv, now = Date.now()) {
   if (sv.severe) tags.push('<span class="tag tag-red">🩸 重傷</span>');
   if (game.survivors.isStarving()) tags.push('<span class="tag tag-red">🍽️ 飢餓</span>');
   if (sv.status === 'exploring') tags.push('<span class="tag tag-blue">探索中</span>');
-  else if (!sv.severe && game.survivors.isGarrisoned(sv.id)) tags.push('<span class="tag tag-amber">駐守瞭望塔</span>');
   else if (!sv.severe) tags.push(`<span class="tag">${JOBS[sv.job]?.icon || ''} ${JOBS[sv.job]?.name || '閒置'}</span>`);
+  const tw = towerTag(game, sv);
+  if (tw) tags.push(tw);
   return `<span class="tags">${tags.join('')}</span>`;
 }
 

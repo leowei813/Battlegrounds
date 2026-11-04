@@ -9,6 +9,9 @@ import {
 /**
  * 載具系統：車庫、維修、製作、探索時的速度／運載量／耗油／磨損。
  */
+/** 載具耗油：每公里耗油倍率與每趟發動成本（每台有引擎的載具） */
+export const VEHICLE_FUEL = { perKmMul: 3, perTrip: 1 };
+
 export class VehicleSystem {
   constructor(game) {
     this.game = game;
@@ -153,7 +156,9 @@ export class VehicleSystem {
       // 所有隊員都有座位才能以載具速度移動（取最慢的一台），否則全隊步行
       speed: seated ? +(Math.min(...defs.map((d) => d.speed)) * (1 + (rb.vehicleSpeedPct || 0))).toFixed(2) : 1,
       cargo: Math.round(people + defs.reduce((s, d) => s + d.cargo, 0) * (1 + (rb.vehicleCargoPct || 0))),
-      fuel: Math.ceil(defs.reduce((s, d) => s + d.fuelPerKm, 0) * (distanceM / 1000) * 2 * Math.max(0.3, 1 - (rb.vehicleFuelReduce || 0))),
+      // 耗油：每公里耗油 × 倍率 × 往返距離，加上每台有引擎的載具每趟的發動成本
+      fuel: Math.ceil((defs.reduce((s, d) => s + d.fuelPerKm, 0) * VEHICLE_FUEL.perKmMul * (distanceM / 1000) * 2
+        + defs.filter((d) => d.fuelPerKm > 0).length * VEHICLE_FUEL.perTrip) * Math.max(0.3, 1 - (rb.vehicleFuelReduce || 0))),
     };
   }
 

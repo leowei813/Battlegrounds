@@ -325,8 +325,11 @@ export class ShelterPanel {
     let garrison = '';
     if (def.stats(1).garrison && lv > 0) {
       const cur = d.garrisonId ? g.survivors.get(d.garrisonId) : null;
-      garrison = `<div class="def-gar"><small class="muted">👤 駐守：${cur ? `${CLASSES[cur.classId].icon} ${escapeHtml(cur.name)}（攻擊 ${g.survivors.stats(cur).atk}）` : '無人駐守'}</small>
-        <select class="def-gar-sel" data-slot="${slot}" aria-label="駐守人員"><option value="">${cur ? '撤回' : '選擇駐守人員'}</option>${st.survivors.filter((sv) => sv.status !== 'exploring' && !sv.severe).map((sv) => `<option value="${sv.id}" ${sv.id === d.garrisonId ? 'selected' : ''}>${CLASSES[sv.classId].icon} ${escapeHtml(sv.name)}</option>`).join('')}</select></div>`;
+      const ts = g.shelter.towerStatus(base, d);
+      const chip = { on: '<span class="tw-st on">🟢 在塔上</span>', standby: '<span class="tw-st off">⚪ 待命</span>', none: '<span class="tw-st off">未設定</span>' }[ts.state];
+      garrison = `<div class="def-gar"><div class="row-between"><small class="muted">👤 駐守人員：${cur ? `${CLASSES[cur.classId].icon} ${escapeHtml(cur.name)}（攻擊 ${g.survivors.stats(cur).atk}）` : '未設定'}</small>${chip}</div>
+        ${ts.why ? `<small class="${ts.state === 'on' ? 'pos' : 'warn-text'} block">${escapeHtml(ts.why)}</small>` : ''}
+        <select class="def-gar-sel" data-slot="${slot}" aria-label="駐守人員"><option value="">${cur ? '清除設定' : '選擇駐守人員'}</option>${st.survivors.filter((sv) => sv.id === d.garrisonId || !sv.severe).map((sv) => `<option value="${sv.id}" ${sv.id === d.garrisonId ? 'selected' : ''}>${CLASSES[sv.classId].icon} ${escapeHtml(sv.name)}</option>`).join('')}</select></div>`;
     }
     const cost = max ? null : g.shelter.defenseCost(type, lv + 1);
     const lack = cost && !affordable(st, cost);
@@ -373,8 +376,10 @@ export class ShelterPanel {
     let garrison = '';
     if (d.type === 'watchPost' && d.level > 0) {
       const cur = d.garrisonId ? g.survivors.get(d.garrisonId) : null;
+      const ts = g.shelter.towerStatus(this.ui.viewBase(), d);
       garrison = `<h4>駐守人員</h4>
-        <p>${cur ? `目前：${CLASSES[cur.classId].icon} ${escapeHtml(cur.name)}（攻擊 ${g.survivors.stats(cur).atk}）` : '無人駐守'}</p>
+        <p>${cur ? `設定：${CLASSES[cur.classId].icon} ${escapeHtml(cur.name)}（攻擊 ${g.survivors.stats(cur).atk}）・${ts.state === 'on' ? '🟢 在塔上' : '⚪ 待命'}` : '未設定'}</p>
+        ${ts.why ? `<small class="muted block">${escapeHtml(ts.why)}</small>` : ''}
         <div class="chips">${st.survivors.filter((sv) => sv.status !== 'exploring').map((sv) => `<button class="chip ${sv.id === d.garrisonId ? 'active' : ''}" data-action="garrison" data-id="${sv.id}">${CLASSES[sv.classId].icon} ${escapeHtml(sv.name)}</button>`).join('')}
         ${cur ? '<button class="chip" data-action="garrison" data-id="">撤回</button>' : ''}</div>`;
     }

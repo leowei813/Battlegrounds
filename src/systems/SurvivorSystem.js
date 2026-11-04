@@ -224,7 +224,9 @@ export class SurvivorSystem {
   }
 
   isAvailable(sv) {
-    return sv.status === 'idle' && !sv.severe && !this.isGarrisoned(sv.id);
+    const at = this.game.shelter.garrisonOf(sv.id);
+    // 駐守前哨站的人不能派出；主要避難所的瞭望塔人員出門時就離開瞭望塔
+    return sv.status === 'idle' && !sv.severe && !(at && !this.game.shelter.isPrimary(at.base));
   }
 
   // ---------------- 生命值 / 重傷 / 飢餓 ----------------
@@ -386,8 +388,9 @@ export class SurvivorSystem {
     this.game.state.survivors = this.list.filter((s) => s.id !== id);
   }
 
+  /** 目前在瞭望塔上（主要避難所依警戒／防禦工作判斷；前哨站設定了就算） */
   isGarrisoned(id) {
-    return !!this.game.shelter.garrisonOf(id);
+    return this.game.shelter.onTower(id);
   }
 
   gainXp(sv, amount) {

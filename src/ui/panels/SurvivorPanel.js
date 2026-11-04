@@ -8,7 +8,7 @@ import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { LOADOUT_MAX } from '../../systems/SurvivorSystem.js';
 import {
-  btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf, affixChips,
+  btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf, affixChips, towerTag,
 } from '../components.js';
 import {
   RARITIES, ITEM_MODELS, ITEM_TYPES, itemWeight, STACK_MAX,
@@ -140,7 +140,7 @@ export class SurvivorPanel {
       <span class="sv-mini-top"><b>${cls.icon} ${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b>${sv.isLeader ? '' : `${rarityTag(sv.rarity)}${this.qTag(g.survivors.avgQuality(sv))}`}<i class="sv-mini-sp"></i>${tag}</span>
       <small class="muted">${cls.name} Lv${sv.level}・戰力 ${s.power}</small>
       <span class="sv-mini-hp"><i style="width:${Math.round(Math.max(0, Math.min(1, hp)) * 100)}%" class="${hp < 0.3 ? 'low' : ''}"></i></span>
-      <small class="muted sv-mini-job">${job}</small>
+      <span class="sv-mini-jobrow"><small class="muted sv-mini-job">${job}</small>${towerTag(g, sv)}</span>
       <small class="muted">🎒 ${load}/${g.survivors.bagCap(sv)}</small>
     </button>`;
   }
@@ -353,7 +353,7 @@ export class SurvivorPanel {
       return `<li class="${sv.job === jid ? 'on' : ''}"><b>${j.icon} ${j.name}</b>${j.classBonus?.[sv.classId] ? ` <span class="tag">本職業 ×${j.classBonus[sv.classId]}</span>` : ''}：${j.desc || ''}${out ? `<small class="muted block">每小時約：${out}</small>` : ''}</li>`;
     }).join('');
     const cur = JOBS[sv.job] || JOBS.idle;
-    return `<div class="job-now">${cur.icon} <b>${cur.name}</b>：${cur.desc || ''}</div>
+    return `<div class="job-now">${cur.icon} <b>${cur.name}</b>${towerTag(this.game, sv) ? ` ${towerTag(this.game, sv)}` : ''}：${cur.desc || ''}</div>
       <details class="job-help" data-keep="jobs" ${this.keepOpen?.jobs ? 'open' : ''}><summary>ℹ️ 所有工作說明（含這位倖存者的每小時產出）</summary><ul class="skill-list">${rows}</ul></details>`;
   }
 
