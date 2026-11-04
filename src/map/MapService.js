@@ -58,6 +58,13 @@ export class MapService {
     this.layers.range = L.layerGroup().addTo(this.map);
     this.poiLayer = new PoiCanvasLayer((poiId) => bus.emit(EVT.OPEN_POI, { poiId })).addTo(this.map);
     this.layers.routes = L.layerGroup().addTo(this.map);
+    // 路線畫在建築圖層（440）之上：原本在預設圖層（400）會被建築畫布蓋住而看不到
+    if (!this.map.getPane('routePane')) {
+      const pane = this.map.createPane('routePane');
+      pane.style.zIndex = 445;
+      pane.style.pointerEvents = 'none';
+    }
+    this.routeRenderer = L.svg({ pane: 'routePane' });
     this.layers.zombies = L.layerGroup().addTo(this.map);
     this.layers.shelter = L.layerGroup().addTo(this.map);
     this.layers.others = L.layerGroup().addTo(this.map);
@@ -253,6 +260,22 @@ export class MapService {
     }));
   }
 
+  /** 預覽路線（探索佇列）：與實際出發時相同的繞路規則；依地點與警戒範圍快取，避免每秒重算 */
+  plannedRoute(a, b) {
+    // 只用 NPC 與其他玩家據點的識別判斷是否需要重算（不每秒建立完整的警戒範圍資料）
+    const zonesKey = `${this.game.npcs.list.map((n) => `${n.id}:${n.level}`).join(',')}|${(this.game.world?.others || []).map((o) => `${o.id}:${o.bases.length}`).join(',')}`;
+    if (zonesKey !== this.routeZonesKey) {
+      this.routeZonesKey = zonesKey;
+      this.routeCache = new Map();
+    }
+    const key = `${a.id || `${a.lat},${a.lon}`}>${b.id || `${b.lat},${b.lon}`}`;
+    if (!this.routeCache.has(key)) {
+      const ignore = b.id ? this.game.exploration.targetZone(b) : [];
+      this.routeCache.set(key, this.game.territory.route(a, b, { ignore }));
+    }
+    return this.routeCache.get(key);
+  }
+
   /** 據點、探索範圍、補給線與探索路線（數量少，每次重建） */
   renderBases(state, sh) {
     this.layers.shelter.clearLayers();
@@ -287,19 +310,34 @@ export class MapService {
 
     this.layers.routes.clearLayers();
     if (sh) {
+      const now = Date.now();
       state.expeditions.forEach((ex) => {
         const p = this.game.exploration.poi(ex.poiId);
         if (!p) return;
         const from = ex.from || sh;
-        L.polyline(ex.path ? ex.path.map((q) => [q.lat, q.lon]) : [[from.lat, from.lon], [p.lat, p.lon]], {
-          color: '#ffd54f', weight: 3, dashArray: '4 8', className: 'route-line',
-        }).addTo(this.layers.routes);
-        // 探索佇列：從目前的目的地依序連到佇列中的每個地點，並標上順序
+        const phase = this.game.exploration.progress(ex, now)?.phase;
+        const outPath = ex.path ? ex.path.map((q) => [q.lat, q.lon]) : [[from.lat, from.lon], [p.lat, p.lon]];
+        // 連續探索：回程是另一條路線（從這個地點直接回避難所），返程時以黃線顯示，否則淡淡顯示
+        const backPath = Array.isArray(ex.backPath) && ex.backPath.length >= 2 ? ex.backPath.map((q) => [q.lat, q.lon]) : null;
+        if (!backPath || phase !== 'returning') {
+          L.polyline(outPath, { color: '#ffd54f', weight: 3, dashArray: '4 8', className: 'route-line', pane: 'routePane', renderer: this.routeRenderer }).addTo(this.layers.routes);
+        }
+        if (backPath) {
+          L.polyline(backPath, phase === 'returning'
+            ? { color: '#ffd54f', weight: 3, dashArray: '4 8', className: 'route-line', pane: 'routePane', renderer: this.routeRenderer }
+            : { color: '#ffd54f', weight: 2, opacity: 0.35, dashArray: '2 8', interactive: false, pane: 'routePane', renderer: this.routeRenderer }).addTo(this.layers.routes);
+        }
+        // 探索佇列：從目前的目的地依序連到佇列中的每個地點（同樣繞開 NPC 等警戒範圍），並標上順序
         const queued = (ex.queue || []).map((id) => this.game.exploration.poi(id)).filter(Boolean);
         if (!queued.length) return;
         const pts = [p, ...queued];
-        L.polyline(pts.map((q) => [q.lat, q.lon]), {
-          color: '#8fc3ff', weight: 3, opacity: 0.9, dashArray: '2 7', interactive: false,
+        const line = [];
+        for (let i = 0; i < pts.length - 1; i += 1) {
+          const seg = this.plannedRoute(pts[i], pts[i + 1]);
+          (i ? seg.slice(1) : seg).forEach((q) => line.push([q.lat, q.lon]));
+        }
+        L.polyline(line, {
+          color: '#8fc3ff', weight: 3, opacity: 0.9, dashArray: '2 7', interactive: false, pane: 'routePane', renderer: this.routeRenderer,
         }).addTo(this.layers.routes);
         queued.forEach((q, i) => {
           L.marker([q.lat, q.lon], {

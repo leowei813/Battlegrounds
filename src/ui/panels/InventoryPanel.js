@@ -4,7 +4,7 @@ import {
 import { CLASSES } from '../../config/survivors.js';
 import { escapeHtml } from '../../utils/dom.js';
 import {
-  btn, itemCard, costHtml, needHtml, progressBar, statRangeLine, affordable,
+  btn, itemCard, costHtml, needHtml, progressBar, statRangeLine, affordable, metaOf,
 } from '../components.js';
 import { VEHICLES } from '../../config/vehicles.js';
 import {
@@ -303,26 +303,86 @@ export class InventoryPanel {
     const filters = cats.map(([k, n]) => `<button class="chip ${this.filter === k ? 'active' : ''}" data-action="filter" data-f="${k}">${n}</button>`).join('');
     if (!cats.some(([k]) => k === this.filter)) this.filter = 'all';
     const shown = this.filter === 'all' ? all : all.filter((c) => c.cat === this.filter);
-    const isSel = (c) => this.sel && (c.kind === 'supply' ? this.sel.kind === 'supply' && this.sel.key === c.key : this.sel.kind === 'gear' && this.sel.id === c.item.id);
+    const qd = this.qd ? this.qdSel || (this.qdSel = new Set()) : null;
+    // 快速拆解：清掉已經不在倉庫的選取
+    if (qd) [...qd].forEach((id) => { if (!eq.storeItems().some((i) => i.id === id)) qd.delete(id); });
+    const isSel = (c) => (qd ? c.kind === 'gear' && qd.has(c.item.id) : this.sel && (c.kind === 'supply' ? this.sel.kind === 'supply' && this.sel.key === c.key : this.sel.kind === 'gear' && this.sel.id === c.item.id));
     const cellHtml = shown.map((c) => {
       if (c.kind === 'supply') {
+        if (qd) {
+          const sp = SUPPLIES[c.key];
+          return `<div class="inv-cell cat-${c.cat} qd-off"><span class="inv-ic">${sp.icon}</span><span class="inv-nm">${sp.name}</span><b class="inv-qty">${c.qty}</b></div>`;
+        }
         const sp = SUPPLIES[c.key];
         return `<button class="inv-cell cat-${c.cat} ${isSel(c) ? 'sel' : ''}" data-action="selSupply" data-key="${c.key}" title="${sp.name} ×${c.qty}">
           <span class="inv-ic">${sp.icon}</span><span class="inv-nm">${sp.name}</span><b class="inv-qty">${c.qty}</b></button>`;
       }
       const it = c.item;
       const r = RARITIES[it.rarity];
-      return `<button class="inv-cell gear r-${it.rarity} ${isSel(c) ? 'sel' : ''}" style="--rc:${r.color}" data-action="selItem" data-id="${it.id}" title="${escapeHtml(it.name)}">
+      return `<button class="inv-cell gear r-${it.rarity} ${isSel(c) ? 'sel' : ''} ${qd && isSel(c) ? 'qd-sel' : ''} ${qd && it.locked ? 'qd-off' : ''}" style="--rc:${r.color}" data-action="${qd ? 'qdPick' : 'selItem'}" data-id="${it.id}" title="${escapeHtml(it.name)}" ${qd && it.locked ? 'disabled' : ''}>
         <span class="inv-ic">${ITEM_MODELS[it.model]?.icon || ITEM_TYPES[it.type]?.icon || '❔'}</span><span class="inv-nm">${escapeHtml(it.name)}</span>${it.locked ? '<i class="inv-lock">🔒</i>' : ''}<b class="inv-qty">Lv${it.level}</b></button>`;
     }).join('');
     const empty = this.filter === 'all' ? Math.max(0, cap - all.length) : 0;
     const carried = g.state.inventory.items.filter((i) => i.loc && i.loc !== 'store' && !eq.equippedBy(i.id)).length;
     return `
       <p>🗄️ 物品倉庫空間 <b class="${used >= cap ? 'neg' : ''}">${used} / ${cap}</b> 格 <small class="muted">（裝備每件 1 格；零件、布料、藥品、彈藥同種類每 ${STACK_MAX} 個 1 格；物品倉庫每升一級 +13 格，研究「物品倉儲」每級 +7 格。穿戴中與隊員背包裡的裝備不在這裡，請到倖存者頁查看${carried ? `，目前有 ${carried} 件在隊員背包` : ''}）</small></p>
-      <div class="chips">${filters}</div>
+      <div class="row-between"><div class="chips">${filters}</div>${qd ? btn('✕ 結束快速拆解', 'qdToggle', {}, { cls: 'btn-sm qd-on' }) : btn('🔨 快速拆解', 'qdToggle', {}, { cls: 'btn-sm', title: '一次選取多件裝備拆解' })}</div>
+      ${qd ? this.qdRarityChips() : ''}
       <div class="inv-grid">${cellHtml}${'<div class="inv-cell empty"></div>'.repeat(empty)}</div>
       ${shown.length ? '' : '<p class="muted">這個分類沒有物品。</p>'}
-      ${this.renderSelected()}`;
+      ${qd ? this.qdBar() : this.renderSelected()}`;
+  }
+
+  /** 快速拆解：依品級一次選取／取消（上鎖的不算） */
+  qdRarityChips() {
+    const eq = this.game.equipment;
+    const items = eq.storeItems().filter((i) => !i.locked);
+    const chips = RARITY_ORDER.map((rk) => {
+      const list = items.filter((i) => i.rarity === rk);
+      if (!list.length) return '';
+      const all = list.every((i) => this.qdSel.has(i.id));
+      return `<button class="chip qd-r ${all ? 'active' : ''}" style="--rc:${RARITIES[rk].color}" data-action="qdRarity" data-r="${rk}">${all ? '✓ ' : ''}${RARITIES[rk].name}（${list.length}）</button>`;
+    }).join('');
+    return `<div class="chips qd-chips">${chips || '<small class="muted">倉庫裡沒有可拆解的裝備</small>'}</div>
+      <small class="muted block">點品級可一次選取／取消該品級全部裝備，也可以一件一件點；上鎖的裝備不能選</small>`;
+  }
+
+  /** 快速拆解：已選件數、預計回收與確認按鈕 */
+  qdBar() {
+    const eq = this.game.equipment;
+    const ids = [...this.qdSel];
+    const gain = eq.dismantlePreview(ids);
+    const chips = Object.entries(gain).map(([k, v]) => `<span class="sr-chip">${metaOf(k).icon} ${metaOf(k).name} +${v}</span>`).join('');
+    return `<div class="qd-bar">
+      <div class="row-between"><b>🔨 已選 ${ids.length} 件</b><small class="muted">預計回收</small></div>
+      <div class="sr-items">${chips || '<small class="muted">點選要拆解的裝備</small>'}</div>
+      <div class="row-between" style="margin-top:8px">${btn('清除選取', 'qdClear', {}, { cls: 'btn-sm btn-ghost', disabled: !ids.length })}${btn(`🔨 確認拆解 ${ids.length} 件`, 'qdConfirm', {}, { cls: 'btn-sm btn-danger', disabled: !ids.length })}</div>
+    </div>`;
+  }
+
+  /** 快速拆解的確認視窗 */
+  qdConfirm() {
+    const g = this.game;
+    const eq = g.equipment;
+    const items = [...this.qdSel].map((id) => eq.getItem(id)).filter(Boolean);
+    if (!items.length) return;
+    const gain = eq.dismantlePreview(items.map((i) => i.id));
+    const rows = items.map((it) => `<div class="sr-row"><span>${ITEM_MODELS[it.model]?.icon || ITEM_TYPES[it.type]?.icon || '❔'} <span style="color:${RARITIES[it.rarity].color}">${RARITIES[it.rarity].name}</span> ${escapeHtml(it.name)} Lv${it.level}</span><span class="muted">戰力 ${it.power}</span></div>`).join('');
+    this.ui.modal.open({
+      title: `🔨 確定拆解 ${items.length} 件裝備？`,
+      body: `<div class="qd-list">${rows}</div>
+        <p class="muted">預計回收：</p><div class="sr-items">${Object.entries(gain).map(([k, v]) => `<span class="sr-chip">${metaOf(k).icon} ${metaOf(k).name} +${v}</span>`).join('')}</div>
+        <p class="warn-text">⚠️ 拆解後無法復原</p>
+        <div class="btn-row end">${btn('取消', 'close', {}, { cls: 'btn-ghost' })}${btn('確認拆解', 'qdDo', {}, { cls: 'btn-danger' })}</div>`,
+      onAction: (a, _d, m) => {
+        if (a !== 'qdDo') return;
+        m.close();
+        const r = g.equipment.dismantleMany(items.map((i) => i.id));
+        this.ui.result(r);
+        if (r.ok) this.qdSel.clear();
+        this.ui.refresh(true);
+      },
+    });
   }
 
   renderCraft() {
@@ -370,6 +430,26 @@ export class InventoryPanel {
         this.dropQty = 1;
         break;
       case 'selItem': this.sel = this.sel?.kind === 'gear' && this.sel.id === data.id ? null : { kind: 'gear', id: data.id }; break;
+      case 'qdToggle':
+        this.qd = !this.qd;
+        this.qdSel = new Set();
+        this.sel = null;
+        break;
+      case 'qdPick': {
+        const it = g.equipment.getItem(data.id);
+        if (!it || it.locked) break;
+        if (this.qdSel.has(data.id)) this.qdSel.delete(data.id);
+        else this.qdSel.add(data.id);
+        break;
+      }
+      case 'qdRarity': {
+        const list = g.equipment.storeItems().filter((i) => !i.locked && i.rarity === data.r);
+        const all = list.every((i) => this.qdSel.has(i.id));
+        list.forEach((i) => (all ? this.qdSel.delete(i.id) : this.qdSel.add(i.id)));
+        break;
+      }
+      case 'qdClear': this.qdSel.clear(); break;
+      case 'qdConfirm': this.qdConfirm(); break;
       case 'dropSupply': this.ui.result(g.equipment.discardSupply(data.key, this.dropQty)); break;
       case 'dropSupplyAll':
         if (confirm(`確定丟棄全部 ${SUPPLIES[data.key]?.name || ''}？丟棄後無法復原。`)) this.ui.result(g.equipment.discardSupply(data.key, Infinity));

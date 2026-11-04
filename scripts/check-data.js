@@ -3540,6 +3540,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 這裡測試路線與物資，不讓建築內的戰鬥造成重傷
   L.level = 60;
   gc.survivors.becomeSevere = () => {};
+  // 建築內遭遇的勝負是隨機的，這裡固定勝利（戰敗撤退另有測試）
+  const sim81 = gc.combat.simulate.bind(gc.combat);
+  gc.combat.simulate = (...a) => ({ ...sim81(...a), victory: true });
   const r1 = ex.start(near[0].id, [L.id], 1, false, Date.now());
   assert(r1.ok, '派出探索');
   const e1 = r1.exp;
@@ -3609,6 +3612,21 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   old.research.levels.r_board = 12;
   const mig = SaveManager.migrate(old);
   assert(mig.research.levels.r_board === 2, `舊存檔情報網 Lv12 換算為 Lv2（效果不變：${mig.research.levels.r_board}）`);
+}
+
+// ---- 83. 快速拆解：一次拆解多件倉庫裝備 ----
+{
+  const gd = Game.newGame({ playerName: 'D83', classId: 'warrior', lat: 25, lon: 121 });
+  const eq = gd.equipment;
+  const made = Array.from({ length: 4 }, (_, i) => { const it = eq.generate({ level: 5, rarity: i === 3 ? 'rare' : 'poor' }); it.loc = 'store'; gd.state.inventory.items.push(it); return it; });
+  made[2].locked = true;
+  const prev = eq.dismantlePreview(made.map((i) => i.id));
+  const expect = {};
+  [made[0], made[1], made[3]].forEach((it) => Object.entries(eq.dismantleValue(it)).forEach(([k, v]) => { expect[k] = (expect[k] || 0) + v; }));
+  assert(JSON.stringify(Object.keys(prev).sort()) === JSON.stringify(Object.keys(expect).sort()) && Object.entries(expect).every(([k, v]) => prev[k] === v), '快速拆解的預計回收＝各件單獨拆解的合計（上鎖的不算）');
+  const r = eq.dismantleMany(made.map((i) => i.id));
+  assert(r.ok && r.n === 3 && eq.getItem(made[2].id) && !eq.getItem(made[0].id) && !eq.getItem(made[3].id), '一次拆解多件，上鎖的保留');
+  assert(!eq.dismantleMany([made[2].id]).ok, '只選到上鎖的裝備時不能拆解');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
