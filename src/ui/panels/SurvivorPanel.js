@@ -8,7 +8,7 @@ import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { LOADOUT_MAX } from '../../systems/SurvivorSystem.js';
 import {
-  btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf,
+  btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf, affixChips,
 } from '../components.js';
 import {
   RARITIES, ITEM_MODELS, ITEM_TYPES, itemWeight, STACK_MAX,
@@ -374,6 +374,7 @@ export class SurvivorPanel {
         <small class="muted">${SLOTS[slot].icon} ${SLOTS[slot].name}</small>
         <b>${item ? escapeHtml(item.name) : '— 空 —'}</b>
         <small class="muted">${item ? `${r.name}・戰力 ${item.power}` : n ? `有 ${n} 件可裝備` : '沒有可裝備的物品'}</small>
+        ${item ? `<div class="gear-stats">${statLine(item.stats)}</div>${item.affixes?.length ? `<div class="gear-affixes">${affixChips(item)}</div>` : ''}` : ''}
         ${away ? '' : `<span class="gear-acts">${btn(item ? '更換' : '裝備', 'pickItem', { slot }, { cls: 'btn-xs', disabled: !n })}${item ? btn('卸下', 'unequip', { slot }, { cls: 'btn-xs btn-ghost' }) : ''}</span>`}
       </div>`;
     }).join('')}</div>${away ? '<small class="muted block">已派出，回到避難所後才能更換裝備。</small>' : ''}`;

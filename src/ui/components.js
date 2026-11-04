@@ -120,6 +120,16 @@ export function statRangeLine(range) {
     .join('');
 }
 
+/** 附加詞條（裝備欄用的小標籤） */
+export function affixChips(item) {
+  return (item.affixes || []).map(({ id, value }) => {
+    const a = AFFIXES[id];
+    if (!a) return '';
+    const v = a.pct ? `${(value * 100).toFixed(1)}%` : value < 1 ? value.toFixed(2) : Math.round(value);
+    return `<span class="affix-chip">✦ ${a.name.replace('%', '')} +${v}</span>`;
+  }).join('');
+}
+
 export function affixLines(item) {
   return item.affixes
     .map(({ id, value }) => {

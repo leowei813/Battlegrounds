@@ -1,5 +1,6 @@
 import { escapeHtml } from '../utils/dom.js';
 import { metaOf } from './components.js';
+import { SUPPLIES } from '../config/supplies.js';
 
 const chip = (text, cls = '') => `<span class="sr-chip ${cls}">${text}</span>`;
 const itemChips = (items, sign, cls = '') => Object.entries(items || {})
@@ -15,14 +16,77 @@ function bossHtml(boss, compact) {
   return `<div class="sr-sec">👑 擊殺 Boss「${escapeHtml(boss.name)}」的戰利品</div><div class="sr-items">${list.join('') || '<span class="muted">（沒有戰利品）</span>'}</div>`;
 }
 
+const sum = (o) => Object.values(o || {}).reduce((a, b) => a + b, 0);
+const ofCat = (items, cats) => Object.fromEntries(Object.entries(items || {}).filter(([k]) => cats.includes(SUPPLIES[k]?.cat)));
+/** 明細用的小字清單：「名稱 數量・名稱 數量」 */
+const plainList = (items, sign = '') => Object.entries(items || {}).map(([k, v]) => `${escapeHtml(metaOf(k).name)} ${sign}${v}`).join('・');
+const groupRow = (label, count, list) => (list ? `<div class="sr-group"><div class="sr-group-h"><b>${label}</b>${count != null ? `<span>×${count}</span>` : ''}</div><div class="sr-group-l">${list}</div></div>` : '');
+
+/** 紀錄收合時：只顯示一行總數 */
+function summaryHtml(e) {
+  const s = e.siege;
+  if (e.success) {
+    const parts = sum(ofCat(s.items, ['part', 'fabric'])) + sum(ofCat(s.boss?.items, ['part', 'fabric']));
+    const ammo = sum(ofCat(s.items, ['ammo']));
+    const list = [
+      chip(`評價 ${escapeHtml(s.gradeName)} ×${s.mul}`, `g-${s.grade}`),
+      chip(`💰 ${s.coins}`),
+      parts ? chip(`🔩 零件 ×${parts}`) : '',
+      ammo ? chip(`🎯 彈藥 ×${ammo}`) : '',
+      s.boss ? chip(`👑 Boss${s.boss.gear ? '・🎁' : ''}`, s.boss.gear ? 'gold' : '') : '',
+      (s.blueprints?.length || s.boss?.blueprint) ? chip(`📜 設計圖 ×${(s.blueprints?.length || 0) + (s.boss?.blueprint ? 1 : 0)}`, 'blue') : '',
+      s.xp?.length ? chip(`🎖️ ${s.xp.length} 人經驗`) : '',
+    ];
+    return `<div class="sr-items">${list.join('')}</div>`;
+  }
+  const hurt = (s.injuries || []).filter((x) => !x.ok);
+  const sev = hurt.filter((x) => x.severe).length;
+  const light = hurt.length - sev;
+  const list = [
+    chip(`📉 資源 −${s.lossPct}%`, 'loss'),
+    sum(s.materials) ? chip(`🧰 材料 −${sum(s.materials)}`, 'loss') : '',
+    e.damaged?.length ? chip(`🏚️ 設施損毀 ${e.damaged.length}`, 'loss') : '',
+    hurt.length ? chip(`🩹 ${[light ? `輕傷 ${light}` : '', sev ? `重傷 ${sev}` : ''].filter(Boolean).join('・')}`, 'loss') : '',
+  ];
+  return `<div class="sr-items">${list.join('')}</div>`;
+}
+
+/** 紀錄展開後：只補充收合時沒有的細項，依類別分組 */
+function recordDetailHtml(e) {
+  const s = e.siege;
+  if (e.success) {
+    const parts = ofCat(s.items, ['part', 'fabric']);
+    const ammo = ofCat(s.items, ['ammo']);
+    const boss = s.boss ? [plainList(s.boss.items), s.boss.gear ? `🎁 ${escapeHtml(s.boss.gear.name)}` : '', s.boss.blueprint ? `📜 ${escapeHtml(s.boss.blueprint)}` : ''].filter(Boolean).join('・') : '';
+    return `<div class="sr-groups">
+      ${groupRow('🔩 零件', sum(parts), plainList(parts))}
+      ${groupRow('🎯 彈藥', sum(ammo), plainList(ammo))}
+      ${groupRow('📜 設計圖', null, (s.blueprints || []).map(escapeHtml).join('・'))}
+      ${s.boss ? groupRow(`👑 Boss「${escapeHtml(s.boss.name)}」`, null, boss || '（沒有戰利品）') : ''}
+      ${groupRow('🎖️ 駐守經驗', null, (s.xp || []).map((x) => `${escapeHtml(x.name)} Lv${x.level} <span class="pos">+${x.xp}</span>`).join('・'))}
+      <small class="muted block">評價依城牆剩餘：≥80% 優秀 ×1.5・50～80% 良好 ×1.2・20～50% 普通 ×1.0・&lt;20% 勉強 ×0.7</small>
+    </div>`;
+  }
+  const hurt = (s.injuries || []).map((x) => `${escapeHtml(x.name)} ${x.severe ? '<span class="neg">重傷</span>' : x.light ? '<span class="neg">輕傷</span>' : '<span class="muted">無傷</span>'}`).join('・');
+  return `<div class="sr-groups">
+    ${groupRow(`📉 資源 −${s.lossPct}%`, null, plainList(e.lost, '−') || '（沒有可損失的資源）')}
+    ${groupRow('🧰 材料', sum(s.materials), plainList(s.materials, '−'))}
+    ${groupRow('🏚️ 防禦設施', null, (e.damaged || []).map(escapeHtml).join('・'))}
+    ${groupRow('🩹 駐守人員', null, hurt)}
+    <small class="muted block">撐過 ${Math.max(0, s.wave - 1)}/${s.maxWaves} 波・資源損失 55%（第 1 波被破）→ 約 26%（最後一波才破），地窖內不受影響</small>
+  </div>`;
+}
+
 /**
  * 屍潮結算明細（天亮守住的獎勵，或被突破時的損失）。
  * @param {object} e 防守紀錄
- * @param {boolean} compact 紀錄列表用的精簡版
+ * @param {boolean|'summary'|'detail'} compact 紀錄收合（summary／true）、紀錄展開（detail）；省略為結算視窗的完整版
  */
 export function siegeDetailHtml(e, compact = false) {
   const s = e.siege;
   if (!s) return '';
+  if (compact === 'summary' || compact === true) return summaryHtml(e);
+  if (compact === 'detail') return recordDetailHtml(e);
   if (e.success) {
     const gains = [chip(`💰 金幣 ×${s.coins}`), ...itemChips(s.items, '×')];
     (s.blueprints || []).forEach((b) => gains.push(chip(`📜 ${escapeHtml(b)}`, 'blue')));
