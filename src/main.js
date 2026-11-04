@@ -30,7 +30,7 @@ function setLoading(text) {
 
 function createPhaser(core) {
   const phaser = new Phaser.Game({
-    type: Phaser.AUTO,
+    type: Phaser.CANVAS, // 畫布已不顯示：用 2D 畫布，不建立 WebGL（手機省繪圖記憶體）
     parent: 'game-root',
     backgroundColor: '#1d2118',
     scale: { mode: Phaser.Scale.RESIZE, width: '100%', height: '100%' },
@@ -43,7 +43,8 @@ function createPhaser(core) {
   phaser.registry.set('viewInset', { right: 0, bottom: 0, top: 0 });
   // HUD 換行等版面變化不會觸發 window resize，需監聽容器尺寸
   const root = $('#game-root');
-  new ResizeObserver(() => phaser.scale.resize(root.clientWidth, root.clientHeight)).observe(root);
+  // 避難所畫面已移除，畫布不再顯示：隱藏並縮到最小，釋放手機的繪圖記憶體
+  new ResizeObserver(() => phaser.scale.resize(Math.max(1, root.clientWidth), Math.max(1, root.clientHeight))).observe(root);
   return phaser;
 }
 
