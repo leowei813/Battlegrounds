@@ -57,6 +57,8 @@ export const ELITE_MUL = { hp: 2.4, atk: 1.6, def: 1.5, xp: 3, coins: 3 };
 export const ZOMBIE_VS_SURVIVOR = { atk: 1.3 };
 /** 防禦減傷：受到的傷害 = 攻擊 × 100 ÷（100 + 防禦 × defFactor） */
 export const COMBAT_TUNING = { defFactor: 0.5 };
+/** 據點防守戰（掠奪、突襲）倒下的人：各有此機率重傷，其餘以剩下的生命比例撐住（守住或戰敗都適用） */
+export const HOME_DEFENSE_DOWN = { severeChance: 0.3, hpPct: 0.2 };
 export const defReduce = (def) => 100 / (100 + Math.max(0, def) * COMBAT_TUNING.defFactor);
 /** 夜晚的危險度：基本倍率，區域每高一級再增加 */
 export const NIGHT_MUL = { hp: 1.2, atk: 1.25, perDanger: 0.12 };

@@ -615,6 +615,17 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   npc.nextRaidAt = t0;
   // 其他 NPC 不在掠奪中（避免同時攻打的機制擋下這次）
   gn.npcs.list.forEach((m) => { if (m !== npc && m.trip?.kind === 'raid') m.trip = null; });
+  // 等級差上限：倖存者最高 6 人平均 Lv1 時，Lv30 的 NPC 不會來掠奪
+  gn.state.survivors.forEach((s) => { s.level = 30; });
+  assert(gn.npcs.raidLevelCap() === 50, `NPC 掠奪等級上限最多高出 20 級（${gn.npcs.raidLevelCap()}）`);
+  gn.state.survivors.forEach((s) => { s.level = 10; });
+  assert(gn.npcs.raidLevelCap() === 26, `NPC 掠奪等級上限 = 倖存者平均等級 × 倍率（Lv10 ×2.6：${gn.npcs.raidLevelCap()}）`);
+  gn.state.survivors.forEach((s) => { s.level = 4; });
+  assert(gn.npcs.raidLevelCap() === 6, `低等級時倍率較低（Lv4：${gn.npcs.raidLevelCap()}）`);
+  gn.npcs.update(t0 + 2500);
+  assert(!npc.trip, '超過等級上限的 NPC 不會來掠奪');
+  npc.nextRaidAt = t0;
+  gn.state.survivors.forEach((s) => { s.level = 15; });
   gn.npcs.update(t0 + 3000);
   assert(npc.trip?.kind === 'raid', '白天 NPC 會出動掠奪');
   gn.npcs.update(npc.trip.startAt + npc.trip.travelMs + 1);
@@ -712,7 +723,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const avg = (a2) => a2.reduce((x, y) => x + y, 0) / a2.length;
   assert(avg(lowDrops) < avg(highDrops) && lowDrops.filter((t) => t >= 9).length < 8, `越強的型號越難取得（低等平均 T${avg(lowDrops).toFixed(1)}、高等平均 T${avg(highDrops).toFixed(1)}）`);
   // 製作
-  assert(craftRarityTable(0).legendary === 0 && Math.abs(craftRarityTable(0).epic - 0.1) < 1e-9 && Math.abs(craftRarityTable(15).legendary - 0.2) < 1e-9, '製作初始稀有 0%、罕見 0.1%，滿級稀有 0.2%');
+  assert(craftRarityTable(0).legendary === 0 && Math.abs(craftRarityTable(0).epic - 0.1) < 1e-9 && Math.abs(craftRarityTable(15).legendary - 3) < 1e-9 && Math.abs(craftRarityTable(15).epic - 8) < 1e-9, '製作初始傳奇 0%、罕見 0.1%，滿級傳奇 3%、罕見 8%（與招募相同）');
+  const sumT = Object.values(craftRarityTable(7)).reduce((a, b) => a + b, 0);
+  assert(Math.abs(sumT - 100) < 1e-9 && Math.abs(craftRarityTable(15).common - 33) < 1e-9, '製作品級機率合計 100%');
   const eq = gr.equipment;
   assert(eq.canCraftModel('knuckles').ok && eq.workbench() === 0, '簡易製作不需要工作台');
   assert(!eq.canCraftModel('bat').ok, '其他裝備需要工作台');
@@ -2483,6 +2496,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const free = gn.state.map.pois.filter((p) => !gn.shelter.baseAtPoi(p.id));
   const a1 = gn.npcs.spawnAt(free[1], 'x', Date.now(), true);
   const a2 = gn.npcs.spawnAt(free[2], 'y', Date.now(), true);
+  gn.npcs.raidLevelCap = () => 99; // 這裡測試同時掠奪的機制，不受等級上限影響
   gn.npcs.launchRaid(a1, Date.now());
   assert(a1.trip?.kind === 'raid' && gn.npcs.activeRaids() === 1, 'NPC 發動掠奪');
   assert(a1.trip.travelMs >= 5 * 60000, `NPC 掠奪避難所的移動時間較長（${Math.round(a1.trip.travelMs / 60000)} 分鐘）`);
@@ -2775,6 +2789,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // V 被 NPC 掠奪隊盯上
   const free = V.state.map.pois.filter((p) => !V.shelter.baseAtPoi(p.id));
   const n = V.npcs.spawnAt(free[1], 'x', Date.now(), true);
+  V.npcs.raidLevelCap = () => 99; // 這裡測試協防，不受等級上限影響
   V.npcs.launchRaid(n, Date.now());
   assert(n.trip?.kind === 'raid', 'NPC 發動掠奪');
   H.world.others = [pres(V, 'V')];
@@ -3375,6 +3390,78 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(okHtml.includes('防守物資箱') && okHtml.includes('駐守經驗') && siegeDetailHtml(ok, true).includes('評價'), '紀錄顯示守住的獎勵');
   assert(failHtml.includes('資源損失') && failHtml.includes('駐守人員傷勢') && siegeDetailHtml(late1, true).includes('資源 −'), '紀錄顯示被突破的損失');
   gs.state.survivors.forEach((x) => { x.severe = false; });
+}
+
+// ---- 77. 據點防守戰倒下的人只有部分重傷 ----
+{
+  const { HOME_DEFENSE_DOWN: HD } = await import('../src/config/enemies.js');
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const gh = Game.newGame({ playerName: 'H77', classId: 'warrior', lat: 25, lon: 121 });
+  const svs = Array.from({ length: 40 }, (_, i) => createSurvivor(`h${i}`, 'warrior', 5, 'common'));
+  gh.state.survivors.push(...svs);
+  const result = { team: svs.map((sv) => ({ id: sv.id, down: true, hp: 0 })), kills: [], bossKills: 0, eliteKills: 0, xp: 0, coins: 0, parts: 0, victory: false };
+  gh.combat.applyOutcome(svs, result, Date.now(), { homeDefense: true });
+  const sev = svs.filter((sv) => sv.severe).length;
+  const ok = svs.filter((sv) => !sv.severe);
+  assert(sev > 0 && sev < 30 && ok.every((sv) => Math.abs(gh.survivors.hpOf(sv) - gh.survivors.maxHp(sv) * HD.hpPct) < 1), `據點防守戰倒下的人約 30% 重傷，其餘剩 20% 生命（重傷 ${sev}/40）`);
+  const svs2 = Array.from({ length: 5 }, (_, i) => createSurvivor(`e${i}`, 'warrior', 5, 'common'));
+  gh.combat.applyOutcome(svs2, { ...result, team: svs2.map((sv) => ({ id: sv.id, down: true, hp: 0 })) }, Date.now());
+  assert(svs2.every((sv) => sv.severe), '其他戰鬥倒下的人仍然重傷');
+  // 玩家突襲：對方回報擊倒的駐守人數，隨機挑在家駐守的人套用同樣規則
+  gh.state.map.pois = fillPois([], 25, 121);
+  gh.shelter.establish(gh.state.map.pois.find((p) => !gh.shelter.baseAtPoi(p.id)));
+  const hb = gh.shelter.primary();
+  const guards = Array.from({ length: 30 }, (_, i) => createSurvivor(`g${i}`, 'warrior', 5, 'common'));
+  gh.state.survivors.forEach((sv) => { sv.job = 'farm'; });
+  guards.forEach((sv) => { sv.job = 'guard'; });
+  gh.state.survivors.push(...guards);
+  const inj = gh.territory.applyRaidDowns(hb, 20);
+  const hit = guards.filter((sv) => sv.severe || gh.survivors.hpOf(sv) < gh.survivors.maxHp(sv));
+  assert(hit.length === 20 && inj.length === guards.filter((sv) => sv.severe).length && inj.length > 0 && inj.length < 20, `玩家突襲擊倒 20 名駐守：全部受傷，其中 ${inj.length} 人重傷`);
+  assert(gh.territory.applyRaidDowns(hb, 'x').length === 0 && gh.territory.applyRaidDowns(hb, -3).length === 0, '突襲事件的擊倒人數不合法時不處理');
+}
+
+// ---- 78. 後期 NPC 人數增加 ----
+{
+  const g78 = Game.newGame({ playerName: 'N78', classId: 'warrior', lat: 25, lon: 121 });
+  const fc = (lv) => g78.npcs.fullCount({ level: lv, wounded: 0 });
+  assert(fc(20) === 8 && fc(27) === 8 && fc(28) === 9 && fc(33) === 11 && fc(40) === 15, `Lv28 起每 2 級多 1 人（Lv27 ${fc(27)}、Lv28 ${fc(28)}、Lv33 ${fc(33)}、Lv40 ${fc(40)}）`);
+}
+
+// ---- 79. NPC：擊退掠奪隊的獎勵、只出現在可視範圍、隔天中午刷新 ----
+{
+  const { nextNoon } = await import('../src/systems/NpcSystem.js');
+  const { NPC_CONFIG: NC } = await import('../src/config/npcs.js');
+  const { POI_SCAN_RADIUS: PSR } = await import('../src/config/constants.js');
+  const t = new Date(2026, 10, 4, 9, 30).getTime();
+  assert(nextNoon(t) === new Date(2026, 10, 4, 12, 0).getTime() && nextNoon(new Date(2026, 10, 4, 12, 0).getTime()) === new Date(2026, 10, 5, 12, 0).getTime(), '被擊敗的 NPC 據點在下一個中午 12:00 重新出現');
+  const g79 = Game.newGame({ playerName: 'N79', classId: 'warrior', lat: 25, lon: 121 });
+  g79.state.map.pois = fillPois([], 25, 121);
+  g79.shelter.establish(g79.state.map.pois[0]);
+  const b79 = g79.shelter.primary();
+  g79.npcs.fillCells(Date.now(), { silent: true });
+  assert(g79.npcs.list.length > 0 && g79.npcs.list.every((n) => haversine(n.lat, n.lon, b79.lat, b79.lon) <= PSR + 1), `NPC 據點只出現在避難所的可視範圍（${PSR} 公尺）內（${g79.npcs.list.length} 個）`);
+  // 擊退掠奪隊：賞金、裝備、經驗
+  const all = Array.from({ length: 6 }, () => g79.combat.createEnemy('raider', 20));
+  all.push(g79.combat.createEnemy('raiderChief', 20));
+  const L = g79.survivors.leader();
+  const xp0 = L.xp; const lv0 = L.level; const c0 = g79.state.player.coins;
+  const R = NC.raidReward;
+  let drops = 0; let chiefDrops = 0;
+  for (let i = 0; i < 200; i += 1) {
+    const rw = g79.npcs.raidReward({ name: '測試', level: 20, lat: b79.lat, lon: b79.lon }, all, { alive: [] }, { kills: [] }, i === 0 ? [L] : [], new Set());
+    drops += rw.gear.length;
+    chiefDrops += rw.gear.filter((x) => x.chief).length;
+    if (i === 0) assert(rw.coins === Math.round(7 * 20 * R.bounty) && g79.state.player.coins - c0 === rw.coins && rw.downed === 7, `賞金 = 擊倒人數 × NPC 等級 × 0.5（${rw.coins}）`);
+    if (i === 0) assert(rw.xp.length === 1 && (L.level > lv0 || L.xp > xp0), '參與防守的人獲得經驗');
+  }
+  const expect = 200 * (R.chiefGear + 6 * R.raiderGear);
+  assert(drops > expect * 0.6 && drops < expect * 1.4 && chiefDrops > 200 * R.chiefGear * 0.6, `遺落裝備：首領 30%、每名掠奪者 5%（200 次共 ${drops} 件，預期約 ${expect}）`);
+  const none = g79.npcs.raidReward({ name: '測試', level: 20, lat: b79.lat, lon: b79.lon }, all, { alive: [...all] }, null, [], new Set());
+  assert(none.coins === 0 && none.gear.length === 0, '沒有擊倒掠奪者就沒有賞金與裝備');
+  const { raidRewardHtml } = await import('../src/ui/SiegeResult.js');
+  const fake = { reward: { npc: '測試', level: 20, raiders: 7, downed: 7, coins: 70, gear: [{ name: '步槍', rarity: 'epic', chief: true, kept: true }], xp: [{ name: 'A', level: 5, xp: 10 }], hurt: [] } };
+  assert(raidRewardHtml(fake).includes('賞金') && raidRewardHtml(fake, 'summary').includes('裝備 ×1') && raidRewardHtml(fake, 'detail').includes('防守經驗'), '結算視窗與紀錄顯示擊退掠奪隊的獎勵');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

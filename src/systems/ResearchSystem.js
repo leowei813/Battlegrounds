@@ -113,6 +113,8 @@ export class ResearchSystem {
     this.state.active = null;
     this.invalidate();
     this.game.state.stats.researchDone += 1;
+    // 剛完成：卡片與分支標示 NEW，玩家看過後才消失
+    this.state.fresh = { ...(this.state.fresh || {}), [active.id]: { level: this.level(active.id), at: now } };
     const name = `${RESEARCH[active.id].name} Lv${this.level(active.id)}`;
     this.game.log(`🔬 研究完成：「${name}」`, 'success');
     this.game.toast(`研究完成：${name}`, 'success');

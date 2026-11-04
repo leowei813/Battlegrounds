@@ -1,6 +1,9 @@
 import { AssistSystem } from './AssistSystem.js';
 import { NPC_CONFIG, NPC_NAMES, npcAggression } from '../config/npcs.js';
-import { RESOURCE_KEYS, RAID_TRAVEL } from '../config/constants.js';
+import { xpToNext } from '../config/survivors.js';
+import {
+  RESOURCE_KEYS, RAID_TRAVEL, POI_SCAN_RADIUS, OUTPOST_SCAN_RADIUS,
+} from '../config/constants.js';
 import { ShelterSystem } from './ShelterSystem.js';
 import { unitWeight } from '../config/supplies.js';
 import { POI_TYPES } from '../config/poiTypes.js';
@@ -37,6 +40,14 @@ const rand = ([a, b]) => randFloat(a, b);
 /** 攻陷 NPC 據點時能搶到的金錢比例 */
 const NPC_COIN_LOOT = 0.35;
 
+/** 下一個中午 12:00（當地時間）：被擊敗的 NPC 據點在這時才重新出現 */
+export function nextNoon(at = Date.now()) {
+  const d = new Date(at);
+  d.setHours(NPC_CONFIG.respawnHour ?? 12, 0, 0, 0);
+  if (d.getTime() <= at) d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+
 export class NpcSystem {
   constructor(game) {
     this.game = game;
@@ -67,7 +78,10 @@ export class NpcSystem {
 
   /** 滿編時的掠奪者人數（不含首領） */
   fullCount(n) {
-    return Math.min(8, 3 + Math.floor(n.level / 4));
+    // 後期：Lv28 起每 2 級多 1 人（Lv33 共 11 人、Lv40 共 15 人，另有首領），需要更多人在家才守得住
+    const c = NPC_CONFIG.lateGarrison;
+    const extra = c && n.level >= c.from ? Math.floor((n.level - c.from) / c.step) + 1 : 0;
+    return Math.min(8, 3 + Math.floor(n.level / 4)) + extra;
   }
 
   /** NPC 據點的防禦：圍牆耐久與防禦火力（攻打時要先破牆） */
@@ -239,6 +253,9 @@ export class NpcSystem {
     // 玩家據點附近（警戒範圍，或至少 300 公尺）不會有 NPC：所有玩家據點都一樣
     const zones = this.playerZones().map((z) => ({ ...z, r: Math.max(z.r, NPC_CONFIG.minFromShelterM) }));
     const inAlert = (p) => zones.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r);
+    // 只出現在玩家的可視範圍內（避難所 POI_SCAN_RADIUS、前哨站 OUTPOST_SCAN_RADIUS；所有玩家都算，彼此看到的相同）
+    const views = this.viewZones();
+    const inView = (p) => views.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r);
     // 哪些格子有 NPC：只看 OpenStreetMap 的真實建築（所有玩家相同），不看各自隨機補上的建築；
     // 完全沒有真實建築資料時（離線、程序生成地圖）才用全部建築
     const pois = this.game.state.map.pois;
@@ -254,7 +271,7 @@ export class NpcSystem {
         // 同一格裡靠太近的 NPC 只保留編號小的：只依格子本身判斷，與各玩家看到的範圍無關（所有玩家相同）
         if (inCell.some((x) => haversine(x.lat, x.lon, s.lat, s.lon) < 120)) continue;
         inCell.push(s);
-        if (haversine(o.lat, o.lon, s.lat, s.lon) < NPC_CONFIG.minFromShelterM || inAlert(s)) continue;
+        if (haversine(o.lat, o.lon, s.lat, s.lon) < NPC_CONFIG.minFromShelterM || inAlert(s) || !inView(s)) continue;
         want.push(s);
       }
     });
@@ -314,6 +331,16 @@ export class NpcSystem {
   }
 
   /** 玩家據點的警戒範圍（NPC 不會出現在裡面） */
+  /** 所有玩家的可視範圍：避難所（主要據點）1200 公尺、前哨站 500 公尺 */
+  viewZones() {
+    const g = this.game;
+    const primary = g.shelter.primary();
+    return [
+      ...g.state.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: b === primary ? POI_SCAN_RADIUS : OUTPOST_SCAN_RADIUS })),
+      ...(g.world?.others || []).flatMap((p) => p.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: b.primary ? POI_SCAN_RADIUS : OUTPOST_SCAN_RADIUS }))),
+    ];
+  }
+
   playerZones() {
     const g = this.game;
     return [
@@ -629,6 +656,8 @@ export class NpcSystem {
     if (!bases.length) return;
     // 盡量避免多個 NPC 同時攻打玩家：已經有掠奪隊在路上時大多會放棄，玩家文明度很高時才比較常發生
     if (!this.allowConcurrentRaid(now)) return;
+    // 等級差太大不出手：避免高等 NPC 一面倒地掠奪等級低很多的玩家
+    if (n.level > this.raidLevelCap()) return;
     const base = pick(bases);
     const t = this.tripTimes(n, base, 0, base.id);
     // 掠奪避難所的移動時間較長，讓玩家有時間準備防守
@@ -641,6 +670,16 @@ export class NpcSystem {
     const eta = `約 ${Math.max(1, Math.round(t.travelMs / 60000))} 分鐘後抵達`;
     this.game.log(`🏴‍☠️「${n.name}」的掠奪隊正朝「${base.name}」前進！（${eta}）`, 'danger');
     this.game.toast(`🏴‍☠️「${n.name}」（${this.intelView(n).levelShort}）的掠奪隊正朝「${base.name}」前進！（${eta}）`, 'danger');
+  }
+
+  /** 會掠奪這位玩家的 NPC 等級上限：倖存者中等級最高 6 人的平均等級 × 倍率（倍率隨等級提高，最多高出 20 級） */
+  raidLevelCap() {
+    const top = this.game.state.survivors.map((s) => s.level).sort((a, b) => b - a).slice(0, 6);
+    const avg = top.length ? top.reduce((a, b) => a + b, 0) / top.length : 1;
+    const c = NPC_CONFIG;
+    const m = c.raidLevelMul || { base: 99, perLevel: 0 };
+    // 至少比平均等級高 2 級（新手也會遇到同等級的 NPC）
+    return Math.floor(Math.max(avg + 2, Math.min(avg * (m.base + m.perLevel * avg), avg + (c.raidLevelGap ?? 99))) + 1e-9);
   }
 
   /** 正在前往玩家據點的 NPC 掠奪隊數量 */
@@ -720,7 +759,7 @@ export class NpcSystem {
     let result = null;
     if (as.breached && (defenders.length || allies.length)) {
       result = g.combat.simulate(defenders, enemies, { firstStrikeBonus: base.facilities.watchtower.level * 0.04, allies, title: `🛡️ 防守 NPC「${n.name}」的掠奪` });
-      g.combat.applyOutcome(defenders, result, now);
+      g.combat.applyOutcome(defenders, result, now, { homeDefense: true });
       victory = result.victory;
     }
     const label0 = `NPC「${n.name}」`;
@@ -734,14 +773,17 @@ export class NpcSystem {
     const label = `NPC「${n.name}」（${this.intelView(n).levelShort}）`;
     if (victory) {
       const injured = ShelterSystem.newlySevere(severeBefore, defenders);
+      const participants = [...new Set([...wallGuards, ...(as.breached ? defenders : [])])];
+      const reward = this.raidReward(n, all, as, result, participants, severeBefore);
       g.state.stats.battlesWon += 1;
       const how = !as.breached
         ? (enemies.length ? `圍牆撐住了 ${as.sec} 秒，掠奪隊放棄撤退` : '防禦設施在圍牆被打破前擊退了掠奪隊')
         : `圍牆被打破，防守人員（${defenders.map((d) => d.name).join('、')}）擊退了掠奪隊`;
-      g.shelter.recordDefense({
-        base, attacker: label, success: true, kills, injured, wallLost: as.wallLost, note: [how, assistNote].filter(Boolean).join('。'),
+      const entry = g.shelter.recordDefense({
+        base, attacker: label, success: true, kills, injured, wallLost: as.wallLost, note: [how, assistNote].filter(Boolean).join('。'), reward,
       });
       g.toast(`🛡️「${base.name}」擊退了「${n.name}」的掠奪隊！`, 'success');
+      g.bus.emit('raid:result', entry);
       this.levelDown(n);
       g.bus.emit('npc:raid', { npcId: n.id, baseId: base.id, victory: true });
       return;
@@ -768,6 +810,40 @@ export class NpcSystem {
     g.bus.emit('npc:raid', {
       npcId: n.id, baseId: base.id, victory: false, stolen, coins,
     });
+  }
+
+  /**
+   * 擊退掠奪隊的獎勵（只給防守方）：賞金、被擊倒的掠奪者遺落的裝備、參與防守的人的經驗。
+   * @returns {{coins:number, gear:object[], xp:object[], hurt:object[], level:number, npc:string}}
+   */
+  raidReward(n, all, as, result, participants, severeBefore) {
+    const g = this.game;
+    const R = NPC_CONFIG.raidReward;
+    // 被擊倒的掠奪者：守城時被防禦設施擊倒的，加上破牆後戰鬥中被擊倒的
+    const downed = [...all.filter((e) => !as.alive.includes(e)), ...(result?.kills || [])];
+    const coins = Math.round(downed.length * n.level * R.bounty);
+    if (coins) g.state.player.coins += coins;
+    const boost = 0.3 + zoneAt(n.lat, n.lon).rarityBoost;
+    const gear = [];
+    downed.forEach((e) => {
+      if (!chance(e.enemyId === 'raiderChief' ? R.chiefGear : R.raiderGear)) return;
+      const item = g.equipment.generate({ level: n.level, boost });
+      const kept = g.equipment.addItem(item, '掠奪隊遺落') !== false;
+      gear.push({ name: item.name, rarity: item.rarity, chief: e.enemyId === 'raiderChief', kept });
+    });
+    const xp = participants.map((sv) => {
+      const amount = Math.round(xpToNext(sv.level) * R.xpPct);
+      const level = sv.level;
+      g.survivors.gainXp(sv, amount);
+      return { name: sv.name, level, xp: amount };
+    });
+    const hurt = participants.filter((sv) => !severeBefore.has(sv.id) && (sv.severe || g.survivors.hpOf(sv) < g.survivors.maxHp(sv)))
+      .map((sv) => ({ name: sv.name, severe: !!sv.severe, pct: Math.round((g.survivors.hpOf(sv) / g.survivors.maxHp(sv)) * 100) }));
+    const list = [`💰${coins}`, ...gear.map((x) => `🎁${x.name}${x.kept ? '' : '（空間不足，留在原地）'}`)];
+    g.log(`🛡️ 擊退「${n.name}」的獎勵：${list.join('、')}${xp.length ? `；${xp.length} 名防守人員獲得經驗` : ''}`, 'success');
+    return {
+      npc: n.name, level: n.level, raiders: all.length, downed: downed.length, coins, gear, xp, hurt,
+    };
   }
 
   /** 防守的倖存者：避難所為所有在家的可行動人員；前哨站只有駐守瞭望塔的人 */
@@ -846,7 +922,7 @@ export class NpcSystem {
   destroy(n, now = Date.now()) {
     this.state.list = this.list.filter((x) => x.id !== n.id);
     n.gone = true;
-    const respawnAt = now + rand(NPC_CONFIG.respawnMs);
+    const respawnAt = nextNoon(now);
     this.state.cellNext = this.state.cellNext || {};
     this.state.cellNext[n.cell || this.cellOf(n.lat, n.lon)] = respawnAt;
     // 共用 NPC：所有玩家的地圖上一起消失，重生時間到後出現新的勢力

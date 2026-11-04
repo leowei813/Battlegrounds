@@ -2,6 +2,7 @@ import { APP_VERSION } from './config/version.js';
 import Phaser from 'phaser';
 import './styles/main.css';
 import { Game } from './core/Game.js';
+import { RESEARCH, effectText } from './config/research.js';
 import { BootScene } from './scenes/BootScene.js';
 import { ShelterScene } from './scenes/ShelterScene.js';
 import { UIManager } from './ui/UIManager.js';
@@ -46,8 +47,21 @@ function createPhaser(core) {
   return phaser;
 }
 
+/** 離線期間完成的研究與建造 */
+function offlineDoneHtml(report) {
+  const d = report.done || {};
+  const rs = (d.research || []).map((x) => `<div class="li-row"><span>${RESEARCH[x.id]?.name || x.id} Lv${x.from} → Lv${x.to}</span><span class="pos">${x.from ? `${effectText(x.id, x.from)} → ` : ''}${effectText(x.id, x.to)}</span></div>`).join('');
+  const bd = (d.builds || []).map((m) => `<div class="li-row"><span>${m}</span><span class="pos">完成</span></div>`).join('');
+  if (!rs && !bd && !report.labIdle) return '';
+  return `<div class="offline-done"><h4>📬 離線期間完成</h4>
+    ${rs ? `<div class="sr-sec">🔬 研究</div>${rs}` : ''}
+    ${bd ? `<div class="sr-sec">🏗️ 建造</div>${bd}` : ''}
+    ${report.labIdle ? '<div class="li-row warn-row"><span>⚠️ 研究中心目前閒置</span><span>可以開始下一項研究</span></div>' : ''}</div>`;
+}
+
 function showOfflineReport(ui, report) {
   return ui.modal.open({
+    onAction: (action, _d, m) => { if (action === 'gotoResearch') { m.close(); ui.switchTab('research'); } },
     title: '🌙 離線收益',
     body: `
       <p>你離開了 <b>${formatDuration(report.elapsed)}</b>${report.capped ? '（已達 24 小時上限）' : ''}。倖存者們持續運作避難所：</p>
@@ -56,7 +70,8 @@ function showOfflineReport(ui, report) {
       ${report.starving ? '<p class="warn">🍽️ 食物已耗盡，人員正在挨餓並持續扣血！請盡快補充食物。</p>' : ''}
       ${report.deaths > 0 ? `<p class="warn">⚰️ 離線期間有 ${report.deaths} 名隊員因長期飢餓死亡。</p>` : ''}
       ${report.defense ? `<p>🛡️ 離線防守擊殺 ${report.defense.kills} 隻殭屍，獲得 💰${report.defense.coins}</p>` : '<p class="muted">研究「夜行者」可解鎖離線防守收益。</p>'}
-      <div class="btn-row end"><button class="btn btn-primary" data-action="close">太好了！</button></div>`,
+      ${offlineDoneHtml(report)}
+      <div class="btn-row end">${report.labIdle ? '<button class="btn btn-ghost" data-action="gotoResearch">🔬 前往研究</button>' : ''}<button class="btn btn-primary" data-action="close">太好了！</button></div>`,
   });
 }
 
@@ -221,6 +236,7 @@ async function boot() {
     window.__game = game;
     window.__cloud = cloud;
     window.__ui = ui;
+    window.__offline = (r) => showOfflineReport(ui, r); // 開發用：預覽離線報告
   }
 }
 

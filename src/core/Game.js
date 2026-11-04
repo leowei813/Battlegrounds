@@ -161,7 +161,8 @@ export class Game {
     // 裝備戰力公式可能更新（例如計入詞條）：每次啟動重新計算
     this.equipment.items.forEach((it) => { it.power = this.equipment.itemPower(it); });
     this.thinMap();
-    this.markers.ensure();
+    // 標記地點已移除：清除舊存檔的標記（不再保留遠處的標記建築）
+    if (this.state.map.markers?.length) this.state.map.markers = [];
     const report = this.processOffline();
     this.quests.ensureDaily();
     this.lastPhase = this.time.phaseId();
@@ -253,6 +254,9 @@ export class Game {
     const before = { ...this.state.resources, coins: this.state.player.coins, parts: this.state.player.parts };
     const killsBefore = this.state.stats.kills;
     const survivorsBefore = this.state.survivors.length;
+    // 離線期間完成的研究與建造（回到遊戲時列出）
+    const levelsBefore = { ...this.state.research.levels };
+    const logBefore = this.state.log.length ? this.state.log[0] : null;
     this.resources.apply(elapsed, { offline: true });
     this.shelter.update(now, elapsed);
     this.research.update(now);
@@ -269,8 +273,19 @@ export class Game {
       const after = k in this.state.resources ? this.state.resources[k] : this.state.player[k];
       gains[k] = Math.floor(after - before[k]);
     });
+    const newLogs = [];
+    for (const l of this.state.log) {
+      if (l === logBefore) break;
+      newLogs.push(l);
+    }
+    const done = {
+      research: Object.entries(this.state.research.levels).filter(([id, lv]) => lv > (levelsBefore[id] || 0))
+        .map(([id, lv]) => ({ id, from: levelsBefore[id] || 0, to: lv })),
+      builds: newLogs.filter((l) => l.msg.startsWith('🏗️') && l.msg.includes('升到')).map((l) => l.msg.replace(/^🏗️\s*/, '')).reverse(),
+    };
     this.log(`🌙 離線 ${Math.round(elapsed / 60000)} 分鐘，收益已結算`, 'info');
     return {
+      done, labIdle: this.research.labLevel() > 0 && !this.state.research.active,
       elapsed, gains, expeditions: reports.length, defense, kills: this.state.stats.kills - killsBefore,
       capped: now - this.state.lastSaveAt > OFFLINE_CAP_MS,
       starving: !!this.state.starving,

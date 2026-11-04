@@ -5,7 +5,7 @@ import { $, delegateActions, escapeHtml } from '../utils/dom.js';
 import { formatNumber } from '../utils/math.js';
 import { Toast } from './Toast.js';
 import { Modal } from './Modal.js';
-import { openSiegeResult } from './SiegeResult.js';
+import { openSiegeResult, openRaidResult } from './SiegeResult.js';
 import { progressBar, metaOf } from './components.js';
 import { MapPanel } from './panels/MapPanel.js';
 import { ShelterPanel } from './panels/ShelterPanel.js';
@@ -172,6 +172,10 @@ export class UIManager {
       if (!this.game.started || this.modal.current) return;
       openSiegeResult(this, e);
     });
+    bus.on('raid:result', (e) => {
+      if (!this.game.started || this.modal.current) return;
+      openRaidResult(this, e);
+    });
     bus.on(EVT.OPEN_POI, ({ poiId }) => this.panels.map.openPoi(poiId));
     bus.on('ui:openZombie', ({ groupId }) => this.panels.map.openZombie(groupId));
     bus.on('ui:openPlayer', ({ playerId }) => this.panels.map.openPlayer(playerId));
@@ -194,7 +198,8 @@ export class UIManager {
       this.panels.map.lastOverlay = '';
       if (this.tab === 'map') this.panels.map.renderOverlay();
     });
-    if (this.game.gps.enabled) this.game.gps.start();
+    // GPS 偵測已移除：舊存檔開著的也關閉
+    if (this.game.gps.enabled) this.game.gps.setEnabled(false);
     bus.on(WORLD_EVT, (players) => this.panels.map.onWorld(players));
     bus.on(EVT.MAP_CHANGED, () => this.panels.map.renderMap(true));
     bus.on('expedition:done', () => this.panels.map.renderMap(true));
@@ -236,6 +241,7 @@ export class UIManager {
   switchTab(id) {
     if (!this.panels[id]) return;
     if (this.tab === 'map' && id !== 'map') this.panels.map.onHide();
+    if (this.tab !== id) this.panels[this.tab]?.onLeave?.();
     if (id !== 'map' && this.chatView?.isOpen) this.chatView.close(); // 聊天只在地圖分頁開啟
     this.tab = id;
     this.lastHtml = '';
@@ -405,11 +411,27 @@ export class UIManager {
       survivors: g.state.recruitPool.length,
     };
     counts.more = MORE_TABS.reduce((s, id) => s + (counts[id] || 0), 0);
+    // 研究：閒置時亮紅色「閒置」，研究中顯示剩餘時間
+    const rs = this.researchBadge();
     this.nav.querySelectorAll('[data-badge]').forEach((el) => {
-      const n = counts[el.dataset.badge] || 0;
-      el.textContent = n ? String(n) : '';
-      el.classList.toggle('on', n > 0);
+      const key = el.dataset.badge;
+      const n = counts[key] || 0;
+      const text = key === 'research' || (key === 'more' && !n) ? rs?.text : null;
+      el.textContent = text || (n ? String(n) : '');
+      el.classList.toggle('on', !!text || n > 0);
+      el.classList.toggle('badge-info', !!text && rs.kind === 'busy');
     });
+  }
+
+  /** 研究狀態徽章：研究中心閒置 → 閒置；研究中 → 剩餘時間 */
+  researchBadge() {
+    const g = this.game;
+    if (!g.research.labLevel()) return null;
+    const a = g.state.research.active;
+    if (!a) return { kind: 'idle', text: '閒置' };
+    const left = Math.max(0, a.endAt - Date.now());
+    const min = Math.ceil(left / 60000);
+    return { kind: 'busy', text: min >= 60 ? `${Math.floor(min / 60)}時` : `${min}分` };
   }
 
   showRates() {

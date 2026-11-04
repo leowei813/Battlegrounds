@@ -120,6 +120,28 @@ export function statRangeLine(range) {
     .join('');
 }
 
+/** 詞條素質：數值落在該品級可擲出範圍內的位置（0～100%） */
+export function affixQuality(item, { id, value }) {
+  const a = AFFIXES[id];
+  const r = RARITIES[item.rarity];
+  if (!a || !r) return null;
+  const base = a.value + (a.perLevel || 0) * ((item.level || 1) - 1);
+  if (!(base > 0) || r.max <= r.min) return null;
+  return Math.round(Math.max(0, Math.min(1, (value / base - r.min) / (r.max - r.min))) * 100);
+}
+
+/** 附加詞條（裝備欄）：數值與素質，滿素質（100%）才以金色底標示 */
+export function affixChips(item) {
+  return (item.affixes || []).map((af) => {
+    const a = AFFIXES[af.id];
+    if (!a) return '';
+    const { value } = af;
+    const v = a.pct ? `${(value * 100).toFixed(1)}%` : value < 1 ? value.toFixed(2) : Math.round(value);
+    const q = affixQuality(item, af);
+    return `<span class="affix-chip ${q === 100 ? 'max' : ''}">✦ ${a.name.replace('%', '')} +${v}${q != null ? `<small>素質 ${q}%</small>` : ''}</span>`;
+  }).join('');
+}
+
 export function affixLines(item) {
   return item.affixes
     .map(({ id, value }) => {
