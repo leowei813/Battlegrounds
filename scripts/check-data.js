@@ -616,12 +616,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 其他 NPC 不在掠奪中（避免同時攻打的機制擋下這次）
   gn.npcs.list.forEach((m) => { if (m !== npc && m.trip?.kind === 'raid') m.trip = null; });
   // 等級差上限：倖存者最高 6 人平均 Lv1 時，Lv30 的 NPC 不會來掠奪
-  gn.state.survivors.forEach((s) => { s.level = 1; });
-  assert(gn.npcs.raidLevelCap() === 21, `NPC 掠奪等級上限 = 倖存者平均等級 + 20（${gn.npcs.raidLevelCap()}）`);
+  gn.state.survivors.forEach((s) => { s.level = 30; });
+  assert(gn.npcs.raidLevelCap() === 50, `NPC 掠奪等級上限最多高出 20 級（${gn.npcs.raidLevelCap()}）`);
+  gn.state.survivors.forEach((s) => { s.level = 10; });
+  assert(gn.npcs.raidLevelCap() === 20, `NPC 掠奪等級上限 = 倖存者平均等級 × 2（${gn.npcs.raidLevelCap()}）`);
   gn.npcs.update(t0 + 2500);
-  assert(!npc.trip, '等級差超過 20 的 NPC 不會來掠奪');
+  assert(!npc.trip, '超過等級上限的 NPC 不會來掠奪');
   npc.nextRaidAt = t0;
-  gn.state.survivors.forEach((s) => { s.level = 12; });
+  gn.state.survivors.forEach((s) => { s.level = 15; });
   gn.npcs.update(t0 + 3000);
   assert(npc.trip?.kind === 'raid', '白天 NPC 會出動掠奪');
   gn.npcs.update(npc.trip.startAt + npc.trip.travelMs + 1);
