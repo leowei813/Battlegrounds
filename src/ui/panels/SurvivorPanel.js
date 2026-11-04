@@ -122,6 +122,16 @@ export class SurvivorPanel {
     return 'home';
   }
 
+  /** 卡片血條：8px 粗條＋生命（滿血顯示數值、受傷顯示百分比），依血量變色 */
+  hpRow(sv, ratio) {
+    const g = this.game;
+    const r = Math.max(0, Math.min(1, ratio));
+    const pct = Math.round(r * 100);
+    const cls = r >= 0.7 ? 'ok' : r >= 0.3 ? 'mid' : 'low';
+    const text = r >= 0.999 ? `${Math.floor(g.survivors.hpOf(sv))}/${g.survivors.maxHp(sv)}` : `${pct}%`;
+    return `<span class="sv-mini-hp-row"><span class="sv-mini-hp"><i style="width:${pct}%" class="${cls}"></i></span><b class="sv-mini-hpn ${cls}">❤️ ${text}</b></span>`;
+  }
+
   /** 列表的小卡片（一列兩位） */
   rosterCard(sv) {
     const g = this.game;
@@ -132,14 +142,14 @@ export class SurvivorPanel {
     const exp = k === 'out' ? g.state.expeditions.find((e) => e.memberIds.includes(sv.id)) : null;
     const where = exp ? `${g.exploration.poi(exp.poiId)?.name || '外出'}・剩 ${formatDuration(Math.max(0, exp.endAt - Date.now()))}` : null;
     const job = k === 'hurt' ? '重傷・需要治療' : where || `${JOBS[sv.job]?.icon || ''} ${JOBS[sv.job]?.name || '閒置'}`;
-    const tag = { home: '<span class="sv-tag home">在家</span>', out: '<span class="sv-tag out">外出</span>', hurt: '<span class="sv-tag hurt">重傷</span>' }[k];
+    const tag = { home: '<span class="sv-tag home">在家</span>', out: '<span class="sv-tag out">外出</span>', hurt: '<span class="sv-tag hurt">🩸 重傷</span>' }[k];
     const load = Math.floor(g.survivors.bagLoad(sv));
     const r = sv.isLeader ? '#ffd54f' : (RARITIES[sv.rarity] || RARITIES.common).color;
     return `<button class="sv-mini ${this.selId === sv.id ? 'on' : ''}" data-action="selSv" data-id="${sv.id}" data-sv="${sv.id}" style="--rc:${r}">
       <span class="sv-drag" data-drag="${sv.id}" title="按住拖移調整順序">⠿</span>
       <span class="sv-mini-top"><b>${cls.icon} ${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b>${sv.isLeader ? '' : `${rarityTag(sv.rarity)}${this.qTag(g.survivors.avgQuality(sv))}`}<i class="sv-mini-sp"></i>${tag}</span>
       <small class="muted">${cls.name} Lv${sv.level}・戰力 ${s.power}</small>
-      <span class="sv-mini-hp"><i style="width:${Math.round(Math.max(0, Math.min(1, hp)) * 100)}%" class="${hp < 0.3 ? 'low' : ''}"></i></span>
+      ${this.hpRow(sv, hp)}
       <span class="sv-mini-jobrow"><small class="muted sv-mini-job">${job}</small>${towerTag(g, sv)}</span>
       <small class="muted">🎒 ${load}/${g.survivors.bagCap(sv)}</small>
     </button>`;

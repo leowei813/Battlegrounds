@@ -1075,3 +1075,14 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .sv-mini-jobrow { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
 .sv-mini-jobrow .sv-mini-job { min-width: 0; flex: 0 1 auto; }
 .sv-mini-jobrow .tw-tag { font-size: 11px; white-space: nowrap; }
+/* 倖存者卡片血條：加粗＋數字（手機 Safari 需要明確寬度） */
+.sv-mini-hp-row { display: flex; align-items: center; gap: 6px; width: 100%; margin: 2px 0; }
+.sv-mini-hp-row .sv-mini-hp { flex: 1 1 auto; width: 100%; min-width: 30px; height: 8px; border-radius: 4px; background: #0008; border: 1px solid #ffffff14; overflow: hidden; }
+.sv-mini-hp-row .sv-mini-hp i { height: 100%; border-radius: 4px; }
+.sv-mini-hp i.ok { background: #66bb6a; }
+.sv-mini-hp i.mid { background: #ffb300; }
+.sv-mini-hp i.low { background: #e53935; }
+.sv-mini-hpn { flex-shrink: 0; font-size: 12px; white-space: nowrap; }
+.sv-mini-hpn.ok { color: #a5d6a7; } .sv-mini-hpn.mid { color: #ffcc80; } .sv-mini-hpn.low { color: #ef9a9a; }
+.sv-tag.hurt { background: #c62828; color: #fff; font-weight: 800; }
+.sv-mini { width: 100%; }
