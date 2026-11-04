@@ -797,7 +797,11 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .gear-cell.empty { background: transparent; border-style: dashed; padding: 8px 10px; text-align: left; line-height: 1.5; }
 .gear-stats { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 12px; margin-top: 3px; }
 .gear-affixes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.affix-chip { font-size: 12px; padding: 1px 7px; border-radius: 8px; background: color-mix(in srgb, var(--rc) 16%, transparent); border: 1px solid color-mix(in srgb, var(--rc) 45%, transparent); white-space: nowrap; }
+.affix-chip { font-size: 12px; padding: 1px 0; white-space: nowrap; color: var(--text); }
+.affix-chip small { margin-left: 5px; color: var(--muted); font-size: 11px; }
+.affix-chip.max { padding: 1px 7px; border-radius: 8px; background: #ffb30026; border: 1px solid #ffb300; color: #ffd54f; }
+.affix-chip.max small { color: #ffd54f; }
+.gear-affixes { column-gap: 14px; }
 @media (max-width: 600px) {
   .gear-grid { grid-template-columns: minmax(0, 1fr); }
   .gear-cell b { white-space: normal; font-size: 15px; }
@@ -830,7 +834,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .sv-layout:not(.pane-open) .sv-pane { display: none; }
   .sv-pane { padding: 10px 12px 28px; }
   .sv-back { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; font-size: 18px; }
-  .sv-pane-head .grow { min-width: 0; }
+  .sv-pane-head .grow { min-width: 0; flex: 1 1 calc(100% - 140px); }
+  .sv-pane-head > .tag, .sv-pane-head > .btn:not(.sv-back), .sv-pane-head > span:not(.sv-icon) { margin-left: 0; }
   .sv-bars { grid-template-columns: 1fr; gap: 6px; }
   .sv-bar { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 10px; }
   .sv-tabs { position: sticky; top: 0; z-index: 3; background: var(--bg); }
