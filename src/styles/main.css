@@ -1040,3 +1040,24 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .sv-mini.dragging { opacity: .55; outline: 2px dashed #ffb300aa; }
 .sv-mini.drop-before { box-shadow: -4px 0 0 0 #ffb300, inset 0 3px 0 0 #ffb300; }
 .sv-mini.drop-after { box-shadow: 4px 0 0 0 #ffb300, inset 0 -3px 0 0 #ffb300; }
+/* 市場頁 */
+.market-page h3 { margin: 4px 0; }
+.cnt-badge { display: inline-block; background: #1565c0; color: #fff; border-radius: 9px; font-size: 11px; font-weight: 800; padding: 0 6px; line-height: 17px; margin-left: 4px; }
+/* 地圖快速切換警戒 */
+.map-tools .alert-btn .alert-lbl { position: absolute; right: 48px; top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 11px; font-weight: 800; border-radius: 8px; padding: 1px 7px; background: #1b5e20; color: #c8e6c9; pointer-events: none; }
+.map-tools .alert-btn .alert-lbl.on { background: #c62828; color: #fff; }
+.map-tools .btn.alert-btn.on { background: #c62828; border-color: #ff8a80; box-shadow: 0 0 0 4px #e5393544, 0 0 14px #e53935aa; animation: alert-pulse 1.6s ease-in-out infinite; }
+@keyframes alert-pulse { 50% { box-shadow: 0 0 0 7px #e5393522, 0 0 18px #e53935cc; } }
+.map-overlay.alerting { box-shadow: inset 0 0 0 3px #e53935aa; }
+.map-alert-banner { position: absolute; top: 10px; left: 56px; right: 64px; background: #b71c1cdd; color: #fff; border-radius: 10px; padding: 5px 10px; font-size: 13px; font-weight: 700; pointer-events: none; text-align: center; }
+.map-alert-banner ~ .siege-banner { top: 46px; }
+/* 分享報告到聊天室 */
+.row-gap { display: inline-flex; gap: 6px; align-items: center; }
+.share-card { display: inline-flex; flex-direction: column; text-align: left; max-width: 92%; border: 1px solid #8fc3ff55; border-left: 3px solid #8fc3ff; background: #162430; border-radius: 10px; padding: 6px 10px; font-size: 13px; line-height: 1.45; }
+.share-card.siege { border-color: #ffab4055; border-left-color: #ffab40; background: #2a2116; }
+.share-card .t { font-weight: 800; }
+.share-card .n { color: var(--muted, #90a4ae); }
+.chat-msg.mine .share-card { margin-left: auto; }
+.share-preview { margin: 8px 0; }
+.share-note { display: block; margin: 8px 0 4px; }
+.share-note input { width: 100%; box-sizing: border-box; }

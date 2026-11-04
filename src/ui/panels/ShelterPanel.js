@@ -1,5 +1,4 @@
-import { exchangeBody, exchangeAction, exchangeForm } from '../ExchangeDialog.js';
-import { blackMarketBody, blackMarketAction } from '../BlackMarketView.js';
+import { shareBtn, openShareDialog } from '../ShareDialog.js';
 import { FACILITIES, FACILITY_MAX_LEVEL, OUTPOST_FACILITIES } from '../../config/facilities.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL, defenseBuildTime } from '../../config/defenses.js';
 import { CLASSES } from '../../config/survivors.js';
@@ -17,9 +16,9 @@ import { BUILD_QUEUE_SIZE } from '../../config/constants.js';
  * 避難所分頁（側邊/底部抽屜）：設施升級、施工佇列、防禦建築、事件紀錄。
  */
 /** 避難所面板的分頁 */
-const SHELTER_TABS = ['overview', 'facilities', 'defense', 'storage', 'garage', 'exchange', 'blackmarket'];
+const SHELTER_TABS = ['overview', 'facilities', 'defense', 'storage', 'garage'];
 /** 避難所面板本身處理的操作（其餘在倉庫、車庫分頁時交給倉庫面板） */
-const SHELTER_ACTIONS = ['gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon', 'cancelBuild', 'toggleAlert', 'facFilter', 'gotoTab', 'defBuild', 'defDemolish', 'defGarrison'];
+const SHELTER_ACTIONS = ['shareDefense', 'gotoMap', 'upgrade', 'slot', 'viewBase', 'abandon', 'cancelBuild', 'toggleAlert', 'facFilter', 'gotoTab', 'defBuild', 'defDemolish', 'defGarrison'];
 
 export class ShelterPanel {
   constructor(ui) {
@@ -117,7 +116,6 @@ export class ShelterPanel {
     const tab = SHELTER_TABS.includes(ui.shelterTab) ? ui.shelterTab : 'overview';
     const inv = ui.panels.inventory;
     const storeN = `${g.equipment.storeUsed()}/${g.equipment.storeCap()}`;
-    const mine = g.market.mine().length;
     // 分頁選單：網頁版在左側直排，手機版在上方一列可左右滑動
     const navItem = (id, label, extra = '') => `<button class="sh-nav-item ${tab === id ? 'active' : ''}" data-action="shelterTab" data-t="${id}"><span>${label}</span>${extra ? `<small>${extra}</small>` : ''}</button>`;
     const nav = `<nav class="sh-nav" aria-label="避難所分頁">
@@ -132,9 +130,6 @@ export class ShelterPanel {
         ${navItem('defense', '🛡️ 防禦')}
         ${navItem('storage', '🗄️ 倉庫', storeN)}
         ${navItem('garage', '🚗 車庫', `${st.vehicles.length}/${g.vehicles.garageSize()}`)}
-        <i class="sh-nav-sep"></i>
-        ${navItem('exchange', '🏪 交易所', mine ? `刊登 ${mine}` : '')}
-        ${navItem('blackmarket', '🕶️ 黑市')}
       </div>
     </nav>`;
 
@@ -191,8 +186,6 @@ export class ShelterPanel {
         ${queue ? queueBox : ''}`,
       storage: tab === 'storage' ? `<h3 class="sh-title">🗄️ 物品倉庫（${storeN} 格）</h3>${inv.renderItems()}` : '',
       garage: tab === 'garage' ? inv.renderGarage() : '',
-      exchange: tab === 'exchange' ? exchangeBody(ui, this.exForm || {}) : '',
-      blackmarket: tab === 'blackmarket' ? blackMarketBody(ui, ui.bmView) : '',
     };
     void head;
     return `<div class="sh-layout">${nav}<div class="sh-main">${sections[tab]}</div></div>`;
@@ -225,7 +218,7 @@ export class ShelterPanel {
         e.siege?.wallPct != null && e.success ? `🧱 城牆剩 ${e.siege.wallPct}%` : e.wallLost ? `🧱 圍牆 −${e.wallLost}` : '',
       ].filter(Boolean).join('・');
       return `<div class="card defense-log ${e.success ? 'ok' : 'fail'}">
-        <div class="row-between"><b>${(e.at || 0) > since ? '<span class="tag tag-blue">未讀</span>' : ''}${e.success ? '🛡️ 防禦成功' : '💥 防禦失敗'}</b><small class="muted">${when}</small></div>
+        <div class="row-between"><b>${(e.at || 0) > since ? '<span class="tag tag-blue">未讀</span>' : ''}${e.success ? '🛡️ 防禦成功' : '💥 防禦失敗'}</b><span class="row-gap">${e.id ? shareBtn(this.game, 'defense', e.id) : ''}<small class="muted">${when}</small></span></div>
         <div>「${escapeHtml(e.baseName)}」遭 ${escapeHtml(e.attacker)} 攻擊</div>
         ${lines ? `<small class="muted block">${lines}</small>` : ''}
         ${e.reward ? `${raidRewardHtml(e, 'summary')}<details class="sr-details"><summary>查看獎勵明細</summary>${raidRewardHtml(e, 'detail')}</details>` : ''}
@@ -252,6 +245,7 @@ export class ShelterPanel {
     if (action === 'viewBase') this.ui.setViewBase(data.id);
     if (action === 'abandon') openAbandonDialog(this.ui, base);
     if (action === 'toggleAlert') this.ui.result(g.shelter.setAlert(!g.shelter.alert));
+    if (action === 'shareDefense') { openShareDialog(this.ui, 'defense', data.id); return; }
     if (action === 'facFilter') {
       this.facFilter = data.f;
       this.ui.refresh(true);
@@ -263,14 +257,6 @@ export class ShelterPanel {
     }
     const tab = this.ui.shelterTab;
     const root = this.ui.panelEl;
-    if (tab === 'blackmarket' && blackMarketAction(this.ui, action, data)) {
-      this.ui.refresh(true);
-      return;
-    }
-    if (tab === 'exchange' && exchangeAction(this.ui, action, data, root, this.exForm || {}, (f) => { this.exForm = f; })) {
-      this.ui.refresh(true);
-      return;
-    }
     if ((tab === 'storage' || tab === 'garage') && !SHELTER_ACTIONS.includes(action)) {
       const inv = this.ui.panels.inventory;
       const input = root?.querySelector('#inv-drop-qty');
@@ -301,7 +287,6 @@ export class ShelterPanel {
     });
     const save = (e) => {
       if (e.target.id === 'inv-drop-qty') this.ui.panels.inventory.dropQty = Number(e.target.value) || 1;
-      if (e.target.closest?.('.demand-form') || e.target.classList?.contains('d-gear-price')) this.exForm = exchangeForm(el, this.exForm || {});
     };
     el.addEventListener('input', save);
     el.addEventListener('change', save);

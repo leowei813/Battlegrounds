@@ -15,6 +15,7 @@ import { InventoryPanel } from './panels/InventoryPanel.js';
 import { ResearchPanel } from './panels/ResearchPanel.js';
 import { QuestPanel } from './panels/QuestPanel.js';
 import { SettingsPanel } from './panels/SettingsPanel.js';
+import { MarketPanel } from './panels/MarketPanel.js';
 import { CLOUD_EVT } from '../cloud/CloudSync.js';
 import { WORLD_EVT } from '../multiplayer/WorldSync.js';
 import { APP_VERSION } from '../config/version.js';
@@ -28,8 +29,9 @@ const TABS = [
   { id: 'map', icon: '🗺️', name: '地圖' },
   { id: 'shelter', icon: '🏠', name: '避難所' },
   { id: 'survivors', icon: '👥', name: '倖存者' },
-  { id: 'inventory', icon: '🛠️', name: '製作' },
+  { id: 'market', icon: '🏪', name: '市場' },
   { id: 'research', icon: '🔬', name: '研究', more: true },
+  { id: 'inventory', icon: '🛠️', name: '製作', more: true },
   { id: 'quests', icon: '📜', name: '任務', more: true },
   { id: 'settings', icon: '⚙️', name: '設定', more: true },
 ];
@@ -72,6 +74,7 @@ export class UIManager {
       shelter: new ShelterPanel(this),
       explore: new ExplorePanel(this),
       survivors: new SurvivorPanel(this),
+      market: new MarketPanel(this),
       inventory: new InventoryPanel(this),
       research: new ResearchPanel(this),
       quests: new QuestPanel(this),
@@ -146,9 +149,6 @@ export class UIManager {
       if (action === 'shelterTab') {
         this.shelterTab = data.t;
         this.panelEl.scrollTop = 0;
-        // 黑市、交易市場：切換時重新讀取共用資料
-        if (data.t === 'blackmarket') this.game.blackMarket.refresh().then(() => this.refresh(true));
-        if (data.t === 'exchange') this.game.market?.refresh().then(() => this.refresh(true));
         this.refresh(true);
         return;
       }
@@ -251,6 +251,7 @@ export class UIManager {
     this.applyLayout();
     this.refresh(true);
     if (id === 'map') this.panels.map.onShow();
+    else this.panels[id].onShow?.();
   }
 
   /** 依分頁與螢幕寬度切換版面，並告知 Phaser 可視區域 */
@@ -294,6 +295,12 @@ export class UIManager {
     this.modal.refreshLive();
     this.renderBadges();
     const panel = this.panels[this.tab];
+    // 停在交易所的市場時，每 30 秒自動更新其他玩家的刊登
+    if (this.tab === 'market' && panel.sub === 'exchange' && (panel.exForm?.view || 'market') === 'market'
+      && Date.now() - (this.mkAutoAt || 0) > 30000 && this.game.market) {
+      this.mkAutoAt = Date.now();
+      this.game.market.refresh().then(() => this.refresh(true));
+    }
     if (this.tab === 'map') {
       panel.renderOverlay();
       return;
@@ -415,8 +422,16 @@ export class UIManager {
     counts.more = MORE_TABS.reduce((s, id) => s + (counts[id] || 0), 0);
     // 研究：閒置時亮紅色「閒置」，研究中顯示剩餘時間
     const rs = this.researchBadge();
+    // 市場：刊登中的總筆數（藍色，只顯示數量）
+    const mk = this.panels.market?.listingCount() || 0;
     this.nav.querySelectorAll('[data-badge]').forEach((el) => {
       const key = el.dataset.badge;
+      if (key === 'market') {
+        el.textContent = mk ? String(Math.min(999, mk)) : '';
+        el.classList.toggle('on', mk > 0);
+        el.classList.add('badge-info');
+        return;
+      }
       const n = counts[key] || 0;
       const text = key === 'research' || (key === 'more' && !n) ? rs?.text : null;
       el.textContent = text || (n ? String(n) : '');

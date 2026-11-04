@@ -2,6 +2,7 @@ import { escapeHtml } from '../utils/dom.js';
 import { RARITIES } from '../config/equipment.js';
 import { gainsHtml, btn } from './components.js';
 import { ZONES } from '../config/zones.js';
+import { shareBtn, openShareDialog } from './ShareDialog.js';
 
 const hhmm = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
@@ -42,7 +43,7 @@ function reportsHtml(game, openId, since) {
     const fresh = (r.at || 0) > since;
     return `<div class="card report ${r.success ? '' : 'fail'} ${fresh ? 'unread' : ''}">
       <div class="row-between" data-action="toggleReport" data-id="${r.id}">
-        <b>${fresh ? NEW : ''}${r.success ? '✅' : '⚠️'} ${escapeHtml(r.poiName)}${zoneTag(r.zone)}</b><small class="muted">${hhmm(r.at)} ${open ? '▲' : '▼'}</small>
+        <b>${fresh ? NEW : ''}${r.success ? '✅' : '⚠️'} ${escapeHtml(r.poiName)}${zoneTag(r.zone)}</b><span class="row-gap">${shareBtn(game, 'report', r.id)}<small class="muted">${hhmm(r.at)} ${open ? '▲' : '▼'}</small></span>
       </div>
       <div class="gains">${gainsHtml(r.resources)} ${r.items.map((it) => `<span class="rarity" style="--rc:${RARITIES[it.rarity].color}">${escapeHtml(it.name)}</span>`).join('')}${r.blueprints.length ? `<span class="tag">📜×${r.blueprints.length}</span>` : ''}</div>
       ${open ? `<ul class="event-list">${r.events.map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul><small class="muted">隊員：${r.members.map(escapeHtml).join('、')}・擊殺 ${r.kills}</small>` : ''}
@@ -112,6 +113,11 @@ export function openMessages(ui) {
       if (action === 'msgTab' && data.t !== tab) {
         if (tab !== 'battles') markRead(tab);
         tab = data.t;
+      }
+      if (action === 'shareReport' || action === 'shareDefense') {
+        if (tab !== 'battles') markRead(tab);
+        openShareDialog(ui, action === 'shareReport' ? 'report' : 'defense', data.id);
+        return;
       }
       if (action === 'markRead') markRead(tab);
       if (action === 'toggleReport' || action === 'toggleBattle') openId = openId === data.id ? null : data.id;
