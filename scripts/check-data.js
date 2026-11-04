@@ -3377,6 +3377,23 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gs.state.survivors.forEach((x) => { x.severe = false; });
 }
 
+// ---- 77. 據點防守戰倒下的人只有部分重傷 ----
+{
+  const { HOME_DEFENSE_DOWN: HD } = await import('../src/config/enemies.js');
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const gh = Game.newGame({ playerName: 'H77', classId: 'warrior', lat: 25, lon: 121 });
+  const svs = Array.from({ length: 40 }, (_, i) => createSurvivor(`h${i}`, 'warrior', 5, 'common'));
+  gh.state.survivors.push(...svs);
+  const result = { team: svs.map((sv) => ({ id: sv.id, down: true, hp: 0 })), kills: [], bossKills: 0, eliteKills: 0, xp: 0, coins: 0, parts: 0, victory: false };
+  gh.combat.applyOutcome(svs, result, Date.now(), { homeDefense: true });
+  const sev = svs.filter((sv) => sv.severe).length;
+  const ok = svs.filter((sv) => !sv.severe);
+  assert(sev > 0 && sev < 30 && ok.every((sv) => Math.abs(gh.survivors.hpOf(sv) - gh.survivors.maxHp(sv) * HD.hpPct) < 1), `據點防守戰倒下的人約 30% 重傷，其餘剩 20% 生命（重傷 ${sev}/40）`);
+  const svs2 = Array.from({ length: 5 }, (_, i) => createSurvivor(`e${i}`, 'warrior', 5, 'common'));
+  gh.combat.applyOutcome(svs2, { ...result, team: svs2.map((sv) => ({ id: sv.id, down: true, hp: 0 })) }, Date.now());
+  assert(svs2.every((sv) => sv.severe), '其他戰鬥倒下的人仍然重傷');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

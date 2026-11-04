@@ -720,7 +720,7 @@ export class NpcSystem {
     let result = null;
     if (as.breached && (defenders.length || allies.length)) {
       result = g.combat.simulate(defenders, enemies, { firstStrikeBonus: base.facilities.watchtower.level * 0.04, allies, title: `🛡️ 防守 NPC「${n.name}」的掠奪` });
-      g.combat.applyOutcome(defenders, result, now);
+      g.combat.applyOutcome(defenders, result, now, { homeDefense: true });
       victory = result.victory;
     }
     const label0 = `NPC「${n.name}」`;

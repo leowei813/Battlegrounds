@@ -1,7 +1,7 @@
 import { COIN_GAIN_MUL } from '../config/constants.js';
 import { ITEM_MODELS } from '../config/equipment.js';
 import { SUPPLIES } from '../config/supplies.js';
-import { ALL_ENEMIES, ELITE_MUL, defReduce } from '../config/enemies.js';
+import { ALL_ENEMIES, ELITE_MUL, defReduce, HOME_DEFENSE_DOWN } from '../config/enemies.js';
 import { chance, randFloat, pick, uid } from '../utils/math.js';
 
 const STEP = 0.1; // 秒
@@ -328,7 +328,11 @@ export class CombatSystem {
     if (lo.med.qty <= 0) lo.med = null;
   }
 
-  applyOutcome(survivors, result, at = Date.now()) {
+  /**
+   * @param {object} [opts]
+   * @param {boolean} [opts.homeDefense] 據點防守戰：倒下的人只有部分重傷，其餘以低生命撐住
+   */
+  applyOutcome(survivors, result, at = Date.now(), { homeDefense = false } = {}) {
     const st = this.game.state.stats;
     st.kills += result.kills.length;
     st.bossKills += result.bossKills;
@@ -338,6 +342,10 @@ export class CombatSystem {
       const u = result.team.find((x) => x.id === sv.id);
       this.consumeMeds(sv, u);
       if (u?.down) {
+        if (homeDefense && !chance(HOME_DEFENSE_DOWN.severeChance)) {
+          this.game.survivors.setHp(sv, Math.max(1, this.game.survivors.maxHp(sv) * HOME_DEFENSE_DOWN.hpPct));
+          return;
+        }
         this.game.survivors.becomeSevere(sv, '在戰鬥中', at);
         return;
       }
