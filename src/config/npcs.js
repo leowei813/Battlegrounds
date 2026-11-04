@@ -23,6 +23,8 @@ export const NPC_CONFIG = {
    */
   raidLevelMul: { base: 0.8, perLevel: 0.18 },
   raidLevelGap: 20,
+  /** 高等級 NPC 的人數：from 級起每 step 級多 1 人 */
+  lateGarrison: { from: 28, step: 2 },
   woundHealMs: 20 * 60000, // NPC 傷亡人員每隔多久補回 1 人
   /** 同時有其他 NPC 正在掠奪玩家時，再發動掠奪的機率（文明度達到 concurrentCiv 後才逐漸提高） */
   concurrentChance: 0.05,

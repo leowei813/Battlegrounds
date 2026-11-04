@@ -3419,6 +3419,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gh.territory.applyRaidDowns(hb, 'x').length === 0 && gh.territory.applyRaidDowns(hb, -3).length === 0, '突襲事件的擊倒人數不合法時不處理');
 }
 
+// ---- 78. 後期 NPC 人數增加 ----
+{
+  const g78 = Game.newGame({ playerName: 'N78', classId: 'warrior', lat: 25, lon: 121 });
+  const fc = (lv) => g78.npcs.fullCount({ level: lv, wounded: 0 });
+  assert(fc(20) === 8 && fc(27) === 8 && fc(28) === 9 && fc(33) === 11 && fc(40) === 15, `Lv28 起每 2 級多 1 人（Lv27 ${fc(27)}、Lv28 ${fc(28)}、Lv33 ${fc(33)}、Lv40 ${fc(40)}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

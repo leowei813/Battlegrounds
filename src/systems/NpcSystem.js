@@ -67,7 +67,10 @@ export class NpcSystem {
 
   /** 滿編時的掠奪者人數（不含首領） */
   fullCount(n) {
-    return Math.min(8, 3 + Math.floor(n.level / 4));
+    // 後期：Lv28 起每 2 級多 1 人（Lv33 共 11 人、Lv40 共 15 人，另有首領），需要更多人在家才守得住
+    const c = NPC_CONFIG.lateGarrison;
+    const extra = c && n.level >= c.from ? Math.floor((n.level - c.from) / c.step) + 1 : 0;
+    return Math.min(8, 3 + Math.floor(n.level / 4)) + extra;
   }
 
   /** NPC 據點的防禦：圍牆耐久與防禦火力（攻打時要先破牆） */
