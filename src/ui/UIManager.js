@@ -294,6 +294,12 @@ export class UIManager {
     this.modal.refreshLive();
     this.renderBadges();
     const panel = this.panels[this.tab];
+    // 停在交易所的市場時，每 30 秒自動更新其他玩家的刊登
+    if (this.tab === 'shelter' && this.shelterTab === 'exchange' && (panel.exForm?.view || 'market') === 'market'
+      && Date.now() - (this.mkAutoAt || 0) > 30000 && this.game.market) {
+      this.mkAutoAt = Date.now();
+      this.game.market.refresh().then(() => this.refresh(true));
+    }
     if (this.tab === 'map') {
       panel.renderOverlay();
       return;

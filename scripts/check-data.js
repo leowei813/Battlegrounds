@@ -2215,6 +2215,17 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   await B.market.refresh();
   await C.market.refresh();
   assert(B.market.listings().length === 2, '其他玩家看得到刊登');
+  // 遠方的玩家（超過 20 公里）也看得到；自己的刊登也顯示在市場並標「我的」
+  const far = Game.newGame({ playerName: 'Far', classId: 'warrior', lat: 35, lon: 139 });
+  far.state.map.pois = fillPois([], 35, 139);
+  far.shelter.establish(far.state.map.pois[0]);
+  far.shared.backend = store;
+  far.world = { others: [], myId: 'Far', identity: () => ({ id: 'Far', token: 't' }) };
+  await far.market.refresh();
+  assert(far.market.listings().length === 2, '距離很遠的玩家也看得到刊登（全服市場）');
+  await A.market.refresh();
+  assert(A.market.listings().length === 2 && A.market.listings().every((d) => d.mine), '自己的刊登也顯示在市場，標記為我的');
+  assert(B.market.listings().every((d) => !d.mine), '別人的刊登不會標成我的');
   B.state.player.coins = 1000;
   C.state.player.coins = 1000;
   const nb0 = B.state.supplies.nail || 0;

@@ -63,6 +63,13 @@ export function exchangeBody(ui, form = {}) {
   }
   const list = mk.listings(now);
   const row = (d) => {
+    // 自己的刊登：標「我的」，可以直接下架（不能自己買）
+    if (d.mine) {
+      const off = btn('下架', 'exCancel', { id: d.id }, { cls: 'btn-xs btn-ghost', disabled: ui.exBusy || !mk.state.mine[d.id] });
+      const info = `<small class="muted block">👤 你${d.item ? `・💰${d.price}` : `・每個 💰${d.price}`}・剩 ${formatDuration(Math.max(0, (d.at || 0) + LISTING_MS - now))}</small>`;
+      if (d.item) return `<div class="mk-mine">${itemCard(d.item, { compact: true, actions: `<span class="tag tag-amber">我的</span>${off}` })}</div>`;
+      return `<div class="card row-between mk-mine"><div><b>${label(d.key)} ×${d.qty - d.filled}</b> <span class="tag tag-amber">我的</span>${info}</div><span class="trade-row">${off}</span></div>`;
+    }
     const what = d.item ? '' : `${label(d.key)} ×${d.qty - d.filled}`;
     const max = d.item ? 1 : d.side === 'sell' ? Math.min(d.qty - d.filled, Math.floor(g.state.player.coins / Math.max(1, d.price))) : Math.min(d.qty - d.filled, have(g, d.key));
     const act = d.side === 'sell'
@@ -75,8 +82,9 @@ export function exchangeBody(ui, form = {}) {
   const sells = list.filter((d) => d.side === 'sell');
   const buys = list.filter((d) => d.side === 'buy');
   return `${head}${g.shared.online ? '' : '<p class="neg">目前未連線到伺服器，看不到其他玩家的刊登。</p>'}
-    <h4>📤 出售中（${sells.length}）</h4><div class="grid">${sells.map(row).join('') || '<p class="muted">附近沒有人在賣東西。</p>'}</div>
-    <h4>📥 收購中（${buys.length}）</h4><div class="grid">${buys.map(row).join('') || '<p class="muted">附近沒有人在收購。</p>'}</div>`;
+    <div class="row-between"><span></span>${btn('🔄 重新整理', 'exRefresh', {}, { cls: 'btn-xs btn-ghost' })}</div>
+    <h4>📤 出售中（${sells.length}）</h4><div class="grid">${sells.map(row).join('') || '<p class="muted">目前沒有人在賣東西。</p>'}</div>
+    <h4>📥 收購中（${buys.length}）</h4><div class="grid">${buys.map(row).join('') || '<p class="muted">目前沒有人在收購。</p>'}</div>`;
 }
 
 /** 讀取刊登表單目前的值 */
@@ -98,7 +106,9 @@ export function exchangeAction(ui, action, data, root, form, setForm) {
     p.then((r) => { ui.exBusy = false; ui.result(r); ui.refresh(true); });
   };
   const qtyOf = (id) => Number(root?.querySelector(`.mk-qty[data-id="${id}"]`)?.value) || 1;
-  if (action === 'exView') {
+  if (action === 'exRefresh') {
+    mk.refresh().then(() => ui.refresh(true));
+  } else if (action === 'exView') {
     setForm({ ...form, view: data.v });
     if (data.v === 'market') mk.refresh().then(() => ui.refresh(true));
   } else if (action === 'exSide') setForm({ ...exchangeForm(root, form), side: data.v, key: undefined });

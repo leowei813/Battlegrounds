@@ -185,7 +185,8 @@ export class SharedWorld {
       try {
         // eslint-disable-next-line no-await-in-loop
         r = await b.objPut(me, token, kind, id, {
-          lat: pos?.lat ?? cur?.lat ?? null, lon: pos?.lon ?? cur?.lon ?? null, data: out.data, ver: cur?.ver || 0,
+          // 指定 pos 時以 pos 為準（lat 為 null＝沒有位置的全域物件，所有玩家都讀得到）
+          lat: pos ? (pos.lat ?? null) : (cur?.lat ?? null), lon: pos ? (pos.lon ?? null) : (cur?.lon ?? null), data: out.data, ver: cur?.ver || 0,
         });
       } catch (err) {
         return { ok: false, reason: err?.kind === 'network' ? '無法連線到伺服器，請稍後再試' : (err?.message || '伺服器錯誤') };

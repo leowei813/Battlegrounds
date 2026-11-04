@@ -67,13 +67,13 @@ export class MarketSystem {
     return this.mine().filter((m) => m.side === side && !m.closed && (!m.live || m.live.status === 'open')).length;
   }
 
-  /** 市場上的有效刊登（不含自己的） */
+  /** 市場上的有效刊登（所有玩家，含自己的；自己的標 mine） */
   listings(now = Date.now()) {
     const me = this.myId();
-    return this.game.shared.all('mk').map((o) => ({ id: o.id, ...o.data }))
-      .filter((d) => d && d.status === 'open' && d.owner !== me && d.qty > d.filled && now < (d.at || 0) + LISTING_MS
+    return this.game.shared.all('mk').map((o) => ({ id: o.id, ...o.data, mine: o.data?.owner === me }))
+      .filter((d) => d && d.status === 'open' && d.qty > d.filled && now < (d.at || 0) + LISTING_MS
         && (d.item || isGood(d.key)))
-      .sort((a, b) => (a.key || a.item?.name || '').localeCompare(b.key || b.item?.name || '') || a.price - b.price || a.at - b.at);
+      .sort((a, b) => (b.mine ? 1 : 0) - (a.mine ? 1 : 0) || (a.key || a.item?.name || '').localeCompare(b.key || b.item?.name || '') || a.price - b.price || a.at - b.at);
   }
 
   refresh() {
@@ -148,7 +148,7 @@ export class MarketSystem {
     const body = {
       side, owner: this.myId(), ownerName: g.state.player.name || '倖存者', ...data, filled: 0, paid: 0, status: 'open', at: now, fills: [],
     };
-    const r = await g.shared.update('mk', id, (cur) => (cur ? { fail: '刊登編號重複，請再試一次' } : { data: body }), { lat: sh.lat, lon: sh.lon });
+    const r = await g.shared.update('mk', id, (cur) => (cur ? { fail: '刊登編號重複，請再試一次' } : { data: body }), { lat: null, lon: null }); // 全服可見（不限距離）
     if (!r.ok) { undo(); return r; }
     this.state.mine[id] = {
       side, key: data.key || null, item: data.item || null, qty: data.qty, price: p, at: now, filled: 0, paid: 0,
