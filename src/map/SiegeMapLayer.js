@@ -85,6 +85,33 @@ export const SiegeMapLayer = L.Layer.extend({
     this.raf = requestAnimationFrame(loop);
   },
 
+  /**
+   * 畫表情符號：每種符號與大小只用 fillText 畫一次，之後重複貼上小圖。
+   * iPhone 在畫布上畫表情符號很慢，屍潮時每一幀幾十次會讓畫面卡住。
+   */
+  glyph(ctx, ch, px, x, y) {
+    this.glyphs = this.glyphs || new Map();
+    const key = `${ch}|${px}`;
+    let img = this.glyphs.get(key);
+    if (!img) {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const sz = Math.ceil(px * 1.4);
+      img = document.createElement('canvas');
+      img.width = sz * dpr;
+      img.height = sz * dpr;
+      const g = img.getContext('2d');
+      g.scale(dpr, dpr);
+      g.font = `${px}px sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(ch, sz / 2, sz / 2);
+      img.sz = sz;
+      if (this.glyphs.size > 60) this.glyphs.clear();
+      this.glyphs.set(key, img);
+    }
+    ctx.drawImage(img, x - img.sz / 2, y - img.sz / 2, img.sz, img.sz);
+  },
+
   /** 是否有需要動畫的內容：屍潮殭屍、傷害特效或突破閃光 */
   busy() {
     if (this.fx.length || this.pulses.length) return true;
@@ -179,8 +206,7 @@ export const SiegeMapLayer = L.Layer.extend({
         ctx.lineWidth = z.boss || atWall ? 2 : 1.2;
         ctx.stroke();
         if (showGlyph) {
-          ctx.font = `${Math.round(rad * 1.5)}px sans-serif`;
-          ctx.fillText(z.boss ? '👹' : '🧟', x, y + 0.5);
+          this.glyph(ctx, z.boss ? '👹' : '🧟', Math.round(rad * 1.5), x, y + 0.5);
         }
         if (k > 1.1 && z.hp < z.maxHp) {
           const w = (z.boss ? 26 : 12) * Math.min(k, 2);

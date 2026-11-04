@@ -1,10 +1,7 @@
 import { APP_VERSION } from './config/version.js';
-import Phaser from 'phaser';
 import './styles/main.css';
 import { Game } from './core/Game.js';
 import { RESEARCH, effectText } from './config/research.js';
-import { BootScene } from './scenes/BootScene.js';
-import { ShelterScene } from './scenes/ShelterScene.js';
 import { UIManager } from './ui/UIManager.js';
 import { SetupScreen } from './ui/SetupScreen.js';
 import { AuthScreen } from './ui/AuthScreen.js';
@@ -28,24 +25,18 @@ function setLoading(text) {
   el.querySelector('p').textContent = text || '';
 }
 
-function createPhaser(core) {
-  const phaser = new Phaser.Game({
-    type: Phaser.CANVAS, // 畫布已不顯示：用 2D 畫布，不建立 WebGL（手機省繪圖記憶體）
-    parent: 'game-root',
-    backgroundColor: '#1d2118',
-    scale: { mode: Phaser.Scale.RESIZE, width: '100%', height: '100%' },
-    render: { antialias: true },
-    // 不監聽整個視窗的輸入：點擊 HTML 面板時不應觸發畫布上的物件
-    input: { windowEvents: false },
-    scene: [BootScene, ShelterScene],
-  });
-  phaser.registry.set('core', core);
-  phaser.registry.set('viewInset', { right: 0, bottom: 0, top: 0 });
-  // HUD 換行等版面變化不會觸發 window resize，需監聽容器尺寸
-  const root = $('#game-root');
-  // 避難所畫面已移除，畫布不再顯示：隱藏並縮到最小，釋放手機的繪圖記憶體
-  new ResizeObserver(() => phaser.scale.resize(Math.max(1, root.clientWidth), Math.max(1, root.clientHeight))).observe(root);
-  return phaser;
+/**
+ * 避難所畫面（Phaser）已在 v9 移除：不再建立遊戲引擎。
+ * 舊引擎即使隱藏也會每一幀執行避難所場景，在手機上造成地圖與避難所頁卡住；
+ * 保留同樣的介面（registry／loop／scale）給仍會呼叫它的程式。
+ */
+function createPhaser() {
+  const data = new Map();
+  return {
+    registry: { set: (k, v) => data.set(k, v), get: (k) => data.get(k) },
+    loop: { sleep() {}, wake() {} },
+    scale: { resize() {} },
+  };
 }
 
 /** 離線期間完成的研究與建造 */
