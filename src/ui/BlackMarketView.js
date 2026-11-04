@@ -44,7 +44,8 @@ export function blackMarketBody(ui, view = 'buy') {
     const afford = g.state.player.coins >= x.price;
     const soldTag = x.soldTo ? `<small class="muted block">✅ 已被 ${escapeHtml(x.soldTo)} 買走</small>` : '';
     const buyBtn = x.soldTo ? '' : btn(`💰${x.price} 購買`, 'bmBuy', { id: x.id }, { cls: 'btn-xs btn-primary', disabled: !afford || ui.bmBusy === x.id });
-    if (x.kind === 'gear') return `<div class="${x.soldTo ? 'sold-out' : ''}">${itemCard(x.item, { actions: buyBtn })}${soldTag}</div>`;
+    // 已售出的裝備沒有購買鈕，把「已被買走」放進卡片內，避免掉到格子外面
+    if (x.kind === 'gear') return `<div class="${x.soldTo ? 'sold-out' : ''}">${itemCard(x.item, { actions: x.soldTo ? soldTag : buyBtn })}</div>`;
     const sp = SUPPLIES[x.key];
     const r = RARITIES[x.rarity];
     return `<div class="card row-between ${x.soldTo ? 'sold-out' : ''}"><div><b style="color:${r?.color || ''}">${sp.icon} ${sp.name} ×${x.qty}</b>
