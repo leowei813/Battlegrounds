@@ -619,7 +619,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gn.state.survivors.forEach((s) => { s.level = 30; });
   assert(gn.npcs.raidLevelCap() === 50, `NPC 掠奪等級上限最多高出 20 級（${gn.npcs.raidLevelCap()}）`);
   gn.state.survivors.forEach((s) => { s.level = 10; });
-  assert(gn.npcs.raidLevelCap() === 20, `NPC 掠奪等級上限 = 倖存者平均等級 × 2（${gn.npcs.raidLevelCap()}）`);
+  assert(gn.npcs.raidLevelCap() === 26, `NPC 掠奪等級上限 = 倖存者平均等級 × 倍率（Lv10 ×2.6：${gn.npcs.raidLevelCap()}）`);
+  gn.state.survivors.forEach((s) => { s.level = 4; });
+  assert(gn.npcs.raidLevelCap() === 6, `低等級時倍率較低（Lv4：${gn.npcs.raidLevelCap()}）`);
   gn.npcs.update(t0 + 2500);
   assert(!npc.trip, '超過等級上限的 NPC 不會來掠奪');
   npc.nextRaidAt = t0;
@@ -2492,6 +2494,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const free = gn.state.map.pois.filter((p) => !gn.shelter.baseAtPoi(p.id));
   const a1 = gn.npcs.spawnAt(free[1], 'x', Date.now(), true);
   const a2 = gn.npcs.spawnAt(free[2], 'y', Date.now(), true);
+  gn.npcs.raidLevelCap = () => 99; // 這裡測試同時掠奪的機制，不受等級上限影響
   gn.npcs.launchRaid(a1, Date.now());
   assert(a1.trip?.kind === 'raid' && gn.npcs.activeRaids() === 1, 'NPC 發動掠奪');
   assert(a1.trip.travelMs >= 5 * 60000, `NPC 掠奪避難所的移動時間較長（${Math.round(a1.trip.travelMs / 60000)} 分鐘）`);
@@ -2784,6 +2787,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // V 被 NPC 掠奪隊盯上
   const free = V.state.map.pois.filter((p) => !V.shelter.baseAtPoi(p.id));
   const n = V.npcs.spawnAt(free[1], 'x', Date.now(), true);
+  V.npcs.raidLevelCap = () => 99; // 這裡測試協防，不受等級上限影響
   V.npcs.launchRaid(n, Date.now());
   assert(n.trip?.kind === 'raid', 'NPC 發動掠奪');
   H.world.others = [pres(V, 'V')];

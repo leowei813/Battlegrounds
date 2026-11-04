@@ -645,12 +645,14 @@ export class NpcSystem {
     this.game.toast(`🏴‍☠️「${n.name}」（${this.intelView(n).levelShort}）的掠奪隊正朝「${base.name}」前進！（${eta}）`, 'danger');
   }
 
-  /** 會掠奪這位玩家的 NPC 等級上限：倖存者中等級最高 6 人的平均等級 × 2（最多高出 20 級） */
+  /** 會掠奪這位玩家的 NPC 等級上限：倖存者中等級最高 6 人的平均等級 × 倍率（倍率隨等級提高，最多高出 20 級） */
   raidLevelCap() {
     const top = this.game.state.survivors.map((s) => s.level).sort((a, b) => b - a).slice(0, 6);
     const avg = top.length ? top.reduce((a, b) => a + b, 0) / top.length : 1;
     const c = NPC_CONFIG;
-    return Math.floor(Math.min(avg * (c.raidLevelMul ?? 99), avg + (c.raidLevelGap ?? 99)));
+    const m = c.raidLevelMul || { base: 99, perLevel: 0 };
+    // 至少比平均等級高 2 級（新手也會遇到同等級的 NPC）
+    return Math.floor(Math.max(avg + 2, Math.min(avg * (m.base + m.perLevel * avg), avg + (c.raidLevelGap ?? 99))) + 1e-9);
   }
 
   /** 正在前往玩家據點的 NPC 掠奪隊數量 */
