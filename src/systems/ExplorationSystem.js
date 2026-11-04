@@ -310,6 +310,29 @@ export class ExplorationSystem {
     return { ok: true, msg: '已從佇列移除' };
   }
 
+  /** 建築已被搜空的原因（報告顯示用） */
+  emptyReason(poi, at = Date.now()) {
+    const by = poi?.lootedBy;
+    if (!by || by.day !== dayKey(at)) return '這個時段已經有人搜過';
+    return by.kind === 'npc' ? `被 NPC「${by.name}」搜過` : '這個時段你已經搜過';
+  }
+
+  /**
+   * 從佇列前端移除已被搜空的地點，並記下跳過的原因。
+   * @returns {number} 跳過的數量
+   */
+  skipEmpty(queue, at, events) {
+    let n = 0;
+    while (queue.length) {
+      const p = this.poi(queue[0]);
+      if (!p || !POI_TYPES[p.type] || this.hasStock(p, at)) break;
+      queue.shift();
+      n += 1;
+      events.push(`⏭️ 「${p.name}」已被搜空（${this.emptyReason(p, at)}），跳過`);
+    }
+    return n;
+  }
+
   /** 地點目前是否還有物資（今日物資或上次留下的） */
   hasStock(poi, at = Date.now()) {
     return !!poi && POI_TYPES[poi.type] && !stockOf(poi, at, this.game.state.map.remain).empty;
@@ -731,7 +754,12 @@ export class ExplorationSystem {
       const cap = exp.cargo || this.game.vehicles.personCarry() * members.length;
       const load = carriedWeight(exp.carried) + Object.entries(cp.gained).filter(([k]) => isLootKey(k)).reduce((s, [k, v]) => s + v * unitWeight(k), 0);
       const pct = Math.round((load / Math.max(1, cap)) * 100);
-      const nextId = autoOn && this.hasStock(poi, searchEnd) ? poi.id : queue[0];
+      const again = autoOn && this.hasStock(poi, searchEnd);
+      // 佇列中已被搜空的地點直接跳過（例如加入後被 NPC 搜走）
+      // 跳過的紀錄接在這個地點的搜索紀錄後面
+      if (!again) this.skipEmpty(queue, searchEnd, cp.events);
+      exp.queue = [...queue];
+      const nextId = again ? poi.id : queue[0];
       if (!nextId) continue;
       if (load >= cap * CHAIN_RETURN_LOAD || this.overloadReason(exp.memberIds)) {
         exp.travelEvents = [...(exp.travelEvents || []), `🎒 負重已達 ${pct}%（${Math.round(load)}/${cap}），返回避難所卸貨`];
@@ -848,6 +876,7 @@ export class ExplorationSystem {
         // 臨時小隊的探索佇列：前往佇列中的下一個地點
         let started = null;
         while (queue.length && !started) {
+          if (this.skipEmpty(queue, exp.endAt, report.events) && !queue.length) break;
           const poiId = queue.shift();
           const r = this.start(poiId, exp.memberIds, exp.durationMin, exp.auto, exp.endAt, { vehicleIds: this.nextVehicles(exp) });
           if (r.ok) started = r.exp;
@@ -1025,6 +1054,7 @@ export class ExplorationSystem {
           stock.resources[k] = (stock.resources[k] || 0) + randInt(2, 6);
         }
         exp.cp = {
+          emptyBy: stock.empty ? this.emptyReason(ctx.poi, ctx.arriveAt) : null,
           total: this.checkpointCount(ctx.poi), done: 0, searchMs: exp.searchMs || 0,
           stock: { resources: { ...stock.resources }, itemMul: stock.itemMul, gear: stock.gear, vehicle: stock.vehicle, empty: stock.empty, partial: !!stock.partial },
           remaining: { ...stock.resources }, gained: {}, items: [], blueprints: [], vehicles: [], events: [], kills: 0, xp: 0, failed: false, stopped: false, overflow: {},
@@ -1109,7 +1139,7 @@ export class ExplorationSystem {
     }
     // 有找到東西才顯示
     if (found.length || extra.length) cp.events.push(`🔍 ${tag}找到 ${[...found, ...extra].join('、')}`);
-    if (k === 1 && cp.stock.empty) cp.events.push('🕸️ 這裡已經被搜刮一空（每天 06:00、18:00 刷新）');
+    if (k === 1 && cp.stock.empty) cp.events.push(`🕸️ 這裡已經被搜刮一空（${cp.emptyBy || '這個時段已經有人搜過'}；每天 06:00、18:00 刷新）`);
 
     // 2. 隨機事件
     const ev = weightedPick({
@@ -1203,6 +1233,7 @@ export class ExplorationSystem {
       kills: (exp.travelKills || 0) + (cp?.kills || 0), xp: (exp.travelXp || 0) + (cp?.xp || 0),
       success: !!cp && !cp.failed && !recalled, members: members.map((m) => m.name),
     };
+    if (cp?.stock?.empty) report.emptied = cp.emptyBy || '這個時段已經有人搜過';
     if (!poi || !members.length) {
       report.success = false;
       report.events.push('目標地點已消失。');
@@ -1305,6 +1336,7 @@ export class ExplorationSystem {
     // 建築的剩餘物資：完整探索完只剩帶不走的（會顯示數量）；沒探索完的剩餘物資留在建築裡，但不知道有多少
     const arriveAt = exp.startAt + (exp.travelMs || 0);
     poi.lootedDay = dayKey(arriveAt);
+    if (!cp.stock?.empty) poi.lootedBy = { kind: 'self', day: dayKey(arriveAt) };
     const overflow = Object.fromEntries(Object.entries(cp.overflow).map(([k, v]) => [k, Math.floor(v / Math.max(1, cp.mul?.[k] || 1))]).filter(([, v]) => v > 0));
     if (complete) this.setRemain(poi, overflow, arriveAt);
     else {

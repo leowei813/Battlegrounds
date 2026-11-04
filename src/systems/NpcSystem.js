@@ -721,6 +721,7 @@ export class NpcSystem {
       this.addResources(n, Object.fromEntries(Object.entries(stock.resources).map(([k, v]) => [k, Math.round(v * 0.6)])));
       // NPC 探索過的建築資源一併消失（包含殘留的物資）
       poi.lootedDay = dayKey(at);
+      poi.lootedBy = { kind: 'npc', name: n.name, day: dayKey(at) };
       delete remain[poi.id];
       this.game.bus.emit('map:changed');
     }
