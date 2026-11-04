@@ -304,6 +304,8 @@ export class UIManager {
     // 手指正在滑動（或剛滑完）左右捲動的分頁列時先不重畫，避免打斷滑動
     if (this.touching && Date.now() - (this.touchAt || 0) > 8000) this.touching = false; // 保險：最多暫停 8 秒
     if (!force && (this.touching || Date.now() - (this.hScrollAt || 0) < 1200)) return;
+    // 拖移排序中不重畫
+    if (!force && this.dragging) return;
     const html = panel.render();
     if (!force && html === this.lastHtml) return;
     this.lastHtml = html;

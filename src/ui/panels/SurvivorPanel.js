@@ -135,7 +135,8 @@ export class SurvivorPanel {
     const tag = { home: '<span class="sv-tag home">在家</span>', out: '<span class="sv-tag out">外出</span>', hurt: '<span class="sv-tag hurt">重傷</span>' }[k];
     const load = Math.floor(g.survivors.bagLoad(sv));
     const r = sv.isLeader ? '#ffd54f' : (RARITIES[sv.rarity] || RARITIES.common).color;
-    return `<button class="sv-mini ${this.selId === sv.id ? 'on' : ''}" data-action="selSv" data-id="${sv.id}" style="--rc:${r}">
+    return `<button class="sv-mini ${this.selId === sv.id ? 'on' : ''}" data-action="selSv" data-id="${sv.id}" data-sv="${sv.id}" style="--rc:${r}">
+      <span class="sv-drag" data-drag="${sv.id}" title="按住拖移調整順序">⠿</span>
       <span class="sv-mini-top"><b>${cls.icon} ${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b>${sv.isLeader ? '' : `${rarityTag(sv.rarity)}${this.qTag(g.survivors.avgQuality(sv))}`}<i class="sv-mini-sp"></i>${tag}</span>
       <small class="muted">${cls.name} Lv${sv.level}・戰力 ${s.power}</small>
       <span class="sv-mini-hp"><i style="width:${Math.round(Math.max(0, Math.min(1, hp)) * 100)}%" class="${hp < 0.3 ? 'low' : ''}"></i></span>
@@ -144,7 +145,55 @@ export class SurvivorPanel {
     </button>`;
   }
 
+  /**
+   * 拖移排序：按住卡片左側的 ⠿ 拖到其他卡片上放開（滑鼠與觸控共用 Pointer 事件）。
+   */
+  bindDrag() {
+    const root = this.ui.panelEl;
+    if (!root || this.dragBound) return;
+    this.dragBound = true;
+    let drag = null;
+    const clear = () => root.querySelectorAll('.sv-mini.drop-before, .sv-mini.drop-after').forEach((x) => x.classList.remove('drop-before', 'drop-after'));
+    root.addEventListener('pointerdown', (e) => {
+      const h = e.target.closest?.('.sv-drag');
+      if (!h) return;
+      e.preventDefault();
+      const card = h.closest('.sv-mini');
+      drag = { id: h.dataset.drag, card, target: null, after: false, moved: false };
+      card.classList.add('dragging');
+      this.ui.dragging = true;
+      h.setPointerCapture?.(e.pointerId);
+    });
+    root.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      drag.moved = true;
+      const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.sv-mini');
+      clear();
+      if (!el || el === drag.card || !el.dataset.sv) { drag.target = null; return; }
+      const r = el.getBoundingClientRect();
+      // 兩欄排列：依滑到卡片的左右（同一列）或上下半決定放在前面或後面
+      drag.after = e.clientY > r.top + r.height * 0.75 || (e.clientY > r.top + r.height * 0.25 && e.clientX > r.left + r.width / 2);
+      drag.target = el.dataset.sv;
+      el.classList.add(drag.after ? 'drop-after' : 'drop-before');
+    });
+    const end = () => {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      this.ui.dragging = false;
+      d.card.classList.remove('dragging');
+      clear();
+      // 拖移結束後擋掉這次點擊（不要打開詳情）
+      this.dragEndAt = Date.now();
+      if (d.target && this.game.survivors.move(d.id, d.target, d.after).ok) this.game.requestSave(); // 順序立即存檔
+      this.ui.refresh(true);
+    };
+    root.addEventListener('pointerup', end);
+    root.addEventListener('pointercancel', end);
+  }
+
   render() {
+    this.bindDrag();
     const g = this.game;
     const st = g.state;
     const list = st.survivors;
@@ -171,6 +220,7 @@ export class SurvivorPanel {
     const id = this.selId;
     const sel = (k) => this.ui.panelEl?.querySelector(k);
     if (action === 'selSv') {
+      if (Date.now() - (this.dragEndAt || 0) < 400 || el?.closest?.('.sv-drag') || data.drag) return;
       this.selId = data.id;
       this.view = 'detail';
       this.paneOpen = true;
@@ -247,6 +297,7 @@ export class SurvivorPanel {
     if (action === 'heal') this.ui.result(g.survivors.heal(id, data.key || null));
     if (action === 'unequip') this.ui.result(g.equipment.unequip(id, data.slot));
     if (action === 'quickEquip') this.ui.result(g.equipment.quickEquip(id));
+    if (action === 'quickUnequip') this.ui.result(g.equipment.unequipAll(id));
     if (action === 'pickItem') this.pickItem(id, data.slot);
     this.ui.refresh(true);
   }
@@ -328,6 +379,7 @@ export class SurvivorPanel {
         ${survivorStatus(g, sv)}
         ${hurt ? btn('💊 治療', 'healOpen', {}, { cls: 'btn-sm', disabled: starving, title: starving ? '飢餓中無法治療' : '' }) : ''}
         ${sv.status === 'idle' ? btn('⚡ 快速換裝', 'quickEquip', {}, { cls: 'btn-sm btn-primary', title: '從倉庫與在家隊員的背包，每個部位換上戰力最高的裝備' }) : ''}
+        ${sv.status === 'idle' ? btn('🧺 快速脫裝', 'quickUnequip', {}, { cls: 'btn-sm btn-ghost', title: '卸下身上全部裝備放回倉庫（倉庫滿了放自己的背包）', disabled: !SLOT_KEYS.some((k) => sv.equipment[k]) }) : ''}
       </div>
       <div class="sv-bars">
         ${bar('生命', hp, max, sv.severe || hp / max < 0.3 ? 'danger' : 'hp', `${Math.floor(hp)}/${max}${sv.severe ? '（30% 脫離重傷）' : ''}`)}

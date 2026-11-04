@@ -39,6 +39,19 @@ export class SurvivorSystem {
     return this.list.find((s) => s.isLeader);
   }
 
+  /**
+   * 調整倖存者順序（拖移排序）：把 id 移到 targetId 的前面或後面。順序存在存檔的倖存者陣列。
+   */
+  move(id, targetId, after = false) {
+    const list = this.list;
+    const from = list.findIndex((s) => s.id === id);
+    if (from < 0 || id === targetId || !list.some((s) => s.id === targetId)) return { ok: false, reason: '無法移動' };
+    const [sv] = list.splice(from, 1);
+    const to = list.findIndex((s) => s.id === targetId) + (after ? 1 : 0);
+    list.splice(to, 0, sv);
+    return { ok: true };
+  }
+
   /** 人員上限：3 + 領袖等級 ÷ 5 + 各據點等級總和，最多 10 人（含領袖），且不超過宿舍可住人數 */
   housing() {
     return Math.min(this.rankCap(), this.dormCap());
