@@ -3728,6 +3728,30 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(JSON.stringify(reloaded.survivors.map((x) => x.id)) === JSON.stringify(order), '拖移後的順序會存檔，讀檔後維持');
 }
 
+// ---- 86. 分享報告到聊天室：摘要不超過 120 字、可辨識成卡片、每份只分享一次 ----
+{
+  const { shareReportText, shareDefenseText, parseShare, isShared, markShared } = await import('../src/multiplayer/ReportShare.js');
+  const { CHAT_MAX_LEN, cleanChat } = await import('../src/multiplayer/Chat.js');
+  const gs = Game.newGame({ playerName: 'S86', classId: 'warrior', lat: 25, lon: 121 });
+  const rep = {
+    id: 'rp_x', poiName: '倒塌的工廠 12號', success: true, zone: 'alert', kills: 6,
+    resources: { screw: 12, wood: 80, painkiller: 3, nail: 40, bolt: 9, gear: 4 }, items: [{ rarity: 'rare', name: '戰術背心' }, { rarity: 'poor', name: '拖鞋' }, { rarity: 'legendary', name: '黃金步槍' }],
+  };
+  const t1 = shareReportText(rep, '運氣不錯！這次收穫很多真的很開心哈哈哈哈哈');
+  const p1 = parseShare(t1);
+  assert([...t1].length <= CHAT_MAX_LEN && cleanChat(t1) === t1, `探索報告分享文字不超過 ${CHAT_MAX_LEN} 字、不會被聊天過濾改掉（${[...t1].length} 字）`);
+  assert(p1 && p1.cls === 'explore' && p1.title.includes('倒塌的工廠') && p1.lines.some((l) => l.includes('擊殺6')) && p1.note.length <= 20 && t1.includes('黃金步槍'), '分享文字可辨識成探索卡片（含擊殺、附加的話、高品級裝備優先）');
+  const siege = { id: 'df_x', success: true, attacker: '屍潮', waves: 5, kills: 142, siege: { wallPct: 82, coins: 320, items: { screw: 40 } } };
+  const p2 = parseShare(shareDefenseText(siege));
+  assert(p2 && p2.cls === 'siege' && p2.title.includes('守住了') && p2.lines.join(' ').includes('5波'), '屍潮防守紀錄可分享成卡片');
+  const raid = { id: 'df_y', success: true, attacker: 'NPC 鐵拳幫', kills: 4, reward: { coins: 76, gear: [{}], xp: [], hurt: [] } };
+  assert(parseShare(shareDefenseText(raid))?.title.includes('擊退NPC 鐵拳幫'), 'NPC 掠奪防守紀錄可分享');
+  assert(parseShare('大家好｜我是新手') === null, '一般訊息不會被當成分享卡片');
+  assert(!isShared(gs, 'rp_x'), '尚未分享');
+  markShared(gs, 'rp_x');
+  assert(isShared(gs, 'rp_x') && SaveManager.migrate(JSON.parse(JSON.stringify(gs.state))).sharedReports?.rp_x, '分享過的紀錄會存檔（每份只能分享一次）');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

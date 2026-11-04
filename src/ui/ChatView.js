@@ -1,3 +1,4 @@
+import { shareCardHtml } from './ShareDialog.js';
 import { escapeHtml } from '../utils/dom.js';
 import { CHAT_MAX_LEN, CHAT_COOLDOWN_MS } from '../multiplayer/Chat.js';
 
@@ -152,7 +153,7 @@ export class ChatView {
         <div class="chat-msg ${m.mine ? 'mine' : ''}" data-msg="${m.id}" data-mine="${m.mine ? 1 : 0}">
           <div class="chat-meta"><b>${m.mine ? '我' : escapeHtml(m.name)}</b> <span>${m.mine ? '' : `文明 ${m.civ}・`}${timeOf(m.at)}</span>
             ${m.mine ? '' : `<button class="chat-more" data-chat="menu" data-id="${m.id}" aria-label="更多">⋯</button>`}</div>
-          <div class="chat-bubble">${escapeHtml(m.text)}</div>
+          ${shareCardHtml(m.text) || `<div class="chat-bubble">${escapeHtml(m.text)}</div>`}
         </div>`;
     });
     if (!msgs.length) {

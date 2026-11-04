@@ -298,17 +298,21 @@ export class MapPanel {
       ${has ? '' : '<div class="map-hint">👆 點選地圖上任一建築，將它設為你的<b>避難所</b></div>'}
       <div class="map-tools">
         ${btn('🏰', 'gotoShelter', {}, { cls: 'btn-icon', disabled: !has, title: '回到避難所' })}
+        ${btn(`🔔<small class="alert-lbl ${this.game.shelter.alert ? 'on' : ''}">${this.game.shelter.alert ? '警戒中' : '正常'}</small>`, 'mapAlert', {}, { cls: `btn-icon alert-btn ${this.game.shelter.alert ? 'on' : ''}`, disabled: !has, title: this.game.shelter.alert ? '警戒中：按一下解除警戒' : '按一下切換警戒（全部倖存者暫時防禦駐守）' })}
         ${btn(`💬${unreadCount(this.game) ? `<small class="unread">${unreadCount(this.game)}</small>` : ''}`, 'messages', {}, { cls: 'btn-icon', title: '消息：探索報告與避難所紀錄' })}
         ${btn(`🗨️${this.game.chat.unread() ? `<small class="unread">${Math.min(99, this.game.chat.unread())}</small>` : ''}`, 'chat', {}, { cls: `btn-icon ${this.ui.chatView?.isOpen ? 'on' : ''}`, title: '全服聊天：所有玩家都看得到' })}
         ${btn(this.scanning ? '⏳' : '🔄', 'rescan', {}, { cls: 'btn-icon', disabled: this.scanning, title: '重新掃描附近建築' })}
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
         ${btn('☣️', 'zoneMode', {}, { cls: `btn-icon ${this.service.zoneMode?.() === 'off' ? '' : 'on'}`, title: '危險度圖層：淡／關閉' })}
       </div>
+      ${has && this.game.shelter.alert ? '<div class="map-alert-banner">🔔 警戒中・全部倖存者防禦駐守</div>' : ''}
       ${this.siegeBanner()}
       ${this.feedHtml()}
       ${this.scanning ? `<div class="scan-progress">📡 掃描建築中 ${this.scanProgress || ''}</div>` : ''}
       ${this.worldChip()}
       <div class="map-info">建築 ${st.map.pois.length}・殭屍群 ${st.map.zombieGroups.length}・資料：${src}</div>`;
+    // 警戒中：地圖外框變紅
+    this.overlay.classList.toggle('alerting', has && this.game.shelter.alert);
     if (html !== this.lastOverlay) {
       this.lastOverlay = html;
       this.overlay.innerHTML = html;
@@ -547,6 +551,14 @@ export class MapPanel {
     if (action === 'messages') openMessages(this.ui);
     if (action === 'chat') this.ui.chatView.toggle();
     if (action === 'legend') this.showLegend();
+    if (action === 'mapAlert' && sh) {
+      const on = !this.game.shelter.alert;
+      const r = this.game.shelter.setAlert(on);
+      if (r.ok) this.ui.toastEl.show(on ? '🔔 已切換警戒：全部在家的倖存者暫時改為防禦駐守' : '🟢 已解除警戒：倖存者恢復原本的工作', on ? 'danger' : 'success');
+      else this.ui.result(r);
+      this.game.changed?.();
+      this.renderOverlay();
+    }
     if (action === 'zoneMode') {
       this.ui.toastEl.show(`☣️ 危險度圖層：${this.service.cycleZoneMode()}`, 'info');
       this.renderOverlay();
