@@ -103,7 +103,7 @@ export function siegeDetailHtml(e, compact = false) {
       <small class="muted block">城牆剩 ≥80% 優秀 ×1.5・50～80% 良好 ×1.2・20～50% 普通 ×1.0・&lt;20% 勉強 ×0.7</small>
       <div class="sr-sec">📦 防守物資箱</div><div class="sr-items">${gains.join('')}</div>
       ${bossHtml(s.boss)}
-      ${s.xp?.length ? `<div class="sr-sec">🎖️ 駐守經驗（整晚駐守的人，各得升級所需 5%）</div>
+      ${s.xp?.length ? `<div class="sr-sec">🎖️ 駐守經驗（今晚參與防守、天亮仍在駐守的人，各得升級所需 5%）</div>
         ${s.xp.map((x) => `<div class="sr-row"><span>${escapeHtml(x.name)} Lv${x.level}</span><span class="pos">+${x.xp} 經驗</span></div>`).join('')}` : ''}`;
   }
   const lost = Object.entries(e.lost || {}).map(([k, v]) => chip(`${metaOf(k).icon} ${escapeHtml(metaOf(k).name)} −${v}`, 'loss'));

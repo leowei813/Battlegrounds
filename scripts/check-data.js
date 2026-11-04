@@ -3369,6 +3369,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   sv.job = 'guard';
   s.startNight();
   s.wave = 4; s.nightKills = 50;
+  s.markDefenders(); // 波次來襲時記錄參與防守的人
   b.wallHp = gs.shelter.wallMax(b) * 0.9;
   const coins0 = gs.state.player.coins;
   const xp0 = sv.xp; const lv0 = sv.level;
@@ -3386,12 +3387,34 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   s.endNight();
   assert(gs.state.defenseLog[0].siege.grade === 'normal' && gs.state.defenseLog[0].siege.coins === 20, '城牆剩 30%：評價普通 ×1.0');
   // 中途才開始駐守的人沒有駐守經驗
+  s.base.nightDefenders = null;
   s.startNight(); s.wave = 1; s.nightKills = 1;
+  s.markDefenders();
   const late = createSurvivor('晚到', 'scout', 5, 'common');
   gs.state.survivors.push(late);
   late.job = 'guard';
   s.endNight();
-  assert(!gs.state.defenseLog[0].siege.xp.some((x) => x.name === '晚到'), '中途才開始駐守的人不給駐守經驗');
+  assert(!gs.state.defenseLog[0].siege.xp.some((x) => x.name === '晚到'), '屍潮都打完才開始駐守的人不給駐守經驗');
+  // 警戒中全部倖存者都防守：來襲時都在防守的人都有經驗（不是只有遊戲開啟時在駐守的人）
+  const others = [createSurvivor('甲', 'scout', 5, 'common'), createSurvivor('乙', 'medic', 5, 'common')];
+  others.forEach((x) => { x.job = 'scavenge'; gs.state.survivors.push(x); });
+  s.base.nightDefenders = null;
+  s.startNight(); s.wave = 2; s.nightKills = 20;
+  gs.shelter.setAlert(true);
+  s.markDefenders();
+  s.endNight();
+  const names = gs.state.defenseLog[0].siege.xp.map((x) => x.name);
+  gs.shelter.setAlert(false);
+  assert(['甲', '乙', '晚到'].every((n) => names.includes(n)), `警戒中全員防守：參與的人都有駐守經驗（${names.join('、')}）`);
+  // 瞭望塔上的人也有駐守經驗
+  b.defenses[0] = { slot: 0, type: 'watchPost', level: 2, garrisonId: null };
+  gs.shelter.garrison(b, 0, others[0].id);
+  others[0].job = 'guard';
+  s.base.nightDefenders = null;
+  s.startNight(); s.wave = 1; s.nightKills = 5;
+  s.markDefenders();
+  s.endNight();
+  assert(gs.state.defenseLog[0].siege.xp.some((x) => x.name === '甲'), '瞭望塔上的人也有駐守經驗');
   // Boss 戰利品：必得 8 個高階零件
   s.startNight();
   gs.state.supplies = {}; // 倉庫有空間
