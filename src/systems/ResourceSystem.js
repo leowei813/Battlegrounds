@@ -1,6 +1,6 @@
 import { RESOURCE_KEYS } from '../config/constants.js';
 import {
-  storageCap, FARM_FOOD, LUMBER_WOOD, WORKBENCH,
+  storageCap, FARM_FOOD, LUMBER_WOOD, WORKBENCH, dormFoodReduce,
 } from '../config/facilities.js';
 import {
   JOBS, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE, foodLevelMul,
@@ -72,7 +72,9 @@ export class ResourceSystem {
     const perHead = offline ? FOOD_PER_SURVIVOR_HOUR_OFFLINE : FOOD_PER_SURVIVOR_HOUR;
     // 每人依等級吃得不同：等級越高消耗越多
     const heads = st.survivors.reduce((s, sv) => s + foodLevelMul(sv.level), 0);
-    upkeep.food += heads * perHead * Math.max(0.5, 1 - (rb.foodUpkeepReduce || 0));
+    // 研究與宿舍居住品質都能減少食物消耗（最多減半）
+    const dormLv = this.game.shelter.maxLevel('dormitory');
+    upkeep.food += heads * perHead * Math.max(0.5, 1 - (rb.foodUpkeepReduce || 0) - dormFoodReduce(dormLv));
 
     const keys = [...new Set([...RESOURCE_KEYS, ...Object.keys(gross), ...Object.keys(upkeep)])].filter((k) => gross[k] || upkeep[k] || RESOURCE_KEYS.includes(k));
     const plain = (o) => Object.fromEntries(keys.map((k) => [k, o[k]]));

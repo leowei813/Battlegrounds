@@ -1,6 +1,6 @@
 import { formatDuration } from '../../utils/math.js';
 import {
-  CLASSES, JOBS, QUALITY_KEYS, QUALITY_NAMES, xpToNext, survivorRarityTable, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE, FOOD_LEVEL_STEP,
+  CLASSES, JOBS, QUALITY_KEYS, QUALITY_NAMES, xpToNext, survivorRarityTable, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE, FOOD_LEVEL_STEP, MAX_SURVIVORS,
 } from '../../config/survivors.js';
 import { RESOURCE_KEYS } from '../../config/constants.js';
 import { SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, unitWeight } from '../../config/supplies.js';
@@ -216,6 +216,7 @@ export class SurvivorPanel {
     const recruitN = (st.recruitOffer || []).length + st.recruitPool.length + (st.recruitBoard?.list || []).length;
     const roster = `<aside class="sv-roster">
       <div class="row-between"><h3>👥 倖存者 ${list.length}/${g.survivors.housing()}</h3></div>
+      ${g.survivors.housing() >= MAX_SURVIVORS && list.length >= MAX_SURVIVORS ? `<div class="sv-max-note">已達最高人數 ${MAX_SURVIVORS} 人（領袖 Lv15、宿舍 Lv7 以上）。宿舍繼續升級可提升休息回復、減少食物消耗、增加招募候選人。</div>` : ''}
       <div class="chips">${chip('all', '全部')}${chip('home', `在家 ${counts.home}`)}${chip('out', `外出 ${counts.out}`)}${chip('hurt', `重傷 ${counts.hurt}`)}</div>
       ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷，飢餓時無法治療。</div>' : ''}
       <div class="sv-mini-grid">${shown.map((sv) => this.rosterCard(sv)).join('') || '<p class="muted">沒有符合的倖存者。</p>'}</div>

@@ -3979,6 +3979,26 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(hp > 3.5 && Math.abs(hp - expect) < 0.2, `診療室 Lv1 每秒回復 10 分鐘後生命會增加（3 → ${hp.toFixed(2)}，預期約 ${expect.toFixed(2)}）`);
 }
 
+// ---- 93. 宿舍住滿後（Lv8～15）：人數維持 10、休息回復加快、食物消耗減少、招募候選人增加 ----
+{
+  const fac = await import('../src/config/facilities.js');
+  const gd = Game.newGame({ playerName: 'A93', classId: 'warrior', lat: 25, lon: 121 });
+  gd.state.map.pois = fillPois([], 25, 121);
+  gd.shelter.establish(gd.state.map.pois[0]);
+  const dorm = gd.shelter.primary().facilities.dormitory;
+  dorm.level = 7;
+  const cap7 = gd.survivors.dormCap(); const mul7 = gd.survivors.regenMul(); const food7 = gd.resources.rates().upkeep.food; const board7 = gd.survivors.boardSize();
+  dorm.level = 15;
+  const cap15 = gd.survivors.dormCap(); const mul15 = gd.survivors.regenMul(); const food15 = gd.resources.rates().upkeep.food; const board15 = gd.survivors.boardSize();
+  dorm.level = 10;
+  const board10 = gd.survivors.boardSize();
+  assert(cap7 === 10 && cap15 === 10 && fac.dormCap(3) === 6, `宿舍 Lv7 住滿 10 人，之後不再增加（${cap7}/${cap15}）`);
+  assert(Math.abs(mul15 - mul7 - 0.48) < 1e-9, `宿舍 Lv15 休息回復 +48%（${mul7.toFixed(2)} → ${mul15.toFixed(2)}）`);
+  assert(Math.abs(food15 / food7 - 0.84) < 0.001, `宿舍 Lv15 食物消耗 −16%（${food7.toFixed(2)} → ${food15.toFixed(2)}）`);
+  assert(board10 === board7 + 1 && board15 === board7 + 2, `宿舍 Lv10、Lv15 招募候選人各 +1（${board7} → ${board10} → ${board15}）`);
+  assert(fac.FACILITIES.dormitory.effectText(12).includes('休息回復 +30%') && fac.FACILITIES.dormitory.effectText(5).includes('8 人'), '宿舍效果說明顯示對應等級的效果');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

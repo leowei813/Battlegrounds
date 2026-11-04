@@ -1,4 +1,6 @@
-import { dormCap, clinicRegen } from '../config/facilities.js';
+import {
+  dormCap, clinicRegen, dormRegenBonus, dormBoardAdd,
+} from '../config/facilities.js';
 import {
   CLASSES, CLASS_KEYS, QUALITY_KEYS, qualityMul, JOBS, SURVIVOR_NAMES, MAX_SURVIVOR_LEVEL, xpToNext, recruitCost,
   SURVIVOR_RARITY, survivorRarityTable, hireFee, RECRUIT_BOARD_SIZE, RECRUIT_BOARD_MS, RECRUIT_STAY_MS, MAX_SURVIVORS, BASE_SURVIVOR_CAP, LEADER_LEVELS_PER_SLOT, RECRUIT_CHOICES, VITALS,
@@ -71,6 +73,7 @@ export class SurvivorSystem {
   /** 人數已滿時的原因說明 */
   fullReason() {
     const dorm = this.game.shelter.maxLevel('dormitory');
+    if (this.housing() >= MAX_SURVIVORS) return `已達最高人數 ${MAX_SURVIVORS} 人`;
     if (this.dormCap() <= this.rankCap()) {
       return dorm ? `宿舍只能住 ${this.dormCap()} 人，請升級宿舍` : `沒有宿舍最多只能有 ${this.dormCap()} 人，請在避難所建造宿舍`;
     }
@@ -313,7 +316,9 @@ export class SurvivorSystem {
   /** 醫療站工作的醫生提高全員回復速度 */
   regenMul() {
     const medics = this.list.filter((s) => s.classId === 'medic' && s.job === 'clinic' && s.status === 'idle' && !s.severe).length;
-    return 1 + Math.min(1, medics * VITALS.medicRegenBonus) + this.game.research.bonus('regenPct');
+    // 宿舍住滿後的居住品質也讓休息回復加快
+    return 1 + Math.min(1, medics * VITALS.medicRegenBonus) + this.game.research.bonus('regenPct')
+      + dormRegenBonus(this.game.shelter.maxLevel('dormitory'));
   }
 
   /**
@@ -508,7 +513,7 @@ export class SurvivorSystem {
   }
 
   boardSize() {
-    return RECRUIT_BOARD_SIZE + Math.floor(this.game.research.bonus('boardSlots'));
+    return RECRUIT_BOARD_SIZE + Math.floor(this.game.research.bonus('boardSlots')) + dormBoardAdd(this.game.shelter.maxLevel('dormitory'));
   }
 
   /** 到整點更新名單 */

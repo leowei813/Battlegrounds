@@ -84,9 +84,9 @@ export const FACILITIES = {
   },
   dormitory: {
     name: '宿舍', icon: '🛏️', startLevel: 0,
-    desc: '倖存者的住處。沒有宿舍最多只能有 3 人，每升一級可多住 1 人。',
+    desc: '倖存者的住處。沒有宿舍最多只能有 3 人，每升一級可多住 1 人，Lv7 住滿 10 人；之後升級提升居住品質：休息回復加快、食物消耗減少，Lv10、Lv15 招募候選人各 +1。',
     cost: (lv) => mat('dormitory', ['struct'], { wood: 90, metal: 25, cloth: 45 }, lv),
-    effectText: (lv) => `可住 ${dormCap(lv)} 人（含領袖）`,
+    effectText: (lv) => dormEffectText(lv),
   },
   exchange: {
     name: '交易所', icon: '🏪', startLevel: 0,
@@ -145,6 +145,24 @@ export const housingCap = (lv) => 3 + lv * 2;
 export const cellarCap = (lv) => (lv > 0 ? 60 * lv + 15 * lv * lv : 0);
 export const cellarCoins = (lv) => (lv > 0 ? 50 * lv + 10 * lv * lv : 0);
 /** 宿舍可住人數（含領袖）：沒有宿舍最多 3 人，每升一級 +1 */
-export const dormCap = (lv) => 3 + Math.max(0, lv);
+export const dormCap = (lv) => Math.min(DORM_FULL_CAP, 3 + Math.max(0, lv));
+/** 宿舍住滿的等級：之後升級改為提升居住品質 */
+export const DORM_FULL_CAP = 10;
+export const DORM_FULL_LV = DORM_FULL_CAP - 3;
+/** 宿舍住滿之後（Lv8～15）的居住品質：休息回復加快、食物消耗減少、Lv10／Lv15 招募候選人 +1 */
+export const DORM_COMFORT = { regenPerLv: 0.06, foodPerLv: 0.02, boardLevels: [10, 15] };
+const comfortLv = (lv) => Math.max(0, lv - DORM_FULL_LV);
+export const dormRegenBonus = (lv) => comfortLv(lv) * DORM_COMFORT.regenPerLv;
+export const dormFoodReduce = (lv) => comfortLv(lv) * DORM_COMFORT.foodPerLv;
+export const dormBoardAdd = (lv) => DORM_COMFORT.boardLevels.filter((x) => lv >= x).length;
+/** 宿舍效果說明 */
+export function dormEffectText(lv) {
+  const cap = dormCap(lv);
+  if (lv <= DORM_FULL_LV) return `可住 ${cap} 人（含領袖）${lv === DORM_FULL_LV ? '・已達最高人數，之後升級提升居住品質' : ''}`;
+  const parts = [`可住 ${cap} 人（已達最高）`, `休息回復 +${Math.round(dormRegenBonus(lv) * 100)}%`, `食物消耗 −${Math.round(dormFoodReduce(lv) * 100)}%`];
+  const add = dormBoardAdd(lv);
+  if (add) parts.push(`招募候選人 +${add}`);
+  return parts.join('・');
+}
 /** 診療室：在據點休息時每分鐘回復最大生命的比例（沒有診療室不會自然回復） */
 export const clinicRegen = (lv) => (lv > 0 ? 0.002 + 0.0015 * (lv - 1) : 0);
