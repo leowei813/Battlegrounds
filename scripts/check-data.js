@@ -195,6 +195,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 戰敗：探索提前結束
   leader.level = 1;
   Object.assign(leader, { severe: false, hp: null });
+  // 這裡只測回程遇襲：建築內的搜索視為已結束（避免 Lv1 首領先在建築內戰敗撤退）
+  if (ex.cp) ex.cp.stopped = true;
   let aborted = false;
   for (let i = 0; i < 20 && !aborted; i += 1) {
     ex.encountered = [];
