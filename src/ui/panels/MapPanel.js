@@ -315,6 +315,20 @@ export class MapPanel {
     }
   }
 
+  /** 連續探索：背著的物資、負重與開關（只有探索隊伍） */
+  chainHtml(ex) {
+    const g = this.game;
+    if (ex.kind !== 'explore' || ex.recalled || ex.defeated) return '';
+    const load = g.exploration.teamLoad(ex);
+    const carried = Object.entries(ex.carried?.gained || {}).filter(([, v]) => v > 0);
+    const on = ex.chain !== false;
+    return `<div class="chain-box">
+      ${carried.length ? `<small class="muted block">🎒 背著前幾站的物資（回到避難所才入庫）：${carried.map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name}×${v}`).join('、')}</small>` : ''}
+      <small class="muted block">🎒 隊伍負重 ${Math.round(load.used)}/${load.cap}</small>${progressBar(load.used / Math.max(1, load.cap), load.used >= load.cap * 0.9 ? 'danger' : 'hp')}
+      ${btn(`${on ? '✅' : '⬜'} 有空間就直接前往下一個地點`, 'toggleChain', {}, { cls: 'btn-sm btn-ghost', title: on ? '負重未達 90% 時，探索完直接前往佇列中的下一個地點' : '關閉：每個地點探索完都先回避難所' })}
+    </div>`;
+  }
+
   /** 多人互動狀態：附近玩家數與隊伍數 */
   worldChip() {
     const w = this.game.world;
@@ -593,6 +607,7 @@ export class MapPanel {
       <p class="muted">⏱ 剩 ${formatDuration(p ? p.remainingMs : Math.max(0, ex.endAt - now))}</p>
       ${this.ui.panels.explore.checkpointHtml(ex)}
       ${(ex.queue || []).length ? `<div class="label">🧭 探索佇列（${ex.queue.length}/${g.exploration.queueLimit()}）</div>${ex.queue.map((pid, i) => `<div class="row-between"><span>${i + 1}. ${escapeHtml(g.exploration.poi(pid)?.name || '地點')}</span>${btn('移除', 'dequeue', { i }, { cls: 'btn-xs btn-ghost' })}</div>`).join('')}` : ''}
+      ${this.chainHtml(ex)}
       ${canRecall ? `<p class="muted">${'召回後隊伍會從目前位置走回避難所（需要移動時間），只會帶回已經到過的檢核點找到的物資。'}</p>` : ''}
       <div class="btn-row">${canRecall ? btn('↩️ 召回', 'recall', {}, { cls: 'btn-danger' }) : ''}</div>`;
     };
@@ -603,6 +618,11 @@ export class MapPanel {
       onAction: (action, data, m) => {
         if (action === 'dequeue') {
           this.ui.result(g.exploration.dequeue(expId, +data.i));
+          m.update(body());
+          return;
+        }
+        if (action === 'toggleChain') {
+          this.ui.result(g.exploration.toggleChain(expId));
           m.update(body());
           return;
         }

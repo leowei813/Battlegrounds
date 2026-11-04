@@ -96,6 +96,7 @@ h4 { margin: 14px 0 6px; font-size: 14px; color: #c5e1a5; }
 .rs-card.rs-new { border-color: #ffb300; box-shadow: 0 0 0 1px #ffb30066 inset; }
 .rs-new-tag { position: absolute; top: -8px; right: 8px; background: #ffb300; color: #1b1b1b; font-size: 10px; font-weight: 800; border-radius: 6px; padding: 0 6px; z-index: 1; }
 .rs-new-dot { font-style: normal; font-size: 10px; font-weight: 800; background: #ffb300; color: #1b1b1b; border-radius: 6px; padding: 0 5px; margin-left: 4px; }
+.chain-box { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .rq-item { background: #ffffff0a; border-radius: 10px; padding: 8px 10px; margin-top: 8px; border-left: 3px solid #455a64; display: flex; flex-direction: column; gap: 3px; }
 .rq-item.run { border-left-color: #ffb300; }
 .rq-item b { font-size: 13px; }
