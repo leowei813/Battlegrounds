@@ -108,6 +108,7 @@ const save = JSON.parse(JSON.stringify(g.state));
 assert(save.version === SAVE_VERSION_NOW, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
 g.state.map.pois[1].lootedDay = 20000;
+delete g.state.map.pois[1].lootedBy; // 手動改了日期，原本的「被誰搜刮」已不適用
 g.state.map.pois[1].lastVisit = 123;
 const packed = JSON.stringify(SaveManager.pack(g.state));
 const restored = SaveManager.migrate(JSON.parse(packed));
@@ -2889,10 +2890,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   delete gq2.state.supplies.ammo556;
   lead.bag = {};
   const r = gq2.equipment.quickEquip(lead.id);
-  assert(r.ok && lead.equipment.melee === strong.id && !lead.equipment.weapon, `快速換裝換上戰力最高的近戰武器，沒有彈藥的槍不換（${r.msg}）`);
+  assert(r.ok && lead.equipment.melee === strong.id && lead.equipment.weapon === gun.id, `快速換裝換上戰力最高的近戰與遠程武器（遠程武器沒有彈藥也換）（${r.msg}）`);
+  assert(r.warn && gq2.survivors.supplyRules(lead).ammo === 'ammo556' && gq2.equipment.ammoWarn(gun, lead)?.level === 'none', '沒有彈藥：自動補給仍設為武器的彈藥，武器標示無彈藥');
+  // 原本裝著別種彈藥：放回倉庫，改裝新武器的彈藥
+  const pistol = gq2.equipment.generate({ level: 1, model: 'm9', rarity: 'poor' });
+  gq2.state.supplies.ammo9 = 30;
+  gq2.survivors.loadSlot(lead.id, 'ammo', 'ammo9', 20);
+  assert(gq2.survivors.loadout(lead).ammo?.key === 'ammo9', '先裝著 9mm 子彈');
   gq2.state.supplies.ammo556 = 50;
-  gq2.equipment.quickEquip(lead.id);
-  assert(lead.equipment.weapon === gun.id, '有彈藥時換上遠程武器');
+  const r2 = gq2.equipment.quickEquip(lead.id);
+  const lo = gq2.survivors.loadout(lead);
+  assert(lead.equipment.weapon === gun.id && lo.ammo?.key === 'ammo556' && lo.ammo.qty === 50 && gq2.state.supplies.ammo9 === 30 && !gq2.equipment.ammoWarn(gun, lead), `快速換裝：彈藥欄改裝新武器的彈藥，原本的彈藥放回倉庫（${r2.msg}）`);
+  void pistol;
 }
 
 // ---- 62. v9 警戒模式 ----
@@ -3695,6 +3704,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(qf.ok && r.exp.queue.length === Math.min(ex.queueLimit(), qf.added.length) && qf.added.length > 0, `快速佇列：自動加入附近地點（${qf.added.length}/${ex.queueLimit()}）`);
   assert(qf.added.every((p) => ex.hasStock(p) && !zones.some((z) => haversine(p.lat, p.lon, z.lat, z.lon) <= z.r)) && new Set(r.exp.queue).size === r.exp.queue.length && !r.exp.queue.includes(poi.id), '快速佇列：只加入有物資、不在警戒範圍、不重複的地點');
   assert(ex.quickFill(r.exp.id).added.length === 0 || r.exp.queue.length <= ex.queueLimit(), '快速佇列不超過上限');
+  const { zoneAt: zoneAt85 } = await import('../src/config/zones.js');
+  assert(qf.added.every((p) => zoneAt85(p.lat, p.lon).id === zoneAt85(poi.lat, poi.lon).id), '快速佇列只加入與選定建築同一個區域的建築（不跨區）');
   ex.list.length = 0; L.status = 'idle';
   // 穿脫裝備：維持生命百分比
   const eq = gq.equipment;
@@ -3750,6 +3761,44 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!isShared(gs, 'rp_x'), '尚未分享');
   markShared(gs, 'rp_x');
   assert(isShared(gs, 'rp_x') && SaveManager.migrate(JSON.parse(JSON.stringify(gs.state))).sharedReports?.rp_x, '分享過的紀錄會存檔（每份只能分享一次）');
+}
+
+// ---- 87. 已被搜空的建築：報告寫出原因、佇列自動跳過 ----
+{
+  const { dayKey } = await import('../src/systems/LootStock.js');
+  const ge = Game.newGame({ playerName: 'E87', classId: 'warrior', lat: 25, lon: 121 });
+  ge.state.map.pois = fillPois([], 25, 121);
+  ge.shelter.establish(ge.state.map.pois[0]);
+  setHour(ge, 10);
+  const ex = ge.exploration;
+  const home = ge.shelter.primary();
+  const near = ge.state.map.pois.filter((p) => !ge.shelter.baseAtPoi(p.id) && !p.npc && haversine(p.lat, p.lon, home.lat, home.lon) < 700).slice(0, 3);
+  const L = ge.survivors.leader();
+  L.level = 60;
+  ge.survivors.becomeSevere = () => {};
+  const sim87 = ge.combat.simulate.bind(ge.combat);
+  ge.combat.simulate = (...a) => ({ ...sim87(...a), victory: true });
+  const now = Date.now();
+  // 第二個地點被 NPC 搜空
+  near[1].lootedDay = dayKey(now);
+  near[1].lootedBy = { kind: 'npc', name: '鐵拳幫', day: dayKey(now) };
+  assert(!ex.hasStock(near[1], now) && ex.emptyReason(near[1], now).includes('鐵拳幫'), '被 NPC 搜空的建築記下 NPC 名稱');
+  const r1 = ex.start(near[0].id, [L.id], 1, false, now);
+  r1.exp.cargo = 1e6;
+  ex.enqueue(r1.exp.id, near[1].id);
+  ex.enqueue(r1.exp.id, near[2].id);
+  ex.update(r1.exp.startAt + r1.exp.travelMs + r1.exp.searchMs + 1);
+  const e2 = ex.list.find((e) => e.poiId === near[2].id);
+  assert(e2 && !ex.list.some((e) => e.poiId === near[1].id), '連續探索：已被搜空的佇列地點自動跳過，直接前往下一個');
+  assert(ge.state.reports[0]?.events.some((t) => t.includes('跳過') && t.includes('鐵拳幫')), '報告寫出跳過的地點與被誰搜空');
+  ex.list.length = 0; L.status = 'idle'; L.hp = null;
+  // 直接去被搜空的建築：報告標示「已被搜空」與原因
+  const r2 = ex.start(near[1].id, [L.id], 1, false, now);
+  ex.update(r2.exp.endAt + 1);
+  const rep = ge.state.reports.find((r) => r.poiName === near[1].name);
+  assert(rep?.emptied?.includes('鐵拳幫') && rep.events.some((t) => t.includes('搜刮一空') && t.includes('鐵拳幫')), '探索已被搜空的建築：報告標示已被搜空與原因');
+  // 自己搜過：原因顯示自己
+  assert(near[0].lootedBy?.kind === 'self' && ex.emptyReason(near[0], now).includes('你已經搜過'), '自己搜過的建築記為自己');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

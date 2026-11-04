@@ -290,7 +290,7 @@ export class InventoryPanel {
       btn('拆解', 'dismantle', { id: it.id }, { cls: 'btn-xs btn-ghost', disabled: it.locked }),
       btn('🗑️ 丟棄', 'dropItem', { id: it.id }, { cls: 'btn-xs btn-danger', disabled: it.locked }),
     ].join('');
-    return `<div class="inv-detail">${itemCard(it, { actions })}<small class="muted">💰 想換錢請在流浪商人出現時，到「回收」分頁賣給他。</small></div>`;
+    return `<div class="inv-detail">${itemCard(it, { actions, ammoWarn: this.game.equipment.ammoWarn(it) })}<small class="muted">💰 想換錢請在流浪商人出現時，到「回收」分頁賣給他。</small></div>`;
   }
 
   renderItems() {

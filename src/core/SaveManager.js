@@ -25,20 +25,22 @@ function idRandom(str) {
 
 /**
  * 地圖建築改以「欄位陣列」儲存（市區可達數千棟，物件格式體積約大一倍）：
- * [id, 類型索引, 名稱, 緯度, 經度, 是否 OSM(1/0), 被搜刮的日期編號, 最後探索時間]
+ * [id, 類型索引, 名稱, 緯度, 經度, 是否 OSM(1/0), 被搜刮的日期編號, 最後探索時間, 被誰搜刮（'self'／'n:NPC 名稱'，可省略）]
  */
+const packLootedBy = (p) => (p.lootedBy && p.lootedBy.day === p.lootedDay ? (p.lootedBy.kind === 'npc' ? `n:${p.lootedBy.name}` : 'self') : 0);
 function packPois(pois) {
   return {
     types: POI_KEYS,
-    rows: pois.map((p) => [p.id, POI_KEYS.indexOf(p.type), p.name, p.lat, p.lon, p.osm ? 1 : 0, p.lootedDay || 0, p.lastVisit || 0]),
+    rows: pois.map((p) => [p.id, POI_KEYS.indexOf(p.type), p.name, p.lat, p.lon, p.osm ? 1 : 0, p.lootedDay || 0, p.lastVisit || 0, ...(packLootedBy(p) ? [packLootedBy(p)] : [])]),
   };
 }
 
 function unpackPois({ types, rows }) {
-  return rows.map(([id, t, name, lat, lon, osm, lootedDay, lastVisit]) => {
+  return rows.map(([id, t, name, lat, lon, osm, lootedDay, lastVisit, by]) => {
     const poi = { id, type: types[t], name, lat, lon, osm: !!osm };
     // v4 以前此欄為枯竭度（小數），不再使用；整數才是被搜刮的日期編號
     if (Number.isInteger(lootedDay) && lootedDay > 1) poi.lootedDay = lootedDay;
+    if (by && poi.lootedDay) poi.lootedBy = String(by).startsWith('n:') ? { kind: 'npc', name: String(by).slice(2), day: poi.lootedDay } : { kind: 'self', day: poi.lootedDay };
     if (lastVisit) poi.lastVisit = lastVisit;
     return poi;
   }).filter((p) => p.type);

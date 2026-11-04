@@ -461,17 +461,62 @@ export class EquipmentSystem {
       const cur = this.getItem(sv.equipment[slot]);
       const pool = this.items.filter((i) => i.slot === slot && !this.equippedBy(i.id)
         && ((i.loc || 'store') === 'store' || homeIds.has(i.loc)));
-      const usable = slot === 'weapon'
-        ? pool.filter((i) => { const need = AMMO_FOR[i.type]; return need && g.survivors.ammoAvailable(sv, need.ammo) >= need.perFight; })
-        : pool;
-      const best = usable.sort((a, b) => b.power - a.power)[0];
+      // 遠程武器也一律換戰力最高的（沒有彈藥時武器卡片會提示，自動補給會設成它的彈藥）
+      const best = pool.sort((a, b) => b.power - a.power)[0];
       if (!best || best.power <= (cur?.power || 0)) return;
       const r = this.equip(sv.id, best.id);
       if (r.ok) changed.push(`${SLOTS[slot].name}：${best.name}`);
     });
-    return changed.length
-      ? { ok: true, changed, msg: `快速換裝：${changed.join('、')}` }
-      : { ok: true, changed, msg: '目前已經是戰力最高的裝備' };
+    const ammo = this.syncAmmo(sv);
+    const parts = [...changed, ...(ammo.notes || [])];
+    if (!parts.length) return { ok: true, changed, msg: '目前已經是戰力最高的裝備' };
+    return { ok: true, changed, msg: `⚡ 快速換裝：${parts.join('；')}`, warn: !!ammo.missing };
+  }
+
+  /**
+   * 彈藥跟著遠程武器：自動補給設成武器用的彈藥；彈藥欄裡別種彈藥放回倉庫、改裝對應彈藥。
+   * @returns {{notes:string[], missing?:boolean}}
+   */
+  syncAmmo(sv) {
+    const g = this.game;
+    const need = g.survivors.ammoNeed(sv);
+    if (!need) return { notes: [] };
+    const notes = [];
+    const key = need.ammo;
+    const name = SUPPLIES[key]?.name || key;
+    const rules = g.survivors.supplyRules(sv);
+    const lo = g.survivors.loadout(sv);
+    if (lo.ammo && lo.ammo.key !== key) {
+      const old = lo.ammo;
+      if (g.survivors.unloadSlot(sv.id, 'ammo').ok) notes.push(`${SUPPLIES[old.key]?.name || old.key}×${old.qty} 放回倉庫`);
+    }
+    const ruleChanged = rules.ammo !== key;
+    rules.ammo = key;
+    const r = (lo.ammo?.qty || 0) < 100 ? g.survivors.loadSlot(sv.id, 'ammo', key) : { ok: false };
+    if (r.ok) notes.push(`彈藥改為 ${name}×${lo.ammo?.qty || r.n}`);
+    const missing = !g.survivors.ammoAvailable(sv, key);
+    if (missing) notes.push(`⚠️ 倉庫與背包沒有${name}，自動補給已設為${name}（有彈藥時自動裝填）`);
+    else if (ruleChanged) notes.push(`自動補給改為${name}`);
+    return { notes, missing };
+  }
+
+  /**
+   * 遠程武器的彈藥狀態（武器卡片提示用）：沒有對應彈藥時回傳提示。
+   * @param {object} item 武器
+   * @param {object|null} sv 裝備者（有的話算他可用的彈藥；沒有則看倉庫與在家隊員的背包）
+   * @returns {{level:'none'|'low', key:string, name:string}|null}
+   */
+  ammoWarn(item, sv = null) {
+    const need = item && AMMO_FOR[item.type];
+    if (!need) return null;
+    const g = this.game;
+    const have = sv ? g.survivors.ammoAvailable(sv, need.ammo)
+      : Math.floor(g.state.supplies?.[need.ammo] || 0) + g.state.survivors.filter((x) => g.survivors.atShelter(x))
+        .reduce((n, x) => n + Math.floor(x.bag?.[need.ammo] || 0) + (x.loadout?.ammo?.key === need.ammo ? x.loadout.ammo.qty : 0), 0);
+    const name = SUPPLIES[need.ammo]?.name || need.ammo;
+    if (have <= 0) return { level: 'none', key: need.ammo, name };
+    if (sv && have < need.perFight) return { level: 'low', key: need.ammo, name };
+    return null;
   }
 
   /**
