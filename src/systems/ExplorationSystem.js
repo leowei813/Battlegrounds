@@ -266,6 +266,7 @@ export class ExplorationSystem {
 
   /**
    * 快速佇列：從小隊目前（或佇列最後）的地點開始，依序把最近、還有物資的一般建築加入佇列直到上限。
+   * 只選與選定建築同一個區域的建築（不跨區）。
    * 不選 NPC 與非友好玩家警戒範圍內的地點、據點，以及其他隊伍正要去的地點。
    * @returns {{ok:boolean, added:object[], msg?:string}}
    */
@@ -281,6 +282,10 @@ export class ExplorationSystem {
       && !this.game.shelter.baseAtPoi(p.id) && this.hasStock(p, now)
       && !zones.some((z) => haversine(p.lat, p.lon, z.lat, z.lon) <= z.r));
     let last = this.poi(exp.queue[exp.queue.length - 1] || exp.poiId);
+    // 只選與選定建築同一個區域（危險等級）的建築，不跨區
+    const base = this.poi(exp.poiId) || last;
+    const zoneId = base ? zoneAt(base.lat, base.lon).id : null;
+    for (let i = pool.length - 1; i >= 0; i -= 1) if (zoneAt(pool[i].lat, pool[i].lon).id !== zoneId) pool.splice(i, 1);
     const added = [];
     while (last && added.length < room && pool.length) {
       let best = -1;
