@@ -263,6 +263,8 @@ export class ShelterSystem {
     const active = this.game.state.research.active;
     const research = active ? cancelRefund(active, now, () => this.game.research.cost(active.id, active.level)).cost : null;
     add(cancelled, research);
+    // 排隊中的研究：全額退還
+    (this.game.state.research.queue || []).forEach((q) => add(cancelled, q.cost));
     const builds = base.buildQueue.map((q) => cancelRefund(q, now, () => (q.kind === 'facility' ? this.discounted(FACILITIES[q.id].cost(q.targetLevel)) : this.defenseCost(q.id, q.targetLevel))).cost);
     builds.forEach((c) => add(cancelled, c));
     const defRefund = Object.fromEntries(Object.entries(this.defenseBuiltCost(base))
@@ -289,7 +291,7 @@ export class ShelterSystem {
     base.defenses.forEach((d) => { d.garrisonId = null; });
     if (isShelter) {
       // 1. 進行中的研究與施工先取消並退還材料
-      if (this.game.state.research.active) this.game.research.cancel();
+      this.game.research.cancelAll();
       while (base.buildQueue.length) this.cancelBuild(base, 0);
       // 2. 防禦建築全部移除，退還 50% 建造材料
       this.game.grant(preview.defRefund);

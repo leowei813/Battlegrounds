@@ -3464,6 +3464,66 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(raidRewardHtml(fake).includes('賞金') && raidRewardHtml(fake, 'summary').includes('裝備 ×1') && raidRewardHtml(fake, 'detail').includes('防守經驗'), '結算視窗與紀錄顯示擊退掠奪隊的獎勵');
 }
 
+// ---- 80. 研究佇列 ----
+{
+  const { SUPPLIES } = await import('../src/config/supplies.js');
+  const gq = Game.newGame({ playerName: 'Q80', classId: 'warrior', lat: 25, lon: 121 });
+  gq.state.map.pois = fillPois([], 25, 121);
+  gq.shelter.establish(gq.state.map.pois[0]);
+  const bq = gq.shelter.primary();
+  const rs = gq.research;
+  bq.facilities.researchCenter.level = 4;
+  assert(rs.slots() === 1, '研究中心 Lv4：1 格');
+  bq.facilities.researchCenter.level = 10;
+  assert(rs.slots() === 3 && rs.slots(5) === 2 && rs.slots(15) === 4, '每 5 級多 1 格（Lv5 2 格、Lv10 3 格、Lv15 4 格）');
+  // 材料充足
+  Object.keys(gq.state.resources).forEach((k) => { gq.state.resources[k] = 1e6; });
+  gq.resources.storageCap = () => 1e9;
+  gq.state.supplies = Object.fromEntries(Object.keys(SUPPLIES).map((k) => [k, 5000]));
+  gq.equipment.supplyRoom = () => 1e6;
+  const free = ['w_atk', 'w_crit', 'w_melee', 'w_pistol'].filter((id) => RESEARCH[id] && !RESEARCH[id].requires.length);
+  const a1 = free[0]; const a2 = free[1];
+  assert(rs.start(a1).ok && gq.state.research.active?.id === a1, '開始研究第 1 項');
+  const before = JSON.stringify(gq.state.supplies);
+  const r2 = rs.start(a2);
+  assert(r2.ok && rs.queue.length === 1 && rs.queue[0].id === a2 && JSON.stringify(gq.state.supplies) !== before, '已有研究時加入佇列，並在加入時扣除材料');
+  const r3 = rs.start(a1);
+  assert(r3.ok && rs.queue[1].id === a1 && rs.queue[1].level === 2, '同一項科技可以排下一級（Lv2）');
+  assert(!rs.start(a2).ok, '佇列已滿（3/3）時不能再加入');
+  // 調整順序：Lv2 不能排到自己的 Lv1 前面（Lv1 正在研究，所以可以往前）
+  assert(rs.move(1, -1).ok && rs.queue[0].id === a1, '排隊項目可以往前');
+  assert(rs.move(0, 1).ok && rs.queue[0].id === a2, '排隊項目可以往後');
+  // 取消排隊中的項目：全額退還
+  const supBefore = { ...gq.state.supplies };
+  const cost2 = rs.queue[0].cost;
+  const c = rs.cancelQueued(0);
+  assert(c.ok && rs.queue.length === 1 && Object.entries(cost2).every(([k, v]) => !SUPPLIES[k] || gq.state.supplies[k] === (supBefore[k] || 0) + v), '取消排隊中的項目全額退還');
+  rs.start(a2);
+  // 依序完成：上一項完成後自動開始下一項（離線一次跑完）
+  const t1 = gq.state.research.active.endAt;
+  const total = rs.queue.reduce((s2, q) => s2 + rs.researchTime(q.id, q.level) * 1000, 0);
+  rs.update(t1 + total + 1000);
+  assert(rs.level(a1) === 2 && rs.level(a2) === 1 && !gq.state.research.active && rs.queue.length === 0, `離線期間佇列依序全部完成（${a1} Lv${rs.level(a1)}、${a2} Lv${rs.level(a2)}）`);
+  // 取消研究中的項目：依賴它的排隊項目（同一科技下一級）一併取消、全額退還
+  rs.start(a1); rs.start(a1); rs.start(a2);
+  assert(rs.queue.length === 2 && rs.queue[0].id === a1, '排入同一科技的 Lv3、Lv4');
+  rs.cancel();
+  assert(gq.state.research.active?.id === a2 && rs.queue.length === 0, '取消研究中的 Lv3：Lv4 一併取消，下一項自動開始');
+  // 研究中心降級：超出格數的排隊項目取消並退還
+  rs.start(a1); rs.start(a1);
+  assert(rs.queue.length === 2, '佇列 3/3');
+  bq.facilities.researchCenter.level = 4;
+  rs.update(Date.now());
+  assert(rs.queue.length === 0 && gq.state.research.active, '研究中心降到 Lv4（1 格）：排隊項目取消並退還');
+  // 搬遷：研究中與排隊中的研究都取消
+  bq.facilities.researchCenter.level = 10;
+  rs.start(a1);
+  assert(rs.queue.length === 1, '再排一項');
+  gq.state.expeditions = [];
+  gq.shelter.abandon(bq.id);
+  assert(!gq.state.research.active && rs.queue.length === 0, '搬遷時取消研究中與排隊中的研究');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
