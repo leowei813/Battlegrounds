@@ -222,8 +222,8 @@ h4 { margin: 14px 0 6px; font-size: 14px; color: #c5e1a5; }
 .phase-banner.phase-night, .phase-banner.phase-midnight { border-color: #3949ab; background: #1a237e44; }
 .report.fail { border-color: #e5393588; }
 .event-list { margin: 6px 0; padding-left: 18px; font-size: 12px; line-height: 1.7; }
-.leaflet-container { background: #2a2d26; font: inherit; }
-.leaflet-tile-pane { opacity: .78; } /* 原本用濾鏡降彩度；改用透明度與暗色底，手機較省繪圖記憶體 */
+.leaflet-container { background: #86796c; font: inherit; }
+.leaflet-tile-pane { opacity: .52; } /* 原本用濾鏡降彩度變暗；改用透明度＋暖灰底色（依原濾鏡色彩擬合），手機較省繪圖記憶體 */
 
 /* ---------- Survivors ---------- */
 .sv-head { display: flex; align-items: center; gap: 8px; }
@@ -398,12 +398,12 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .map-hint + .siege-banner { top: 64px; }
 /* 日夜：改用透明度讓圖磚變暗（底色透出），不使用 CSS 濾鏡：濾鏡在手機上很耗繪圖記憶體，會造成黑畫面與閃爍 */
 #map-root .leaflet-tile-pane { transition: opacity 2s; }
-#map-root[data-phase="dusk"] .leaflet-container { background: #2a1d10; }
-#map-root[data-phase="dusk"] .leaflet-tile-pane { opacity: .62; }
-#map-root[data-phase="night"] .leaflet-container { background: #0b1222; }
-#map-root[data-phase="night"] .leaflet-tile-pane { opacity: .42; }
-#map-root[data-phase="midnight"] .leaflet-container { background: #070b16; }
-#map-root[data-phase="midnight"] .leaflet-tile-pane { opacity: .32; }
+#map-root[data-phase="dusk"] .leaflet-container { background: #6f604e; }
+#map-root[data-phase="dusk"] .leaflet-tile-pane { opacity: .38; }
+#map-root[data-phase="night"] .leaflet-container { background: #3a3a44; }
+#map-root[data-phase="night"] .leaflet-tile-pane { opacity: .22; }
+#map-root[data-phase="midnight"] .leaflet-container { background: #1f1e26; }
+#map-root[data-phase="midnight"] .leaflet-tile-pane { opacity: .2; }
 
 /* ---------- Expedition progress ---------- */
 .exp-steps { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 6px 0 2px; font-size: 12px; }

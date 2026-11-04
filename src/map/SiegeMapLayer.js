@@ -64,18 +64,19 @@ export const SiegeMapLayer = L.Layer.extend({
     this.canvas.style.height = `${size.y}px`;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     L.DomUtil.setPosition(this.canvas, this.map.containerPointToLayerPoint([0, 0]));
-    if (!this.running) this.draw(0);
+    // 拖動、縮放地圖時立即重畫，範圍圈才會跟著地圖移動（不等下一次定時重畫）
+    this.draw(0);
   },
 
   start() {
     if (this.running) return;
     this.running = true;
     this.lastT = performance.now();
-    // 手機效能：有屍潮或特效時最多每秒 30 張；沒有動態時每秒只重畫 1 次（圍牆耐久等）
+    // 有屍潮或特效時每一幀都畫（流暢）；沒有動態時每秒只重畫 1 次（圍牆耐久等），拖動地圖時另外即時重畫
     const loop = (t) => {
       if (!this.running) return;
       const gap = t - this.lastT;
-      if (gap >= (this.busy() ? 33 : 1000)) {
+      if (this.busy() || gap >= 1000) {
         this.draw(Math.min(0.1, gap / 1000));
         this.lastT = t;
       }
