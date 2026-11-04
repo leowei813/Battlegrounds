@@ -3938,6 +3938,30 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   }
 }
 
+// ---- 91. 藥品製作：依診療室等級解鎖、前一階藥品投入不超過產出的 6 成 ----
+{
+  const sup = await import('../src/config/supplies.js');
+  const gm = Game.newGame({ playerName: 'A91', classId: 'warrior', lat: 25, lon: 121 });
+  const eq = gm.equipment;
+  let lv = 0;
+  eq.clinicLevel = () => lv;
+  assert(!eq.canCraftAmmo('gauze').ok && eq.canCraftAmmo('gauze').reason.includes('診療室'), '沒有診療室不能製作藥品');
+  lv = 1;
+  assert(eq.canCraftAmmo('gauze').ok && !eq.canCraftAmmo('vitamin').ok, '診療室 Lv1 可做紗布，維他命需要更高等級');
+  (gm.state.survivors || []).forEach((s) => { s.bag = {}; });
+  gm.state.supplies.cotton = 8;
+  const g0 = gm.state.supplies.gauze || 0;
+  const r = eq.craftAmmo('gauze', 4);
+  assert(r.ok && gm.state.supplies.gauze === g0 + 20 && !gm.state.supplies.cotton, '藥品可以批量製作並扣除材料');
+  assert(!sup.MED_RECIPES.largeKit, '大型醫藥箱不能製作');
+  const ok = Object.entries(sup.MED_RECIPES).every(([k, rc]) => {
+    const meds = Object.entries(rc.cost).filter(([m]) => sup.SUPPLIES[m]?.cat === 'med');
+    const input = meds.reduce((a, [m, v]) => a + sup.SUPPLIES[m].heal * v, 0);
+    return input <= sup.SUPPLIES[k].heal * rc.batch * 0.6;
+  });
+  assert(ok, '每種藥品配方都划算：投入藥品的回復量不超過產出 6 成');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

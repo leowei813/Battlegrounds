@@ -128,6 +128,20 @@ export const AMMO_RECIPES = {
   ammo308: { bench: 3, batch: 10, cost: { casing: 5, steelPipe: 1, firingPin: 1, fuel: 5 }, gun: 1 },
 };
 
+/**
+ * 藥品製作（診療室）：依診療室等級解鎖，一次產出 batch 個。
+ * 投入的藥品回復量不超過產出的約 6 成，確保製作划算。大型醫藥箱不能製作。
+ */
+export const MED_RECIPES = {
+  gauze: { clinic: 1, batch: 5, cost: { cotton: 2 } },
+  bandage: { clinic: 1, batch: 5, cost: { cotton: 2, coarse: 1 } },
+  vitamin: { clinic: 3, batch: 5, cost: { food: 15 } },
+  painkiller: { clinic: 5, batch: 3, cost: { vitamin: 1, plastic: 1 } },
+  antibiotic: { clinic: 7, batch: 2, cost: { painkiller: 1, glass: 1, fuel: 3 } },
+  smallKit: { clinic: 9, batch: 2, cost: { bandage: 2, gauze: 2, canvas: 1, plastic: 1 } },
+  mediumKit: { clinic: 12, batch: 2, cost: { smallKit: 1, antibiotic: 1, canvas: 1, plastic: 2 } },
+};
+
 /** 用掉的子彈回收成彈殼、射出的箭矢回收的比例 */
 export const AMMO_RECOVER = 0.3;
 /** 用掉某種彈藥後回收的物品：箭矢直接回收，子彈回收彈殼 */
