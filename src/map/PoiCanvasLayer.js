@@ -72,7 +72,7 @@ export const PoiCanvasLayer = L.Layer.extend({
   redraw() {
     const map = this.map;
     const size = map.getSize();
-    const dpr = Math.min(2, window.devicePixelRatio || 1); // 手機 3 倍解析度改用 2 倍，繪圖記憶體減半以上
+    const dpr = window.devicePixelRatio || 1;
     if (this.canvas.width !== size.x * dpr || this.canvas.height !== size.y * dpr) {
       this.canvas.width = size.x * dpr;
       this.canvas.height = size.y * dpr;
