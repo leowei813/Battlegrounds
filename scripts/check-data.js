@@ -2756,11 +2756,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 還有物資：回到同一個地點
   const orig = ex.hasStock.bind(ex);
   ex.hasStock = (p, at) => (p.id === pois[0].id ? true : orig(p, at));
+  const origLeft = ex.leftAfterSearch.bind(ex);
+  ex.leftAfterSearch = () => true; // 連續探索：搜完後建築裡還有剩
   let reps = ex.update(st.exp.endAt + 1, { silent: true });
   let cur = ga.state.expeditions[0];
   assert(cur && cur.poiId === pois[0].id && cur.queue.length === 1, `還有物資時再搜同一個地點、佇列保留（${reps[0]?.events.slice(-1)}）`);
   // 拿光了：前往佇列的下一個地點（不會自己換到附近其他地點）
   ex.hasStock = (p, at) => (p.id === pois[0].id ? false : orig(p, at));
+  ex.leftAfterSearch = () => false;
   reps = ex.update(cur.endAt + 1, { silent: true });
   cur = ga.state.expeditions[0];
   assert(cur && cur.poiId === pois[1].id && !cur.queue.length, `拿光後前往佇列的下一個地點（${reps[0]?.events.slice(-1)}）`);
@@ -2768,6 +2771,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   reps = ex.update(cur.endAt + 1, { silent: true });
   assert(!ga.state.expeditions.length && reps[0].events.some((e) => e.includes('自動探索結束')), '佇列也沒有地點時自動探索結束，不會換到附近其他地點');
   ex.hasStock = orig;
+  ex.leftAfterSearch = origLeft;
   // 背包都滿、倉庫也滿：停止所有佇列並說明原因
   const st2 = ex.start(pois[2].id, [lead.id], 5, true);
   ex.enqueue(st2.exp.id, pois[0].id);
@@ -3816,6 +3820,31 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(rep?.emptied?.includes('鐵拳幫') && rep.events.some((t) => t.includes('搜刮一空') && t.includes('鐵拳幫')), '探索已被搜空的建築：報告標示已被搜空與原因');
   // 自己搜過：原因顯示自己
   assert(near[0].lootedBy?.kind === 'self' && ex.emptyReason(near[0], now).includes('你已經搜過'), '自己搜過的建築記為自己');
+}
+
+// ---- 88. 自動探索＋連續探索：搜完沒有剩下物資時，不會「再搜索一次」同一個地點 ----
+{
+  const ga = Game.newGame({ playerName: 'A88', classId: 'warrior', lat: 25, lon: 121 });
+  ga.state.map.pois = fillPois([], 25, 121);
+  ga.shelter.establish(ga.state.map.pois[0]);
+  setHour(ga, 10);
+  const ex = ga.exploration;
+  const home = ga.shelter.primary();
+  const near = ga.state.map.pois.filter((p) => !ga.shelter.baseAtPoi(p.id) && !p.npc && ex.hasStock(p) && haversine(p.lat, p.lon, home.lat, home.lon) < 700).slice(0, 2);
+  const L = ga.survivors.leader();
+  L.level = 60;
+  ga.survivors.becomeSevere = () => {};
+  const sim88 = ga.combat.simulate.bind(ga.combat);
+  ga.combat.simulate = (...a) => ({ ...sim88(...a), victory: true });
+  ga.research.hasUnlock = () => true;
+  const r = ex.start(near[0].id, [L.id], 1, true, Date.now());
+  r.exp.cargo = 1e6; // 全部帶得走：搜完就沒有剩下
+  ex.enqueue(r.exp.id, near[1].id);
+  ex.update(r.exp.startAt + r.exp.travelMs + r.exp.searchMs + 1);
+  const again = ex.list.find((e) => e.poiId === near[0].id);
+  const next = ex.list.find((e) => e.poiId === near[1].id);
+  assert(!again && next && !ex.hasStock(near[0]), '搜完全部帶走：不會再搜索同一個地點，改前往佇列下一站');
+  assert(!ga.state.reports[0].events.some((t) => t.includes('直接再搜索一次')), '報告不會寫「還有物資，直接再搜索一次」');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
