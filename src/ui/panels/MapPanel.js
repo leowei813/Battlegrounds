@@ -493,7 +493,7 @@ export class MapPanel {
   }
 
   /**
-   * 地圖左上角資訊欄：威脅接近（誰、多久後抵達）、好友求援（點擊增援）、探索佇列（點擊查看／召回）。
+   * 地圖左上角資訊欄：威脅接近（誰、多久後抵達）、好友遭攻打求援（點擊增援）、探索佇列（點擊查看／召回）。
    */
   feedHtml() {
     const g = this.game;
@@ -502,10 +502,9 @@ export class MapPanel {
     g.threatDetails(now).filter((t) => t.kind !== 'siege').forEach((t) => {
       rows.push(`<button class="feed-chip danger" data-action="gotoShelter">⚠️ ${escapeHtml(t.text)}${t.at ? `・約 ${formatDuration(t.at - now)}後抵達` : ''}</button>`);
     });
-    // 好友遭受攻擊：點擊直接進入增援指派
+    // 好友遭受玩家／NPC 攻打：點擊直接進入增援指派（好友的屍潮不顯示在這裡）
     const seen = new Set();
-    [...g.assist.friendSieges().map((x) => ({ p: x.player, text: `遭屍潮攻擊（第 ${x.base.siege.wave}/${x.base.siege.maxWaves} 波）` })),
-      ...g.assist.friendRaids(now).map((x) => ({ p: x.player, text: `遭 ${x.raid.by} 攻打・約 ${formatDuration(x.raid.at - now)}後抵達` }))].forEach(({ p, text }) => {
+    g.assist.friendRaids(now).map((x) => ({ p: x.player, text: `遭 ${x.raid.by} 攻打・約 ${formatDuration(x.raid.at - now)}後抵達` })).forEach(({ p, text }) => {
       const key = `${p.id}|${text}`;
       if (seen.has(key)) return;
       seen.add(key);
