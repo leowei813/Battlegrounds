@@ -5,6 +5,7 @@ import { $, delegateActions, escapeHtml } from '../utils/dom.js';
 import { formatNumber } from '../utils/math.js';
 import { Toast } from './Toast.js';
 import { Modal } from './Modal.js';
+import { openSiegeResult } from './SiegeResult.js';
 import { progressBar, metaOf } from './components.js';
 import { MapPanel } from './panels/MapPanel.js';
 import { ShelterPanel } from './panels/ShelterPanel.js';
@@ -166,6 +167,11 @@ export class UIManager {
     bus.on(EVT.TOAST, ({ msg, type }) => this.toastEl.show(msg, type));
     bus.on(EVT.STATE_CHANGED, () => this.refresh());
     bus.on(EVT.OPEN_SLOT, ({ slot }) => this.panels.shelter.openSlot(slot));
+    // 屍潮結算（天亮守住的獎勵／被突破的損失）：沒有其他視窗開著時跳出結算，否則只留在紀錄
+    bus.on('siege:result', (e) => {
+      if (!this.game.started || this.modal.current) return;
+      openSiegeResult(this, e);
+    });
     bus.on(EVT.OPEN_POI, ({ poiId }) => this.panels.map.openPoi(poiId));
     bus.on('ui:openZombie', ({ groupId }) => this.panels.map.openZombie(groupId));
     bus.on('ui:openPlayer', ({ playerId }) => this.panels.map.openPlayer(playerId));

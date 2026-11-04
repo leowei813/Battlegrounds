@@ -251,7 +251,7 @@ export class WorldSync {
           lat: b.lat, lon: b.lon, name: b.name, primary: b === primary, size: b.size,
           alert: g.territory.alertRadius(b), guards: gar.count, guardLevel: gar.level,
           // 攻擊者要先打破圍牆，期間防禦設施會射擊（只公開看得到的強度，不含彈藥存量）
-          wall: Math.round(g.shelter.wallHp(b)), dps: g.siege.of(b.id).defenseDps({ apparent: true }),
+          wall: Math.round(g.shelter.wallHp(b)), dps: g.siege.of(b.id).defenseDps({ apparent: true, raw: true }),
           // 正在被屍潮攻擊：友好玩家可以看到狀況並前來協防
           siege: siegeStatus(g, b),
           // 正在前來攻打的隊伍（友好玩家可以看到）

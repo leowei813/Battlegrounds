@@ -400,7 +400,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gv.shelter.sizeInfo(base).total === 20 && base.defenses.length === 11, '最大（巨型）據點可建造 20 棟建築');
   const small = gv.shelter.sizeInfo(gv.state.map.pois.find((p) => p.type === 'gasStation'));
   assert(small.total < 20, `其他規模可建造數較少（${small.name} ${small.total} 棟）`);
-  // 突破：資源 -50%，建築可能降級或被拆毀，當晚不再來襲
+  // 突破：第 1 波就被突破損失 55% 資源，建築可能降級或被拆毀，當晚不再來襲
   Object.keys(gv.state.resources).forEach((k) => { gv.state.resources[k] = 1000; });
   base.defenses.forEach((d) => Object.assign(d, { type: 'trap', level: 1 }));
   const siege = gv.siege.of(base.id);
@@ -409,7 +409,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   base.facilities.cellar.level = 0;
   siege.breach();
   base.facilities.cellar.level = cellarLv;
-  assert(Math.round(gv.state.resources.wood) === 500, `突破損失 50% 資源（木材 1000 → ${Math.round(gv.state.resources.wood)}）`);
+  assert(Math.round(gv.state.resources.wood) === 450, `第 1 波就被突破損失 55% 資源（木材 1000 → ${Math.round(gv.state.resources.wood)}）`);
   setHour(gv, 22);
   assert(siege.quiet() && !siege.active() && base.quietUntil > Date.now(), '防線被突破後當晚不再有屍潮');
   assert(!siege.quiet(base.quietUntil + 1), '天亮後恢復');
@@ -1374,7 +1374,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gl.state.survivors.forEach((sv) => { sv.severe = false; });
   const fail = gl.state.defenseLog[0];
   assert((fail?.damaged || []).length <= 2, `被攻破時最多損毀 2 棟建築（${(fail?.damaged || []).length}）`);
-  assert(fail && !fail.success && fail.attacker === '屍潮' && fail.lost.food === 500, `屍潮突破時記錄防禦失敗與損失（${JSON.stringify(fail)}）`);
+  assert(fail && !fail.success && fail.attacker === '屍潮' && fail.lost.food === 550 && fail.siege?.lossPct === 55, `屍潮突破時記錄防禦失敗與損失（${JSON.stringify(fail)}）`);
   // 撐過一夜 → 防禦成功
   const gl2 = Game.newGame({ playerName: 'L2', classId: 'warrior', lat: 25, lon: 121 });
   gl2.state.map.pois = fillPois([], 25, 121);
@@ -3263,6 +3263,108 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   await new Promise((r) => setTimeout(r, 20));
   const server = store.map.get(`npc:${nA.sid}`)?.data?.levelLoss;
   assert(nB.levelLoss === server && nA.levelLoss === server, `別人已經結算過的夜晚不會在本機重複扣等級（A ${nA.levelLoss}／B ${nB.levelLoss}／伺服器 ${server}）`);
+}
+
+// ---- 76. 屍潮平衡：前期加強、駐守倍率；天亮結算獎勵與突破懲罰 ----
+{
+  const { SIEGE_SCALING: SS, SIEGE_REWARD: SR, SIEGE_PENALTY: SPN } = await import('../src/config/civilization.js');
+  const { SUPPLIES: SP } = await import('../src/config/supplies.js');
+  const { xpToNext: xpn } = await import('../src/config/survivors.js');
+  const { BOSSES } = await import('../src/config/enemies.js');
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const gs = Game.newGame({ playerName: 'S76', classId: 'warrior', lat: 25, lon: 121 });
+  gs.state.map.pois = fillPois([], 25, 121);
+  gs.shelter.establish(gs.state.map.pois.find((p) => !gs.shelter.baseAtPoi(p.id)));
+  const b = gs.shelter.primary();
+  const s = gs.siege.of(b.id);
+  // 前期固定加強：文明 150（超過基準 130）時加滿
+  gs.civilization.value = () => 150;
+  const hp150 = gs.civilization.siegeHpMul();
+  assert(Math.abs(hp150 - (1 + 130 * SS.hpPerCiv + SS.hpEarly)) < 1e-9, `文明 150 屍潮生命倍率含前期加強（${hp150.toFixed(3)}）`);
+  gs.civilization.value = () => 566;
+  assert(Math.abs(gs.civilization.siegeHpMul() - (1 + 546 * 0.0042)) < 0.01, '文明 566 屍潮生命倍率維持預計強度');
+  // 駐守倍率只作用在屍潮；NPC／玩家攻打用原始火力
+  const sv = gs.survivors.leader();
+  sv.job = 'guard';
+  const dSiege = s.defenseDps();
+  const dRaw = s.defenseDps({ raw: true });
+  assert(s.guardMul() === s.guardMul(true) * SS.guardDmgMul && dSiege > dRaw, `屍潮中駐守人員傷害 ×${SS.guardDmgMul}（${dSiege} > 原始 ${dRaw}）`);
+  b.defenses[0] = { slot: 0, type: 'machineGun', level: 3, garrisonId: null };
+  sv.job = 'farm';
+  assert(Math.abs(s.defenseDps() / s.defenseDps({ raw: true }) - SS.towerDmgMul) < 0.02, '屍潮中防禦設施傷害 ×0.7');
+  // Boss 生命、攻擊 ×0.5
+  s.spawn('walker');
+  s.spawn(Object.keys(BOSSES)[0], true);
+  const bz = s.zombies[s.zombies.length - 1];
+  const be = gs.combat.createEnemy(bz.enemyId, s.zombieLevel() + 3);
+  assert(Math.abs(bz.maxHp / Math.round(be.maxHp * gs.civilization.siegeHpMul() * SS.bossMul) - 1) < 0.01, '屍潮 Boss 生命另乘 0.5');
+  s.zombies = [];
+  // 天亮結算：城牆 90% → 優秀 ×1.5
+  sv.job = 'guard';
+  s.startNight();
+  s.wave = 4; s.nightKills = 50;
+  b.wallHp = gs.shelter.wallMax(b) * 0.9;
+  const coins0 = gs.state.player.coins;
+  const xp0 = sv.xp; const lv0 = sv.level;
+  s.endNight();
+  const ok = gs.state.defenseLog[0];
+  assert(ok.success && ok.siege?.grade === 'excellent' && ok.siege.coins === Math.round(50 * SR.coinsPerKill * 1.5), `天亮守住：評價優秀，金幣 擊殺×2×1.5（${ok.siege?.coins}）`);
+  assert(gs.state.player.coins - coins0 >= ok.siege.coins, '天亮結算的金幣已入帳');
+  const nParts = Object.entries(ok.siege.items).filter(([k]) => SP[k].cat === 'part').reduce((a, [, v]) => a + v, 0);
+  const nAmmo = Object.entries(ok.siege.items).filter(([k]) => SP[k].cat === 'ammo').reduce((a, [, v]) => a + v, 0);
+  assert(nParts === Math.round(4 * SR.partsPerWave * 1.5) && nAmmo === Math.round(4 * SR.ammoPerWave * 1.5), `物資箱：零件 ${nParts}、彈藥 ${nAmmo}`);
+  assert(ok.siege.xp.length === 1 && ok.siege.xp[0].xp === Math.round(xpn(lv0) * SR.guardXpPct) && (sv.level > lv0 || sv.xp > xp0), '整晚駐守的人獲得升級所需 5% 經驗');
+  // 城牆 30% → 普通 ×1.0
+  s.startNight(); s.wave = 2; s.nightKills = 10;
+  b.wallHp = gs.shelter.wallMax(b) * 0.3;
+  s.endNight();
+  assert(gs.state.defenseLog[0].siege.grade === 'normal' && gs.state.defenseLog[0].siege.coins === 20, '城牆剩 30%：評價普通 ×1.0');
+  // 中途才開始駐守的人沒有駐守經驗
+  s.startNight(); s.wave = 1; s.nightKills = 1;
+  const late = createSurvivor('晚到', 'scout', 5, 'common');
+  gs.state.survivors.push(late);
+  late.job = 'guard';
+  s.endNight();
+  assert(!gs.state.defenseLog[0].siege.xp.some((x) => x.name === '晚到'), '中途才開始駐守的人不給駐守經驗');
+  // Boss 戰利品：必得 8 個高階零件
+  s.startNight();
+  gs.state.supplies = {}; // 倉庫有空間
+  s.bossLoot({ enemyId: Object.keys(BOSSES)[0] });
+  const bossParts = Object.values(s.nightBoss.items).reduce((a, v) => a + v, 0);
+  assert(bossParts === SR.boss.parts && Object.keys(s.nightBoss.items).every((k) => SP[k].tier >= 3), `擊殺 Boss 必得 ${SR.boss.parts} 個高階零件`);
+  // 突破：撐到最後一波損失較少，並記錄材料與傷勢
+  Object.keys(gs.state.resources).forEach((k) => { gs.state.resources[k] = 1000; });
+  gs.state.supplies = { ...(gs.state.supplies || {}), nail: 200, screw: 200, linen: 200, bolt: 200, ironPlate: 200, gear: 200 };
+  const cellar = b.facilities.cellar?.level || 0;
+  if (b.facilities.cellar) b.facilities.cellar.level = 0;
+  s.startNight();
+  const max = s.maxWaves();
+  s.wave = max;
+  let matLost = 0;
+  let tries = 0;
+  s.breach();
+  const late1 = gs.state.defenseLog[0];
+  const expect = Math.round((SPN.lossMax - SPN.lossSpan * ((max - 1) / max)) * 100);
+  assert(!late1.success && late1.siege.lossPct === expect && late1.siege.wave === max, `最後一波才被突破：資源損失 ${late1.siege.lossPct}%（預期 ${expect}%）`);
+  assert(Array.isArray(late1.siege.injuries) && late1.siege.injuries.length >= 1, '突破時記錄駐守人員傷勢');
+  matLost += Object.keys(late1.siege.materials).length;
+  // 材料損失有機率：多試幾次一定會發生，且只扣零件與布料、每種最多 15%
+  while (!matLost && tries < 20) {
+    tries += 1;
+    gs.state.survivors.forEach((x) => { x.severe = false; x.hp = null; });
+    s.startNight(); s.wave = 1; s.breach();
+    matLost += Object.keys(gs.state.defenseLog[0].siege.materials).length;
+  }
+  const mats = gs.state.defenseLog[0].siege.materials;
+  assert(matLost > 0 && Object.entries(mats).every(([k, v]) => ['part', 'fabric'].includes(SP[k].cat) && v <= Math.ceil(200 * SPN.materialMax)), '突破時有機率損失少量零件、布料');
+  if (b.facilities.cellar) b.facilities.cellar.level = cellar;
+  // 紀錄與結算視窗顯示獎勵與損失
+  const { siegeDetailHtml } = await import('../src/ui/SiegeResult.js');
+  const okHtml = siegeDetailHtml(ok);
+  const failHtml = siegeDetailHtml(late1);
+  assert(okHtml.includes('防守物資箱') && okHtml.includes('駐守經驗') && siegeDetailHtml(ok, true).includes('評價'), '紀錄顯示守住的獎勵');
+  assert(failHtml.includes('資源損失') && failHtml.includes('駐守人員傷勢') && siegeDetailHtml(late1, true).includes('資源 −'), '紀錄顯示被突破的損失');
+  gs.state.survivors.forEach((x) => { x.severe = false; });
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

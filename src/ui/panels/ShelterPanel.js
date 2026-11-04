@@ -5,6 +5,7 @@ import { DEFENSES, DEFENSE_MAX_LEVEL, defenseBuildTime } from '../../config/defe
 import { CLASSES } from '../../config/survivors.js';
 import { PRIMARY_DANGER_COEF, MAX_OUTPOSTS, BASE_SIZES } from '../../config/civilization.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
+import { siegeDetailHtml } from '../SiegeResult.js';
 import { escapeHtml } from '../../utils/dom.js';
 import {
   btn, costHtml, needHtml, timerBar, progressBar, metaOf, affordable,
@@ -227,9 +228,10 @@ export class ShelterPanel {
         <div class="row-between"><b>${(e.at || 0) > since ? '<span class="tag tag-blue">未讀</span>' : ''}${e.success ? '🛡️ 防禦成功' : '💥 防禦失敗'}</b><small class="muted">${when}</small></div>
         <div>「${escapeHtml(e.baseName)}」遭 ${escapeHtml(e.attacker)} 攻擊</div>
         ${lines ? `<small class="muted block">${lines}</small>` : ''}
+        ${e.siege ? `${siegeDetailHtml(e, true)}<details class="sr-details"><summary>查看${e.success ? '獎勵' : '損失'}明細</summary>${siegeDetailHtml(e)}</details>` : `
         ${lost.length ? `<div class="neg">損失資源：${lost.join('、')}</div>` : (e.success ? '<div class="pos">沒有損失資源</div>' : '')}
         ${e.damaged?.length ? `<div class="neg">毀損建築：${e.damaged.map(escapeHtml).join('、')}</div>` : ''}
-        ${e.injured?.length ? `<div class="neg">🩸 重傷：${e.injured.map(escapeHtml).join('、')}</div>` : ''}
+        ${e.injured?.length ? `<div class="neg">🩸 重傷：${e.injured.map(escapeHtml).join('、')}</div>` : ''}`}
         ${e.note ? `<small class="muted block">${escapeHtml(e.note)}</small>` : ''}
       </div>`;
     }).join('');

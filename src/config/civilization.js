@@ -31,8 +31,20 @@ export const SIEGE_SCALING = {
   civPerLevel: 16, // 每 16 文明度，殭屍 +1 級
   spawnPerCiv: 0.0012, // 每點文明度，屍潮頻率 +0.12%
   maxSpawnMul: 2.2, // 文明度造成的頻率倍率上限
-  hpPerCiv: 0.001, // 每點文明度，屍潮殭屍生命 +0.1%（等級已隨文明度提高，避免重複加成）
-  atkPerCiv: 0.0008, // 每點文明度，屍潮殭屍攻擊 +0.08%
+  hpPerCiv: 0.00273, // 每點文明度，屍潮殭屍生命 +0.273%（等級已隨文明度提高）
+  atkPerCiv: 0.00163, // 每點文明度，屍潮殭屍攻擊 +0.163%
+  /** 前期固定加強：生命 +80%、攻擊 +20%，在超過基準 earlyCiv 點文明度時加滿（讓文明 150～300 也有一點壓力） */
+  hpEarly: 0.8,
+  atkEarly: 0.2,
+  earlyCiv: 130,
+  /** 駐守人員（含瞭望塔駐守、協防隊）在屍潮中的傷害倍率：讓駐守人數成為守城關鍵 */
+  guardDmgMul: 2,
+  /** 防禦設施在屍潮中的傷害倍率 */
+  towerDmgMul: 0.7,
+  /** 每多一波，殭屍數量 +2%（最多 +60%） */
+  waveGrowth: 0.02,
+  /** Boss 在屍潮中的生命、攻擊倍率（抵銷文明度加成，維持原本強度） */
+  bossMul: 0.5,
   dangerLevelMul: 0.25, // 每點據點危險度（超過 1 的部分），殭屍 +0.25 級
   dangerSpawn: 0.04, // 每點據點危險度，屍潮頻率 +4%
   /** 每晚最多幾波屍潮（依文明度階級：廢墟／新手 1 波 → 新文明 6 波） */
@@ -72,6 +84,38 @@ export const baseEstablishCost = (n) => materialize({
 
 /** 據點遭突破時損失的資源比例 */
 export const BREACH_LOSS = { primary: 0.5, outpost: 0.5 };
+
+/**
+ * 屍潮防守的獎勵與懲罰。
+ * 守住：天亮依城牆剩餘給評價倍率，發放金幣、零件、彈藥（優秀時有機率得到設計圖），整晚駐守的人額外獲得經驗。
+ * 突破：越早被突破損失越重（資源、材料、防禦設施損毀），駐守人員可能受傷。
+ */
+export const SIEGE_REWARD = {
+  grades: [
+    { min: 0.8, id: 'excellent', name: '優秀', mul: 1.5 },
+    { min: 0.5, id: 'good', name: '良好', mul: 1.2 },
+    { min: 0.2, id: 'normal', name: '普通', mul: 1 },
+    { min: 0, id: 'barely', name: '勉強', mul: 0.7 },
+  ],
+  coinsPerKill: 2,
+  partsPerWave: 2,
+  ammoPerWave: 10,
+  blueprintChance: 0.05, // 評價「優秀」時
+  guardXpPct: 0.05, // 整晚駐守：每人獲得升級所需經驗的 5%
+  boss: { parts: 8, gearChance: 0.25, blueprintChance: 0.1 },
+};
+export const SIEGE_PENALTY = {
+  lossMax: 0.55, // 第 1 波就被突破
+  lossSpan: 0.35, // 撐過的比例越高，損失越少
+  materialChance: 0.25, // 每種零件、布料被奪走的機率
+  materialMin: 0.05,
+  materialMax: 0.15,
+  defenseBase: 0.2, // 防禦設施損毀機率：0.2 + 0.4 ×（1 − 撐過比例）
+  defenseSpan: 0.4,
+  lightChance: 0.4, // 駐守人員輕傷（生命 −30%）
+  lightHpPct: 0.3,
+  severeChance: 0.2, // 駐守人員重傷
+};
 
 /**
  * 據點遭突破時，每棟建築（設施與防禦建築）各自有此機率損毀降 1 級；

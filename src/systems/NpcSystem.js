@@ -549,7 +549,7 @@ export class NpcSystem {
   baseDefense(base) {
     const g = this.game;
     const guards = g.territory.garrison(base).list.reduce((s, sv) => s + g.survivors.stats(sv, sv.equipment?.weapon ? 'ranged' : 'melee').power, 0);
-    return g.siege.of(base.id).defenseDps({ apparent: true }) * 8 + guards;
+    return g.siege.of(base.id).defenseDps({ apparent: true, raw: true }) * 8 + guards;
   }
 
   /**
@@ -708,7 +708,7 @@ export class NpcSystem {
     const allies = isHome ? g.assist.allyUnits() : [];
     const helpDps = helpers.reduce((s, h) => s + (h.dps || 0), 0);
     const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));
-    const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps() * (1 + g.research.bonus('raidDefensePct')) + helpDps);
+    const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps({ raw: true }) * (1 + g.research.bonus('raidDefensePct')) + helpDps);
     base.wallHp = Math.max(0, as.wallLeft);
     // 守城時：近戰防守的人會受傷，對方有遠程武器時遠程防守的人也可能中彈
     const wallGuards = [...siege.guards().map((x) => x.sv), ...base.defenses.map((d) => g.survivors.get(d.garrisonId)).filter(Boolean)];
