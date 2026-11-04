@@ -3999,6 +3999,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(fac.FACILITIES.dormitory.effectText(12).includes('休息回復 +30%') && fac.FACILITIES.dormitory.effectText(5).includes('8 人'), '宿舍效果說明顯示對應等級的效果');
 }
 
+// ---- 94. 探索遇到的倖存者：等級依自己隊伍的平均等級，不會因建築殭屍等級過高 ----
+{
+  const ge = Game.newGame({ playerName: 'A94', classId: 'warrior', lat: 25, lon: 121 });
+  ge.state.map.pois = fillPois([], 25, 121);
+  ge.shelter.establish(ge.state.map.pois[0]);
+  ge.survivors.leader().level = 5;
+  const src = (await import('node:fs')).readFileSync(new URL('../src/systems/ExplorationSystem.js', import.meta.url), 'utf8');
+  assert(src.includes('this.game.survivors.candidateLevel() + lvBonus'), '探索遇到的倖存者等級改用隊伍平均等級');
+  const maxLv = Math.max(...Array.from({ length: 300 }, () => ge.survivors.candidateLevel())) + 3;
+  assert(maxLv <= 5 + 3, `隊伍 Lv5 時，探索遇到的倖存者最多約 Lv${maxLv}（不會出現 Lv40）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

@@ -1154,7 +1154,9 @@ export class ExplorationSystem {
       none: 46, zombies: 28 * phase.zombieMul * ctx.zoneMul, survivor: 5 * (1 + this.game.research.bonus('survivorFindPct')), special: 10, elite: ctx.zone.danger < 0 ? 0 : (3 + danger * phase.danger) * ctx.zoneMul, // 安全區沒有精英怪
     });
     if (ev === 'survivor') {
-      const cand = this.game.survivors.makeCandidate(randInt(1, Math.max(1, level - 1)));
+      // 等級依自己隊伍的平均等級（和招募相同），越危險的區域略高，但不超過這棟建築的殭屍等級
+      const lvBonus = Math.max(0, Math.min(3, ctx.zone.danger || 0));
+      const cand = this.game.survivors.makeCandidate(Math.min(Math.max(1, level - 1), this.game.survivors.candidateLevel() + lvBonus));
       const pool = this.game.state.recruitPool;
       cand.leaveAt = Math.max(Date.now(), at) + RECRUIT_STAY_MS;
       if (pool.length < 5) pool.push(cand);
