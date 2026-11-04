@@ -748,7 +748,7 @@ export class BaseSiege {
     const injuries = this.injureGuards();
     this.breachedTonight = true;
     const entry = sh.recordDefense({
-      base, attacker: '屍潮', success: false, lost, damaged, kills: this.nightKills, waves: this.wave,
+      base, attacker: '屍潮', success: false, lost, damaged, kills: this.nightKills, waves: Math.max(0, this.wave - 1),
       injured: injuries.filter((x) => x.severe).map((x) => x.name),
       wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note: [note, this.assistNote('breached')].filter(Boolean).join('。'),
       siege: {
