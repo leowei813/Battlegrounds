@@ -106,9 +106,10 @@ export function openTeamPicker(ui, opts) {
       const names = e.memberIds.map((id) => game.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
       const full = (e.queue || []).length >= game.exploration.queueLimit();
       const on = squadId === e.id;
+      const sp = e.memberIds.reduce((sum, id) => { const m = game.survivors.get(id); return sum + (m ? game.survivors.stats(m).power : 0); }, 0);
       return `<button class="pick-row squad ${on ? 'on' : ''}" data-action="squad" data-id="${e.id}" ${full || selected.size ? 'disabled' : ''}>
         <span class="check">${on ? '☑' : '☐'}</span>
-        <span>🧭 <b>臨時小隊</b>：${names}<small class="muted block">正在探索「${escapeHtml(game.exploration.poi(e.poiId)?.name || '')}」・佇列 ${(e.queue || []).length}/${game.exploration.queueLimit()}${full ? '（已滿）' : ''}</small></span>
+        <span>🧭 <b>臨時小隊</b>：${names}<small class="muted block">⚔️ 總戰力 <b>${sp}</b>・${e.memberIds.length} 人</small><small class="muted block">正在探索「${escapeHtml(game.exploration.poi(e.poiId)?.name || '')}」・佇列 ${(e.queue || []).length}/${game.exploration.queueLimit()}${full ? '（已滿）' : ''}</small></span>
       </button>`;
     }).join('');
     return `${opts.intro}
@@ -119,6 +120,8 @@ export function openTeamPicker(ui, opts) {
       ${opts.routeOption ? '<small class="muted block">🛡️ 路線會自動繞開 NPC、敵對與中立玩家據點的警戒範圍；友好玩家的範圍可以直接通過。</small>' : ''}
       ${timeHtml(game, opts.trip, ids, vids, avoidHostile)}
       ${durs}
+      ${opts.quickQueue ? `<label class="toggle"><input type="checkbox" data-role="qq" ${game.exploration.quickQueueOn() ? 'checked' : ''}> ⚡ 快速佇列（自動把附近還有物資的地點加入佇列，最多 ${game.exploration.queueLimit()} 個）</label>
+         <small class="muted block">依距離由近到遠一站接一站加入，避開 NPC 與敵對、中立玩家的警戒範圍；開關會記住。</small>` : ''}
       <div class="btn-row end"><button class="btn btn-primary" data-action="confirm" ${ids.length || squadId ? '' : 'disabled'}>${squadId ? '加入小隊佇列' : opts.confirmLabel}</button></div>`;
   };
 
@@ -151,6 +154,7 @@ export function openTeamPicker(ui, opts) {
   modal.body.addEventListener('change', (e) => {
     if (e.target.dataset.role === 'auto') auto = e.target.checked;
     if (e.target.dataset.role === 'avoid') avoidHostile = e.target.checked;
+    if (e.target.dataset.role === 'qq') game.exploration.setQuickQueue(e.target.checked);
   });
   return modal;
 }

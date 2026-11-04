@@ -18,6 +18,8 @@ const lootLabel = (k) => { const m = RESOURCES[k] || SUPPLIES[k]; return m ? `${
 const carriedWeight = (c) => Object.entries(c?.gained || {}).filter(([k]) => isLootKey(k)).reduce((s, [k, v]) => s + v * unitWeight(k), 0);
 /** 連續探索：負重達到運載量的此比例就回家 */
 export const CHAIN_RETURN_LOAD = 0.9;
+/** 快速佇列：每一站最多往外找多遠的下一個地點（公尺） */
+export const QUICK_QUEUE_HOP_M = 600;
 const nameOf = (k) => RESOURCES[k]?.name || SUPPLIES[k]?.name || k;
 import { POI_TYPES } from '../config/poiTypes.js';
 import { RARITIES } from '../config/equipment.js';
@@ -252,6 +254,50 @@ export class ExplorationSystem {
   }
 
   /** 從佇列移除 */
+  /** 快速佇列開關（記在存檔設定，預設關閉） */
+  quickQueueOn() {
+    return !!this.game.state.settings?.quickQueue;
+  }
+
+  setQuickQueue(on) {
+    this.game.state.settings = this.game.state.settings || {};
+    this.game.state.settings.quickQueue = !!on;
+  }
+
+  /**
+   * 快速佇列：從小隊目前（或佇列最後）的地點開始，依序把最近、還有物資的一般建築加入佇列直到上限。
+   * 不選 NPC 與非友好玩家警戒範圍內的地點、據點，以及其他隊伍正要去的地點。
+   * @returns {{ok:boolean, added:object[], msg?:string}}
+   */
+  quickFill(expId, now = Date.now()) {
+    const exp = this.list.find((e) => e.id === expId);
+    if (!exp || exp.kind !== 'explore' || exp.recalled || exp.defeated) return { ok: false, added: [], reason: '這支小隊無法加入佇列' };
+    exp.queue = exp.queue || [];
+    const room = this.queueLimit() - exp.queue.length;
+    if (room <= 0) return { ok: true, added: [] };
+    const taken = new Set(this.list.flatMap((e) => [e.poiId, ...(e.queue || [])]));
+    const zones = this.game.territory.zones().filter((z) => z.relation !== 'friend');
+    const pool = this.game.state.map.pois.filter((p) => POI_TYPES[p.type] && !p.npc && !p.pvp && !taken.has(p.id)
+      && !this.game.shelter.baseAtPoi(p.id) && this.hasStock(p, now)
+      && !zones.some((z) => haversine(p.lat, p.lon, z.lat, z.lon) <= z.r));
+    let last = this.poi(exp.queue[exp.queue.length - 1] || exp.poiId);
+    const added = [];
+    while (last && added.length < room && pool.length) {
+      let best = -1;
+      let bestD = QUICK_QUEUE_HOP_M;
+      pool.forEach((p, i) => {
+        const d = haversine(last.lat, last.lon, p.lat, p.lon);
+        if (d <= bestD) { bestD = d; best = i; }
+      });
+      if (best < 0) break;
+      const [p] = pool.splice(best, 1);
+      exp.queue.push(p.id);
+      added.push(p);
+      last = p;
+    }
+    return { ok: true, added, msg: added.length ? `⚡ 快速佇列：自動加入附近 ${added.length} 個地點（${added.map((p) => p.name).join('、')}）` : '⚡ 快速佇列：附近沒有可以加入的地點' };
+  }
+
   dequeue(expId, index) {
     const exp = this.list.find((e) => e.id === expId);
     if (!exp?.queue?.[index]) return { ok: false, reason: '找不到這個地點' };
