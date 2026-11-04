@@ -333,6 +333,13 @@ export class ExplorationSystem {
     return n;
   }
 
+  /** 這趟搜索完之後建築裡是否還有物資（沒搜完的部分或帶不走留下的） */
+  leftAfterSearch(cp) {
+    if (!cp || cp.stock?.empty) return false;
+    const rest = cp.done < cp.total ? Object.values(cp.remaining || {}) : [];
+    return [...rest, ...Object.values(cp.overflow || {})].some((v) => v >= 1);
+  }
+
   /** 地點目前是否還有物資（今日物資或上次留下的） */
   hasStock(poi, at = Date.now()) {
     return !!poi && POI_TYPES[poi.type] && !stockOf(poi, at, this.game.state.map.remain).empty;
@@ -754,7 +761,8 @@ export class ExplorationSystem {
       const cap = exp.cargo || this.game.vehicles.personCarry() * members.length;
       const load = carriedWeight(exp.carried) + Object.entries(cp.gained).filter(([k]) => isLootKey(k)).reduce((s, [k, v]) => s + v * unitWeight(k), 0);
       const pct = Math.round((load / Math.max(1, cap)) * 100);
-      const again = autoOn && this.hasStock(poi, searchEnd);
+      // 「還有物資」要看這趟搜索完之後建築裡剩下的（帶不走留下的），不能用搜索前的庫存判斷
+      const again = autoOn && this.leftAfterSearch(cp);
       // 佇列中已被搜空的地點直接跳過（例如加入後被 NPC 搜走）
       // 跳過的紀錄接在這個地點的搜索紀錄後面
       if (!again) this.skipEmpty(queue, searchEnd, cp.events);
