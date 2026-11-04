@@ -3594,6 +3594,23 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   void maxMed;
 }
 
+// ---- 82. 存檔保留研究佇列；情報網改為 3 級 ----
+{
+  const { SaveManager } = await import('../src/core/SaveManager.js');
+  const gs = Game.newGame({ playerName: 'S82', classId: 'warrior', lat: 25, lon: 121 });
+  gs.state.research.active = { id: 'w_atk', level: 1, startAt: Date.now(), endAt: Date.now() + 60000, cost: {} };
+  gs.state.research.queue = [{ id: 'w_crit', level: 1, cost: { wood: 10 } }];
+  gs.state.research.fresh = { w_atk: { level: 1, at: Date.now() } };
+  const loaded = SaveManager.migrate(JSON.parse(JSON.stringify(gs.state)));
+  assert(loaded.research.queue.length === 1 && loaded.research.queue[0].id === 'w_crit' && loaded.research.fresh?.w_atk, '讀取存檔時保留研究佇列與剛完成標示');
+  assert(RESEARCH.r_board.maxLevel === 3 && RESEARCH.r_board.labReq.join() === '5,10,15', '情報網最多 3 級，需要研究中心 Lv5／10／15');
+  const old = JSON.parse(JSON.stringify(gs.state));
+  old.version = 22;
+  old.research.levels.r_board = 12;
+  const mig = SaveManager.migrate(old);
+  assert(mig.research.levels.r_board === 2, `舊存檔情報網 Lv12 換算為 Lv2（效果不變：${mig.research.levels.r_board}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
