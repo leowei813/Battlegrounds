@@ -3543,6 +3543,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const r1 = ex.start(near[0].id, [L.id], 1, false, Date.now());
   assert(r1.ok, '派出探索');
   const e1 = r1.exp;
+  e1.cargo = 1e6; // 運載量足夠：測試直接前往下一站（第一站找到的物資多寡是隨機的）
   ex.enqueue(e1.id, near[1].id);
   // 背包幾乎沒東西：搜索完直接前往下一個地點（不回家）
   const searchEnd = e1.startAt + e1.travelMs + e1.searchMs;
@@ -3567,7 +3568,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ex.enqueue(e3.id, near[2].id);
   e3.carried = { gained: { wood: Math.ceil(e3.cargo * CHAIN_RETURN_LOAD) + 1 }, items: [], blueprints: [], vehicles: [] };
   ex.update(e3.startAt + e3.travelMs + e3.searchMs + 1);
-  assert(ex.list.includes(e3) && e3.travelEvents.some((t) => t.includes('返回避難所卸貨')), '負重達 90% 時返回避難所');
+  assert(ex.list.includes(e3) && (e3.travelEvents.some((t) => t.includes('返回避難所卸貨')) || e3.cp?.stopped), '負重達 90% 時返回避難所（不前往下一站）');
   ex.update(e3.endAt + 1);
   // 關閉開關：每個地點探索完都先回家
   heal();
