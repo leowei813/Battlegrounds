@@ -104,13 +104,25 @@ export class InventoryPanel {
     const cards = Object.entries(AMMO_RECIPES).map(([key, rc]) => {
       const sp = SUPPLIES[key];
       const check = eq.canCraftAmmo(key);
-      const st = check.ok ? 'ok' : affordable(g.state, rc.cost) ? 'lock' : 'lack';
+      const n = eq.ammoBatch(key);
+      const cost = eq.ammoCost(key, n);
+      const { max, limit } = eq.ammoMaxBatches(key);
+      const st = !check.ok ? 'lock' : n <= max ? 'ok' : 'lack';
       if (!this.passFilter(st)) return '';
+      const qtyRow = check.ok ? `<div class="ammo-qty"><small class="muted">批數</small>
+          <span class="ammo-step">${btn('−', 'ammoBatch', { key, n: n - 1 }, { disabled: n <= 1 })}<b>${n}</b>${btn('＋', 'ammoBatch', { key, n: n + 1 }, { disabled: n >= eq.constructor.AMMO_BATCH_MAX })}</span>
+          ${[1, 5, 10].map((v) => `<button class="chip ${n === v ? 'active' : ''}" data-action="ammoBatch" data-key="${key}" data-n="${v}">×${v}</button>`).join('')}
+          <button class="chip ${n === max && max > 1 ? 'active' : ''}" data-action="ammoBatch" data-key="${key}" data-n="${Math.max(1, max)}" ${max < 1 ? 'disabled' : ''}>最多 ×${max}</button></div>` : '';
+      const lackName = limit === 'room' ? '倉庫空間' : metaOf(limit)?.name || '材料';
+      const note = st === 'ok' ? `<small class="pos">一次製作 <b>${rc.batch * n}</b> 發${n > 1 ? `（${n} 批）` : ''}</small>`
+        : st === 'lack' ? `<small class="neg">${lackName}不足${max > 0 ? `：最多可做 ${max} 批` : ''}</small>` : '<span></span>';
+      const label = n > 1 ? `製作 ×${n}` : '製作';
       return `<div class="fac-card2 ${st === 'lock' ? 'unbuilt' : ''}">
-        <div class="fac2-head"><span class="fac-icon">${sp.icon}</span><b>${sp.name} ×${rc.batch}</b><span class="muted">倉庫 ${g.state.supplies?.[key] || 0}</span></div>
+        <div class="fac2-head"><span class="fac-icon">${sp.icon}</span><b>${sp.name} ×${rc.batch}／批</b><span class="muted">倉庫 ${g.state.supplies?.[key] || 0}</span></div>
         <div class="fac2-effect"><small class="muted">用於：${users(key)}・${rc.bench ? `工作台 Lv${rc.bench}` : '不需工作台'}</small></div>
-        <div class="fac2-cost"><small class="muted">所需材料（擁有/需要）</small><div class="needs">${needHtml(g.state, rc.cost)}</div>
-          <div class="row-between"><span></span>${this.craftBtn(st, '製作', 'craftAmmo', { key }, check.reason)}</div></div>
+        ${qtyRow}
+        <div class="fac2-cost"><small class="muted">所需材料（擁有/需要${n > 1 ? ` ×${n} 批` : ''}）</small><div class="needs">${needHtml(g.state, cost)}</div>
+          <div class="row-between">${note}${this.craftBtn(st, label, 'craftAmmo', { key }, check.reason)}</div></div>
       </div>`;
     }).join('');
     const per = Object.entries(AMMO_FOR).map(([t, a]) => `${ITEM_TYPES[t].name} ${a.perFight}`).join('、');
@@ -464,7 +476,8 @@ export class InventoryPanel {
       case 'lock': g.equipment.toggleLock(data.id); break;
       case 'dismantle': this.ui.result(g.equipment.dismantle(data.id)); break;
       case 'craft': this.showCraftResult(g.equipment.craft(data.type)); break;
-      case 'craftAmmo': this.ui.result(g.equipment.craftAmmo(data.key)); break;
+      case 'craftAmmo': this.ui.result(g.equipment.craftAmmo(data.key, g.equipment.ammoBatch(data.key))); break;
+      case 'ammoBatch': g.equipment.setAmmoBatch(data.key, data.n); g.requestSave?.(); break;
       case 'craftBp': this.showCraftResult(g.equipment.craft(data.type, data.id)); break;
       case 'equipTo': this.pickSurvivor(data.id); break;
       case 'toStore': this.ui.result(g.equipment.moveToStore(data.id)); break;

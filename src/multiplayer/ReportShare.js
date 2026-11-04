@@ -53,14 +53,25 @@ export function shareReportText(r, note = '') {
 /** 避難所紀錄（屍潮、NPC 掠奪、玩家突襲）→ 分享文字 */
 export function shareDefenseText(e, note = '') {
   const s = e.siege;
+  const base = e.baseName ? `🏠${clean(e.baseName)}` : '';
+  const hurt = (s?.injuries || e.injuries || []).filter((x) => !x.ok);
+  const sev = hurt.filter((x) => x.severe).length;
+  const hurtText = hurt.length ? `🩹${[hurt.length - sev ? `輕傷${hurt.length - sev}` : '', sev ? `重傷${sev}` : ''].filter(Boolean).join('')}` : '';
+  const lostText = () => {
+    const mats = Object.values(s?.materials || {}).reduce((a, b) => a + b, 0);
+    const res = s?.lossPct ? `📉資源−${s.lossPct}%` : Object.entries(e.lost || {}).sort((x, y) => y[1] - x[1]).slice(0, 2).map(([k, v]) => `${metaOf(k).icon}−${Math.floor(v)}`).join(' ');
+    return [res, mats ? `🧰材料−${mats}` : '', e.coins ? `💰−${e.coins}` : '', e.damaged?.length ? `🏚️設施損毀${e.damaged.length}` : '', hurtText].filter(Boolean).join(' ');
+  };
   if (s) {
-    const stat = [e.waves ? `${e.waves}波` : '', e.kills ? `擊殺${e.kills}` : '', s.wallPct != null && e.success ? `城牆剩${s.wallPct}%` : ''].filter(Boolean).join('・');
-    const gains = e.success ? [s.coins ? `💰+${s.coins}` : '', ...Object.entries(s.items || {}).slice(0, 3).map(([k, v]) => `${metaOf(k).icon}×${v}`)].filter(Boolean).join(' ') : '';
-    return compose(['🧟屍潮防守', e.success ? '守住了！' : '被突破了', stat, gains], note);
+    const waves = e.success ? (e.waves ? `${e.waves}波` : '') : s.maxWaves ? `撐過${Math.max(0, (s.wave || 1) - 1)}/${s.maxWaves}波` : '';
+    const wall = e.success ? (s.wallPct != null ? `城牆剩${s.wallPct}%` : '') : e.wallLost ? `圍牆−${e.wallLost}` : '';
+    const stat = [waves, e.kills ? `擊殺${e.kills}` : '', wall, e.success && s.gradeName ? `評價${s.gradeName}` : ''].filter(Boolean).join('・');
+    const gains = e.success ? [s.coins ? `💰+${s.coins}` : '', ...Object.entries(s.items || {}).slice(0, 3).map(([k, v]) => `${metaOf(k).icon}×${v}`)].filter(Boolean).join(' ') : lostText();
+    return compose(['🧟屍潮防守', e.success ? '守住了！' : '被突破了', [base, stat].filter(Boolean).join('・'), gains], note);
   }
-  const stat = [e.kills ? `擊倒${e.kills}` : '', e.wallLost ? `圍牆−${e.wallLost}` : ''].filter(Boolean).join('・');
+  const stat = [base, e.kills ? `擊倒${e.kills}` : '', e.wallLost ? `圍牆−${e.wallLost}` : ''].filter(Boolean).join('・');
   const r = e.reward;
-  const gains = r ? [r.coins ? `💰+${r.coins}` : '', r.gear?.length ? `🎁裝備×${r.gear.length}` : ''].filter(Boolean).join(' ') : '';
+  const gains = e.success ? (r ? [r.coins ? `💰+${r.coins}` : '', r.gear?.length ? `🎁裝備×${r.gear.length}` : ''].filter(Boolean).join(' ') : '') : lostText();
   return compose(['🛡️據點防守', `${e.success ? '擊退' : '未能擋下'}${clean(e.attacker)}`, stat, gains], note);
 }
 
