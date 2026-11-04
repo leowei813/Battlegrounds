@@ -37,11 +37,26 @@ export class Modal {
         const inputs = [...bodyEl.querySelectorAll('input[type=number]')];
         const values = inputs.map((el) => el.value);
         const focused = inputs.indexOf(document.activeElement);
+        // 內層可捲動的區塊（例如派遣隊員的名單）：依「標籤＋類別＋第幾個」記下捲動位置，重繪後還原
+        const keyed = (root) => {
+          const seen = new Map();
+          return [...root.querySelectorAll('*')].map((el) => {
+            const base = `${el.tagName}.${el.className}`;
+            const n = seen.get(base) || 0;
+            seen.set(base, n + 1);
+            return [`${base}#${n}`, el];
+          });
+        };
+        const scrolled = keyed(bodyEl).filter(([, el]) => el.scrollTop > 0 || el.scrollLeft > 0).map(([k, el]) => [k, el.scrollTop, el.scrollLeft]);
         bodyEl.innerHTML = html;
         const after = [...bodyEl.querySelectorAll('input[type=number]')];
         if (after.length === values.length) after.forEach((el, i) => { el.value = values[i]; });
-        if (focused >= 0) after[focused]?.focus();
+        if (focused >= 0) after[focused]?.focus({ preventScroll: true });
         bodyEl.scrollTop = top;
+        if (scrolled.length) {
+          const map = new Map(keyed(bodyEl));
+          scrolled.forEach(([k, st, sl]) => { const el = map.get(k); if (el) { el.scrollTop = st; el.scrollLeft = sl; } });
+        }
       },
       setTitle: (t) => { wrap.querySelector('h3').textContent = t; },
       close: () => this.close(),
