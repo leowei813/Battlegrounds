@@ -3556,6 +3556,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(e2 && !ex.list.includes(e1), '探索完第一個地點後直接前往佇列中的下一個地點');
   assert(Math.abs(e2.from.lat - near[0].lat) < 1e-9 && e2.backPath && e2.backMs > 0 && e2.endAt === e2.startAt + e2.travelMs + e2.searchMs + e2.backMs, '從上一個地點出發，回程直接回避難所');
   assert(gc.state.resources.wood === woodBefore, '途中取得的物資先背著，還沒入庫');
+  const tr = e2.trail || [];
+  assert(tr.length >= 2 && Math.abs(tr[0].lat - home.lat) < 1e-6 && Math.abs(tr[tr.length - 1].lat - near[0].lat) < 1e-6 && (e2.stops || []).includes(near[0].id), '地圖顯示：記下已走過的路線（避難所→第一站）與搜索過的地點');
   const rep1 = gc.state.reports[0];
   assert(rep1?.carried && rep1.events.some((t) => t.includes('直接前往')), '探索報告寫出背包還有空間、直接前往下一個地點');
   // 回到避難所：背著的物資一起入庫

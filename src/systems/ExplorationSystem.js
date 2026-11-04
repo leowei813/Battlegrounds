@@ -715,6 +715,15 @@ export class ExplorationSystem {
         const ne = r.exp;
         ne.queue = nextId === poi.id ? queue : queue.slice(1);
         ne.nextVehicleIds = exp.nextVehicleIds;
+        // 地圖顯示用：記下這趟已經走過的路線與搜索過的地點
+        const leg = Array.isArray(exp.path) && exp.path.length >= 2 ? exp.path : [exp.from || poi, poi];
+        const trail = [...(exp.trail || [])];
+        leg.forEach((q) => {
+          const last = trail[trail.length - 1];
+          if (!last || Math.abs(last.lat - q.lat) > 1e-7 || Math.abs(last.lon - q.lon) > 1e-7) trail.push({ lat: q.lat, lon: q.lon });
+        });
+        ne.trail = trail.length > 300 ? trail.filter((_, i) => i === 0 || i === trail.length - 1 || i % Math.ceil(trail.length / 300) === 0) : trail;
+        ne.stops = [...new Set([...(exp.stops || []), poi.id])];
         report.events.push(nextId === poi.id
           ? `🎒 背包還有空間（負重 ${Math.round(load)}/${cap}），「${poi.name}」還有物資，直接再搜索一次`
           : `🎒 背包還有空間（負重 ${Math.round(load)}/${cap}），直接前往「${nextPoi?.name || ''}」${ne.queue.length ? `（佇列還有 ${ne.queue.length} 個）` : ''}`);
