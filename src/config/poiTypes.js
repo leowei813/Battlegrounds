@@ -5,6 +5,7 @@
  *   medLow 低階藥品（紗布、繃帶…）、medMid 中低階藥品（到抗生素、小型醫藥箱為止）、
  *   med 各級藥品（含中大型醫藥箱）、ammo 彈藥與箭矢
  * itemChance：找到裝備的機率（0 = 不會出現裝備）；itemBias：裝備部位權重
+ * lootFirst：第一種物資固定的類別；extraKinds：額外多出的物資種類數
  * enemies：遭遇敵人權重
  */
 export const LOOT_CATS = {
@@ -45,8 +46,9 @@ export const POI_TYPES = {
   },
   hospital: {
     name: '醫院', icon: '🏥', color: '#f44336', danger: 4, special: true,
-    loot: { med: 7, fabric: 4 },
-    lootAmount: { med: 0.6 }, // 醫療物品數量較少
+    // 醫療物資最豐富：種類（含中大型醫藥箱）與數量都比藥局多，且一定找得到藥品
+    loot: { med: 9, fabric: 2 },
+    lootFirst: 'med', extraKinds: 2,
     itemChance: 0, blueprintChance: 0.05,
     itemBias: { armor: 2, helmet: 2, backpack: 1, gloves: 2, accessory: 2, melee: 1 },
     enemies: { infected: 5, mutant: 3, berserker: 2 },

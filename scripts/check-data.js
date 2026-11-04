@@ -1883,6 +1883,16 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const ph = tally('pharmacy'); const shop = tally('shop'); const hosp = tally('hospital');
   assert([...ph.cats].every((c) => c === 'med') && ph.medTier <= 3 && hosp.medTier > ph.medTier, `藥局只有藥品，種類比醫院少（最高 ${ph.medTier} 階，醫院 ${hosp.medTier} 階）`);
   assert(ph.med > shop.med * 3, `藥局的低階藥品比商店多很多（${ph.med} vs ${shop.med}）`);
+  assert(hosp.med > ph.med, `醫院的藥品數量比藥局多（${hosp.med} vs ${ph.med}）`);
+  {
+    // 醫院一定有藥品、藥品種類比藥局多；區域越危險，高階藥品越容易出現
+    const { pickSupply } = await import('../src/systems/LootStock.js');
+    const kindsOf = (type) => { const ks = new Set(); days.forEach((d, i) => Object.keys(stock({ id: `k_${type}_${i}`, type, lat: 25, lon: 121 }, d).resources).forEach((k) => { if (sup.SUPPLIES[k]?.cat === 'med') ks.add(k); })); return ks.size; };
+    assert(kindsOf('hospital') > kindsOf('pharmacy'), '醫院的藥品種類比藥局多');
+    assert(days.every((d, i) => Object.keys(stock({ id: `g_${i}`, type: 'hospital', lat: 25, lon: 121 }, d).resources).some((k) => sup.SUPPLIES[k]?.cat === 'med')), '醫院每次刷新一定有藥品');
+    const highRate = (danger) => { let a = 0; let s0 = 7; const rnd = () => { s0 = (s0 * 16807) % 2147483647; return s0 / 2147483647; }; for (let i = 0; i < 4000; i += 1) if (sup.SUPPLIES[pickSupply('med', rnd, danger)].tier >= 4) a += 1; return a / 4000; };
+    assert(highRate(9) > highRate(4) * 1.5, `危險度越高越容易找到中大型醫藥箱（${highRate(4)} → ${highRate(9)}）`);
+  }
   const rc = tally('recycling');
   assert([...rc.cats].every((c) => c === 'part' || c === 'fabric') && rc.cats.size === 2, `回收站可搜到布料與零件（${[...rc.cats]}）`);
   const bk = tally('bakery'); const res = tally('residential');
