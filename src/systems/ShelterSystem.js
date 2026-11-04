@@ -643,6 +643,39 @@ export class ShelterSystem {
     return null;
   }
 
+  /**
+   * 這個人目前是否在瞭望塔上（實際駐守、會射擊）。
+   * 主要避難所：在避難所、沒有重傷，且警戒中或工作為「防禦駐守」才上塔；前哨站：設定了就一直駐守。
+   */
+  onTower(survivorId) {
+    const at = this.garrisonOf(survivorId);
+    if (!at) return false;
+    if (!this.isPrimary(at.base)) return true;
+    const sv = this.game.survivors.get(survivorId);
+    return !!sv && sv.status === 'idle' && !sv.severe && (this.alert || sv.job === 'guard');
+  }
+
+  /**
+   * 瞭望塔駐守狀態（介面顯示用）。
+   * @returns {{state:'none'|'on'|'standby', sv?:object, why:string}}
+   */
+  towerStatus(base, d) {
+    const sv = d?.garrisonId ? this.game.survivors.get(d.garrisonId) : null;
+    if (!sv) return { state: 'none', why: '' };
+    if (this.onTower(sv.id)) {
+      return { state: 'on', sv, why: this.isPrimary(base) ? `${sv.name}${this.alert ? '：警戒中' : '：工作為「防禦駐守」'}，已上塔` : `${sv.name} 駐守前哨站` };
+    }
+    const why = sv.status === 'exploring' ? '外出中，回到避難所後依規則上塔'
+      : sv.severe ? '重傷中，治好後依規則上塔'
+        : `目前工作為「${JOBS[sv.job]?.name || '閒置'}」：切換警戒或指派「防禦駐守」時才會上塔`;
+    return { state: 'standby', sv, why: `${sv.name} ${why}` };
+  }
+
+  /** 瞭望塔目前在塔上的人（沒有則 null） */
+  towerGuard(d) {
+    return d?.garrisonId && this.onTower(d.garrisonId) ? this.game.survivors.get(d.garrisonId) : null;
+  }
+
   garrison(b, slot, survivorId) {
     const base = this.resolve(b);
     const d = base?.defenses[slot];
@@ -655,8 +688,9 @@ export class ShelterSystem {
     if (!sv || sv.status === 'exploring') return { ok: false, reason: '該倖存者無法駐守' };
     this.bases.forEach((x) => x.defenses.forEach((y) => { if (y.garrisonId === survivorId) y.garrisonId = null; }));
     d.garrisonId = survivorId;
-    sv.job = 'guard';
-    return { ok: true, msg: `${sv.name} 駐守「${base.name}」瞭望塔` };
+    // 前哨站：設定後一直駐守；主要避難所：警戒中或工作為「防禦駐守」時才上塔（不強制改工作）
+    if (!this.isPrimary(base)) return { ok: true, msg: `${sv.name} 駐守「${base.name}」瞭望塔` };
+    return { ok: true, msg: this.onTower(sv.id) ? `${sv.name} 已上「${base.name}」瞭望塔` : `${sv.name} 設定為瞭望塔駐守人員（警戒中或工作為「防禦駐守」時自動上塔）` };
   }
 
   // ---------- 更新 ----------

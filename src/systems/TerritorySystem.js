@@ -52,7 +52,7 @@ export class TerritorySystem {
   garrison(base) {
     const g = this.game;
     const list = g.state.survivors.filter((s) => s.status === 'idle' && !s.severe && (
-      g.shelter.garrisonOf(s.id)?.base.id === base.id
+      (g.shelter.garrisonOf(s.id)?.base.id === base.id && g.shelter.onTower(s.id))
       || (g.shelter.isPrimary(base) && s.job === 'guard' && !g.survivors.isGarrisoned(s.id))));
     const level = list.length ? Math.round(list.reduce((s, v) => s + v.level, 0) / list.length) : 1;
     return { list, count: list.length, level };

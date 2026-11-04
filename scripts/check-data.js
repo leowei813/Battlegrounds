@@ -520,6 +520,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(walk.speed === 1 && ride.speed > 1 && ride.cargo > walk.cargo * 10, '載具提升速度與運載量');
   assert(vs.tripStats(2, [bike], 1000).seated === false && vs.tripStats(2, [bike], 1000).speed === 1, '座位不足時全隊步行');
   assert(vs.tripStats(1, [bike], 1000).fuel === 0 && ride.fuel > 0, '腳踏車不耗油，貨車耗油');
+  // 耗油：每公里耗油 ×3 × 往返，加上每趟發動 1（大貨車 1 公里約 10）
+  assert(ride.fuel === Math.ceil(1.4 * 3 * 2 + 1) && vs.tripStats(1, [vs.create('car', 0.5)], 3000).fuel === Math.ceil(0.5 * 3 * 6 + 1), `載具耗油依距離與載具大小計算（大貨車 1 公里 ${ride.fuel}）`);
   assert(!vs.validate([bike.id, truck.id], 1, 1000).ok, '每台載具至少需要一名駕駛');
   gw.state.resources.fuel = 0;
   assert(!vs.validate([truck.id], 2, 1000).ok, '燃料不足無法出車');
@@ -3149,9 +3151,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const sg = gw5.siege.of(b5.id);
   const none = sg.defenseDps();
   gw5.shelter.garrison(b5, 0, 'leader');
+  // 設定駐守但工作不是防禦駐守、也沒有警戒：待命，不上塔、也不會被改工作
+  assert(gw5.survivors.leader().job === 'scavenge' && !gw5.shelter.onTower('leader') && sg.defenseDps() === none && gw5.shelter.towerStatus(b5, b5.defenses[0]).state === 'standby', '瞭望塔設定駐守後不強制改工作；工作不是防禦駐守時待命、不射擊');
+  gw5.shelter.setAlert(true);
+  assert(gw5.shelter.onTower('leader') && sg.defenseDps() > none, '切換警戒：瞭望塔人員自動上塔');
+  gw5.shelter.setAlert(false);
+  assert(!gw5.shelter.onTower('leader'), '解除警戒且工作不是防禦駐守：離開瞭望塔');
+  gw5.survivors.leader().job = 'guard';
   assert(sg.defenseDps() > none, '瞭望塔駐守人員計入守城火力（NPC 掠奪與玩家突襲破牆前都會射擊）');
   assert(gw5.territory.garrison(b5).count === 1 && gw5.npcs.defenders(b5).some((x) => x.id === 'leader'), '瞭望塔駐守人員算在警戒範圍駐守人數，破牆後也會迎戰 NPC');
   assert(gw5.world == null && gw5.npcs.baseDefense(b5) > 0, 'NPC 判斷防禦強度時計入瞭望塔');
+  // 被驅逐：自動清除瞭望塔設定
+  const { createSurvivor: mk69 } = await import('../src/core/GameState.js');
+  const ext = mk69('外人', 'scout', 3, 'common');
+  gw5.state.survivors.push(ext);
+  gw5.shelter.garrison(b5, 0, ext.id);
+  assert(b5.defenses[0].garrisonId === ext.id, '換人設定瞭望塔');
+  gw5.survivors.dismiss(ext.id);
+  assert(!b5.defenses[0].garrisonId, '被驅逐的人自動清除瞭望塔設定');
 }
 
 // ---- 70. v9.9 倖存者能力素質 ----

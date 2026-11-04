@@ -751,7 +751,7 @@ export class NpcSystem {
     const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps({ raw: true }) * (1 + g.research.bonus('raidDefensePct')) + helpDps);
     base.wallHp = Math.max(0, as.wallLeft);
     // 守城時：近戰防守的人會受傷，對方有遠程武器時遠程防守的人也可能中彈
-    const wallGuards = [...siege.guards().map((x) => x.sv), ...base.defenses.map((d) => g.survivors.get(d.garrisonId)).filter(Boolean)];
+    const wallGuards = [...siege.guards().map((x) => x.sv), ...base.defenses.map((d) => g.shelter.towerGuard(d)).filter(Boolean)];
     g.combat.wallDefenseHurt([...new Set(wallGuards)], all, as.sec, '守城對抗 NPC 掠奪時受傷');
     const enemies = as.alive;
     const defenders = this.defenders(base);

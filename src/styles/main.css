@@ -1066,3 +1066,12 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .ammo-badge { display: inline-block; background: #c62828; color: #fff; border-radius: 6px; padding: 0 6px; font-size: 11px; font-weight: 800; vertical-align: middle; }
 .gear-cell.noammo, .item-card.noammo { border-color: #e5393588; background: #2a1c1c; }
 .toast-warn { border-left-color: #ffb300; }
+/* 瞭望塔駐守 */
+.tw-tag { background: #5d4037; color: #ffe0b2; }
+.tw-tag.off { background: #37474f; color: #b0bec5; }
+.tw-st { font-size: 12px; font-weight: 700; border-radius: 8px; padding: 1px 8px; white-space: nowrap; }
+.tw-st.on { background: #1b5e20; color: #c8e6c9; }
+.tw-st.off { background: #37474f; color: #cfd8dc; }
+.sv-mini-jobrow { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
+.sv-mini-jobrow .sv-mini-job { min-width: 0; flex: 0 1 auto; }
+.sv-mini-jobrow .tw-tag { font-size: 11px; white-space: nowrap; }

@@ -580,7 +580,7 @@ export class BaseSiege {
         break;
       }
       case 'watchPost': {
-        const sv = this.game.survivors.get(d.garrisonId);
+        const sv = this.game.shelter.towerGuard(d);
         if (!sv || sv.status !== 'idle') return;
         const s = this.game.survivors.stats(sv);
         // 沒有遠程武器或彈藥：只能近戰，打瞭望塔旁邊的殭屍
@@ -671,7 +671,7 @@ export class BaseSiege {
     // 經驗分給防守人員
     const defenders = [
       ...this.guards().map((g) => g.sv),
-      ...this.base.defenses.map((d) => this.game.survivors.get(d.garrisonId)).filter(Boolean),
+      ...this.base.defenses.map((d) => this.game.shelter.towerGuard(d)).filter(Boolean),
     ];
     const recipients = defenders.length ? defenders : [this.game.survivors.leader()];
     recipients.forEach((sv) => this.game.survivors.gainXp(sv, (xp * 0.5) / recipients.length));
@@ -844,7 +844,7 @@ export class BaseSiege {
       if (DEFENSES[d.type].power && !this.powered()) return;
       const st = DEFENSES[d.type].stats(d.level);
       if (d.type === 'watchPost') {
-        const sv = this.game.survivors.get(d.garrisonId);
+        const sv = this.game.shelter.towerGuard(d);
         if (sv) dps += this.meleeOrRangedAtk(sv, apparent) * st.garrisonMul * st.fireRate * mul * gm;
       } else {
         dps += st.damage * st.fireRate * mul * this.typeMul(d.type) * (st.aoe ? 1.8 : 1) * (st.chain ? 2 : 1);
