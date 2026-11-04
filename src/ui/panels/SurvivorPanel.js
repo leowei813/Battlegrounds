@@ -296,7 +296,11 @@ export class SurvivorPanel {
     if (action === 'job') this.ui.result(g.survivors.setJob(id, data.job));
     if (action === 'heal') this.ui.result(g.survivors.heal(id, data.key || null));
     if (action === 'unequip') this.ui.result(g.equipment.unequip(id, data.slot));
-    if (action === 'quickEquip') this.ui.result(g.equipment.quickEquip(id));
+    if (action === 'quickEquip') {
+      const r = g.equipment.quickEquip(id);
+      if (r.ok && r.warn) this.ui.toastEl.show(r.msg, 'warn', 6000);
+      else this.ui.result(r);
+    }
     if (action === 'quickUnequip') this.ui.result(g.equipment.unequipAll(id));
     if (action === 'pickItem') this.pickItem(id, data.slot);
     this.ui.refresh(true);
@@ -422,9 +426,11 @@ export class SurvivorPanel {
       const item = g.equipment.getItem(sv.equipment[slot]);
       const n = this.candidates(sv.id, slot).length;
       const r = item ? RARITIES[item.rarity] : null;
-      return `<div class="gear-cell ${item ? '' : 'empty'}" style="--rc:${r?.color || '#666'}">
+      const aw = slot === 'weapon' && item ? g.equipment.ammoWarn(item, sv) : null;
+      return `<div class="gear-cell ${item ? '' : 'empty'} ${aw ? 'noammo' : ''}" style="--rc:${r?.color || '#666'}">
         <small class="muted">${SLOTS[slot].icon} ${SLOTS[slot].name}</small>
-        <b>${item ? escapeHtml(item.name) : '— 空 —'}</b>
+        <b>${item ? escapeHtml(item.name) : '— 空 —'}${aw ? ` <span class="ammo-badge">⚠️ ${aw.level === 'low' ? '彈藥不足' : '無彈藥'}</span>` : ''}</b>
+        ${aw ? `<small class="neg">需要${escapeHtml(aw.name)}：${aw.level === 'low' ? '不夠一場戰鬥使用' : '沒有彈藥時戰鬥只能用近戰武器'}</small>` : ''}
         <small class="muted">${item ? `${r.name}・戰力 ${item.power}` : n ? `有 ${n} 件可裝備` : '沒有可裝備的物品'}</small>
         ${item ? `<div class="gear-stats">${statLine(item.stats)}</div>${item.affixes?.length ? `<div class="gear-affixes">${affixChips(item)}</div>` : ''}` : ''}
         ${away ? '' : `<span class="gear-acts">${btn(item ? '更換' : '裝備', 'pickItem', { slot }, { cls: 'btn-xs', disabled: !n })}${item ? btn('卸下', 'unequip', { slot }, { cls: 'btn-xs btn-ghost' }) : ''}</span>`}
@@ -612,6 +618,7 @@ export class SurvivorPanel {
           return itemCard(it, {
             equippedBy: owner,
             carrier,
+            ammoWarn: slot === 'weapon' ? g.equipment.ammoWarn(it, sv) : null,
             actions: `${btn('裝備', 'equip', { id: it.id }, { cls: 'btn-sm btn-primary' })}${compareHtml(g, it, cur)}`,
           });
         }).join('')

@@ -2890,10 +2890,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   delete gq2.state.supplies.ammo556;
   lead.bag = {};
   const r = gq2.equipment.quickEquip(lead.id);
-  assert(r.ok && lead.equipment.melee === strong.id && !lead.equipment.weapon, `快速換裝換上戰力最高的近戰武器，沒有彈藥的槍不換（${r.msg}）`);
+  assert(r.ok && lead.equipment.melee === strong.id && lead.equipment.weapon === gun.id, `快速換裝換上戰力最高的近戰與遠程武器（遠程武器沒有彈藥也換）（${r.msg}）`);
+  assert(r.warn && gq2.survivors.supplyRules(lead).ammo === 'ammo556' && gq2.equipment.ammoWarn(gun, lead)?.level === 'none', '沒有彈藥：自動補給仍設為武器的彈藥，武器標示無彈藥');
+  // 原本裝著別種彈藥：放回倉庫，改裝新武器的彈藥
+  const pistol = gq2.equipment.generate({ level: 1, model: 'm9', rarity: 'poor' });
+  gq2.state.supplies.ammo9 = 30;
+  gq2.survivors.loadSlot(lead.id, 'ammo', 'ammo9', 20);
+  assert(gq2.survivors.loadout(lead).ammo?.key === 'ammo9', '先裝著 9mm 子彈');
   gq2.state.supplies.ammo556 = 50;
-  gq2.equipment.quickEquip(lead.id);
-  assert(lead.equipment.weapon === gun.id, '有彈藥時換上遠程武器');
+  const r2 = gq2.equipment.quickEquip(lead.id);
+  const lo = gq2.survivors.loadout(lead);
+  assert(lead.equipment.weapon === gun.id && lo.ammo?.key === 'ammo556' && lo.ammo.qty === 50 && gq2.state.supplies.ammo9 === 30 && !gq2.equipment.ammoWarn(gun, lead), `快速換裝：彈藥欄改裝新武器的彈藥，原本的彈藥放回倉庫（${r2.msg}）`);
+  void pistol;
 }
 
 // ---- 62. v9 警戒模式 ----

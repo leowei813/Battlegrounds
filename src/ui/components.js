@@ -153,21 +153,22 @@ export function affixLines(item) {
 }
 
 export function itemCard(item, {
-  actions = '', equippedBy = null, compact = false, carrier = null,
+  actions = '', equippedBy = null, compact = false, carrier = null, ammoWarn = null,
 } = {}) {
   if (!item) return '';
   const r = RARITIES[item.rarity];
   return `
-  <div class="item-card r-${item.rarity} ${compact ? 'compact' : ''}" style="--rc:${r.color}">
+  <div class="item-card r-${item.rarity} ${compact ? 'compact' : ''} ${ammoWarn ? 'noammo' : ''}" style="--rc:${r.color}">
     <div class="item-head">
       <span class="item-icon">${ITEM_MODELS[item.model]?.icon || ITEM_TYPES[item.type]?.icon || '❔'}</span>
       <div class="item-title">
-        <b>${escapeHtml(item.name)}</b>${item.locked ? ' 🔒' : ''}
+        <b>${escapeHtml(item.name)}</b>${item.locked ? ' 🔒' : ''}${ammoWarn ? ` <span class="ammo-badge">⚠️ ${ammoWarn.level === 'low' ? '彈藥不足' : '無彈藥'}</span>` : ''}
         <small>${rarityTag(item.rarity)} ${ITEM_TYPES[item.type]?.name || ''}${item.tier ? ` T${item.tier}` : ''} · Lv${item.level} · 戰力 ${item.power} · ⚖️${itemWeight(item)} ${compact ? '' : qualityTag(item)}</small>
       </div>
     </div>
     ${compact ? '' : `<div class="stat-line">${statLine(item.stats)}</div>
     ${item.affixes.length ? `<ul class="affixes">${affixLines(item)}</ul>` : ''}`}
+    ${ammoWarn ? `<small class="neg block">需要${escapeHtml(ammoWarn.name)}：${ammoWarn.level === 'low' ? '不夠一場戰鬥使用' : '沒有彈藥時戰鬥只能用近戰武器'}</small>` : ''}
     ${equippedBy ? `<div class="equipped-by">已裝備：${escapeHtml(equippedBy.name)}</div>` : carrier ? `<div class="equipped-by">🎒 ${escapeHtml(carrier.name)} 攜帶中</div>` : ''}
     ${actions ? `<div class="btn-row">${actions}</div>` : ''}
   </div>`;
