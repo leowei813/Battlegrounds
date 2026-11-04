@@ -3629,6 +3629,38 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!eq.dismantleMany([made[2].id]).ok, '只選到上鎖的裝備時不能拆解');
 }
 
+// ---- 84. 召回需要回程時間（連續探索在同一地點再搜索時也一樣）----
+{
+  const gr = Game.newGame({ playerName: 'R84', classId: 'warrior', lat: 25, lon: 121 });
+  gr.state.map.pois = fillPois([], 25, 121);
+  gr.shelter.establish(gr.state.map.pois[0]);
+  setHour(gr, 10);
+  const ex = gr.exploration;
+  const home = gr.shelter.primary();
+  const poi = gr.state.map.pois.filter((p) => !gr.shelter.baseAtPoi(p.id) && !p.npc && haversine(p.lat, p.lon, home.lat, home.lon) > 300)[0];
+  const L = gr.survivors.leader();
+  // 這裡只測回程時間，不讓建築內的戰鬥影響隊員狀態
+  gr.survivors.becomeSevere = () => {};
+  const sim84 = gr.combat.simulate.bind(gr.combat);
+  gr.combat.simulate = (...a) => ({ ...sim84(...a), victory: true });
+  const t0 = Date.now();
+  // 一般探索：搜索途中召回
+  const r = ex.start(poi.id, [L.id], 1, false, t0);
+  const e = r.exp;
+  const mid = e.startAt + e.travelMs + Math.round(e.searchMs / 2);
+  assert(ex.recall(e.id, mid).ok && e.endAt - mid > 0 && Math.abs((e.endAt - mid) - e.travelMs) < 5, `搜索途中召回：需要走回避難所（回程 ${Math.round((e.endAt - mid) / 1000)} 秒）`);
+  ex.list.splice(ex.list.indexOf(e), 1); L.status = 'idle'; L.hp = gr.survivors.maxHp(L);
+  // 連續探索在同一地點再搜索：這一段去程距離為 0
+  const r2 = ex.start(poi.id, [L.id], 1, false, t0, { from: { lat: poi.lat, lon: poi.lon } });
+  const e2 = r2.exp;
+  assert(r2.ok && e2.distanceM < 5 && e2.backMs > 0, '同一地點再搜索：去程為 0、回程直接回避難所');
+  const mid2 = e2.startAt + e2.travelMs + Math.round(e2.searchMs / 2);
+  const back2 = e2.backMs;
+  assert(ex.recall(e2.id, mid2).ok && e2.endAt - mid2 > 0 && Math.abs((e2.endAt - mid2) - back2) < back2 * 0.05 + 5, `同一地點再搜索時召回：仍需要回程時間（${Math.round((e2.endAt - mid2) / 1000)} 秒，不會瞬間回家）`);
+  ex.update(mid2 + 1000);
+  assert(ex.list.includes(e2), '召回後隊伍還在回程中');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

@@ -517,6 +517,17 @@ export class ExplorationSystem {
     return this.progress(exp, now)?.phase !== 'returning';
   }
 
+  /** 沒有可參考的路程時，依隊伍目前的步行速度估算每公尺需要的毫秒數 */
+  walkRate(exp, now = Date.now()) {
+    const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+    const vehicles = (exp.vehicleIds || []).map((id) => this.game.vehicles.get(id)).filter(Boolean);
+    const scout = Math.max(0, ...members.map((m) => (this.game.survivors.skillEffects(m).exploreSpeed || 0)
+      + (this.game.survivors.stats(m).exploreSpeed || 0)));
+    const speed = this.game.time.exploreSpeedMul(now) * (1 + scout + this.game.research.bonus('exploreSpeed'));
+    const trip = this.game.vehicles.tripStats(members, vehicles, 1000);
+    return (MIN_PER_KM_ONE_WAY / 1000) * 60000 / (speed * (trip?.speed || 1));
+  }
+
   /**
    * 隊伍立刻折返：從目前位置走回避難所（需要移動時間），途中的搜索、交戰都取消。
    * 召回與被攔截擊敗共用。
@@ -525,10 +536,18 @@ export class ExplorationSystem {
     const p = this.progress(exp, now);
     const home = this.game.shelter.primary() || exp.from;
     if (!p || !home) return false;
-    const dist = haversine(p.pos.lat, p.pos.lon, home.lat, home.lon);
-    const travelMs = exp.distanceM ? Math.round(exp.travelMs * (dist / exp.distanceM)) : 0;
+    // 回程路線同樣繞開警戒範圍
+    const route = this.game.territory?.route ? this.game.territory.route(p.pos, home, { avoidHostile: exp.avoidHostile }) : null;
+    const dist = route?.length > 1 ? pathLength(route) : haversine(p.pos.lat, p.pos.lon, home.lat, home.lon);
+    // 移動速度（毫秒/公尺）：取這趟去程或回程的速度；連續探索在同一地點再搜索時去程距離為 0，
+    // 以前用去程換算會得到 0 而瞬間回家
+    const rate = exp.distanceM > 0 && exp.travelMs > 0 ? exp.travelMs / exp.distanceM
+      : exp.backDistanceM > 0 && exp.backMs > 0 ? exp.backMs / exp.backDistanceM
+        : this.walkRate(exp, now);
+    const travelMs = Math.round(dist * rate);
+    const back = route?.length > 1 ? [...route].reverse() : [{ lat: home.lat, lon: home.lon }, p.pos];
     Object.assign(exp, {
-      from: { lat: home.lat, lon: home.lon }, path: [{ lat: home.lat, lon: home.lon }, p.pos],
+      from: { lat: home.lat, lon: home.lon }, path: back,
       distanceM: Math.round(dist), travelMs, searchMs: 0, startAt: now - travelMs, endAt: now + travelMs,
       threats: [], auto: false, backPath: null, backMs: null, backDistanceM: null,
     });
