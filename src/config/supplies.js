@@ -49,6 +49,8 @@ export const SUPPLIES = {
   hydraulic: s('part', '液壓缸', '🧯', 4, 1.5, { tag: 'mech' }),
   barrel: s('part', '槍管', '🔫', 4, 0.8, { tag: 'gun' }),
   precision: s('part', '精密零件', '🎛️', 5, 0.1, { tag: 'mech' }),
+  // ---- 零件：彈藥材料（只用在子彈製作，不會出現在建造與裝備的成本） ----
+  casing: s('part', '彈殼', '🥉', 1, 0.005, { tag: 'ammo' }),
   // ---- 零件：電子 ----
   tape: s('part', '絕緣膠帶', '🩹', 1, 0.05, { tag: 'elec' }),
   wire: s('part', '電線', '🔌', 1, 0.1, { tag: 'elec' }),
@@ -100,13 +102,13 @@ export const suppliesOf = (cat, maxTier = 5, minTier = 1) => SUPPLY_KEYS
 
 /** 各武器類別使用的彈藥，與每場戰鬥消耗的數量 */
 export const AMMO_FOR = {
-  pistol: { ammo: 'ammo9', perFight: 6 },
-  smg: { ammo: 'ammo9', perFight: 15 },
-  shotgun: { ammo: 'shell12', perFight: 4 },
-  rifle: { ammo: 'ammo556', perFight: 8 },
-  sniper: { ammo: 'ammo308', perFight: 3 },
-  lmg: { ammo: 'ammo762', perFight: 25 },
-  crossbow: { ammo: 'arrow', perFight: 4 },
+  pistol: { ammo: 'ammo9', perFight: 4 },
+  smg: { ammo: 'ammo9', perFight: 9 },
+  shotgun: { ammo: 'shell12', perFight: 3 },
+  rifle: { ammo: 'ammo556', perFight: 6 },
+  sniper: { ammo: 'ammo308', perFight: 2 },
+  lmg: { ammo: 'ammo762', perFight: 14 },
+  crossbow: { ammo: 'arrow', perFight: 3 },
 };
 /** 避難所防守時每次射擊消耗的彈藥（衝鋒槍、輕機槍連發較耗彈） */
 export const ammoPerShot = (type) => Math.max(1, Math.round((AMMO_FOR[type]?.perFight || 6) / 6));
@@ -114,19 +116,28 @@ export const ammoPerShot = (type) => Math.max(1, Math.round((AMMO_FOR[type]?.per
 /** 出發時自動從倉庫補給的彈藥（場數） */
 export const AMMO_PACK_FIGHTS = 4;
 
-/** 彈藥製作（工作台）：一次產出 batch 個 */
+/** 彈藥製作（工作台）：一次產出 batch 個。子彈以彈殼為主要材料，只有 .308 需要稀有零件 */
 export const AMMO_RECIPES = {
-  arrow: { bench: 0, batch: 10, cost: { wood: 6, nail: 2 } },
+  arrow: { bench: 0, batch: 15, cost: { wood: 6, nail: 2 } },
   // 子彈：研究「槍械製造」Lv1、工作台 Lv3 即可製作全部種類
-  ammo9: { bench: 3, batch: 20, cost: { scrap: 2, spring: 1, fuel: 2 }, gun: 1 },
-  shell12: { bench: 3, batch: 10, cost: { scrap: 3, plastic: 1, fuel: 3 }, gun: 1 },
-  ammo556: { bench: 3, batch: 20, cost: { scrap: 3, firingPin: 1, fuel: 4 }, gun: 1 },
-  ammo762: { bench: 3, batch: 20, cost: { scrap: 4, firingPin: 1, fuel: 5 }, gun: 1 },
-  ammo308: { bench: 3, batch: 10, cost: { steelPipe: 1, firingPin: 1, fuel: 5 }, gun: 1 },
+  casing: { bench: 3, batch: 10, cost: { scrap: 2 }, gun: 1 },
+  ammo9: { bench: 3, batch: 30, cost: { casing: 15, scrap: 1, fuel: 2 }, gun: 1 },
+  shell12: { bench: 3, batch: 15, cost: { casing: 8, plastic: 1, fuel: 3 }, gun: 1 },
+  ammo556: { bench: 3, batch: 30, cost: { casing: 15, scrap: 2, spring: 1, fuel: 4 }, gun: 1 },
+  ammo762: { bench: 3, batch: 30, cost: { casing: 15, scrap: 2, spring: 1, fuel: 5 }, gun: 1 },
+  ammo308: { bench: 3, batch: 10, cost: { casing: 5, steelPipe: 1, firingPin: 1, fuel: 5 }, gun: 1 },
 };
 
+/** 用掉的子彈回收成彈殼、射出的箭矢回收的比例 */
+export const AMMO_RECOVER = 0.3;
+/** 用掉某種彈藥後回收的物品：箭矢直接回收，子彈回收彈殼 */
+export const recoverKeyOf = (ammoKey) => (ammoKey === 'arrow' ? 'arrow' : 'casing');
+/** 把小數的回收量依機率取整數 */
+export const rollRecover = (map, rnd = Math.random) => Object.fromEntries(Object.entries(map)
+  .map(([k, v]) => [k, Math.floor(v) + (rnd() < v - Math.floor(v) ? 1 : 0)]).filter(([, v]) => v > 0));
+
 /** 彈藥的基準價（不再依階級大幅提高）：黑市售價 = 基準價 × AMMO_SELL_MUL */
-export const AMMO_PRICE = { arrow: 2, ammo9: 2, ammo556: 2, ammo762: 2, shell12: 3, ammo308: 3 };
+export const AMMO_PRICE = { casing: 1, arrow: 2, ammo9: 2, ammo556: 2, ammo762: 2, shell12: 3, ammo308: 3 };
 export const AMMO_SELL_MUL = 2;
 
 /** 治療藥品的出現權重（回復量越高越稀有） */

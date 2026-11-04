@@ -18,6 +18,7 @@ export const LOOT_CATS = {
   medMid: { name: '中低階藥品', icon: '💊' },
   med: { name: '藥品', icon: '💊' },
   ammo: { name: '彈藥／箭矢', icon: '🎯' },
+  casing: { name: '彈殼', icon: '🥉' },
   gear: { name: '裝備', icon: '🎁' },
   vehicle: { name: '載具（需維修）', icon: '🚗' },
 };
@@ -111,7 +112,7 @@ export const POI_TYPES = {
   },
   recycling: {
     name: '回收站', icon: '♻️', color: '#8d6e63', danger: 2, amountMul: 1.3,
-    loot: { part: 6, fabric: 5 },
+    loot: { part: 6, fabric: 5, casing: 2 },
     itemChance: 0, blueprintChance: 0.02,
     itemBias: { melee: 2, gloves: 2, backpack: 1 },
     enemies: { walker: 6, infected: 3, berserker: 1 },

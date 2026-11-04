@@ -1,6 +1,6 @@
 import { COIN_GAIN_MUL } from '../config/constants.js';
 import { ITEM_MODELS } from '../config/equipment.js';
-import { SUPPLIES } from '../config/supplies.js';
+import { SUPPLIES, AMMO_RECOVER, recoverKeyOf, rollRecover } from '../config/supplies.js';
 import { ALL_ENEMIES, ELITE_MUL, defReduce, HOME_DEFENSE_DOWN } from '../config/enemies.js';
 import { chance, randFloat, pick, uid } from '../utils/math.js';
 
@@ -110,6 +110,10 @@ export class CombatSystem {
     const need = svs.ammoNeed(sv);
     if (need && svs.ammoAvailable(sv, need.ammo) >= need.perFight) {
       svs.useAmmo(sv, need.ammo, need.perFight);
+      if (this.fightUse) {
+        const rk = recoverKeyOf(need.ammo);
+        this.fightUse[rk] = (this.fightUse[rk] || 0) + need.perFight * AMMO_RECOVER;
+      }
       delete sv.noAmmo;
       return 'ranged';
     }
@@ -139,6 +143,8 @@ export class CombatSystem {
    * @param {{firstStrikeBonus?:number}} opts
    */
   simulate(survivors, enemies, opts = {}) {
+    // 記下這場用掉的彈藥：勝利後回收部分彈殼與箭矢
+    this.fightUse = {};
     // allies：友好玩家的協防隊員（不是自己的倖存者，戰後由對方自行套用傷勢）
     const team = [...survivors.map((sv) => this.unitFromSurvivor(sv)), ...(opts.allies || []).map((a) => ({
       ...a, side: 'team', skills: {}, cd: randFloat(0, 0.3), healCd: 0, firstHit: true, lifeSteal: 0,
@@ -248,12 +254,18 @@ export class CombatSystem {
     }
 
     const victory = alive(foes).length === 0 && alive(team).length > 0;
+    const recovered = victory ? rollRecover(this.fightUse) : {};
+    this.fightUse = null;
+    // 回收物：探索搜刮時放進隊伍的收穫（一起帶回家），其他戰鬥直接放回物品倉庫
+    if (opts.recoverTo) Object.entries(recovered).forEach(([k, v]) => { opts.recoverTo[k] = (opts.recoverTo[k] || 0) + v; });
+    else if (Object.keys(recovered).length) this.game.equipment?.addSupplies(recovered);
     push(t, victory ? '🏆 戰鬥勝利！' : '💀 戰鬥失敗，隊伍撤退…', victory ? 'win' : 'lose');
     // 記錄這場戰鬥的詳細資料（逐筆傷害、暴擊與每人傷害統計），在「消息 → 戰鬥紀錄」查看
     if (opts.record !== false && survivors.length) this.record(opts.title, victory, t, log, team, foes);
 
     return {
       victory,
+      recovered,
       duration: +t.toFixed(1),
       log,
       kills,

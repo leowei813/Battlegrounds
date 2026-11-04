@@ -2604,7 +2604,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ga.state.supplies.ammo9 = 300;
   assert(ga.survivors.loadSlot(lead.id, 'ammo', 'ammo9').ok && lead.loadout.ammo.qty === 100, '彈藥欄最多 100');
   const u1 = ga.combat.unitFromSurvivor(lead);
-  assert(u1.weapon === 'ranged' && lead.loadout.ammo.qty === 94, '有彈藥時優先使用遠程武器並消耗彈藥欄');
+  assert(u1.weapon === 'ranged' && lead.loadout.ammo.qty === 100 - (await import('../src/config/supplies.js')).AMMO_FOR.pistol.perFight, '有彈藥時優先使用遠程武器並消耗彈藥欄');
   lead.loadout.ammo = null;
   delete ga.state.supplies.ammo9;
   const u2 = ga.combat.unitFromSurvivor(lead);
@@ -3899,6 +3899,43 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(mb.max === 1 && mb.limit === 'room', '倉庫空間限制最多批數');
   assert(!eq.craftAmmo('arrow', 2).ok, '倉庫放不下時不能製作');
   eq.supplyRoom = room0;
+}
+
+// ---- 90. 彈殼：戰鬥勝利後回收、子彈配方用彈殼、彈殼不會出現在一般零件 ----
+{
+  const sup = await import('../src/config/supplies.js');
+  const { pickSupply } = await import('../src/systems/LootStock.js');
+  const gc = Game.newGame({ playerName: 'A90', classId: 'warrior', lat: 25, lon: 121 });
+  const lead = gc.survivors.leader();
+  const gun = gc.equipment.generate({ level: 5, model: 'm1911', rarity: 'common' });
+  gc.equipment.addItem(gun, 't');
+  gc.equipment.equip(lead.id, gun.id);
+  gc.survivors.loadout(lead).ammo = { key: 'ammo9', qty: 100 };
+  const pool = {};
+  gc.combat.fightUse = null;
+  const sim = gc.combat.simulate.bind(gc.combat);
+  let rec = 0;
+  for (let i = 0; i < 20; i += 1) {
+    gc.survivors.loadout(lead).ammo = { key: 'ammo9', qty: 100 };
+    const enemies = [gc.combat.createEnemy('walker', 1, false)];
+    const r = sim([lead], enemies, { recoverTo: pool, record: false });
+    if (r.victory) rec += 1;
+    gc.survivors.setHp(lead, gc.survivors.maxHp(lead));
+    lead.severe = false;
+  }
+  const per = sup.AMMO_FOR.pistol.perFight * sup.AMMO_RECOVER;
+  assert(rec > 0 && pool.casing > 0 && pool.casing <= Math.ceil(per) * rec, `勝利後回收彈殼（${rec} 場勝利，回收 ${pool.casing}）`);
+  assert(Object.values(sup.AMMO_RECIPES).filter((r) => r.batch >= 30).length === 3 && sup.AMMO_RECIPES.ammo9.cost.casing > 0, '子彈每批產量提高並使用彈殼');
+  assert(!sup.AMMO_RECIPES.ammo556.cost.firingPin && sup.AMMO_RECIPES.ammo308.cost.firingPin, '只有 .308 需要擊針');
+  let seen = false;
+  for (let i = 0; i < 3000; i += 1) if (pickSupply('part', Math.random, 0) === 'casing') seen = true;
+  assert(!seen && sup.materialize({ metal: 50 }, { tier: 1, tags: ['struct', 'mech', 'elec', 'gun'] }).casing === undefined, '彈殼不會出現在一般零件與建造成本');
+  const sg = gc.siege.of ? gc.siege.of(gc.state.primaryBaseId || 'x') : null;
+  if (sg) {
+    sg.nightRecover = { casing: 10.0, arrow: 3.0 };
+    const got = sg.collectRecovered();
+    assert(got.casing === 10 && got.arrow === 3 && gc.state.supplies.casing >= 10, '屍潮防守射擊後回收的彈殼放回倉庫');
+  }
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

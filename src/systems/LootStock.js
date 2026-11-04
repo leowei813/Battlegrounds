@@ -94,10 +94,13 @@ export function pickSupply(cat, rnd, danger) {
     keys = suppliesOf('med');
     weight = (k) => medRiskWeight(k, danger);
   } else if (cat === 'ammo') {
-    keys = suppliesOf('ammo');
-    weight = (k) => (k === 'arrow' ? 3 : 2) * 0.6 ** Math.max(0, SUPPLIES[k].tier - danger);
+    // 彈藥類地點也常找到彈殼
+    keys = [...suppliesOf('ammo'), 'casing'];
+    weight = (k) => (k === 'casing' ? 3 : k === 'arrow' ? 3 : 2) * 0.6 ** Math.max(0, SUPPLIES[k].tier - danger);
+  } else if (cat === 'casing') {
+    return 'casing';
   } else {
-    keys = suppliesOf(cat);
+    keys = suppliesOf(cat).filter((k) => SUPPLIES[k].tag !== 'ammo');
     // 越危險的地點越容易出現高階零件與布料
     // 基礎建設材料（第 1～2 階結構零件，例如釘子、螺絲、鐵絲、鐵板）較容易出現
     weight = (k) => 0.45 ** Math.max(0, SUPPLIES[k].tier - Math.ceil(danger / 1.3)) * (isBasicBuild(k) ? BASIC_BUILD_BOOST : 1)
@@ -114,7 +117,7 @@ export function pickSupply(cat, rnd, danger) {
 
 /** 每單位的數量係數：零件、布料、藥品比食物木材稀少 */
 const CAT_AMOUNT = {
-  food: 0.65, wood: 1, fuel: 0.7, part: 0.21, fabric: 0.25, medLow: 0.08, medMid: 0.08, med: 0.08, ammo: 0.6,
+  food: 0.65, wood: 1, fuel: 0.7, part: 0.21, casing: 0.5, fabric: 0.25, medLow: 0.08, medMid: 0.08, med: 0.08, ammo: 0.6,
 };
 /** 全部物資依比例調降（所有類別一起套用） */
 const LOOT_AMOUNT_MUL = 0.85;

@@ -8,7 +8,7 @@ import {
 } from '../components.js';
 import { VEHICLES } from '../../config/vehicles.js';
 import {
-  SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, AMMO_RECIPES, AMMO_FOR,
+  SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, AMMO_RECIPES, AMMO_FOR, AMMO_RECOVER,
 } from '../../config/supplies.js';
 import { STACK_MAX } from '../../config/equipment.js';
 
@@ -114,12 +114,12 @@ export class InventoryPanel {
           ${[1, 5, 10].map((v) => `<button class="chip ${n === v ? 'active' : ''}" data-action="ammoBatch" data-key="${key}" data-n="${v}">×${v}</button>`).join('')}
           <button class="chip ${n === max && max > 1 ? 'active' : ''}" data-action="ammoBatch" data-key="${key}" data-n="${Math.max(1, max)}" ${max < 1 ? 'disabled' : ''}>最多 ×${max}</button></div>` : '';
       const lackName = limit === 'room' ? '倉庫空間' : metaOf(limit)?.name || '材料';
-      const note = st === 'ok' ? `<small class="pos">一次製作 <b>${rc.batch * n}</b> 發${n > 1 ? `（${n} 批）` : ''}</small>`
+      const note = st === 'ok' ? `<small class="pos">一次製作 <b>${rc.batch * n}</b> ${key === 'casing' ? '個' : '發'}${n > 1 ? `（${n} 批）` : ''}</small>`
         : st === 'lack' ? `<small class="neg">${lackName}不足${max > 0 ? `：最多可做 ${max} 批` : ''}</small>` : '<span></span>';
       const label = n > 1 ? `製作 ×${n}` : '製作';
       return `<div class="fac-card2 ${st === 'lock' ? 'unbuilt' : ''}">
         <div class="fac2-head"><span class="fac-icon">${sp.icon}</span><b>${sp.name} ×${rc.batch}／批</b><span class="muted">倉庫 ${g.state.supplies?.[key] || 0}</span></div>
-        <div class="fac2-effect"><small class="muted">用於：${users(key)}・${rc.bench ? `工作台 Lv${rc.bench}` : '不需工作台'}</small></div>
+        <div class="fac2-effect"><small class="muted">${key === 'casing' ? '子彈的主要材料（戰鬥後也會回收）' : `用於：${users(key)}`}・${rc.bench ? `工作台 Lv${rc.bench}` : '不需工作台'}</small></div>
         ${qtyRow}
         <div class="fac2-cost"><small class="muted">所需材料（擁有/需要${n > 1 ? ` ×${n} 批` : ''}）</small><div class="needs">${needHtml(g.state, cost)}</div>
           <div class="row-between">${note}${this.craftBtn(st, label, 'craftAmmo', { key }, check.reason)}</div></div>
@@ -128,7 +128,7 @@ export class InventoryPanel {
     const per = Object.entries(AMMO_FOR).map(([t, a]) => `${ITEM_TYPES[t].name} ${a.perFight}`).join('、');
     return `<div class="sh-fac"><div class="sh-fac-main">
       <h3 class="sh-title">🎯 彈藥與箭矢</h3>
-      <details class="civ-more"><summary>說明</summary><p class="muted">槍械需要彈藥、弓弩需要箭矢；沒有彈藥時改用近戰武器。每場戰鬥消耗：${per}。也能在警察局、軍事基地、商店探索時找到。</p></details>
+      <details class="civ-more"><summary>說明</summary><p class="muted">槍械需要彈藥、弓弩需要箭矢；沒有彈藥時改用近戰武器。每場戰鬥消耗：${per}。子彈以彈殼製作：戰鬥勝利與屍潮防守後會回收約 ${Math.round(AMMO_RECOVER * 100)}% 的彈殼（箭矢直接回收），也能用廢鐵壓製，或在警察局、軍事基地、回收站找到。</p></details>
       ${this.filterChips()}
       <div class="fac-grid">${cards || '<p class="muted">沒有符合的項目。</p>'}</div>
     </div>${this.craftSide()}</div>`;
