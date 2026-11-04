@@ -17,6 +17,8 @@ export const NPC_CONFIG = {
   searchMs: 10 * 60000,
   raidStealPct: 0.15, // 掠奪成功時搶走的資源比例
   raidWallDamage: 0.3, // 掠奪成功時圍牆損失
+  /** NPC 只掠奪「倖存者中等級最高 6 人的平均等級 + raidLevelGap」以內的玩家 */
+  raidLevelGap: 20,
   woundHealMs: 20 * 60000, // NPC 傷亡人員每隔多久補回 1 人
   /** 同時有其他 NPC 正在掠奪玩家時，再發動掠奪的機率（文明度達到 concurrentCiv 後才逐漸提高） */
   concurrentChance: 0.05,

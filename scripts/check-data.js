@@ -615,6 +615,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   npc.nextRaidAt = t0;
   // 其他 NPC 不在掠奪中（避免同時攻打的機制擋下這次）
   gn.npcs.list.forEach((m) => { if (m !== npc && m.trip?.kind === 'raid') m.trip = null; });
+  // 等級差上限：倖存者最高 6 人平均 Lv1 時，Lv30 的 NPC 不會來掠奪
+  gn.state.survivors.forEach((s) => { s.level = 1; });
+  assert(gn.npcs.raidLevelCap() === 21, `NPC 掠奪等級上限 = 倖存者平均等級 + 20（${gn.npcs.raidLevelCap()}）`);
+  gn.npcs.update(t0 + 2500);
+  assert(!npc.trip, '等級差超過 20 的 NPC 不會來掠奪');
+  npc.nextRaidAt = t0;
+  gn.state.survivors.forEach((s) => { s.level = 12; });
   gn.npcs.update(t0 + 3000);
   assert(npc.trip?.kind === 'raid', '白天 NPC 會出動掠奪');
   gn.npcs.update(npc.trip.startAt + npc.trip.travelMs + 1);
@@ -3392,6 +3399,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const svs2 = Array.from({ length: 5 }, (_, i) => createSurvivor(`e${i}`, 'warrior', 5, 'common'));
   gh.combat.applyOutcome(svs2, { ...result, team: svs2.map((sv) => ({ id: sv.id, down: true, hp: 0 })) }, Date.now());
   assert(svs2.every((sv) => sv.severe), '其他戰鬥倒下的人仍然重傷');
+  // 玩家突襲：對方回報擊倒的駐守人數，隨機挑在家駐守的人套用同樣規則
+  gh.state.map.pois = fillPois([], 25, 121);
+  gh.shelter.establish(gh.state.map.pois.find((p) => !gh.shelter.baseAtPoi(p.id)));
+  const hb = gh.shelter.primary();
+  const guards = Array.from({ length: 30 }, (_, i) => createSurvivor(`g${i}`, 'warrior', 5, 'common'));
+  gh.state.survivors.forEach((sv) => { sv.job = 'farm'; });
+  guards.forEach((sv) => { sv.job = 'guard'; });
+  gh.state.survivors.push(...guards);
+  const inj = gh.territory.applyRaidDowns(hb, 20);
+  const hit = guards.filter((sv) => sv.severe || gh.survivors.hpOf(sv) < gh.survivors.maxHp(sv));
+  assert(hit.length === 20 && inj.length === guards.filter((sv) => sv.severe).length && inj.length > 0 && inj.length < 20, `玩家突襲擊倒 20 名駐守：全部受傷，其中 ${inj.length} 人重傷`);
+  assert(gh.territory.applyRaidDowns(hb, 'x').length === 0 && gh.territory.applyRaidDowns(hb, -3).length === 0, '突襲事件的擊倒人數不合法時不處理');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

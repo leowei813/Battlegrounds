@@ -629,6 +629,8 @@ export class NpcSystem {
     if (!bases.length) return;
     // 盡量避免多個 NPC 同時攻打玩家：已經有掠奪隊在路上時大多會放棄，玩家文明度很高時才比較常發生
     if (!this.allowConcurrentRaid(now)) return;
+    // 等級差太大不出手：避免高等 NPC 一面倒地掠奪等級低很多的玩家
+    if (n.level > this.raidLevelCap()) return;
     const base = pick(bases);
     const t = this.tripTimes(n, base, 0, base.id);
     // 掠奪避難所的移動時間較長，讓玩家有時間準備防守
@@ -641,6 +643,13 @@ export class NpcSystem {
     const eta = `約 ${Math.max(1, Math.round(t.travelMs / 60000))} 分鐘後抵達`;
     this.game.log(`🏴‍☠️「${n.name}」的掠奪隊正朝「${base.name}」前進！（${eta}）`, 'danger');
     this.game.toast(`🏴‍☠️「${n.name}」（${this.intelView(n).levelShort}）的掠奪隊正朝「${base.name}」前進！（${eta}）`, 'danger');
+  }
+
+  /** 會掠奪這位玩家的 NPC 等級上限：倖存者中等級最高 6 人的平均等級 + raidLevelGap */
+  raidLevelCap() {
+    const top = this.game.state.survivors.map((s) => s.level).sort((a, b) => b - a).slice(0, 6);
+    const avg = top.length ? top.reduce((a, b) => a + b, 0) / top.length : 1;
+    return Math.floor(avg) + (NPC_CONFIG.raidLevelGap ?? 99);
   }
 
   /** 正在前往玩家據點的 NPC 掠奪隊數量 */
