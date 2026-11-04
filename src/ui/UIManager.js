@@ -5,7 +5,7 @@ import { $, delegateActions, escapeHtml } from '../utils/dom.js';
 import { formatNumber } from '../utils/math.js';
 import { Toast } from './Toast.js';
 import { Modal } from './Modal.js';
-import { openSiegeResult } from './SiegeResult.js';
+import { openSiegeResult, openRaidResult } from './SiegeResult.js';
 import { progressBar, metaOf } from './components.js';
 import { MapPanel } from './panels/MapPanel.js';
 import { ShelterPanel } from './panels/ShelterPanel.js';
@@ -171,6 +171,10 @@ export class UIManager {
     bus.on('siege:result', (e) => {
       if (!this.game.started || this.modal.current) return;
       openSiegeResult(this, e);
+    });
+    bus.on('raid:result', (e) => {
+      if (!this.game.started || this.modal.current) return;
+      openRaidResult(this, e);
     });
     bus.on(EVT.OPEN_POI, ({ poiId }) => this.panels.map.openPoi(poiId));
     bus.on('ui:openZombie', ({ groupId }) => this.panels.map.openZombie(groupId));

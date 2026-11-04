@@ -7,7 +7,8 @@ export const NPC_CONFIG = {
   cellKm: 0.9, // 格子大小（約 0.9 公里見方）
   keepRatio: 2 / 3, // 每個名額有此機率出現 NPC（依格子種子固定，所有玩家相同）：密度約每平方公里 1.6 個
   minFromShelterM: 300, // 不會出現在避難所旁邊
-  respawnMs: [30 * 60000, 60 * 60000], // 被摧毀後重新出現的時間
+  respawnMs: [30 * 60000, 60 * 60000], // （舊）被摧毀後重新出現的時間；現在改為隔天中午刷新
+  respawnHour: 12, // 被擊敗的 NPC 據點在下一個中午 12:00（當地時間）才重新出現
   levelUpMs: [90 * 60000, 150 * 60000], // 升級間隔
   maxLevel: 40,
   exploreEveryMs: [30 * 60000, 55 * 60000], // 外出探索間隔（回來後休息一段時間才再出發）
@@ -25,6 +26,8 @@ export const NPC_CONFIG = {
   raidLevelGap: 20,
   /** 高等級 NPC 的人數：from 級起每 step 級多 1 人 */
   lateGarrison: { from: 28, step: 2 },
+  /** 擊退 NPC 掠奪隊的獎勵：賞金（擊倒人數 × NPC 等級 × bounty）、遺落裝備（首領／每名掠奪者的機率）、參與防守的人獲得升級所需經驗的 xpPct */
+  raidReward: { bounty: 0.5, chiefGear: 0.3, raiderGear: 0.05, xpPct: 0.03 },
   woundHealMs: 20 * 60000, // NPC 傷亡人員每隔多久補回 1 人
   /** 同時有其他 NPC 正在掠奪玩家時，再發動掠奪的機率（文明度達到 concurrentCiv 後才逐漸提高） */
   concurrentChance: 0.05,

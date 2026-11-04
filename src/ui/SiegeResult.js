@@ -1,6 +1,7 @@
 import { escapeHtml } from '../utils/dom.js';
 import { metaOf } from './components.js';
 import { SUPPLIES } from '../config/supplies.js';
+import { RARITIES } from '../config/equipment.js';
 
 const chip = (text, cls = '') => `<span class="sr-chip ${cls}">${text}</span>`;
 const itemChips = (items, sign, cls = '') => Object.entries(items || {})
@@ -138,5 +139,42 @@ export function openSiegeResult(ui, e) {
     title,
     body: `<div class="siege-result ${e.success ? 'ok' : 'fail'}"><small class="muted block">${sub}</small>${siegeDetailHtml(e)}
       <div class="btn-row end"><button class="btn ${e.success ? 'btn-primary' : 'btn-ghost'}" data-action="close">${e.success ? '收下' : '知道了'}</button></div></div>`,
+  });
+}
+
+/** 擊退 NPC 掠奪隊的獎勵：收合（summary）、展開（detail）、結算視窗（省略） */
+const gearChip = (x) => chip(`🎁 ${escapeHtml(RARITIES[x.rarity]?.name || '')} ${escapeHtml(x.name)}${x.kept ? '' : '（空間不足，留在原地）'}`, x.rarity === 'legendary' || x.rarity === 'epic' ? 'gold' : x.rarity === 'rare' ? 'blue' : '');
+export function raidRewardHtml(e, mode = 'popup') {
+  const r = e.reward;
+  if (!r) return '';
+  const hurtText = (x) => (x.severe ? '<span class="neg">重傷（需醫療站治療）</span>' : `<span class="neg">被擊倒，剩 ${x.pct}% 生命</span>`);
+  if (mode === 'summary') {
+    return `<div class="sr-items">${chip(`💰 ${r.coins}`)}${r.gear.length ? chip(`🎁 裝備 ×${r.gear.length}`, 'gold') : ''}${r.xp.length ? chip(`🎖️ ${r.xp.length} 人經驗`) : ''}${r.hurt.length ? chip(`🩹 受傷 ${r.hurt.length}`, 'loss') : ''}</div>`;
+  }
+  if (mode === 'detail') {
+    return `<div class="sr-groups">
+      ${groupRow('🎁 裝備', r.gear.length, r.gear.map((x) => `${escapeHtml(RARITIES[x.rarity]?.name || '')} ${escapeHtml(x.name)}${x.kept ? '' : '（空間不足）'}`).join('・') || '（這次沒有掉落）')}
+      ${groupRow('🎖️ 防守經驗', null, r.xp.map((x) => `${escapeHtml(x.name)} Lv${x.level} <span class="pos">+${x.xp}</span>`).join('・'))}
+      ${groupRow('🩹 傷勢', null, r.hurt.map((x) => `${escapeHtml(x.name)} ${hurtText(x)}`).join('・'))}
+      <small class="muted block">賞金 = 擊倒 ${r.downed} 人 × Lv${r.level} × 0.5・首領 30%、每名掠奪者 5% 機率遺落裝備</small>
+    </div>`;
+  }
+  return `<div class="sr-stats">
+      <div><b>${r.downed}/${r.raiders}</b><small>擊倒</small></div>
+      <div><b>Lv${r.level}</b><small>NPC 等級</small></div>
+      <div><b>${r.xp.length}</b><small>防守人員</small></div>
+    </div>
+    <div class="sr-sec">💰 賞金（擊倒 ${r.downed} 人 × Lv${r.level} × 0.5）</div><div class="sr-items">${chip(`💰 金幣 ×${r.coins}`)}</div>
+    <div class="sr-sec">🎁 掠奪者遺落的裝備（首領 30%、每名掠奪者 5%）</div><div class="sr-items">${r.gear.map(gearChip).join('') || '<span class="muted">（這次沒有掉落）</span>'}</div>
+    ${r.xp.length ? `<div class="sr-sec">🎖️ 防守經驗（參與防守的人，各得升級所需 3%）</div>${r.xp.map((x) => `<div class="sr-row"><span>${escapeHtml(x.name)} Lv${x.level}</span><span class="pos">+${x.xp} 經驗</span></div>`).join('')}` : ''}
+    ${r.hurt.length ? `<div class="sr-sec">🩹 傷勢</div>${r.hurt.map((x) => `<div class="sr-row"><span>${escapeHtml(x.name)}</span>${hurtText(x)}</div>`).join('')}` : ''}`;
+}
+
+export function openRaidResult(ui, e) {
+  if (!e?.reward) return;
+  ui.modal.open({
+    title: `🛡️ 擊退了 NPC「${e.reward.npc}」的掠奪隊！`,
+    body: `<div class="siege-result ok"><small class="muted block">「${escapeHtml(e.baseName)}」・NPC Lv${e.reward.level}・掠奪隊 ${e.reward.raiders} 人</small>${raidRewardHtml(e)}
+      <div class="btn-row end"><button class="btn btn-primary" data-action="close">收下</button></div></div>`,
   });
 }
