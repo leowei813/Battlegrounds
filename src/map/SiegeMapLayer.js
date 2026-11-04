@@ -57,7 +57,7 @@ export const SiegeMapLayer = L.Layer.extend({
 
   reset() {
     const size = this.map.getSize();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(2, window.devicePixelRatio || 1); // 手機 3 倍解析度改用 2 倍，繪圖記憶體減半以上
     this.canvas.width = size.x * dpr;
     this.canvas.height = size.y * dpr;
     this.canvas.style.width = `${size.x}px`;
@@ -71,13 +71,24 @@ export const SiegeMapLayer = L.Layer.extend({
     if (this.running) return;
     this.running = true;
     this.lastT = performance.now();
+    // 手機效能：有屍潮或特效時最多每秒 30 張；沒有動態時每秒只重畫 1 次（圍牆耐久等）
     const loop = (t) => {
       if (!this.running) return;
-      this.draw(Math.min(0.1, (t - this.lastT) / 1000));
-      this.lastT = t;
+      const gap = t - this.lastT;
+      if (gap >= (this.busy() ? 33 : 1000)) {
+        this.draw(Math.min(0.1, gap / 1000));
+        this.lastT = t;
+      }
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
+  },
+
+  /** 是否有需要動畫的內容：屍潮殭屍、傷害特效或突破閃光 */
+  busy() {
+    if (this.fx.length || this.pulses.length) return true;
+    const { state, siege } = this.game;
+    return state.bases.some((b) => siege.of(b.id).zombies.length > 0);
   },
 
   stop() {
