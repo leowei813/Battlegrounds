@@ -8,7 +8,7 @@ import {
 } from '../components.js';
 import { VEHICLES } from '../../config/vehicles.js';
 import {
-  SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, AMMO_RECIPES, AMMO_FOR,
+  SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, AMMO_RECIPES, MED_RECIPES, AMMO_FOR, AMMO_RECOVER,
 } from '../../config/supplies.js';
 import { STACK_MAX } from '../../config/equipment.js';
 
@@ -30,7 +30,7 @@ export class InventoryPanel {
   render() {
     const g = this.game;
     const eq = g.equipment;
-    const view = ['vehicles', 'ammo', 'blueprints'].includes(this.view) ? this.view : 'craft';
+    const view = ['vehicles', 'ammo', 'meds', 'blueprints'].includes(this.view) ? this.view : 'craft';
     if (!ITEM_TYPES[this.craftCat]) this.craftCat = Object.keys(ITEM_TYPES)[0];
     const bpN = g.state.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model]).length;
     const count = (type) => Object.values(ITEM_MODELS).filter((md) => md.type === type).length;
@@ -41,17 +41,18 @@ export class InventoryPanel {
     };
     const nav = `<nav class="sh-nav craft-nav" aria-label="製作分類">
       <div class="sh-base"><b>🛠️ 工作台 Lv ${eq.workbench()}</b><small class="muted">製作技術 Lv ${eq.craftTech()}・倉庫 ${eq.storeUsed()}/${eq.storeCap()}</small></div>
-      <div class="craft-kinds">${[['craft', '裝備'], ['ammo', '彈藥'], ['vehicles', '載具'], ['blueprints', `設計圖${bpN ? ` ${bpN}` : ''}`]].map(([v, l]) => `<button class="sv-tab ${view === v ? 'active' : ''}" data-action="view" data-v="${v}">${l}</button>`).join('')}</div>
+      <div class="craft-kinds">${[['craft', '裝備'], ['ammo', '彈藥'], ['meds', '藥品'], ['vehicles', '載具'], ['blueprints', `設計圖${bpN ? ` ${bpN}` : ''}`]].map(([v, l]) => `<button class="sv-tab ${view === v ? 'active' : ''}" data-action="view" data-v="${v}">${l}</button>`).join('')}</div>
       <div class="sh-nav-list craft-cats ${view === 'craft' ? '' : 'desk-only'}">
         <small class="muted nav-label2">裝備</small>
         ${Object.entries(ITEM_TYPES).map(([id, t]) => item('craft', id, `${t.icon} ${t.name}`, count(id))).join('')}
         <i class="sh-nav-sep"></i>
         ${item('ammo', null, '🎯 彈藥與箭矢', Object.keys(AMMO_RECIPES).length)}
+        ${item('meds', null, '💊 藥品', Object.keys(MED_RECIPES).length)}
         ${item('vehicles', null, '🚗 載具', Object.values(VEHICLES).filter((d) => d.craft).length)}
         ${item('blueprints', null, '📜 設計圖', bpN || '')}
       </div>
     </nav>`;
-    const body = view === 'craft' ? this.renderCraft() : view === 'ammo' ? this.renderAmmoCraft() : view === 'vehicles' ? this.renderVehicleCraft() : this.renderBlueprints();
+    const body = view === 'craft' ? this.renderCraft() : view === 'ammo' ? this.renderAmmoCraft() : view === 'meds' ? this.renderMedCraft() : view === 'vehicles' ? this.renderVehicleCraft() : this.renderBlueprints();
     return `<div class="sh-layout craft-layout">${nav}<div class="sh-main">${body}</div></div>`;
   }
 
@@ -97,30 +98,71 @@ export class InventoryPanel {
   }
 
   /** 彈藥與箭矢製作：槍械需要彈藥、弓弩需要箭矢 */
-  renderAmmoCraft() {
+  /**
+   * 可批量製作的卡片（彈藥、藥品）：選批數、材料依批數相乘、不足時說明最多可做幾批。
+   * @param {{effect:string, unit:string, tag?:string, highlight?:string[]}} o
+   */
+  batchCard(key, rc, o) {
     const g = this.game;
     const eq = g.equipment;
+    const sp = SUPPLIES[key];
+    const check = eq.canCraftAmmo(key);
+    const n = eq.ammoBatch(key);
+    const cost = eq.ammoCost(key, n);
+    const { max, limit } = eq.ammoMaxBatches(key);
+    const st = !check.ok ? 'lock' : n <= max ? 'ok' : 'lack';
+    if (!this.passFilter(st)) return '';
+    const qtyRow = check.ok ? `<div class="ammo-qty"><small class="muted">批數</small>
+        <span class="ammo-step">${btn('−', 'ammoBatch', { key, n: n - 1 }, { disabled: n <= 1 })}<b>${n}</b>${btn('＋', 'ammoBatch', { key, n: n + 1 }, { disabled: n >= eq.constructor.AMMO_BATCH_MAX })}</span>
+        ${[1, 5, 10].map((v) => `<button class="chip ${n === v ? 'active' : ''}" data-action="ammoBatch" data-key="${key}" data-n="${v}">×${v}</button>`).join('')}
+        <button class="chip ${n === max && max > 1 ? 'active' : ''}" data-action="ammoBatch" data-key="${key}" data-n="${Math.max(1, max)}" ${max < 1 ? 'disabled' : ''}>最多 ×${max}</button></div>` : '';
+    const lackName = limit === 'room' ? '倉庫空間' : metaOf(limit)?.name || '材料';
+    const note = st === 'ok' ? `<small class="pos">一次製作 <b>${rc.batch * n}</b> ${o.unit}${n > 1 ? `（${n} 批）` : ''}</small>`
+      : st === 'lack' ? `<small class="neg">${lackName}不足${max > 0 ? `：最多可做 ${max} 批` : ''}</small>` : '<span></span>';
+    const label = n > 1 ? `製作 ×${n}` : '製作';
+    return `<div class="fac-card2 ${st === 'lock' ? 'unbuilt' : ''}">
+      <div class="fac2-head"><span class="fac-icon">${sp.icon}</span><b>${sp.name} ×${rc.batch}／批</b>${o.tag || ''}<span class="muted">倉庫 ${g.state.supplies?.[key] || 0}</span></div>
+      <div class="fac2-effect"><small class="muted">${o.effect}</small></div>
+      ${qtyRow}
+      <div class="fac2-cost"><small class="muted">所需材料（擁有/需要${n > 1 ? ` ×${n} 批` : ''}）</small><div class="needs">${needHtml(g.state, cost, o.highlight || [])}</div>
+        <div class="row-between">${note}${this.craftBtn(st, label, 'craftAmmo', { key }, check.reason)}</div></div>
+    </div>`;
+  }
+
+  /** 彈藥與箭矢製作：槍械需要彈藥、弓弩需要箭矢 */
+  renderAmmoCraft() {
     const users = (key) => Object.entries(AMMO_FOR).filter(([, a]) => a.ammo === key).map(([t]) => ITEM_TYPES[t].name).join('、');
-    const cards = Object.entries(AMMO_RECIPES).map(([key, rc]) => {
-      const sp = SUPPLIES[key];
-      const check = eq.canCraftAmmo(key);
-      const st = check.ok ? 'ok' : affordable(g.state, rc.cost) ? 'lock' : 'lack';
-      if (!this.passFilter(st)) return '';
-      return `<div class="fac-card2 ${st === 'lock' ? 'unbuilt' : ''}">
-        <div class="fac2-head"><span class="fac-icon">${sp.icon}</span><b>${sp.name} ×${rc.batch}</b><span class="muted">倉庫 ${g.state.supplies?.[key] || 0}</span></div>
-        <div class="fac2-effect"><small class="muted">用於：${users(key)}・${rc.bench ? `工作台 Lv${rc.bench}` : '不需工作台'}</small></div>
-        <div class="fac2-cost"><small class="muted">所需材料（擁有/需要）</small><div class="needs">${needHtml(g.state, rc.cost)}</div>
-          <div class="row-between"><span></span>${this.craftBtn(st, '製作', 'craftAmmo', { key }, check.reason)}</div></div>
-      </div>`;
-    }).join('');
+    const cards = Object.entries(AMMO_RECIPES).map(([key, rc]) => this.batchCard(key, rc, {
+      effect: `${key === 'casing' ? '子彈的主要材料（戰鬥後也會回收）' : `用於：${users(key)}`}・${rc.bench ? `工作台 Lv${rc.bench}` : '不需工作台'}`,
+      unit: key === 'casing' ? '個' : '發',
+    })).join('');
     const per = Object.entries(AMMO_FOR).map(([t, a]) => `${ITEM_TYPES[t].name} ${a.perFight}`).join('、');
     return `<div class="sh-fac"><div class="sh-fac-main">
       <h3 class="sh-title">🎯 彈藥與箭矢</h3>
-      <details class="civ-more"><summary>說明</summary><p class="muted">槍械需要彈藥、弓弩需要箭矢；沒有彈藥時改用近戰武器。每場戰鬥消耗：${per}。也能在警察局、軍事基地、商店探索時找到。</p></details>
+      <details class="civ-more"><summary>說明</summary><p class="muted">槍械需要彈藥、弓弩需要箭矢；沒有彈藥時改用近戰武器。每場戰鬥消耗：${per}。子彈以彈殼製作：戰鬥勝利與屍潮防守後會回收約 ${Math.round(AMMO_RECOVER * 100)}% 的彈殼（箭矢直接回收），也能用廢鐵壓製，或在警察局、軍事基地、回收站找到。</p></details>
       ${this.filterChips()}
       <div class="fac-grid">${cards || '<p class="muted">沒有符合的項目。</p>'}</div>
     </div>${this.craftSide()}</div>`;
   }
+
+  /** 藥品製作：依診療室等級解鎖 */
+  renderMedCraft() {
+    const eq = this.game.equipment;
+    const cards = Object.entries(MED_RECIPES).map(([key, rc]) => this.batchCard(key, rc, {
+      effect: `診療室 Lv${rc.clinic}`,
+      unit: '個',
+      tag: `<span class="heal-tag">回復 ${Math.round((SUPPLIES[key].heal || 0) * 100)}%</span>`,
+      highlight: Object.keys(rc.cost).filter((k) => SUPPLIES[k]?.cat === 'med'),
+    })).join('');
+    return `<div class="sh-fac"><div class="sh-fac-main">
+      <h3 class="sh-title">💊 藥品</h3>
+      <small class="muted block">🩺 診療室 Lv${eq.clinicLevel()}・等級越高可製作的藥品越好</small>
+      <details class="civ-more"><summary>說明</summary><p class="muted">依診療室等級解鎖：Lv1 紗布、繃帶／Lv3 維他命／Lv5 止痛藥／Lv7 抗生素／Lv9 小型醫藥箱／Lv12 中型醫藥箱。大型醫藥箱不能製作，只能探索取得。藍色標示的是當作材料的藥品，投入的回復量不超過做出來的 6 成，製作一定划算。</p></details>
+      ${this.filterChips()}
+      <div class="fac-grid">${cards || '<p class="muted">沒有符合的項目。</p>'}</div>
+    </div>${this.craftSide()}</div>`;
+  }
+
 
   /** 倉庫裝備（從避難所頁開啟） */
   openStorage() {
@@ -464,7 +506,8 @@ export class InventoryPanel {
       case 'lock': g.equipment.toggleLock(data.id); break;
       case 'dismantle': this.ui.result(g.equipment.dismantle(data.id)); break;
       case 'craft': this.showCraftResult(g.equipment.craft(data.type)); break;
-      case 'craftAmmo': this.ui.result(g.equipment.craftAmmo(data.key)); break;
+      case 'craftAmmo': this.ui.result(g.equipment.craftAmmo(data.key, g.equipment.ammoBatch(data.key))); break;
+      case 'ammoBatch': g.equipment.setAmmoBatch(data.key, data.n); g.requestSave?.(); break;
       case 'craftBp': this.showCraftResult(g.equipment.craft(data.type, data.id)); break;
       case 'equipTo': this.pickSurvivor(data.id); break;
       case 'toStore': this.ui.result(g.equipment.moveToStore(data.id)); break;

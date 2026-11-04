@@ -1179,13 +1179,15 @@ export class ExplorationSystem {
         cp.events.push(`🧟 ${tag}遭遇 ${n} 隻殭屍`);
       }
       const fs = this.game.shelter.primary().facilities.watchtower.level * 0.04;
-      const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs, title: `🔍 ${ctx.poi.name}：${enemies[0]?.name || '殭屍'}${enemies.length > 1 ? ` ×${enemies.length}` : ''}` });
+      const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs, recoverTo: cp.gained, title: `🔍 ${ctx.poi.name}：${enemies[0]?.name || '殭屍'}${enemies.length > 1 ? ` ×${enemies.length}` : ''}` });
       this.game.combat.applyOutcome(members, result, at);
       if (result.refills) cp.events.push(`💊 ${result.refills.join('；')}`);
       cp.kills += result.kills.length;
       cp.xp += result.xp;
       if (result.victory) {
         cp.events.push(`  ↳ 勝利！擊殺 ${result.kills.length}，獲得 ${Math.round(result.coins * COIN_GAIN_MUL)} 金錢`);
+        const rec = Object.entries(result.recovered || {}).map(([k, v]) => `${SUPPLIES[k].icon} ${k === 'arrow' ? '回收箭矢' : `回收${SUPPLIES[k].name}`} +${v}`);
+        if (rec.length) cp.events.push(`  ↳ ${rec.join('、')}`);
         if (isElite) {
           const item = this.game.equipment.generate({ level: level + 2, bias: pt.itemBias, boost: 0.5 + zone.rarityBoost, minRarity: 'uncommon' });
           cp.items.push(item);

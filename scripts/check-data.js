@@ -2604,7 +2604,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ga.state.supplies.ammo9 = 300;
   assert(ga.survivors.loadSlot(lead.id, 'ammo', 'ammo9').ok && lead.loadout.ammo.qty === 100, '彈藥欄最多 100');
   const u1 = ga.combat.unitFromSurvivor(lead);
-  assert(u1.weapon === 'ranged' && lead.loadout.ammo.qty === 94, '有彈藥時優先使用遠程武器並消耗彈藥欄');
+  assert(u1.weapon === 'ranged' && lead.loadout.ammo.qty === 100 - (await import('../src/config/supplies.js')).AMMO_FOR.pistol.perFight, '有彈藥時優先使用遠程武器並消耗彈藥欄');
   lead.loadout.ammo = null;
   delete ga.state.supplies.ammo9;
   const u2 = ga.combat.unitFromSurvivor(lead);
@@ -3801,6 +3801,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(p2 && p2.cls === 'siege' && p2.title.includes('守住了') && p2.lines.join(' ').includes('5波'), '屍潮防守紀錄可分享成卡片');
   const raid = { id: 'df_y', success: true, attacker: 'NPC 鐵拳幫', kills: 4, reward: { coins: 76, gear: [{}], xp: [], hurt: [] } };
   assert(parseShare(shareDefenseText(raid))?.title.includes('擊退NPC 鐵拳幫'), 'NPC 掠奪防守紀錄可分享');
+  const lostSiege = { id: 'df_y', success: false, attacker: '屍潮', baseName: '倒塌的工廠 57號', kills: 8, wallLost: 2083, damaged: ['尖刺陷阱'], siege: { wave: 1, maxWaves: 4, lossPct: 55, materials: { screw: 213 } } };
+  const p3 = parseShare(shareDefenseText(lostSiege, '慘'));
+  assert(p3 && p3.lines.join(' ').includes('倒塌的工廠') && p3.lines.join(' ').includes('資源−55%') && p3.lines.join(' ').includes('材料−213') && p3.lines.join(' ').includes('設施損毀1') && p3.lines.join(' ').includes('圍牆−2083'), '防守失敗的分享包含據點、圍牆與損失');
   assert(parseShare('大家好｜我是新手') === null, '一般訊息不會被當成分享卡片');
   assert(!isShared(gs, 'rp_x'), '尚未分享');
   markShared(gs, 'rp_x');
@@ -3868,6 +3871,95 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const next = ex.list.find((e) => e.poiId === near[1].id);
   assert(!again && next && !ex.hasStock(near[0]), '搜完全部帶走：不會再搜索同一個地點，改前往佇列下一站');
   assert(!ga.state.reports[0].events.some((t) => t.includes('直接再搜索一次')), '報告不會寫「還有物資，直接再搜索一次」');
+}
+
+// ---- 89. 彈藥批量製作：材料依批數相乘、最多批數依材料與倉庫空間、批數會記住 ----
+{
+  const gb = Game.newGame({ playerName: 'A89', classId: 'warrior', lat: 25, lon: 121 });
+  const eq = gb.equipment;
+  const sup = await import('../src/config/supplies.js');
+  const rc = sup.AMMO_RECIPES.arrow;
+  const setMat = (m) => Object.entries(rc.cost).forEach(([k, v]) => { if (k in gb.state.resources) gb.state.resources[k] = v * m; else gb.state.supplies[k] = v * m; });
+  (gb.state.survivors || []).forEach((s) => { s.bag = {}; });
+  setMat(4);
+  gb.state.supplies.arrow = 0;
+  assert(eq.ammoMaxBatches('arrow').max === 4, '最多批數依材料計算');
+  assert(eq.ammoBatch('arrow') === 1, '批數預設 ×1');
+  eq.setAmmoBatch('arrow', 5);
+  assert(eq.ammoBatch('arrow') === 5 && gb.state.settings.ammoBatch.arrow === 5, '批數記在存檔設定');
+  const over = eq.craftAmmo('arrow', 5);
+  assert(!over.ok && !gb.state.supplies.arrow, '材料不足時不會製作');
+  const r = eq.craftAmmo('arrow', 3);
+  assert(r.ok && gb.state.supplies.arrow === rc.batch * 3 && r.msg.includes('3 批'), '一次製作 3 批');
+  assert(eq.ammoMaxBatches('arrow').max === 1, '扣除 3 批材料後剩 1 批');
+  const room0 = eq.supplyRoom;
+  eq.supplyRoom = () => rc.batch * 1;
+  setMat(10);
+  const mb = eq.ammoMaxBatches('arrow');
+  assert(mb.max === 1 && mb.limit === 'room', '倉庫空間限制最多批數');
+  assert(!eq.craftAmmo('arrow', 2).ok, '倉庫放不下時不能製作');
+  eq.supplyRoom = room0;
+}
+
+// ---- 90. 彈殼：戰鬥勝利後回收、子彈配方用彈殼、彈殼不會出現在一般零件 ----
+{
+  const sup = await import('../src/config/supplies.js');
+  const { pickSupply } = await import('../src/systems/LootStock.js');
+  const gc = Game.newGame({ playerName: 'A90', classId: 'warrior', lat: 25, lon: 121 });
+  const lead = gc.survivors.leader();
+  const gun = gc.equipment.generate({ level: 5, model: 'm1911', rarity: 'common' });
+  gc.equipment.addItem(gun, 't');
+  gc.equipment.equip(lead.id, gun.id);
+  gc.survivors.loadout(lead).ammo = { key: 'ammo9', qty: 100 };
+  const pool = {};
+  gc.combat.fightUse = null;
+  const sim = gc.combat.simulate.bind(gc.combat);
+  let rec = 0;
+  for (let i = 0; i < 20; i += 1) {
+    gc.survivors.loadout(lead).ammo = { key: 'ammo9', qty: 100 };
+    const enemies = [gc.combat.createEnemy('walker', 1, false)];
+    const r = sim([lead], enemies, { recoverTo: pool, record: false });
+    if (r.victory) rec += 1;
+    gc.survivors.setHp(lead, gc.survivors.maxHp(lead));
+    lead.severe = false;
+  }
+  const per = sup.AMMO_FOR.pistol.perFight * sup.AMMO_RECOVER;
+  assert(rec > 0 && pool.casing > 0 && pool.casing <= Math.ceil(per) * rec, `勝利後回收彈殼（${rec} 場勝利，回收 ${pool.casing}）`);
+  assert(Object.values(sup.AMMO_RECIPES).filter((r) => r.batch >= 30).length === 3 && sup.AMMO_RECIPES.ammo9.cost.casing > 0, '子彈每批產量提高並使用彈殼');
+  assert(!sup.AMMO_RECIPES.ammo556.cost.firingPin && sup.AMMO_RECIPES.ammo308.cost.firingPin, '只有 .308 需要擊針');
+  let seen = false;
+  for (let i = 0; i < 3000; i += 1) if (pickSupply('part', Math.random, 0) === 'casing') seen = true;
+  assert(!seen && sup.materialize({ metal: 50 }, { tier: 1, tags: ['struct', 'mech', 'elec', 'gun'] }).casing === undefined, '彈殼不會出現在一般零件與建造成本');
+  const sg = gc.siege.of ? gc.siege.of(gc.state.primaryBaseId || 'x') : null;
+  if (sg) {
+    sg.nightRecover = { casing: 10.0, arrow: 3.0 };
+    const got = sg.collectRecovered();
+    assert(got.casing === 10 && got.arrow === 3 && gc.state.supplies.casing >= 10, '屍潮防守射擊後回收的彈殼放回倉庫');
+  }
+}
+
+// ---- 91. 藥品製作：依診療室等級解鎖、前一階藥品投入不超過產出的 6 成 ----
+{
+  const sup = await import('../src/config/supplies.js');
+  const gm = Game.newGame({ playerName: 'A91', classId: 'warrior', lat: 25, lon: 121 });
+  const eq = gm.equipment;
+  let lv = 0;
+  eq.clinicLevel = () => lv;
+  assert(!eq.canCraftAmmo('gauze').ok && eq.canCraftAmmo('gauze').reason.includes('診療室'), '沒有診療室不能製作藥品');
+  lv = 1;
+  assert(eq.canCraftAmmo('gauze').ok && !eq.canCraftAmmo('vitamin').ok, '診療室 Lv1 可做紗布，維他命需要更高等級');
+  (gm.state.survivors || []).forEach((s) => { s.bag = {}; });
+  gm.state.supplies.cotton = 8;
+  const g0 = gm.state.supplies.gauze || 0;
+  const r = eq.craftAmmo('gauze', 4);
+  assert(r.ok && gm.state.supplies.gauze === g0 + 20 && !gm.state.supplies.cotton, '藥品可以批量製作並扣除材料');
+  assert(!sup.MED_RECIPES.largeKit, '大型醫藥箱不能製作');
+  const ok = Object.entries(sup.MED_RECIPES).every(([k, rc]) => {
+    const meds = Object.entries(rc.cost).filter(([m]) => sup.SUPPLIES[m]?.cat === 'med');
+    const input = meds.reduce((a, [m, v]) => a + sup.SUPPLIES[m].heal * v, 0);
+    return input <= sup.SUPPLIES[k].heal * rc.batch * 0.6;
+  });
+  assert(ok, '每種藥品配方都划算：投入藥品的回復量不超過產出 6 成');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

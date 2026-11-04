@@ -5,7 +5,9 @@ import {
   SIEGE_SCALING, BREACH_LOSS, BASE_SIZES, SIEGE_REWARD, SIEGE_PENALTY,
 } from '../config/civilization.js';
 import { zoneAt } from '../config/zones.js';
-import { SUPPLIES, AMMO_FOR, ammoPerShot, suppliesOf } from '../config/supplies.js';
+import {
+  SUPPLIES, AMMO_FOR, ammoPerShot, suppliesOf, AMMO_RECOVER, recoverKeyOf, rollRecover,
+} from '../config/supplies.js';
 import { ITEM_MODELS } from '../config/equipment.js';
 import { xpToNext } from '../config/survivors.js';
 import { FACILITIES } from '../config/facilities.js';
@@ -58,6 +60,7 @@ export class BaseSiege {
     this.nextId = 1;
     this.wasActive = false;
     this.nightKills = 0;
+    this.nightRecover = {};
     this.nightWallStart = 0;
     this.breachedTonight = false;
     this.gateLogged = false;
@@ -101,10 +104,18 @@ export class BaseSiege {
     this.gateLogged = false;
   }
 
+  /** 今晚射擊後回收的彈殼與箭矢：放回物品倉庫，回傳實際放入的數量 */
+  collectRecovered() {
+    const got = this.game.equipment.addSupplies(rollRecover(this.nightRecover || {}));
+    this.nightRecover = {};
+    return Object.fromEntries(Object.entries(got || {}).filter(([, v]) => v > 0));
+  }
+
   /** 天亮：今晚有屍潮來襲且沒有被突破 → 記錄防禦成功 */
   endNight() {
     if (this.wave > 0 && !this.breachedTonight && this.base) {
       const reward = this.dawnReward();
+      reward.recovered = this.collectRecovered();
       const entry = this.game.shelter.recordDefense({
         base: this.base, attacker: '屍潮', success: true, waves: this.wave, kills: this.nightKills,
         wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)), note: this.assistNote('ok'),
@@ -644,6 +655,9 @@ export class BaseSiege {
     const need = weapon && AMMO_FOR[weapon.type];
     if (need && svs.ammoAvailable(sv, need.ammo) >= ammoPerShot(weapon.type)) {
       svs.useAmmo(sv, need.ammo, ammoPerShot(weapon.type));
+      const rk = recoverKeyOf(need.ammo);
+      this.nightRecover = this.nightRecover || {};
+      this.nightRecover[rk] = (this.nightRecover[rk] || 0) + ammoPerShot(weapon.type) * AMMO_RECOVER;
       delete sv.noAmmo;
       return { value: svs.stats(sv, 'ranged').atk, ranged: true };
     }
@@ -761,13 +775,14 @@ export class BaseSiege {
     const damaged = this.damageBuildings(base, P.defenseBase + P.defenseSpan * (1 - progress));
     const materials = this.loseMaterials();
     const injuries = this.injureGuards();
+    const recovered = this.collectRecovered();
     this.breachedTonight = true;
     const entry = sh.recordDefense({
       base, attacker: '屍潮', success: false, lost, damaged, kills: this.nightKills, waves: Math.max(0, this.wave - 1),
       injured: injuries.filter((x) => x.severe).map((x) => x.name),
       wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note: [note, this.assistNote('breached')].filter(Boolean).join('。'),
       siege: {
-        lossPct: pct, wave: this.wave, maxWaves: this.maxWaves(), materials, injuries, boss: this.nightBoss,
+        lossPct: pct, wave: this.wave, maxWaves: this.maxWaves(), materials, injuries, boss: this.nightBoss, recovered,
       },
     });
     const dmgText = damaged.length ? `，${damaged.length} 棟建築損毀` : '';

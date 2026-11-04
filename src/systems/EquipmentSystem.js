@@ -7,8 +7,10 @@ import {
   withSeed,
   weightedPick, pick, randFloat, uid, clamp, chance,
 } from '../utils/math.js';
-import { canAfford, payCost, grant } from './costUtils.js';
-import { SUPPLIES, AMMO_RECIPES, AMMO_FOR } from '../config/supplies.js';
+import { canAfford, payCost, grant, amountOf } from './costUtils.js';
+import {
+  SUPPLIES, AMMO_RECIPES, MED_RECIPES, AMMO_FOR,
+} from '../config/supplies.js';
 
 /** 防護裝備依強度使用的板材與布料（索引為型號強度 1～10） */
 const PLATE = [null, null, null, 'ironWire', 'ironPlate', 'ironPlate', 'steelPlate', 'steelPlate', 'alloyPlate', 'alloyPlate', 'titanium'];
@@ -788,27 +790,82 @@ export class EquipmentSystem {
     return { id: uid('bp'), model: this.pickModel(type, level, 1), rarity };
   }
 
-  // ---- 彈藥製作 ----
+  // ---- 彈藥與藥品製作 ----
+
+  /** 彈藥（工作台）或藥品（診療室）的配方 */
+  recipeOf(key) {
+    return AMMO_RECIPES[key] || MED_RECIPES[key] || null;
+  }
+
+  /** 診療室等級（藥品製作） */
+  clinicLevel() {
+    return this.game.shelter.maxLevel('clinic');
+  }
 
   /** @returns {{ok:boolean, reason?:string}} */
   canCraftAmmo(key) {
-    const rc = AMMO_RECIPES[key];
+    const rc = this.recipeOf(key);
     if (!rc) return { ok: false, reason: '無法製作' };
+    if (rc.clinic && this.clinicLevel() < rc.clinic) return { ok: false, reason: this.clinicLevel() < 1 ? '需要建造診療室' : `需要診療室 Lv${rc.clinic}` };
     if (rc.bench > 0 && this.workbench() < rc.bench) return { ok: false, reason: this.workbench() < 1 ? '需要建造工作台' : `需要工作台 Lv${rc.bench}` };
     if (rc.gun && this.game.research.level('c_gun') < rc.gun) return { ok: false, reason: `需研究「槍械製造」Lv${rc.gun}` };
     return { ok: true };
   }
 
-  /** 製作彈藥或箭矢（一次一批） */
-  craftAmmo(key) {
+  /** 一次批量製作的上限 */
+  static AMMO_BATCH_MAX = 99;
+
+  /** 依批數相乘後的材料 */
+  ammoCost(key, batches = 1) {
+    const rc = this.recipeOf(key);
+    return Object.fromEntries(Object.entries(rc?.cost || {}).map(([k, v]) => [k, v * batches]));
+  }
+
+  /**
+   * 依材料與倉庫空間，最多可以做幾批。
+   * @returns {{max:number, limit:string}} limit：限制最多批數的項目（材料 key 或 'room'）
+   */
+  ammoMaxBatches(key) {
+    const rc = this.recipeOf(key);
+    if (!rc) return { max: 0, limit: '' };
+    let max = EquipmentSystem.AMMO_BATCH_MAX;
+    let limit = '';
+    Object.entries(rc.cost).forEach(([k, v]) => {
+      const n = Math.floor(amountOf(this.game.state, k) / v);
+      if (n < max) { max = n; limit = k; }
+    });
+    const room = Math.floor(this.supplyRoom(key) / rc.batch);
+    if (room < max) { max = room; limit = 'room'; }
+    return { max: Math.max(0, max), limit };
+  }
+
+  /** 記住的批數（每種彈藥各自記，預設 1） */
+  ammoBatch(key) {
+    const n = Math.floor(this.game.state.settings?.ammoBatch?.[key] || 1);
+    return Math.min(EquipmentSystem.AMMO_BATCH_MAX, Math.max(1, n));
+  }
+
+  setAmmoBatch(key, n) {
+    if (!this.recipeOf(key)) return;
+    const st = this.game.state;
+    st.settings = st.settings || {};
+    st.settings.ammoBatch = st.settings.ammoBatch || {};
+    st.settings.ammoBatch[key] = Math.min(EquipmentSystem.AMMO_BATCH_MAX, Math.max(1, Math.floor(Number(n) || 1)));
+  }
+
+  /** 製作彈藥、箭矢或藥品（可一次製作多批，立即完成） */
+  craftAmmo(key, batches = 1) {
     const check = this.canCraftAmmo(key);
     if (!check.ok) return check;
-    const rc = AMMO_RECIPES[key];
-    if (this.supplyRoom(key) < rc.batch) return { ok: false, reason: `物品倉庫空間不足（${this.storeUsed()}/${this.storeCap()} 格）` };
-    if (!payCost(this.game.state, rc.cost)) return { ok: false, reason: '材料不足' };
-    this.addSupplies({ [key]: rc.batch });
-    this.game.state.stats.ammoCrafted = (this.game.state.stats.ammoCrafted || 0) + 1;
-    return { ok: true, msg: `製作完成：${SUPPLIES[key].name} ×${rc.batch}` };
+    const rc = this.recipeOf(key);
+    const n = Math.min(EquipmentSystem.AMMO_BATCH_MAX, Math.max(1, Math.floor(Number(batches) || 1)));
+    const qty = rc.batch * n;
+    if (this.supplyRoom(key) < qty) return { ok: false, reason: `物品倉庫空間不足（${this.storeUsed()}/${this.storeCap()} 格）` };
+    if (!payCost(this.game.state, this.ammoCost(key, n))) return { ok: false, reason: '材料不足' };
+    this.addSupplies({ [key]: qty });
+    const stat = MED_RECIPES[key] ? 'medCrafted' : 'ammoCrafted';
+    this.game.state.stats[stat] = (this.game.state.stats[stat] || 0) + n;
+    return { ok: true, msg: `製作完成：${SUPPLIES[key].name} ×${qty}${n > 1 ? `（${n} 批）` : ''}` };
   }
 
   canAffordCraft(modelId, bp) {

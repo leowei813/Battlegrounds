@@ -61,6 +61,8 @@ export class MapPanel {
   }
 
   renderMap(force = false) {
+    // 手機聊天佔滿畫面時地圖被隱藏：不重畫，關閉聊天時再一次重畫
+    if (this.ui.mapCovered) return;
     if (this.ui.tab !== 'map' && !force) return;
     this.lastRender = Date.now();
     this.service.render(this.game.state);

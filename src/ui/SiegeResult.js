@@ -24,6 +24,11 @@ const plainList = (items, sign = '') => Object.entries(items || {}).map(([k, v])
 const groupRow = (label, count, list) => (list ? `<div class="sr-group"><div class="sr-group-h"><b>${label}</b>${count != null ? `<span>×${count}</span>` : ''}</div><div class="sr-group-l">${list}</div></div>` : '');
 
 /** 紀錄收合時：只顯示一行總數 */
+/** 回收的彈殼、箭矢 */
+function recoveredChips(s) {
+  return Object.entries(s?.recovered || {}).map(([k, v]) => chip(`${metaOf(k).icon} ${k === 'arrow' ? '回收箭矢' : '回收彈殼'} +${v}`, 'gold')).join('');
+}
+
 function summaryHtml(e) {
   const s = e.siege;
   if (e.success) {
@@ -37,6 +42,7 @@ function summaryHtml(e) {
       s.boss ? chip(`👑 Boss${s.boss.gear ? '・🎁' : ''}`, s.boss.gear ? 'gold' : '') : '',
       (s.blueprints?.length || s.boss?.blueprint) ? chip(`📜 設計圖 ×${(s.blueprints?.length || 0) + (s.boss?.blueprint ? 1 : 0)}`, 'blue') : '',
       s.xp?.length ? chip(`🎖️ ${s.xp.length} 人經驗`) : '',
+      recoveredChips(s),
     ];
     return `<div class="sr-items">${list.join('')}</div>`;
   }
@@ -48,6 +54,7 @@ function summaryHtml(e) {
     sum(s.materials) ? chip(`🧰 材料 −${sum(s.materials)}`, 'loss') : '',
     e.damaged?.length ? chip(`🏚️ 設施損毀 ${e.damaged.length}`, 'loss') : '',
     hurt.length ? chip(`🩹 ${[light ? `輕傷 ${light}` : '', sev ? `重傷 ${sev}` : ''].filter(Boolean).join('・')}`, 'loss') : '',
+    recoveredChips(s),
   ];
   return `<div class="sr-items">${list.join('')}</div>`;
 }
@@ -63,6 +70,7 @@ function recordDetailHtml(e) {
       ${groupRow('🔩 零件', sum(parts), plainList(parts))}
       ${groupRow('🎯 彈藥', sum(ammo), plainList(ammo))}
       ${groupRow('📜 設計圖', null, (s.blueprints || []).map(escapeHtml).join('・'))}
+      ${groupRow('🥉 戰後回收', sum(s.recovered || {}), plainList(s.recovered || {}))}
       ${s.boss ? groupRow(`👑 Boss「${escapeHtml(s.boss.name)}」`, null, boss || '（沒有戰利品）') : ''}
       ${groupRow('🎖️ 駐守經驗', null, (s.xp || []).map((x) => `${escapeHtml(x.name)} Lv${x.level} <span class="pos">+${x.xp}</span>`).join('・'))}
       <small class="muted block">評價依城牆剩餘：≥80% 優秀 ×1.5・50～80% 良好 ×1.2・20～50% 普通 ×1.0・&lt;20% 勉強 ×0.7</small>
@@ -91,6 +99,7 @@ export function siegeDetailHtml(e, compact = false) {
   if (e.success) {
     const gains = [chip(`💰 金幣 ×${s.coins}`), ...itemChips(s.items, '×')];
     (s.blueprints || []).forEach((b) => gains.push(chip(`📜 ${escapeHtml(b)}`, 'blue')));
+    if (s.recovered && Object.keys(s.recovered).length) gains.push(recoveredChips(s));
     if (compact) {
       return `<div class="sr-items">${chip(`評價 ${escapeHtml(s.gradeName)} ×${s.mul}`, `g-${s.grade}`)}${gains.join('')}${bossHtml(s.boss, true)}${s.xp?.length ? chip(`🎖️ ${s.xp.length} 人駐守經驗`) : ''}</div>`;
     }
@@ -122,6 +131,7 @@ export function siegeDetailHtml(e, compact = false) {
     <small class="muted block">資源損失 55%（第 1 波被破）→ 約 26%（撐到最後一波才破），地窖內不受影響</small>
     <div class="sr-sec">📉 資源損失（${s.lossPct}%）</div><div class="sr-items">${lost.join('') || '<span class="muted">（沒有可損失的資源）</span>'}</div>
     ${mats.length ? `<div class="sr-sec">🧰 材料損失（部分零件、布料被奪走或損壞）</div><div class="sr-items">${mats.join('')}</div>` : ''}
+    ${recoveredChips(s) ? `<div class="sr-sec">🥉 戰後回收</div><div class="sr-items">${recoveredChips(s)}</div>` : ''}
     ${e.damaged?.length ? `<div class="sr-sec">🏚️ 防禦設施</div>${e.damaged.map((d) => `<div class="sr-row"><span class="neg">${escapeHtml(d)}</span></div>`).join('')}` : ''}
     ${s.injuries?.length ? `<div class="sr-sec">🩹 駐守人員傷勢</div>${s.injuries.map((x) => `<div class="sr-row"><span>${escapeHtml(x.name)}</span><span class="${x.ok ? 'muted' : 'neg'}">${x.severe ? '重傷（需醫療站治療）' : x.light ? '輕傷（生命 −30%）' : '無傷'}</span></div>`).join('')}` : ''}
     ${bossHtml(s.boss)}`;
