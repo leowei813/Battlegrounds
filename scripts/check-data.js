@@ -588,7 +588,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gn.npcs.update(t0 + 122000);
   const perCell = {};
   gn.npcs.list.forEach((n) => { perCell[n.cell] = (perCell[n.cell] || 0) + 1; });
-  assert(gn.npcs.list.length >= 2 && Object.values(perCell).every((c) => c <= 2) && Object.values(perCell).some((c) => c === 2), `每平方公里約 2 個 NPC 據點（共 ${gn.npcs.list.length} 個、${Object.keys(perCell).length} 格）`);
+  assert(gn.npcs.list.length >= 2 && Object.values(perCell).every((c) => c <= 2), `每格（約 1 平方公里）最多 2 個 NPC 據點（共 ${gn.npcs.list.length} 個、${Object.keys(perCell).length} 格；只出現在可視範圍內，數量依地圖而定）`);
   const npc = gn.npcs.list.find((n) => n.level < 30) || gn.npcs.list[0];
   const lv = npc.level;
   const { SHARED_NPC } = await import('../src/systems/NpcSystem.js');
