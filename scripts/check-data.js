@@ -1513,6 +1513,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     gw.state.map.pois = JSON.parse(JSON.stringify(pois));
     gw.shelter.establish(gw.state.map.pois[0]);
     gw.world = { myId: 'W', identity: () => ({ id: 'W', token: 't' }), provider: { objPut: store.objPut.bind(store), objList: store.objList.bind(store), objListMany: store.objListMany.bind(store) } };
+    setHour(gw, 10); // 白天：避免結算 NPC 抵禦屍群而改到共用資料
     gw.npcs.update(t0);
     assert(gw.npcs.list.length === 0, '連線中尚未讀到共用 NPC 資料前不顯示 NPC');
     await gw.shared.poll();
@@ -1529,6 +1530,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const nA = A.npcs.list.find((n) => A.npcs.fullCount(n) >= 5) || A.npcs.list[0];
   const C = mk('C', 0);
   C.world.others = [{ id: 'X', bases: [{ lat: nA.lat, lon: nA.lon, alert: 120 }], trips: [] }];
+  setHour(C, 10);
   await C.shared.poll();
   C.npcs.update(t0);
   assert(C.npcs.list.length > 0, '同步後會顯示 NPC 據點');
