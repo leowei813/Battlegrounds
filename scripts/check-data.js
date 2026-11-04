@@ -723,7 +723,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const avg = (a2) => a2.reduce((x, y) => x + y, 0) / a2.length;
   assert(avg(lowDrops) < avg(highDrops) && lowDrops.filter((t) => t >= 9).length < 8, `越強的型號越難取得（低等平均 T${avg(lowDrops).toFixed(1)}、高等平均 T${avg(highDrops).toFixed(1)}）`);
   // 製作
-  assert(craftRarityTable(0).legendary === 0 && Math.abs(craftRarityTable(0).epic - 0.1) < 1e-9 && Math.abs(craftRarityTable(15).legendary - 0.2) < 1e-9, '製作初始稀有 0%、罕見 0.1%，滿級稀有 0.2%');
+  assert(craftRarityTable(0).legendary === 0 && Math.abs(craftRarityTable(0).epic - 0.1) < 1e-9 && Math.abs(craftRarityTable(15).legendary - 3) < 1e-9 && Math.abs(craftRarityTable(15).epic - 8) < 1e-9, '製作初始傳奇 0%、罕見 0.1%，滿級傳奇 3%、罕見 8%（與招募相同）');
+  const sumT = Object.values(craftRarityTable(7)).reduce((a, b) => a + b, 0);
+  assert(Math.abs(sumT - 100) < 1e-9 && Math.abs(craftRarityTable(15).common - 33) < 1e-9, '製作品級機率合計 100%');
   const eq = gr.equipment;
   assert(eq.canCraftModel('knuckles').ok && eq.workbench() === 0, '簡易製作不需要工作台');
   assert(!eq.canCraftModel('bat').ok, '其他裝備需要工作台');

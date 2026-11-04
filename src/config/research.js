@@ -137,11 +137,11 @@ export const RESEARCH = {
   v_find: r('vehicles', 2, '車輛搜尋', '探索時找到載具的機率提升', { vehicleFindPct: 0.1 }),
   v_garage: r('vehicles', 2, '車庫擴建', '車庫容量提升（每 2 級 +1）', { garageSlots: 0.5 }),
   // ---- 製作 ----
-  c_tech: r('crafting', 1, '製作技術', '製作出高品級裝備的機率提升（滿級時傳奇 0.2%）', { craftTech: 1 }),
+  c_tech: r('crafting', 1, '製作技術', '製作出高品級裝備的機率提升（滿級時傳奇 3%）', { craftTech: 1 }),
   c_cost: r('crafting', 1, '材料節約', '製作費用降低', { craftCostReduce: 0.03 }),
   c_gun: r('crafting', 2, '槍械製造', '解鎖槍械製作：Lv1 手槍、Lv2 十字弓、Lv3 衝鋒槍、Lv4 散彈槍、Lv5 步槍、Lv7 狙擊槍、Lv9 輕機槍', { gunCraft: 1 }, { req: [['c_tech', 1]] }),
   c_level: r('crafting', 2, '精工', '製作的裝備等級提升', { craftLevelAdd: 1 }, { req: [['c_tech', 2]] }),
-  c_bp: r('crafting', 3, '設計圖解析', '用設計圖製作時有機會提升一個品級', { craftBpBoost: 0.03 }, { req: [['c_tech', 3]] }),
+  c_bp: r('crafting', 3, '設計圖解析', '用設計圖製作時有機會提升一個品級', { craftBpBoost: 0.01 }, { req: [['c_tech', 3]] }),
   c_quality: r('crafting', 3, '品質控管', '製作裝備的素質提升', { craftQualityAdd: 0.03 }, { req: [['c_level', 2]] }),
   // ---- 招募 ----
   r_tech: r('recruitment', 1, '招募技術', '招募到高品級倖存者的機率提升（滿級時傳奇 3%）', { recruitTech: 1 }),

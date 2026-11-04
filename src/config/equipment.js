@@ -258,17 +258,25 @@ export const tierMul = (tier) => 1 + (tier - 1) * 0.25;
 /** 製作型號需要的工作台等級（簡易製作為 0） */
 export const benchFor = (model) => (model.simple ? 0 : model.tier);
 
+/** 製作的品級機率（%）：與倖存者招募相同，研究「製作技術」0 級 → 15 級之間線性提升（滿級傳奇 3%），其餘為一般 */
+export const CRAFT_RARITY_ODDS = {
+  min: { poor: 32, uncommon: 12, rare: 2, epic: 0.1, legendary: 0 },
+  max: { poor: 10, uncommon: 28, rare: 18, epic: 8, legendary: 3 },
+};
+
 /**
- * 製作的品級機率（%）：初始傳奇 0%、罕見 0.1%；研究「製作技術」每級提升，滿級傳奇 0.2%。
- * @param {number} tech 製作技術等級 0～15（換算成 0～10 的進度）
+ * 製作的品級機率（%）。
+ * @param {number} tech 製作技術等級 0～15
  */
 export function craftRarityTable(tech = 0) {
-  const t = (Math.max(0, Math.min(15, tech)) * 10) / 15;
-  const legendary = 0.02 * t;
-  const epic = 0.1 + 0.05 * t;
-  const rare = 4.9 + 0.4 * t;
-  const uncommon = 15 + t;
-  const poor = 40 - 1.5 * t;
+  const t = Math.max(0, Math.min(15, tech)) / 15;
+  const { min, max } = CRAFT_RARITY_ODDS;
+  const at = (k) => min[k] + (max[k] - min[k]) * t;
+  const legendary = at('legendary');
+  const epic = at('epic');
+  const rare = at('rare');
+  const uncommon = at('uncommon');
+  const poor = at('poor');
   return {
     poor, common: 100 - legendary - epic - rare - uncommon - poor, uncommon, rare, epic, legendary,
   };
