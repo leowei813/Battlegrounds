@@ -61,8 +61,6 @@ export class BaseSiege {
     this.nightWallStart = 0;
     this.breachedTonight = false;
     this.gateLogged = false;
-    // 整晚駐守的人（入夜時就在駐守，天亮時仍在駐守）才拿得到駐守經驗
-    this.nightGuards = this.guards().map(({ sv }) => sv.id);
     this.nightBoss = null;
   }
 
@@ -159,9 +157,11 @@ export class BaseSiege {
     const got = g.grant({ coins, ...items }, true);
     const gained = Object.fromEntries(Object.entries(items).map(([k]) => [k, got[k] || 0]).filter(([, v]) => v > 0));
     g.state.inventory.blueprints.push(...blueprints);
-    // 整晚駐守的經驗
-    const stay = new Set(this.nightGuards || []);
-    const xp = guards.filter((sv) => stay.has(sv.id)).map((sv) => {
+    // 駐守經驗：今晚有參與防守（任一波來襲時在駐守或在瞭望塔上），且天亮時仍在防守的人
+    const rec = this.base.nightDefenders;
+    // 沒有今晚的紀錄（例如更新前就已入夜）：以天亮時在防守的人計
+    const joined = new Set(rec?.night === this.nightKey() ? rec.ids : this.defenderIds());
+    const xp = this.defenderIds().filter((id) => joined.has(id)).map((id) => g.survivors.get(id)).filter(Boolean).map((sv) => {
       const amount = Math.round(xpToNext(sv.level) * R.guardXpPct);
       g.survivors.gainXp(sv, amount);
       return { name: sv.name, level: sv.level, xp: amount };
@@ -332,9 +332,24 @@ export class BaseSiege {
     if (isBoss) this.game.toast(`⚠️ Boss「${def.name}」正在接近「${this.base.name}」！`, 'danger');
   }
 
+  /** 目前在防守的人：防禦駐守的人與在瞭望塔上的人 */
+  defenderIds() {
+    const tower = (this.base?.defenses || []).map((d) => this.game.shelter.towerGuard(d)?.id).filter(Boolean);
+    return [...new Set([...this.guards().map(({ sv }) => sv.id), ...tower])];
+  }
+
+  /** 記下今晚參與防守的人（每波來襲時在防守的都算；存在據點上，重新整理也不會遺失） */
+  markDefenders() {
+    if (!this.base) return;
+    const night = this.nightKey();
+    const cur = this.base.nightDefenders?.night === night ? this.base.nightDefenders.ids : [];
+    this.base.nightDefenders = { night, ids: [...new Set([...cur, ...this.defenderIds()])] };
+  }
+
   startWave() {
     this.wave += 1;
     if (this.base) this.base.nightWaves = { night: this.nightKey(), waves: this.wave };
+    this.markDefenders();
     this.waveLeft = this.waveSize();
     this.lull = WAVE_LULL * randFloat(0.8, 1.2);
     this.spawnTimer = 0;
