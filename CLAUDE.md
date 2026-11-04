@@ -26,4 +26,3 @@
 - 所有回覆、文件、更新日誌、PR 都使用繁體中文。
 - 改動後執行 `npm run check` 與 `npm run build`。
 - 存檔格式變更時提高 `SAVE_VERSION` 並在 `SaveManager.migrate()` 加入遷移。
-- 使用者說「以目前玩家」時，指的是這幾位玩家：Leo、阿許、Yaokaching、chise、都是我的錯、都是我的錯（有兩位同名「都是我的錯」）。
