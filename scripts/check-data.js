@@ -3524,6 +3524,75 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!gq.state.research.active && rs.queue.length === 0, '搬遷時取消研究中與排隊中的研究');
 }
 
+// ---- 81. 連續探索：背包有空間就直接前往下一個地點；戰鬥後自動補滿藥品欄 ----
+{
+  const { CHAIN_RETURN_LOAD } = await import('../src/systems/ExplorationSystem.js');
+  const { SUPPLIES } = await import('../src/config/supplies.js');
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const gc = Game.newGame({ playerName: 'C81', classId: 'warrior', lat: 25, lon: 121 });
+  gc.state.map.pois = fillPois([], 25, 121);
+  gc.shelter.establish(gc.state.map.pois[0]);
+  setHour(gc, 10);
+  const ex = gc.exploration;
+  const home = gc.shelter.primary();
+  const near = gc.state.map.pois.filter((p) => !gc.shelter.baseAtPoi(p.id) && !p.npc && haversine(p.lat, p.lon, home.lat, home.lon) < 700).slice(0, 3);
+  const L = gc.survivors.leader();
+  // 這裡測試路線與物資，不讓建築內的戰鬥造成重傷
+  L.level = 60;
+  gc.survivors.becomeSevere = () => {};
+  const r1 = ex.start(near[0].id, [L.id], 1, false, Date.now());
+  assert(r1.ok, '派出探索');
+  const e1 = r1.exp;
+  ex.enqueue(e1.id, near[1].id);
+  // 背包幾乎沒東西：搜索完直接前往下一個地點（不回家）
+  const searchEnd = e1.startAt + e1.travelMs + e1.searchMs;
+  const woodBefore = gc.state.resources.wood;
+  ex.update(searchEnd + 1);
+  const e2 = ex.list.find((e) => e.poiId === near[1].id);
+  assert(e2 && !ex.list.includes(e1), '探索完第一個地點後直接前往佇列中的下一個地點');
+  assert(Math.abs(e2.from.lat - near[0].lat) < 1e-9 && e2.backPath && e2.backMs > 0 && e2.endAt === e2.startAt + e2.travelMs + e2.searchMs + e2.backMs, '從上一個地點出發，回程直接回避難所');
+  assert(gc.state.resources.wood === woodBefore, '途中取得的物資先背著，還沒入庫');
+  const rep1 = gc.state.reports[0];
+  assert(rep1?.carried && rep1.events.some((t) => t.includes('直接前往')), '探索報告寫出背包還有空間、直接前往下一個地點');
+  // 回到避難所：背著的物資一起入庫
+  const carriedNow = { ...(e2.carried?.gained || {}) };
+  ex.update(e2.endAt + 1);
+  assert(!ex.list.includes(e2) && Object.keys(carriedNow).every((k) => !['food', 'wood', 'fuel'].includes(k) || gc.state.resources[k] >= woodBefore * 0 ), '最後一站回到避難所');
+  assert(gc.state.reports[0].events.some((t) => t.includes('背包物資入庫')), '回到避難所時背著的物資入庫');
+  // 負重達 90%：回家卸貨（探索途中可能受傷，先治好）
+  const heal = () => { L.severe = false; L.hp = null; L.status = 'idle'; };
+  heal();
+  const r3 = ex.start(near[0].id, [L.id], 1, false, Date.now());
+  const e3 = r3.exp;
+  ex.enqueue(e3.id, near[2].id);
+  e3.carried = { gained: { wood: Math.ceil(e3.cargo * CHAIN_RETURN_LOAD) + 1 }, items: [], blueprints: [], vehicles: [] };
+  ex.update(e3.startAt + e3.travelMs + e3.searchMs + 1);
+  assert(ex.list.includes(e3) && e3.travelEvents.some((t) => t.includes('返回避難所卸貨')), '負重達 90% 時返回避難所');
+  ex.update(e3.endAt + 1);
+  // 關閉開關：每個地點探索完都先回家
+  heal();
+  const r4 = ex.start(near[0].id, [L.id], 1, false, Date.now());
+  const e4 = r4.exp;
+  ex.enqueue(e4.id, near[1].id);
+  assert(ex.toggleChain(e4.id).ok && e4.chain === false, '可以關閉連續探索');
+  ex.update(e4.startAt + e4.travelMs + e4.searchMs + 1);
+  assert(ex.list.includes(e4), '關閉時探索完照常回家');
+  ex.update(e4.endAt + 1);
+  // 戰鬥後補滿藥品欄：從缺最多的隊員開始，先用自己的背包，再用隊友的
+  const med = Object.keys(SUPPLIES).find((k) => SUPPLIES[k].cat === 'med' && SUPPLIES[k].heal > 0);
+  const a = createSurvivor('甲', 'warrior', 5, 'common');
+  const b = createSurvivor('乙', 'medic', 5, 'common');
+  gc.state.survivors.push(a, b);
+  [a, b].forEach((sv) => { gc.survivors.supplyRules(sv).med = med; });
+  gc.survivors.loadout(a).med = { key: med, qty: 2 };
+  gc.survivors.loadout(b).med = { key: med, qty: 7 };
+  a.bag = {}; b.bag = { [med]: 5 };
+  const notes = gc.survivors.refillMeds([b, a]);
+  const maxMed = gc.survivors.loadout(a).med.qty;
+  assert(notes[0]?.startsWith('甲') && gc.survivors.loadout(a).med.qty === 7 && !b.bag[med] && gc.survivors.loadout(b).med.qty === 7, `缺最多的隊員先補，從隊友背包拿相同藥品（${notes.join('；')}）`);
+  void maxMed;
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

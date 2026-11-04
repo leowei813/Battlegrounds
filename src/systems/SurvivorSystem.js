@@ -896,6 +896,42 @@ export class SurvivorSystem {
     return got.join('、');
   }
 
+  /**
+   * 戰鬥結算後：設定了自動補給藥品的隊員，藥品欄用掉的部分從隊伍成員背包裡相同的藥品補滿；
+   * 從缺最多的隊員開始補（先用自己背包，再用隊友背包）。
+   * @returns {string[]} 補充紀錄
+   */
+  refillMeds(members) {
+    const list = members.filter((sv) => sv && !sv.severe);
+    const notes = [];
+    const want = list.map((sv) => {
+      const key = this.supplyRules(sv).med;
+      const lo = this.loadout(sv);
+      if (!key || (lo.med && lo.med.key !== key)) return null;
+      const need = LOADOUT_MAX.med - (lo.med?.qty || 0);
+      return need > 0 ? { sv, key, need } : null;
+    }).filter(Boolean).sort((a, b) => b.need - a.need);
+    want.forEach(({ sv, key, need }) => {
+      let rest = need;
+      const lo = this.loadout(sv);
+      // 自己的背包優先，再從隊友背包拿（隊友給出的藥品要放得進自己的負重）
+      [sv, ...list.filter((x) => x !== sv)].forEach((from) => {
+        if (rest <= 0) return;
+        const have = Math.floor(from.bag?.[key] || 0);
+        if (have <= 0) return;
+        let n = Math.min(rest, have);
+        if (from !== sv) n = Math.min(n, Math.floor(Math.max(0, this.bagCap(sv) - this.bagLoad(sv)) / Math.max(1e-9, unitWeight(key))));
+        if (n <= 0) return;
+        from.bag[key] -= n;
+        if (from.bag[key] <= 0) delete from.bag[key];
+        lo.med = { key, qty: (lo.med?.qty || 0) + n };
+        rest -= n;
+        notes.push(`${sv.name}的藥品欄補充${SUPPLIES[key].name}×${n}${from !== sv ? `（來自${from.name}的背包）` : ''}`);
+      });
+    });
+    return notes;
+  }
+
   /** 全部存入倉庫 */
   depositAll(id) {
     const sv = this.get(id);
