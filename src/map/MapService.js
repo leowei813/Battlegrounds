@@ -316,29 +316,42 @@ export class MapService {
         if (!p) return;
         const from = ex.from || sh;
         const phase = this.game.exploration.progress(ex, now)?.phase;
-        const outPath = ex.path ? ex.path.map((q) => [q.lat, q.lon]) : [[from.lat, from.lon], [p.lat, p.lon]];
-        // 連續探索：回程是另一條路線（從這個地點直接回避難所），返程時以黃線顯示，否則淡淡顯示
-        const backPath = Array.isArray(ex.backPath) && ex.backPath.length >= 2 ? ex.backPath.map((q) => [q.lat, q.lon]) : null;
-        if (!backPath || phase !== 'returning') {
-          L.polyline(outPath, { color: '#ffd54f', weight: 3, dashArray: '4 8', className: 'route-line', pane: 'routePane', renderer: this.routeRenderer }).addTo(this.layers.routes);
+        const ll = (pts) => pts.map((q) => [q.lat, q.lon]);
+        const route = (latlngs, style) => L.polyline(latlngs, { pane: 'routePane', renderer: this.routeRenderer, ...style }).addTo(this.layers.routes);
+        const YELLOW = { color: '#ffd54f', weight: 3, dashArray: '4 8', className: 'route-line' };
+        const HOME = { color: '#ffab40', weight: 2.5, opacity: 0.8, dashArray: '8 6', interactive: false };
+        // 連續探索：已經走過的路線（避難所 → 搜索過的地點）以灰線保留
+        if (Array.isArray(ex.trail) && ex.trail.length >= 2) {
+          route(ll(ex.trail), { color: '#90a4ae', weight: 2, opacity: 0.3, interactive: false });
         }
-        if (backPath) {
-          L.polyline(backPath, phase === 'returning'
-            ? { color: '#ffd54f', weight: 3, dashArray: '4 8', className: 'route-line', pane: 'routePane', renderer: this.routeRenderer }
-            : { color: '#ffd54f', weight: 2, opacity: 0.35, dashArray: '2 8', interactive: false, pane: 'routePane', renderer: this.routeRenderer }).addTo(this.layers.routes);
-        }
+        const outPath = ex.path ? ll(ex.path) : [[from.lat, from.lon], [p.lat, p.lon]];
+        // 連續探索的回程是另一條路線（從這個地點直接回避難所）
+        const backPath = Array.isArray(ex.backPath) && ex.backPath.length >= 2 ? ll(ex.backPath) : null;
+        if (!backPath || phase !== 'returning') route(outPath, YELLOW);
+        else route(backPath, YELLOW);
+        // 已搜索過的地點標上 ✓
+        (ex.stops || []).forEach((id) => {
+          const s = this.game.exploration.poi(id);
+          if (!s || id === ex.poiId) return;
+          L.marker([s.lat, s.lon], { icon: this.icon('<div class="queue-pin done">✓</div>', 'queue-icon', 22), interactive: false, zIndexOffset: 690 }).addTo(this.layers.routes);
+        });
         // 探索佇列：從目前的目的地依序連到佇列中的每個地點（同樣繞開 NPC 等警戒範圍），並標上順序
         const queued = (ex.queue || []).map((id) => this.game.exploration.poi(id)).filter(Boolean);
-        if (!queued.length) return;
+        const chainOn = ex.kind === 'explore' && ex.chain !== false;
+        if (!queued.length) {
+          // 最後一站：預計回家路線（回程中已經畫成黃線）
+          if (backPath && phase !== 'returning') route(backPath, HOME);
+          return;
+        }
         const pts = [p, ...queued];
         const line = [];
         for (let i = 0; i < pts.length - 1; i += 1) {
           const seg = this.plannedRoute(pts[i], pts[i + 1]);
           (i ? seg.slice(1) : seg).forEach((q) => line.push([q.lat, q.lon]));
         }
-        L.polyline(line, {
-          color: '#8fc3ff', weight: 3, opacity: 0.9, dashArray: '2 7', interactive: false, pane: 'routePane', renderer: this.routeRenderer,
-        }).addTo(this.layers.routes);
+        route(line, { color: '#8fc3ff', weight: 3, opacity: 0.9, dashArray: '2 7', interactive: false });
+        // 連續探索：預計回家路線從佇列最後一個地點畫回避難所
+        if (chainOn) route(ll(this.plannedRoute(queued[queued.length - 1], sh)), HOME);
         queued.forEach((q, i) => {
           L.marker([q.lat, q.lon], {
             icon: this.icon(`<div class="queue-pin">${i + 1}</div>`, 'queue-icon', 22),

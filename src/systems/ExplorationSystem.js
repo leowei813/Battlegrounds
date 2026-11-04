@@ -18,6 +18,8 @@ const lootLabel = (k) => { const m = RESOURCES[k] || SUPPLIES[k]; return m ? `${
 const carriedWeight = (c) => Object.entries(c?.gained || {}).filter(([k]) => isLootKey(k)).reduce((s, [k, v]) => s + v * unitWeight(k), 0);
 /** 連續探索：負重達到運載量的此比例就回家 */
 export const CHAIN_RETURN_LOAD = 0.9;
+/** 快速佇列：每一站最多往外找多遠的下一個地點（公尺） */
+export const QUICK_QUEUE_HOP_M = 600;
 const nameOf = (k) => RESOURCES[k]?.name || SUPPLIES[k]?.name || k;
 import { POI_TYPES } from '../config/poiTypes.js';
 import { RARITIES } from '../config/equipment.js';
@@ -252,6 +254,50 @@ export class ExplorationSystem {
   }
 
   /** 從佇列移除 */
+  /** 快速佇列開關（記在存檔設定，預設關閉） */
+  quickQueueOn() {
+    return !!this.game.state.settings?.quickQueue;
+  }
+
+  setQuickQueue(on) {
+    this.game.state.settings = this.game.state.settings || {};
+    this.game.state.settings.quickQueue = !!on;
+  }
+
+  /**
+   * 快速佇列：從小隊目前（或佇列最後）的地點開始，依序把最近、還有物資的一般建築加入佇列直到上限。
+   * 不選 NPC 與非友好玩家警戒範圍內的地點、據點，以及其他隊伍正要去的地點。
+   * @returns {{ok:boolean, added:object[], msg?:string}}
+   */
+  quickFill(expId, now = Date.now()) {
+    const exp = this.list.find((e) => e.id === expId);
+    if (!exp || exp.kind !== 'explore' || exp.recalled || exp.defeated) return { ok: false, added: [], reason: '這支小隊無法加入佇列' };
+    exp.queue = exp.queue || [];
+    const room = this.queueLimit() - exp.queue.length;
+    if (room <= 0) return { ok: true, added: [] };
+    const taken = new Set(this.list.flatMap((e) => [e.poiId, ...(e.queue || [])]));
+    const zones = this.game.territory.zones().filter((z) => z.relation !== 'friend');
+    const pool = this.game.state.map.pois.filter((p) => POI_TYPES[p.type] && !p.npc && !p.pvp && !taken.has(p.id)
+      && !this.game.shelter.baseAtPoi(p.id) && this.hasStock(p, now)
+      && !zones.some((z) => haversine(p.lat, p.lon, z.lat, z.lon) <= z.r));
+    let last = this.poi(exp.queue[exp.queue.length - 1] || exp.poiId);
+    const added = [];
+    while (last && added.length < room && pool.length) {
+      let best = -1;
+      let bestD = QUICK_QUEUE_HOP_M;
+      pool.forEach((p, i) => {
+        const d = haversine(last.lat, last.lon, p.lat, p.lon);
+        if (d <= bestD) { bestD = d; best = i; }
+      });
+      if (best < 0) break;
+      const [p] = pool.splice(best, 1);
+      exp.queue.push(p.id);
+      added.push(p);
+      last = p;
+    }
+    return { ok: true, added, msg: added.length ? `⚡ 快速佇列：自動加入附近 ${added.length} 個地點（${added.map((p) => p.name).join('、')}）` : '⚡ 快速佇列：附近沒有可以加入的地點' };
+  }
+
   dequeue(expId, index) {
     const exp = this.list.find((e) => e.id === expId);
     if (!exp?.queue?.[index]) return { ok: false, reason: '找不到這個地點' };
@@ -517,6 +563,17 @@ export class ExplorationSystem {
     return this.progress(exp, now)?.phase !== 'returning';
   }
 
+  /** 沒有可參考的路程時，依隊伍目前的步行速度估算每公尺需要的毫秒數 */
+  walkRate(exp, now = Date.now()) {
+    const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+    const vehicles = (exp.vehicleIds || []).map((id) => this.game.vehicles.get(id)).filter(Boolean);
+    const scout = Math.max(0, ...members.map((m) => (this.game.survivors.skillEffects(m).exploreSpeed || 0)
+      + (this.game.survivors.stats(m).exploreSpeed || 0)));
+    const speed = this.game.time.exploreSpeedMul(now) * (1 + scout + this.game.research.bonus('exploreSpeed'));
+    const trip = this.game.vehicles.tripStats(members, vehicles, 1000);
+    return (MIN_PER_KM_ONE_WAY / 1000) * 60000 / (speed * (trip?.speed || 1));
+  }
+
   /**
    * 隊伍立刻折返：從目前位置走回避難所（需要移動時間），途中的搜索、交戰都取消。
    * 召回與被攔截擊敗共用。
@@ -525,10 +582,18 @@ export class ExplorationSystem {
     const p = this.progress(exp, now);
     const home = this.game.shelter.primary() || exp.from;
     if (!p || !home) return false;
-    const dist = haversine(p.pos.lat, p.pos.lon, home.lat, home.lon);
-    const travelMs = exp.distanceM ? Math.round(exp.travelMs * (dist / exp.distanceM)) : 0;
+    // 回程路線同樣繞開警戒範圍
+    const route = this.game.territory?.route ? this.game.territory.route(p.pos, home, { avoidHostile: exp.avoidHostile }) : null;
+    const dist = route?.length > 1 ? pathLength(route) : haversine(p.pos.lat, p.pos.lon, home.lat, home.lon);
+    // 移動速度（毫秒/公尺）：取這趟去程或回程的速度；連續探索在同一地點再搜索時去程距離為 0，
+    // 以前用去程換算會得到 0 而瞬間回家
+    const rate = exp.distanceM > 0 && exp.travelMs > 0 ? exp.travelMs / exp.distanceM
+      : exp.backDistanceM > 0 && exp.backMs > 0 ? exp.backMs / exp.backDistanceM
+        : this.walkRate(exp, now);
+    const travelMs = Math.round(dist * rate);
+    const back = route?.length > 1 ? [...route].reverse() : [{ lat: home.lat, lon: home.lon }, p.pos];
     Object.assign(exp, {
-      from: { lat: home.lat, lon: home.lon }, path: [{ lat: home.lat, lon: home.lon }, p.pos],
+      from: { lat: home.lat, lon: home.lon }, path: back,
       distanceM: Math.round(dist), travelMs, searchMs: 0, startAt: now - travelMs, endAt: now + travelMs,
       threats: [], auto: false, backPath: null, backMs: null, backDistanceM: null,
     });
@@ -696,6 +761,15 @@ export class ExplorationSystem {
         const ne = r.exp;
         ne.queue = nextId === poi.id ? queue : queue.slice(1);
         ne.nextVehicleIds = exp.nextVehicleIds;
+        // 地圖顯示用：記下這趟已經走過的路線與搜索過的地點
+        const leg = Array.isArray(exp.path) && exp.path.length >= 2 ? exp.path : [exp.from || poi, poi];
+        const trail = [...(exp.trail || [])];
+        leg.forEach((q) => {
+          const last = trail[trail.length - 1];
+          if (!last || Math.abs(last.lat - q.lat) > 1e-7 || Math.abs(last.lon - q.lon) > 1e-7) trail.push({ lat: q.lat, lon: q.lon });
+        });
+        ne.trail = trail.length > 300 ? trail.filter((_, i) => i === 0 || i === trail.length - 1 || i % Math.ceil(trail.length / 300) === 0) : trail;
+        ne.stops = [...new Set([...(exp.stops || []), poi.id])];
         report.events.push(nextId === poi.id
           ? `🎒 背包還有空間（負重 ${Math.round(load)}/${cap}），「${poi.name}」還有物資，直接再搜索一次`
           : `🎒 背包還有空間（負重 ${Math.round(load)}/${cap}），直接前往「${nextPoi?.name || ''}」${ne.queue.length ? `（佇列還有 ${ne.queue.length} 個）` : ''}`);

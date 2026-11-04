@@ -3556,6 +3556,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(e2 && !ex.list.includes(e1), '探索完第一個地點後直接前往佇列中的下一個地點');
   assert(Math.abs(e2.from.lat - near[0].lat) < 1e-9 && e2.backPath && e2.backMs > 0 && e2.endAt === e2.startAt + e2.travelMs + e2.searchMs + e2.backMs, '從上一個地點出發，回程直接回避難所');
   assert(gc.state.resources.wood === woodBefore, '途中取得的物資先背著，還沒入庫');
+  const tr = e2.trail || [];
+  assert(tr.length >= 2 && Math.abs(tr[0].lat - home.lat) < 1e-6 && Math.abs(tr[tr.length - 1].lat - near[0].lat) < 1e-6 && (e2.stops || []).includes(near[0].id), '地圖顯示：記下已走過的路線（避難所→第一站）與搜索過的地點');
   const rep1 = gc.state.reports[0];
   assert(rep1?.carried && rep1.events.some((t) => t.includes('直接前往')), '探索報告寫出背包還有空間、直接前往下一個地點');
   // 回到避難所：背著的物資一起入庫
@@ -3571,8 +3573,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ex.enqueue(e3.id, near[2].id);
   e3.carried = { gained: { wood: Math.ceil(e3.cargo * CHAIN_RETURN_LOAD) + 1 }, items: [], blueprints: [], vehicles: [] };
   ex.update(e3.startAt + e3.travelMs + e3.searchMs + 1);
-  assert(ex.list.includes(e3) && (e3.travelEvents.some((t) => t.includes('返回避難所卸貨')) || e3.cp?.stopped), '負重達 90% 時返回避難所（不前往下一站）');
-  ex.update(e3.endAt + 1);
+  // 背包一開始就很重時，搜索途中可能已經停止回家（甚至已經到家）；重點是沒有前往下一站
+  assert(!ex.list.some((e) => e.poiId === near[2].id) && (!ex.list.includes(e3) || e3.travelEvents.some((t) => t.includes('返回避難所卸貨')) || e3.cp?.stopped), '負重達 90% 時返回避難所（不前往下一站）');
+  if (ex.list.includes(e3)) ex.update(e3.endAt + 1);
   // 關閉開關：每個地點探索完都先回家
   heal();
   const r4 = ex.start(near[0].id, [L.id], 1, false, Date.now());
@@ -3627,6 +3630,91 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const r = eq.dismantleMany(made.map((i) => i.id));
   assert(r.ok && r.n === 3 && eq.getItem(made[2].id) && !eq.getItem(made[0].id) && !eq.getItem(made[3].id), '一次拆解多件，上鎖的保留');
   assert(!eq.dismantleMany([made[2].id]).ok, '只選到上鎖的裝備時不能拆解');
+}
+
+// ---- 84. 召回需要回程時間（連續探索在同一地點再搜索時也一樣）----
+{
+  const gr = Game.newGame({ playerName: 'R84', classId: 'warrior', lat: 25, lon: 121 });
+  gr.state.map.pois = fillPois([], 25, 121);
+  gr.shelter.establish(gr.state.map.pois[0]);
+  setHour(gr, 10);
+  const ex = gr.exploration;
+  const home = gr.shelter.primary();
+  const poi = gr.state.map.pois.filter((p) => !gr.shelter.baseAtPoi(p.id) && !p.npc && haversine(p.lat, p.lon, home.lat, home.lon) > 300)[0];
+  const L = gr.survivors.leader();
+  // 這裡只測回程時間，不讓建築內的戰鬥影響隊員狀態
+  gr.survivors.becomeSevere = () => {};
+  const sim84 = gr.combat.simulate.bind(gr.combat);
+  gr.combat.simulate = (...a) => ({ ...sim84(...a), victory: true });
+  const t0 = Date.now();
+  // 一般探索：搜索途中召回
+  const r = ex.start(poi.id, [L.id], 1, false, t0);
+  const e = r.exp;
+  const mid = e.startAt + e.travelMs + Math.round(e.searchMs / 2);
+  assert(ex.recall(e.id, mid).ok && e.endAt - mid > 0 && Math.abs((e.endAt - mid) - e.travelMs) < 5, `搜索途中召回：需要走回避難所（回程 ${Math.round((e.endAt - mid) / 1000)} 秒）`);
+  ex.list.splice(ex.list.indexOf(e), 1); L.status = 'idle'; L.hp = gr.survivors.maxHp(L);
+  // 連續探索在同一地點再搜索：這一段去程距離為 0
+  const r2 = ex.start(poi.id, [L.id], 1, false, t0, { from: { lat: poi.lat, lon: poi.lon } });
+  const e2 = r2.exp;
+  assert(r2.ok && e2.distanceM < 5 && e2.backMs > 0, '同一地點再搜索：去程為 0、回程直接回避難所');
+  const mid2 = e2.startAt + e2.travelMs + Math.round(e2.searchMs / 2);
+  const back2 = e2.backMs;
+  assert(ex.recall(e2.id, mid2).ok && e2.endAt - mid2 > 0 && Math.abs((e2.endAt - mid2) - back2) < back2 * 0.05 + 5, `同一地點再搜索時召回：仍需要回程時間（${Math.round((e2.endAt - mid2) / 1000)} 秒，不會瞬間回家）`);
+  ex.update(mid2 + 1000);
+  assert(ex.list.includes(e2), '召回後隊伍還在回程中');
+}
+
+// ---- 85. 快速佇列、穿脫裝維持生命百分比、快速脫裝、倖存者排序 ----
+{
+  const gq = Game.newGame({ playerName: 'Q85', classId: 'warrior', lat: 25, lon: 121 });
+  gq.state.map.pois = fillPois([], 25, 121);
+  gq.shelter.establish(gq.state.map.pois[0]);
+  setHour(gq, 10);
+  const ex = gq.exploration;
+  assert(!ex.quickQueueOn(), '快速佇列預設關閉');
+  ex.setQuickQueue(true);
+  const loaded = SaveManager.migrate(JSON.parse(JSON.stringify(gq.state)));
+  assert(loaded.settings.quickQueue === true, '快速佇列開關會存檔');
+  const home = gq.shelter.primary();
+  const poi = gq.state.map.pois.find((p) => !gq.shelter.baseAtPoi(p.id) && !p.npc && haversine(p.lat, p.lon, home.lat, home.lon) < 800);
+  const L = gq.survivors.leader();
+  const r = ex.start(poi.id, [L.id], 1, false, Date.now());
+  const qf = ex.quickFill(r.exp.id);
+  const zones = gq.territory.zones().filter((z) => z.relation !== 'friend');
+  assert(qf.ok && r.exp.queue.length === Math.min(ex.queueLimit(), qf.added.length) && qf.added.length > 0, `快速佇列：自動加入附近地點（${qf.added.length}/${ex.queueLimit()}）`);
+  assert(qf.added.every((p) => ex.hasStock(p) && !zones.some((z) => haversine(p.lat, p.lon, z.lat, z.lon) <= z.r)) && new Set(r.exp.queue).size === r.exp.queue.length && !r.exp.queue.includes(poi.id), '快速佇列：只加入有物資、不在警戒範圍、不重複的地點');
+  assert(ex.quickFill(r.exp.id).added.length === 0 || r.exp.queue.length <= ex.queueLimit(), '快速佇列不超過上限');
+  ex.list.length = 0; L.status = 'idle';
+  // 穿脫裝備：維持生命百分比
+  const eq = gq.equipment;
+  const armor = eq.generate({ level: 5, rarity: 'rare', type: 'armor' });
+  armor.loc = 'store'; gq.state.inventory.items.push(armor);
+  const sv = gq.survivors;
+  Object.keys(L.equipment).forEach((k) => { L.equipment[k] = null; });
+  const max0 = sv.maxHp(L);
+  sv.setHp(L, max0 * 0.8);
+  assert(eq.equip(L.id, armor.id).ok && max0 !== sv.maxHp(L), '穿上裝備（生命上限改變）');
+  const max1 = sv.maxHp(L);
+  assert(Math.abs(sv.hpOf(L) / max1 - 0.8) < 0.01, `穿上裝備後維持 80% 生命（${Math.round(sv.hpOf(L))}/${max1}）`);
+  assert(eq.unequip(L.id, armor.slot).ok && Math.abs(sv.hpOf(L) / sv.maxHp(L) - 0.8) < 0.01, '脫下裝備後仍是 80%，不會變滿血');
+  L.hp = null;
+  eq.equip(L.id, armor.id);
+  assert(L.hp == null, '滿血的人穿上裝備仍是滿血');
+  // 快速脫裝
+  sv.setHp(L, sv.maxHp(L) * 0.5);
+  const u = eq.unequipAll(L.id);
+  assert(u.ok && u.n >= 1 && !Object.values(L.equipment).some(Boolean) && Math.abs(sv.hpOf(L) / sv.maxHp(L) - 0.5) < 0.01, '快速脫裝：卸下全部裝備且維持生命百分比');
+  assert(!eq.unequipAll(L.id).ok, '身上沒有裝備時不能快速脫裝');
+  // 倖存者排序
+  const { createSurvivor: mk85 } = await import('../src/core/GameState.js');
+  const a = mk85('A85', 'scout', 3, 'common'); const b = mk85('B85', 'scout', 3, 'common');
+  gq.state.survivors.push(a, b);
+  const ids = () => gq.state.survivors.map((x) => x.id);
+  assert(sv.move(b.id, L.id).ok && ids()[0] === b.id, '拖移排序：移到最前面');
+  assert(sv.move(b.id, a.id, true).ok && ids().indexOf(b.id) === ids().indexOf(a.id) + 1, '拖移排序：移到指定隊員後面');
+  const order = ids();
+  const reloaded = SaveManager.migrate(JSON.parse(JSON.stringify(gq.state)));
+  assert(JSON.stringify(reloaded.survivors.map((x) => x.id)) === JSON.stringify(order), '拖移後的順序會存檔，讀檔後維持');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

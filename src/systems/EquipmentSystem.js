@@ -392,7 +392,25 @@ export class EquipmentSystem {
     return true;
   }
 
+  /**
+   * 穿脫裝備會改變生命上限：前後維持相同的生命百分比（不會脫裝回滿、穿上變低）。
+   * 被拿走裝備的其他人也一起處理。
+   */
+  keepHpPct(fn) {
+    const sv = this.game.survivors;
+    const before = this.game.state.survivors.map((s) => [s, s.hp == null ? null : sv.hpOf(s) / Math.max(1, sv.maxHp(s))]);
+    const r = fn();
+    if (r?.ok !== false) {
+      before.forEach(([s, pct]) => { if (pct != null) sv.setHp(s, Math.max(s.hp > 0 ? 1 : 0, sv.maxHp(s) * pct)); });
+    }
+    return r;
+  }
+
   equip(survivorId, itemId) {
+    return this.keepHpPct(() => this.equipRaw(survivorId, itemId));
+  }
+
+  equipRaw(survivorId, itemId) {
     const sv = this.game.survivors.get(survivorId);
     const item = this.getItem(itemId);
     if (!sv || !item) return { ok: false, reason: '找不到目標' };
@@ -456,8 +474,35 @@ export class EquipmentSystem {
       : { ok: true, changed, msg: '目前已經是戰力最高的裝備' };
   }
 
+  /**
+   * 快速脫裝：卸下身上全部裝備，放回倉庫（倉庫滿了放進自己的背包）。
+   * @returns {{ok:boolean, n:number, msg?:string, reason?:string}}
+   */
+  unequipAll(survivorId) {
+    const sv = this.game.survivors.get(survivorId);
+    if (!sv) return { ok: false, reason: '找不到倖存者' };
+    if (sv.status !== 'idle') return { ok: false, reason: '已派出的倖存者無法更換裝備' };
+    const worn = SLOT_KEYS.filter((slot) => sv.equipment[slot]);
+    if (!worn.length) return { ok: false, reason: '身上沒有裝備' };
+    return this.keepHpPct(() => {
+      let n = 0;
+      const stuck = [];
+      worn.forEach((slot) => {
+        const r = this.unequipRaw(sv.id, slot);
+        if (r.ok) n += 1;
+        else stuck.push(SLOTS[slot].name);
+      });
+      if (!n) return { ok: false, reason: '倉庫與背包都沒有空間' };
+      return { ok: true, n, msg: `快速脫裝：卸下 ${n} 件裝備${stuck.length ? `（${stuck.join('、')}放不下，保留在身上）` : ''}` };
+    });
+  }
+
   /** 卸下：放回倉庫，倉庫滿了放進自己的背包 */
   unequip(survivorId, slot) {
+    return this.keepHpPct(() => this.unequipRaw(survivorId, slot));
+  }
+
+  unequipRaw(survivorId, slot) {
     const sv = this.game.survivors.get(survivorId);
     if (!sv) return { ok: false, reason: '找不到倖存者' };
     if (sv.status !== 'idle') return { ok: false, reason: '已派出的倖存者無法更換裝備' };
