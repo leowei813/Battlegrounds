@@ -278,7 +278,7 @@ export class InterceptSystem {
       defeated: true, defeatedBy: by, defeatLoss: { resources: lost.resources, items: lost.items.map((i) => i.name) },
       from: { lat: home.lat, lon: home.lon }, path: [{ lat: home.lat, lon: home.lon }, p.pos],
       distanceM: Math.round(dist), travelMs, searchMs: 0, startAt: now - travelMs, endAt: now + travelMs,
-      threats: [], auto: false,
+      threats: [], auto: false, backPath: null, backMs: null, backDistanceM: null,
     });
     exp.travelEvents = [...(exp.travelEvents || []), `💀 遭到${by}攔截，戰敗！${this.lossText(lost)}`];
     g.toast(`💀 你的探索隊遭到${by}攔截，正在撤回據點`, 'danger');
@@ -372,9 +372,11 @@ export class InterceptSystem {
     const g = this.game;
     const poi = g.exploration.poi(exp.poiId);
     const members = exp.memberIds.map((id) => g.survivors.get(id)).filter(Boolean);
+    // 連續探索時背著的物資：被擊敗時掉了一半
+    const carriedNote = g.exploration.bringCarried(exp, 0.5, members);
     return {
       id: uid('rp'), poiName: poi?.name || '未知地點', poiType: poi?.type, at: exp.endAt,
-      events: [...(exp.travelEvents || []), '🏳️ 隊伍被攔截後空手撤回據點。'],
+      events: [...(exp.travelEvents || []), '🏳️ 隊伍被攔截後撤回據點。', ...(carriedNote ? [carriedNote] : [])],
       resources: {}, items: [], blueprints: [], kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: false,
       members: members.map((m) => m.name),
     };
