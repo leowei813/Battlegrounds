@@ -118,7 +118,7 @@ const hhmm = (t) => { const d = new Date(t); return `${String(d.getHours()).padS
 
 /**
  * 探索系統：派遣隊伍前往地圖建築，經過一段時間後結算事件。
- * 支援自動探索（研究解鎖）與離線結算。
+ * 探索一律自動進行（同一地點搜光才結束、有佇列時接著前往下一站），支援離線結算。
  */
 export class ExplorationSystem {
   constructor(game) {
@@ -418,7 +418,6 @@ export class ExplorationSystem {
   } = {}) {
     const v = this.validate(poiId, memberIds);
     if (!v.ok) return v;
-    if (auto && !this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」解鎖自動探索' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
     durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' || kind === 'rally' ? 0 : kind === 'raid' || kind === 'pvp' || kind === 'infect' ? 2 : this.searchMinutes(v.poi);
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile, from });
@@ -712,7 +711,6 @@ export class ExplorationSystem {
   toggleAuto(expId) {
     const exp = this.list.find((e) => e.id === expId);
     if (!exp) return { ok: false };
-    if (!this.game.research.hasUnlock('autoExplore')) return { ok: false, reason: '需研究「斥候訓練」' };
     exp.auto = !exp.auto;
     return { ok: true, msg: exp.auto ? '已開啟自動探索' : '已關閉自動探索' };
   }
@@ -795,7 +793,7 @@ export class ExplorationSystem {
       if (now < searchEnd || exp.chainChecked) continue;
       const poi = this.poi(exp.poiId);
       const queue = [...(exp.queue || [])];
-      const autoOn = exp.auto && this.game.research.hasUnlock('autoExplore');
+      const autoOn = !!exp.auto;
       if (!poi || (!queue.length && !autoOn)) continue;
       // 有指定給小隊的載具在家等著：先回家換車
       if ((exp.nextVehicleIds || []).length) continue;
@@ -910,7 +908,7 @@ export class ExplorationSystem {
         });
         if (exp.kind !== 'explore' || exp.defeated || exp.recalled || !healthy || now - exp.endAt >= OFFLINE_CAP_MS) return;
         const queue = [...(exp.queue || [])];
-        const autoOn = exp.auto && this.game.research.hasUnlock('autoExplore');
+        const autoOn = !!exp.auto;
         if (!queue.length && !autoOn) return;
         // 隊員背包都滿、倉庫也滿：停止所有佇列並說明原因
         const full = this.overloadReason(exp.memberIds);

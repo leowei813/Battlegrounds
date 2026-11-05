@@ -119,7 +119,7 @@ export const RESEARCH = {
   i_build: r('industry', 2, '建築學', '建造與升級費用降低', { buildCostReduce: 0.02 }),
   i_fast: r('industry', 2, '快速施工', '建造與升級時間縮短', { buildTimeReduce: 0.03 }),
   // ---- 生存 ----
-  s_scout: r('survival', 1, '斥候訓練', '探索速度提升，解鎖「自動探索」', { exploreSpeed: 0.02 }, { unlock: ['autoExplore'] }),
+  s_scout: r('survival', 1, '斥候訓練', '探索速度提升', { exploreSpeed: 0.02 }),
   s_queue: r('survival', 2, '行動規劃', '每支臨時小隊的探索佇列 +1 個地點（基本 2 個，最多 5 個）；Lv1 需要研究中心 Lv4、Lv2 需要 Lv7、Lv3 需要 Lv10', { queueSlots: 1 }, { max: 3, labReq: [4, 7, 10] }),
   s_parts: r('survival', 2, '零件辨識', '探索時有機率多找到一種零件', { partKindPct: 0.05 }, { max: 10, req: [['s_loot', 2]] }),
   s_loot: r('survival', 1, '拾荒技巧', '探索物資提升', { lootPct: 0.03 }),

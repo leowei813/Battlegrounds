@@ -32,7 +32,7 @@ export class ExplorePanel {
         ${timerBar(ex.startAt, ex.endAt, now)}
         ${this.checkpointHtml(ex)}
         ${(ex.travelEvents || []).length ? `<ul class="event-list">${ex.travelEvents.slice(-3).map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul>` : ''}
-        <div class="btn-row">${btn('🗺️ 在地圖上追蹤', 'track', { id: ex.id }, { cls: 'btn-sm btn-primary' })}${btn(ex.auto ? '停止自動' : '🔁 自動探索', 'auto', { id: ex.id }, { cls: 'btn-sm btn-ghost', disabled: !g.research.hasUnlock('autoExplore') })}${g.exploration.canRecall(ex, now) ? btn('召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' }) : ''}</div>
+        <div class="btn-row">${btn('🗺️ 在地圖上追蹤', 'track', { id: ex.id }, { cls: 'btn-sm btn-primary' })}${g.exploration.canRecall(ex, now) ? btn('召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' }) : ''}</div>
       </div>`;
     }).join('');
 

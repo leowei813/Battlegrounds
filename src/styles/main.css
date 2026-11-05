@@ -1254,3 +1254,9 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .bmx-q { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0; font-size: 12.5px; }
 .bmx-q input { width: 80px; }
 .bmx-go { text-align: right; }
+/* 派遣視窗：出發按鈕左邊的快速佇列開關 */
+.pk-qq { flex: 0 0 auto; display: inline-flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px 9px; border-radius: 9px; border: 1px solid #ffffff26; background: transparent; color: var(--muted, #b0bec5); font: inherit; font-size: 11.5px; font-weight: 700; line-height: 1.25; white-space: nowrap; cursor: pointer; }
+.pk-qq small { font-size: 10px; font-weight: 500; }
+.pk-qq.on { border-color: #8bc34a; background: #33691e55; color: #dcedc8; }
+.pk-qq.on small { color: #c5e1a5; }
+.pick-foot { gap: 8px; }
