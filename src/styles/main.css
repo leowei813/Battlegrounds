@@ -806,10 +806,14 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .sv-tag.out { background: #182633; color: #8fc3ff; }
 .sv-tag.hurt { background: #3a1d1b; color: #ff8f88; }
 .sv-roster-head { display: flex; align-items: center; gap: 10px; }
-.sv-recruit-chip { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 3px 12px; border-radius: 16px; border: 1px solid #ffb300; background: #ffb30018; color: var(--accent); font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; }
-.sv-recruit-chip .n { background: #ffb300; color: #000; border-radius: 9px; padding: 0 6px; font-size: 12px; }
-.sv-recruit-chip.on { background: #ffb300; color: #000; }
-.sv-recruit-chip.on .n { background: #000; color: #ffb300; }
+.sv-recruit-chip { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 3px 12px; border-radius: 16px; border: 1px solid #1e4f86; background: #0d2a4a; color: #90caf9; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.sv-recruit-chip .n { background: #1e4f86; color: #e3f2fd; border-radius: 9px; padding: 0 6px; font-size: 12px; }
+.sv-recruit-chip.on { background: #1e4f86; color: #e3f2fd; border-color: #64b5f6; }
+.sv-recruit-chip.on .n { background: #e3f2fd; color: #0d2a4a; }
+.sv-recruit-chip.legend { background: linear-gradient(135deg, #5d4300, #8d6e00); border-color: #ffca28; color: #ffe082; box-shadow: 0 0 8px #ffca2880; animation: recruit-legend-glow 2.4s ease-in-out infinite; }
+.sv-recruit-chip.legend .n { background: #ffca28; color: #3e2c00; }
+.sv-recruit-chip.legend.on { border-color: #fff3c4; }
+@keyframes recruit-legend-glow { 50% { box-shadow: 0 0 16px #ffca28cc; } }
 .sv-pane { flex: 1; min-width: 0; padding: 16px 20px 32px; display: flex; flex-direction: column; gap: 12px; max-width: 1100px; }
 .sv-detail2 { display: flex; flex-direction: column; gap: 12px; }
 .sv-pane-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -1147,3 +1151,19 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .map-tools .btn.home-btn.on { border-color: #66bb6a; box-shadow: 0 0 0 2px #66bb6a55; }
 .poi-st.busy.npc { background: #b71c1c44; border-color: #ef5350aa; }
 .poi-st.busy.friend { background: #2e7d3244; border-color: #66bb6aaa; }
+/* 名單卡片：快速換裝（👕▲）／快速脫裝（👕▼） */
+.sv-mini-bagrow { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.sv-qe { display: inline-flex; gap: 7px; }
+.sv-qe-btn { position: relative; width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; background: var(--card2, #263238); border: 1px solid #ffffff26; cursor: pointer; }
+.sv-qe-btn i { position: absolute; right: -4px; bottom: -4px; width: 14px; height: 14px; border-radius: 50%; font-style: normal; font-size: 8px; font-weight: 900; display: flex; align-items: center; justify-content: center; color: #fff; border: 2px solid var(--card, #1d272d); }
+.sv-qe-btn.up { border-color: #43a04788; }
+.sv-qe-btn.up i { background: #43a047; }
+.sv-qe-btn.down { border-color: #e5393588; }
+.sv-qe-btn.down i { background: #e53935; }
+.sv-qe-btn:hover { filter: brightness(1.25); }
+/* 全員治療（倖存者標題右邊、招募左邊） */
+.sv-heal-chip { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 3px 12px; border-radius: 16px; border: 1px solid #ef5350; background: #ef535022; color: #ffcdd2; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.sv-heal-chip .n { background: #ef5350; color: #fff; border-radius: 9px; padding: 0 6px; font-size: 12px; }
+.sv-heal-chip.off { opacity: .45; cursor: default; }
+.sv-heal-chip + .sv-recruit-chip { margin-left: 0; }
+.sq-dist { color: #81d4fa; }

@@ -1,7 +1,7 @@
 import { CLASSES } from '../config/survivors.js';
 import { EXPLORE_DURATIONS, MAX_TEAM_SIZE } from '../config/constants.js';
 import { escapeHtml } from '../utils/dom.js';
-import { formatDuration } from '../utils/math.js';
+import { formatDuration, haversine } from '../utils/math.js';
 import { survivorStatus } from './components.js';
 import { VEHICLES } from '../config/vehicles.js';
 
@@ -118,15 +118,21 @@ export function openTeamPicker(ui, opts) {
       : '';
     const squadPower = (e) => e.memberIds.reduce((sum, id) => { const m = game.survivors.get(id); return sum + (m ? game.survivors.stats(m).power : 0); }, 0);
     const squadFull = (e) => (e.queue || []).length >= game.exploration.queueLimit();
-    // 臨時小隊：佇列還有空位的在上面，依總戰力由高到低
-    const squadRows = [...squads].sort((a, b) => (squadFull(a) - squadFull(b)) || squadPower(b) - squadPower(a)).map((e) => {
+    // 臨時小隊：佇列還有空位的在上面，離這個地點近的優先（從佇列最後一站出發），再依總戰力
+    const target = opts.trip?.poi;
+    const squadDist = (e) => {
+      const last = game.exploration.poi((e.queue || []).length ? e.queue[e.queue.length - 1] : e.poiId);
+      return target && last ? Math.round(haversine(last.lat, last.lon, target.lat, target.lon)) : null;
+    };
+    const fmtDist = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} 公里` : `${m} 公尺`);
+    const squadRows = [...squads].sort((a, b) => (squadFull(a) - squadFull(b)) || ((squadDist(a) ?? Infinity) - (squadDist(b) ?? Infinity)) || squadPower(b) - squadPower(a)).map((e) => {
       const names = e.memberIds.map((id) => game.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
       const full = (e.queue || []).length >= game.exploration.queueLimit();
       const on = squadId === e.id;
       const sp = e.memberIds.reduce((sum, id) => { const m = game.survivors.get(id); return sum + (m ? game.survivors.stats(m).power : 0); }, 0);
       return `<button class="pick-row squad ${on ? 'on' : ''}" data-action="squad" data-id="${e.id}" ${full || selected.size ? 'disabled' : ''}>
         <span class="check">${on ? '☑' : '☐'}</span>
-        <span>🧭 <b>臨時小隊</b>：${names}<small class="muted block">⚔️ 總戰力 <b>${sp}</b>・${e.memberIds.length} 人</small><small class="muted block">正在探索「${escapeHtml(game.exploration.poi(e.poiId)?.name || '')}」・佇列 ${(e.queue || []).length}/${game.exploration.queueLimit()}${full ? '（已滿）' : ''}</small></span>
+        <span>🧭 <b>臨時小隊</b>：${names}<small class="muted block">⚔️ 總戰力 <b>${sp}</b>・${e.memberIds.length} 人</small><small class="muted block">正在探索「${escapeHtml(game.exploration.poi(e.poiId)?.name || '')}」・佇列 ${(e.queue || []).length}/${game.exploration.queueLimit()}${full ? '（已滿）' : ''}</small>${(() => { const d = squadDist(e); return d == null ? '' : `<small class="block">📍 ${(e.queue || []).length ? '從佇列最後一站' : '從目前地點'}到這裡 <b class="sq-dist">${fmtDist(d)}</b></small>`; })()}</span>
       </button>`;
     }).join('');
     return `${opts.intro}
