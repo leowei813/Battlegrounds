@@ -4679,6 +4679,19 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!gh.survivors.postBattleHeal(sv) && sv.loadout.med.qty === q, '生命還有 70% 以上時不吃藥');
 }
 
+// ---- 116. 文明度新增 550 之後的階段（屍潮最多仍為 6 波）----
+{
+  const gt = Game.newGame({ playerName: 'T116', classId: 'warrior', lat: 25, lon: 121 });
+  const c = gt.civilization;
+  const at = (v) => { c.value = () => v; return { t: c.tier(), w: c.maxWaves ? c.maxWaves() : null }; };
+  const a = at(1609);
+  assert(a.t.name === '黎明之國' && a.t.next?.min === 2000, `文明度 1609 為「黎明之國」，下一階段 2000（${a.t.name}）`);
+  const z = at(5000);
+  assert(z.t.name === '重生紀元' && !z.t.next, '文明度 2800 以上為最高階段「重生紀元」');
+  const waves = [600, 1000, 1609, 2500, 5000].map((v) => { c.value = () => v; return gt.siege.of ? gt.siege.of()?.maxWaves?.() : null; }).filter((x) => x != null);
+  assert(waves.every((w) => w <= 6), `新文明之後每晚最多仍為 6 波（${waves.join('/')}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

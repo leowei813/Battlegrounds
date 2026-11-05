@@ -23,6 +23,10 @@ export const CIV_TIERS = [
   { min: 200, name: '城鎮', icon: '🏙️' },
   { min: 350, name: '城邦', icon: '🏛️' },
   { min: 550, name: '新文明', icon: '🌆' },
+  { min: 900, name: '復興都市', icon: '🏙️' },
+  { min: 1400, name: '黎明之國', icon: '🌇' },
+  { min: 2000, name: '曙光聯邦', icon: '🌍' },
+  { min: 2800, name: '重生紀元', icon: '🌟' },
 ];
 
 /** 屍潮隨文明度成長的係數 */
@@ -53,7 +57,7 @@ export const SIEGE_SCALING = {
   dangerLevelMul: 0.25, // 每點據點危險度（超過 1 的部分），殭屍 +0.25 級
   dangerSpawn: 0.04, // 每點據點危險度，屍潮頻率 +4%
   /** 每晚最多幾波屍潮（依文明度階級：廢墟／新手 1 波 → 新文明 6 波） */
-  wavesByTier: [1, 2, 3, 4, 5, 6],
+  wavesByTier: [1, 2, 3, 4, 5, 6, 6, 6, 6, 6], // 新文明之後的階段維持 6 波
   /** 文明度越低，每波殭屍越少（倍率從 0.45 到 0.7） */
   waveSizeMin: 0.45,
   waveSizeMax: 0.7,
