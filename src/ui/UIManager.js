@@ -454,6 +454,12 @@ export class UIManager {
     const rs = this.researchBadge();
     // 市場：刊登中的總筆數（藍色，只顯示數量）
     const mk = this.panels.market?.listingCount() || 0;
+    // 呼吸光：市場＝黑市換新後這一輪還沒看過；倖存者＝有傳說候選人等待招募
+    const st = g.state;
+    const bmNew = !!g.blackMarket && (st.settings?.bmSeenTick ?? -1) !== g.blackMarket.tick();
+    const legend = [...(st.recruitOffer || []), ...(st.recruitPool || []), ...(st.recruitBoard?.list || [])].some((c) => c.rarity === 'legendary');
+    this.nav.querySelector('[data-tab="market"]')?.classList.toggle('glow-bm', bmNew);
+    this.nav.querySelector('[data-tab="survivors"]')?.classList.toggle('glow-legend', legend);
     this.nav.querySelectorAll('[data-badge]').forEach((el) => {
       const key = el.dataset.badge;
       if (key === 'market') {

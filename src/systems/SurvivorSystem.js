@@ -24,6 +24,9 @@ import { canAfford, payCost, scaleCost } from './costUtils.js';
  * 倖存者系統：屬性計算、經驗/升級、工作指派、招募（三選一）、
  * 生命值 / 重傷 / 飢餓 / 永久死亡、驅逐。
  */
+/** 戰鬥結束後生命低於這個比例時，自動用藥品欄的藥補血（補到不溢出） */
+export const POST_BATTLE_HEAL_BELOW = 0.7;
+
 export class SurvivorSystem {
   constructor(game) {
     this.game = game;
@@ -749,7 +752,7 @@ export class SurvivorSystem {
     return { ok: true, n };
   }
 
-  /** 這種消耗品還能放多少（只看格子：每格堆疊 999） */
+  /** 這種消耗品還能放多少（只看格子：每格堆疊 9999） */
   stackRoom(sv, key) {
     const eq = this.game.equipment;
     const cur = this.bagOf(sv)[key] || 0;
@@ -763,7 +766,7 @@ export class SurvivorSystem {
     if (!this.atShelter(sv)) return { ok: false, reason: '不在避難所，無法存取倉庫' };
     const bag = this.bagOf(sv);
     const res = this.storePool(key);
-    // 同種類消耗品堆疊（每格最多 999），需要新格子時要有空格
+    // 同種類消耗品堆疊（每格最多 9999），需要新格子時要有空格
     const slotRoom = this.stackRoom(sv, key);
     if (slotRoom <= 0) return { ok: false, reason: '背包格子已滿' };
     const room = Math.floor(Math.max(0, this.bagCap(sv) - this.bagLoad(sv)) / unitWeight(key));
@@ -919,6 +922,24 @@ export class SurvivorSystem {
       lo[kind] = null;
     }
     return { ok: true, msg: `已卸下 ${SUPPLIES[key].name}×${qty}` };
+  }
+
+  /**
+   * 戰鬥結束後補血：生命低於 70% 時，從藥品欄吃藥補到不會溢出為止（倒下的人不用）。
+   * @returns {string|null} 報告說明
+   */
+  postBattleHeal(sv) {
+    const lo = this.loadout(sv);
+    if (!lo.med?.qty || sv.severe) return null;
+    const max = this.maxHp(sv);
+    if (this.hpOf(sv) >= max * POST_BATTLE_HEAL_BELOW) return null;
+    const key = lo.med.key;
+    let used = 0;
+    while (lo.med?.qty && this.hpOf(sv) + this.healAmount(sv, key) <= max + 1e-6) {
+      this.setHp(sv, this.hpOf(sv) + this.useLoadoutMed(sv));
+      used += 1;
+    }
+    return used ? `${sv.name} 戰後使用 ${SUPPLIES[key]?.name || '藥品'}×${used}（生命 ${Math.round(this.hpOf(sv))}/${Math.round(max)}）` : null;
   }
 
   /** 戰鬥中使用一個藥品欄的藥（回傳回復量；沒有則 0） */

@@ -23,6 +23,10 @@ export const CIV_TIERS = [
   { min: 200, name: '城鎮', icon: '🏙️' },
   { min: 350, name: '城邦', icon: '🏛️' },
   { min: 550, name: '新文明', icon: '🌆' },
+  { min: 900, name: '復興都市', icon: '🏙️' },
+  { min: 1400, name: '黎明之國', icon: '🌇' },
+  { min: 2000, name: '曙光聯邦', icon: '🌍' },
+  { min: 2800, name: '重生紀元', icon: '🌟' },
 ];
 
 /** 屍潮隨文明度成長的係數 */
@@ -31,11 +35,13 @@ export const SIEGE_SCALING = {
   /** 文明度超過 softFrom（新文明）的部分，只以 softRate 的比例增加屍潮強度（避免後期無限變強） */
   softFrom: 550,
   softRate: 0.5,
-  /** 屍潮殭屍最高等級（與倖存者等級上限相同，含據點與區域加成） */
-  maxZombieLevel: 60,
+  /** 屍潮殭屍最高等級（含據點與區域加成；v10.9 由 60 提高，讓後期持續變強） */
+  maxZombieLevel: 75,
+  /** 屍潮殭屍的生命、攻擊整體倍率（v10.9 略為加強；破牆後的近身戰沿用同一批殭屍的數值） */
+  zombieMul: { hp: 1.1, atk: 1.1 },
   civPerLevel: 16, // 每 16 文明度，殭屍 +1 級
   spawnPerCiv: 0.0012, // 每點文明度，屍潮頻率 +0.12%
-  maxSpawnMul: 2.2, // 文明度造成的頻率倍率上限
+  maxSpawnMul: 2.5, // 文明度造成的頻率倍率上限（v10.9 由 2.2 提高）
   hpPerCiv: 0.00273, // 每點文明度，屍潮殭屍生命 +0.273%（等級已隨文明度提高）
   atkPerCiv: 0.00163, // 每點文明度，屍潮殭屍攻擊 +0.163%
   /** 前期固定加強：生命 +80%、攻擊 +20%，在超過基準 earlyCiv 點文明度時加滿（讓文明 150～300 也有一點壓力） */
@@ -53,7 +59,7 @@ export const SIEGE_SCALING = {
   dangerLevelMul: 0.25, // 每點據點危險度（超過 1 的部分），殭屍 +0.25 級
   dangerSpawn: 0.04, // 每點據點危險度，屍潮頻率 +4%
   /** 每晚最多幾波屍潮（依文明度階級：廢墟／新手 1 波 → 新文明 6 波） */
-  wavesByTier: [1, 2, 3, 4, 5, 6],
+  wavesByTier: [1, 2, 3, 4, 5, 6, 6, 6, 6, 6], // 新文明之後的階段維持 6 波
   /** 文明度越低，每波殭屍越少（倍率從 0.45 到 0.7） */
   waveSizeMin: 0.45,
   waveSizeMax: 0.7,

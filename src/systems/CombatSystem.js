@@ -440,8 +440,10 @@ export class CombatSystem {
       if (u) this.game.survivors.setHp(sv, u.hp);
     });
     this.game.grant({ coins: Math.round(result.coins * COIN_GAIN_MUL), parts: result.parts });
-    // 戰鬥後：藥品欄用掉的部分，從隊伍背包裡相同的藥品自動補滿（缺最多的人先補）
-    const notes = this.game.survivors.refillMeds(survivors);
+    // 戰鬥後：生命低於 70% 的人從藥品欄吃藥補到不溢出
+    const healed = survivors.map((sv) => this.game.survivors.postBattleHeal(sv)).filter(Boolean);
+    // 藥品欄用掉的部分，從隊伍背包裡相同的藥品自動補滿（缺最多的人先補）
+    const notes = [...healed, ...this.game.survivors.refillMeds(survivors)];
     if (notes.length) result.refills = notes;
   }
 }

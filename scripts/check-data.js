@@ -1034,14 +1034,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   home.facilities.itemStore.level = 3;
   assert(gq.equipment.storeCap() === slots0 + 26, '物品倉庫提高物品格子');
   assert(gq.shelter.sizeInfo(home).total <= 20, '據點建築總數上限仍為 20');
-  // 堆疊上限 999
+  // 堆疊上限 9999
   const lead = gq.survivors.leader();
-  gq.vehicles.memberCarry = () => 1e6;
-  gq.state.resources.food = 5000;
-  home.facilities.warehouse.level = 10;
-  assert(gq.survivors.withdraw(lead.id, 'food', 1500).ok && gq.equipment.bagSlotsUsed(lead) === 2, `消耗品每格最多堆疊 ${STACK_MAX}（1500 佔 2 格）`);
-  lead.bag = {};
+  gq.vehicles.memberCarry = () => 1e7;
   gq.state.resources.food = 50000;
+  home.facilities.warehouse.level = 10;
+  assert(STACK_MAX === 9999 && gq.survivors.withdraw(lead.id, 'food', STACK_MAX + 500).ok && gq.equipment.bagSlotsUsed(lead) === 2, `消耗品每格最多堆疊 ${STACK_MAX}（${STACK_MAX + 500} 佔 2 格）`);
+  lead.bag = {};
+  gq.state.resources.food = 2e6;
   const max = gq.survivors.withdraw(lead.id, 'food', 1e6);
   assert(max.n === gq.equipment.bagSlotCap(lead) * STACK_MAX, '背包格子決定可攜帶的消耗品上限');
   lead.bag = {};
@@ -1599,17 +1599,6 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   A.npcs.update(later);
   B.npcs.update(later);
   assert(ids(A) === ids(B), '重生後兩位玩家看到的仍然相同');
-  // 夜晚屍群：結果相同且只結算一次
-  const n2 = A.npcs.list.find((n) => n.sid);
-  const n2b = B.npcs.get(n2.id);
-  const night = A.time.nightKey(later);
-  A.npcs.nightSiege(n2, night, later);
-  B.npcs.nightSiege(n2b, night, later);
-  assert(n2.lastSiege.result === n2b.lastSiege.result, '同一晚 NPC 抵禦屍群的結果所有玩家相同');
-  await new Promise((r) => setTimeout(r, 5));
-  await A.shared.poll();
-  const d = A.shared.get('npc', n2.sid);
-  assert(d.siegeNight === night, '屍群結果寫入共用資料（每晚只結算一次）');
   // 單機（沒有伺服器）：摧毀的 NPC 重新開啟後仍然消失
   const S = Game.newGame({ playerName: 'S', classId: 'warrior', lat: 25.02, lon: 121.02 });
   S.state.map.pois = JSON.parse(JSON.stringify(pois));
@@ -1719,13 +1708,29 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!A.infected.get(s.id, t0) && !B.infected.get(s.id, t0), '消滅後所有玩家的地圖上都消失');
   const next = A.infected.nextRefresh(t0);
   assert(A.infected.list(next + 1000).some((x) => x.id === s.id), '下一個中午 12:00 重新出現');
+  // 消滅時的獎勵會補進那一場的探索報告（不會顯示「無」）
+  {
+    const s2 = la.find((x) => x.id !== s.id && A.infected.get(x.id, t0));
+    if (s2) {
+      await A.infected.addPurity(s2, 99.9, t0);
+      const exp = { poiId: s2.id, endAt: t0, memberIds: A.state.survivors.map((x) => x.id), travelEvents: [] };
+      const orig = A.infected.battle.bind(A.infected);
+      A.infected.battle = (...a) => { const o = orig(...a); return { ...o, gain: Math.max(o.gain, 1) }; }; // 確保這一場把淨化度推到 100%
+      const rep = A.infected.resolveAttack(exp);
+      A.infected.battle = orig;
+      for (let i = 0; i < 50 && !rep.events.some((t) => t.includes('消滅')); i += 1) await new Promise((r) => setTimeout(r, 5));
+      assert(rep.events.some((t) => t.includes('消滅')) && (rep.items.length > 0 || Object.keys(rep.resources).length > 0), `消滅獎勵顯示在探索報告（裝備 ${rep.items.length}、物資 ${Object.keys(rep.resources).length} 種）`);
+    }
+  }
   // 獎勵：1 人 3～4 種，每多 1 人上下限 +2，最低優良
   const rw1 = A.infected.rewards(s, 1);
   const n1 = rw1.items.length + Object.keys(rw1.mats).length;
   const rw3 = A.infected.rewards(s, 3);
   const n3 = rw3.items.length + Object.values(rw3.mats).length;
-  assert(n1 >= 2 && n1 <= 4 && rw3.items.every((it) => ['uncommon', 'rare', 'epic', 'legendary'].includes(it.rarity)), `消滅獎勵數量與品級（1 人 ${n1} 種）`);
+  assert(n1 >= 3 && n1 <= 8 && rw3.items.every((it) => ['rare', 'epic', 'legendary'].includes(it.rarity)) && rw3.coins >= 1800, `消滅獎勵：1 人最多 8 種、裝備最低精良、金錢 ×3（1 人 ${n1} 種，3 人 💰${rw3.coins}）`);
   void n3;
+  const fr = A.infected.fightRewards(s, 30);
+  assert(fr.coins === 450 && Object.values(fr.mats).reduce((a, v) => a + v, 0) >= 6 && fr.items.every((it) => ['rare', 'epic', 'legendary'].includes(it.rarity)), `每場依淨化度給獎勵：+30% 得到 💰${fr.coins} 與 ${Object.keys(fr.mats).length} 種材料`);
   // 不會與玩家據點重疊：在據點位置上的重度感染據點會移到格子內其他位置
   const s0 = A.infected.list()[0];
   const C2 = mk('C2');
@@ -2156,15 +2161,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   n.healAt = Date.now() - 10 * 20 * 60000;
   gq.npcs.update(Date.now());
   assert(!n.wounded && gq.npcs.garrison(n).length > g0, 'NPC 傷亡人員會隨時間補回');
-  // 夜晚：NPC 也要抵禦屍群（每晚一次）
+  // 夜晚：NPC 據點不再抵禦屍潮（v10.9 移除），等級不會因此下降
   setHour(gq, 22);
   n.wounded = 0;
+  const lv22 = n.level;
+  const loss22 = n.levelLoss || 0;
   gq.npcs.update(Date.now());
-  const night = gq.time.nightKey();
-  assert(n.siegeNight === night || !gq.npcs.get(n.id), 'NPC 據點在夜晚抵禦屍群');
-  const last = JSON.stringify(n.lastSiege);
-  gq.npcs.update(Date.now());
-  assert(JSON.stringify(n.lastSiege) === last, '每晚只結算一次');
+  assert(!n.lastSiege && (n.levelLoss || 0) === loss22 && n.level >= lv22 && !n.wounded, 'NPC 據點夜晚不會抵禦屍潮、等級不會下降');
   // 偵查情報
   gq.state.research.levels = {};
   gq.research._cache = null;
@@ -2667,7 +2670,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ga.survivors.setHp(lead, 1);
   const r = ga.combat.simulate([lead], [ga.combat.createEnemy('walker', 1)]);
   ga.combat.applyOutcome([lead], r);
-  assert(r.log.some((l) => l.msg.includes('💊')) && lead.loadout.med.qty < 5, '生命過低時自動使用藥品欄的藥');
+  assert(r.log.some((l) => l.msg.includes('💊')) && (lead.loadout.med?.qty ?? 0) < 5, '生命過低時自動使用藥品欄的藥');
   lead.bag.nail = 10;
   assert(ga.survivors.discardBag(lead.id, 'nail', 4).ok && lead.bag.nail === 6, '背包物品可以指定數量丟棄');
   assert(ga.survivors.discardBag(lead.id, 'nail', Infinity).ok && !lead.bag.nail, '背包物品可以全部丟棄');
@@ -3347,42 +3350,6 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(bm.supplyPrice('ammo308') < 85 && SP.ammo308.cat === 'ammo', '.308 狙擊彈不再是高價');
 }
 
-// ---- 75. 同一晚多位玩家都結算 NPC 抵禦屍群：不重複扣等級 ----
-{
-  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
-  const store = new MemoryObjects();
-  const pois = fillPois([], 25.3, 121.3);
-  const mk = (name) => {
-    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.3, lon: 121.3 });
-    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
-    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
-    gx.shared.backend = store;
-    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
-    gx.npcs.fillCells(Date.now(), { silent: true });
-    return gx;
-  };
-  const A = mk('A');
-  const B = mk('B');
-  let night = null;
-  let nA = null;
-  for (let k = 0; k < 300 && !night; k += 1) {
-    nA = A.npcs.list[k % A.npcs.list.length];
-    const save = JSON.parse(JSON.stringify(nA));
-    const before = nA.levelLoss || 0;
-    A.npcs.nightSiege(nA, `t${k}`, Date.now());
-    await new Promise((r) => setTimeout(r, 2));
-    if ((nA.levelLoss || 0) > before && A.npcs.list.includes(nA)) night = `t${k}`;
-    else Object.assign(nA, save);
-  }
-  assert(!!night, '找到 NPC 被屍群突破而降級的夜晚');
-  const nB = B.npcs.list.find((x) => x.ident === nA.ident);
-  // B 還沒同步到 A 的結算就自己也結算了同一晚
-  B.npcs.nightSiege(nB, night, Date.now());
-  await new Promise((r) => setTimeout(r, 20));
-  const server = store.map.get(`npc:${nA.sid}`)?.data?.levelLoss;
-  assert(nB.levelLoss === server && nA.levelLoss === server, `別人已經結算過的夜晚不會在本機重複扣等級（A ${nA.levelLoss}／B ${nB.levelLoss}／伺服器 ${server}）`);
-}
-
 // ---- 76. 屍潮平衡：前期加強、駐守倍率；天亮結算獎勵與突破懲罰 ----
 {
   const { SIEGE_SCALING: SS, SIEGE_REWARD: SR, SIEGE_PENALTY: SPN } = await import('../src/config/civilization.js');
@@ -3415,7 +3382,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   s.spawn(Object.keys(BOSSES)[0], true);
   const bz = s.zombies[s.zombies.length - 1];
   const be = gs.combat.createEnemy(bz.enemyId, s.zombieLevel() + 3);
-  assert(Math.abs(bz.maxHp / Math.round(be.maxHp * gs.civilization.siegeHpMul() * SS.bossMul) - 1) < 0.01, '屍潮 Boss 生命另乘 0.5');
+  assert(Math.abs(bz.maxHp / Math.round(be.maxHp * gs.civilization.siegeHpMul() * SS.bossMul * (SS.zombieMul?.hp || 1)) - 1) < 0.01, '屍潮 Boss 生命另乘 0.5');
   s.zombies = [];
   // 天亮結算：城牆 90% → 優秀 ×1.5
   sv.job = 'guard';
@@ -4455,7 +4422,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gr.rally.get(st.id || st.rally?.id || gr.shared.all('rally')[0]?.id)?.status === 'cancelled' || gr.shared.all('rally').every((o) => o.data.status === 'cancelled'), '自己發起的集結會取消');
 }
 
-// ---- 105. 屍潮強度：文明度超過新文明（550）的部分只算一半；屍潮殭屍最高 Lv60 ----
+// ---- 105. 屍潮強度：文明度超過新文明（550）的部分只算一半；屍潮殭屍最高 Lv75 ----
 {
   const gz = Game.newGame({ playerName: 'Z105', classId: 'warrior', lat: 25, lon: 121 });
   gz.state.map.pois = fillPois([], 25, 121);
@@ -4470,7 +4437,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(civ.effective() === 280, '文明度 550 以下不受影響');
   civ.value = () => 5000;
   setHour(gz, 23);
-  assert(gz.siege.of().zombieLevel() === 60, `屍潮殭屍最高 Lv60（${gz.siege.of().zombieLevel()}）`);
+  assert(gz.siege.of().zombieLevel() === 75, `屍潮殭屍最高 Lv75（${gz.siege.of().zombieLevel()}）`);
 }
 
 // ---- 106. 電磁塔、電網每個據點限 1 座；舊存檔多出的拆除並全額退還材料 ----
@@ -4672,6 +4639,57 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const logM = gs.state.defenseLog.length;
   gs.siege.of().update(0.1);
   assert(gs.state.defenseLog.length === logM && !gs.shelter.primary().nightStats, '被突破的夜晚不會補記成防守成功');
+}
+
+// ---- 114. 剛開遊戲、還沒讀到共用 NPC 資料時，保留存檔裡的 NPC（不會先顯示錯的等級再突然下降）----
+{
+  const gn = Game.newGame({ playerName: 'N114', classId: 'warrior', lat: 25, lon: 121 });
+  gn.state.map.pois = fillPois([], 25, 121);
+  gn.shelter.establish(gn.state.map.pois.find((p) => gn.shelter.canEstablish(p).ok));
+  gn.npcs.fillCells(Date.now(), { silent: true });
+  const saved = gn.npcs.list.map((n) => `${n.ident}:${n.level}`).join(',');
+  Object.defineProperty(gn.shared, 'online', { get: () => true, configurable: true }); // 模擬連線中
+  assert(gn.npcs.list.length > 0, '有存檔裡的 NPC');
+  if (gn.npcs.list.length) {
+    gn.shared.listedAt = {};
+    gn.npcs.createdAt = Date.now();
+    gn.npcs.list.forEach((n) => { n.level = 99; });
+    assert(gn.npcs.waitingShared() && gn.npcs.fillCells(Date.now(), { silent: true }) === 0 && gn.npcs.list.every((n) => n.level === 99), '還沒讀到共用 NPC 資料時，先保留存檔裡的 NPC');
+    gn.shared.listedAt.npc = Date.now();
+    assert(!gn.npcs.waitingShared(), '讀到共用資料後照常更新 NPC');
+  }
+  void saved;
+}
+
+// ---- 115. 戰鬥結束後生命低於 70%：從藥品欄吃藥補到不溢出 ----
+{
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const gh = Game.newGame({ playerName: 'H115', classId: 'warrior', lat: 25, lon: 121 });
+  const sv = createSurvivor('傑', 'engineer', 20, 'rare');
+  gh.state.survivors.push(sv);
+  const max = gh.survivors.maxHp(sv);
+  gh.survivors.setHp(sv, max * 0.43);
+  sv.loadout = { ammo: null, med: { key: 'vitamin', qty: 10 } };
+  const r1 = gh.survivors.postBattleHeal(sv);
+  const hp1 = gh.survivors.hpOf(sv);
+  const heal = gh.survivors.healAmount(sv, 'vitamin');
+  assert(r1 && hp1 <= max + 1e-6 && hp1 + heal > max && sv.loadout.med.qty < 10, `生命 43% 戰後吃維他命補到不溢出（${Math.round(hp1)}/${Math.round(max)}，剩 ${sv.loadout.med.qty} 個）`);
+  gh.survivors.setHp(sv, max * 0.75);
+  const q = sv.loadout.med.qty;
+  assert(!gh.survivors.postBattleHeal(sv) && sv.loadout.med.qty === q, '生命還有 70% 以上時不吃藥');
+}
+
+// ---- 116. 文明度新增 550 之後的階段（屍潮最多仍為 6 波）----
+{
+  const gt = Game.newGame({ playerName: 'T116', classId: 'warrior', lat: 25, lon: 121 });
+  const c = gt.civilization;
+  const at = (v) => { c.value = () => v; return { t: c.tier(), w: c.maxWaves ? c.maxWaves() : null }; };
+  const a = at(1609);
+  assert(a.t.name === '黎明之國' && a.t.next?.min === 2000, `文明度 1609 為「黎明之國」，下一階段 2000（${a.t.name}）`);
+  const z = at(5000);
+  assert(z.t.name === '重生紀元' && !z.t.next, '文明度 2800 以上為最高階段「重生紀元」');
+  const waves = [600, 1000, 1609, 2500, 5000].map((v) => { c.value = () => v; return gt.siege.of ? gt.siege.of()?.maxWaves?.() : null; }).filter((x) => x != null);
+  assert(waves.every((w) => w <= 6), `新文明之後每晚最多仍為 6 波（${waves.join('/')}）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

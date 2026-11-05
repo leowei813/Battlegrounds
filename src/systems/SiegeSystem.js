@@ -370,8 +370,9 @@ export class BaseSiege {
     // 屍潮殭屍額外受文明度強化（地圖戰鬥的敵人不受此影響）
     // Boss 另乘 bossMul，抵銷文明度加成，維持原本強度
     const bossMul = isBoss ? (SIEGE_SCALING.bossMul ?? 1) : 1;
-    const hpMul = this.game.civilization.siegeHpMul() * bossMul;
-    const atkMul = this.game.civilization.siegeAtkMul() * bossMul;
+    const zm = SIEGE_SCALING.zombieMul || { hp: 1, atk: 1 };
+    const hpMul = this.game.civilization.siegeHpMul() * bossMul * zm.hp;
+    const atkMul = this.game.civilization.siegeAtkMul() * bossMul * zm.atk;
     this.zombies.push({
       id: this.nextId++,
       enemyId,
