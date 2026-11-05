@@ -193,6 +193,9 @@ export class ShelterSystem {
   canEstablish(poi) {
     if (!poi) return { ok: false, reason: '找不到地點' };
     if (this.baseAtPoi(poi.id)) return { ok: false, reason: '這裡已經是你的據點' };
+    // 重度感染據點位置固定：據點（含警戒範圍）不能和它重疊
+    const inf = this.game.infected?.blocking(poi, BASE_SIZES[baseSizeOf(poi)]?.alert || 80);
+    if (inf) return { ok: false, reason: `這裡太靠近重度感染據點「${inf.name}」，無法建立據點` };
     if (this.primary()) {
       const limit = this.outpostLimit();
       if (!limit) return { ok: false, reason: '需研究「前哨站」科技' };

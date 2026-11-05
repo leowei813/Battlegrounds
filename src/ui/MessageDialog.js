@@ -7,25 +7,21 @@ import { battlesSectionHtml, battleHtml } from './BattleLog.js';
 
 const hhmm = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
-/** 重要的避難所事件（計入未讀）：不含一般資訊訊息 */
-const IMPORTANT = new Set(['danger', 'success', 'loot', 'legendary']);
-
 /** 事件紀錄上次已讀的時間（舊存檔沿用避難所紀錄的已讀時間） */
 const eventsSeen = (seen) => seen.events ?? seen.base ?? 0;
 
-/** 各分頁的未讀數：探索報告、避難所紀錄（遭襲紀錄）、事件紀錄（重要事件） */
+/** 各分頁的未讀數：探索報告、避難所紀錄（遭襲紀錄）；事件紀錄只做記錄，不計未讀 */
 export function unreadCounts(game) {
   const st = game.state;
   const seen = st.msgSeen || {};
   const reports = (st.reports || []).filter((r) => (r.at || 0) > (seen.reports || 0)).length;
   const base = (st.defenseLog || []).filter((e) => (e.at || 0) > (seen.base || 0)).length;
-  const events = (st.log || []).filter((l) => IMPORTANT.has(l.type) && (l.t || 0) > eventsSeen(seen)).length;
-  return { reports, base, events };
+  return { reports, base, events: 0 };
 }
 
 export function unreadCount(game) {
   const c = unreadCounts(game);
-  return c.reports + c.base + c.events;
+  return c.reports + c.base;
 }
 
 const NEW = '<span class="tag tag-blue new-tag">未讀</span>';
@@ -62,7 +58,7 @@ function eventsHtml(ui, since, openBattle) {
   const logs = ui.game.state.log.slice(0, 80).map((l) => {
     const b = l.battleId ? ui.game.combat.battle(l.battleId) : null;
     const open = b && openBattle === b.id;
-    return `<li class="log-${l.type} ${(l.t || 0) > since && IMPORTANT.has(l.type) ? 'unread' : ''}"><time>${hhmm(l.t)}</time>${(l.t || 0) > since && IMPORTANT.has(l.type) ? NEW : ''}${escapeHtml(l.msg)}${b ? ` ${btn(open ? '收起戰鬥' : '⚔️ 戰鬥明細', 'toggleBattle', { id: b.id }, { cls: 'btn-xs btn-ghost' })}${open ? battleHtml(b, true) : ''}` : ''}</li>`;
+    return `<li class="log-${l.type}"><time>${hhmm(l.t)}</time>${escapeHtml(l.msg)}${b ? ` ${btn(open ? '收起戰鬥' : '⚔️ 戰鬥明細', 'toggleBattle', { id: b.id }, { cls: 'btn-xs btn-ghost' })}${open ? battleHtml(b, true) : ''}` : ''}</li>`;
   }).join('');
   return `<ul class="log-list">${logs || '<li class="muted">尚無紀錄</li>'}</ul>`;
 }
@@ -74,7 +70,7 @@ function eventsHtml(ui, since, openBattle) {
 export function openMessages(ui) {
   const g = ui.game;
   const first = unreadCounts(g);
-  let tab = first.reports ? 'reports' : first.base ? 'base' : first.events ? 'events' : 'reports';
+  let tab = first.reports ? 'reports' : first.base ? 'base' : 'reports';
   let openId = null;
   let openBattle = null;
   g.state.msgSeen = g.state.msgSeen || {};
