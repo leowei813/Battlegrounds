@@ -1778,6 +1778,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const lead = A.survivors.leader();
   const st = await A.rally.start(target, 5, [lead.id]);
   assert(st.ok && lead.status === 'exploring', `發起集結，自己的隊伍加入（${st.reason || ''}）`);
+  {
+    const ex0 = A.rally.trips()[0];
+    const dd = A.rally.get(st.id);
+    assert(ex0 && dd && ex0.startAt === dd.departAt && ex0.startAt > Date.now() + 60000, '發起集結後隊伍等到倒數結束才出發（不會馬上出發）');
+  }
   assert(!(await A.rally.start(target, 5, [])).ok, '同時只能發起一個集結');
   await B.shared.poll();
   B.rally.lastAt = 0;
@@ -1786,14 +1791,32 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const C = mk('C');
   await C.shared.poll();
   assert(!C.rally.invites().length && !(await C.rally.join(st.id, [C.survivors.leader().id])).ok, '不是好友不能參加');
+  // 加入時共用資料還是舊的（名單裡還沒有自己）：隊伍不會被誤判成被移出而回家
+  const staleRally = JSON.parse(JSON.stringify(B.shared.get('rally', st.id)));
   const jb = await B.rally.join(st.id, [B.survivors.leader().id]);
   assert(jb.ok, `好友參加集結（${jb.reason || ''}）`);
+  {
+    const realRally = B.shared.get('rally', st.id);
+    const key = [...B.shared.cache.keys()].find((k) => B.shared.cache.get(k) === realRally || (B.shared.cache.get(k)?.data === realRally));
+    const exB = B.rally.trips()[0];
+    if (key) {
+      const saved = B.shared.cache.get(key);
+      B.shared.cache.set(key, saved?.data ? { ...saved, data: staleRally } : staleRally);
+      await B.rally.step(exB, Date.now());
+      assert(B.state.expeditions.includes(exB), '加入集結後即使資料還沒更新，隊伍也不會回家');
+      const bl = B.survivors.leader();
+      const poiB = B.state.map.pois.find((p) => B.exploration.poi(p.id));
+      assert(!B.survivors.isAvailable(bl) && (!poiB || !B.exploration.start(poiB.id, [bl.id], 5, true).ok), '集結成員在倒數期間不能再派出去探索');
+      B.shared.cache.set(key, saved);
+    } else assert(!!exB, '加入集結後隊伍在集結中');
+  }
   // 滿員立即出發；A 之後離線
   await A.shared.poll();
   await A.rally.step(A.rally.trips()[0], Date.now());
   await B.shared.poll();
   const d1 = B.rally.get(st.id);
   assert(d1.status === 'departed' && d1.fightAt >= Date.now() - 1000, '滿員時立即出發');
+  assert(d1.teams.every((t) => typeof t.travelMs === 'number') && d1.fightAt === d1.departedAt + Math.max(d1.travelMs || 0, ...d1.teams.map((t) => t.travelMs || 0)), `等最晚抵達的隊伍到了才開打（${d1.teams.map((t) => t.travelMs).join('/')}）`);
   // 發起人 A 離線（不再執行）；B 到時間自己結算
   await B.rally.step(B.rally.trips()[0], d1.fightAt + 1);
   await B.shared.poll();
@@ -4594,6 +4617,61 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gq.research.invalidate();
   const cut = gq.equipment.ammoCost('shell12', 10).plastic;
   assert(base === 10 && cut === 7, `材料節約 Lv10 套用到彈藥：10 批霰彈塑膠外殼 ${base}→${cut}`);
+}
+
+// ---- 112. 黑市子彈類數量 ×3（單價不變）----
+{
+  const { BLACK_MARKET: BMC } = await import('../src/systems/BlackMarketSystem.js');
+  const { SUPPLIES } = await import('../src/config/supplies.js');
+  const gb = Game.newGame({ playerName: 'B112', classId: 'warrior', lat: 25, lon: 121 });
+  const ammo = [];
+  for (let gen = 0; gen < 400 && ammo.length < 30; gen += 1) {
+    for (let slot = 0; slot < BMC.slots; slot += 1) {
+      const x = gb.blackMarket.good(slot, gen);
+      if (x.kind === 'supply' && SUPPLIES[x.key]?.cat === 'ammo') ammo.push(x);
+    }
+  }
+  assert(BMC.ammoQty === 90, '子彈類基礎數量為 90');
+  assert(ammo.length > 0, '黑市會出現子彈');
+  if (ammo.length) {
+    const t1 = ammo.filter((x) => SUPPLIES[x.key].tier === 1);
+    assert(!t1.length || t1.every((x) => x.qty >= 54), `★1 子彈每格至少 54 個（${t1.map((x) => x.qty).join('/')}）`);
+    assert(ammo.every((x) => x.price === Math.max(1, Math.round(gb.blackMarket.supplyPrice(x.key) * x.qty * BMC.priceMul))), '單價不變，總價依數量計算');
+  }
+}
+
+// ---- 113. 屍潮防守紀錄：夜裡重新整理不會讓擊殺歸零；天亮前離開，回來時補記防守成功與獎勵 ----
+{
+  const { BaseSiege } = await import('../src/systems/SiegeSystem.js');
+  const gs = Game.newGame({ playerName: 'S113', classId: 'warrior', lat: 25, lon: 121 });
+  gs.state.map.pois = fillPois([], 25, 121);
+  gs.shelter.establish(gs.state.map.pois.find((p) => gs.shelter.canEstablish(p).ok));
+  gs.shelter.primary().facilities.wall.level = 10;
+  setHour(gs, 21);
+  const s1 = gs.siege.of();
+  for (let i = 0; i < 1200; i += 1) { s1.update(0.1); gs.shelter.primary().wallHp = null; }
+  const killsBefore = s1.nightKills;
+  // 模擬重新整理：換一個新的屍潮物件（記憶體中的統計消失）
+  const id = gs.shelter.primary().id;
+  gs.siege.sieges.set(id, new BaseSiege(gs, id));
+  const s2 = gs.siege.of();
+  s2.update(0.1);
+  assert(killsBefore > 0 && s2.nightKills >= killsBefore, `夜裡重新整理後擊殺數沿用（${killsBefore} → ${s2.nightKills}）`);
+  // 模擬天亮前離開：再換一個新物件，直接到白天才回來
+  gs.siege.sieges.set(id, new BaseSiege(gs, id));
+  const logN = gs.state.defenseLog.length;
+  setHour(gs, 9);
+  gs.siege.of().update(0.1);
+  const rec = gs.state.defenseLog[0];
+  assert(gs.state.defenseLog.length === logN + 1 && rec.success && rec.kills >= killsBefore && rec.siege?.coins > 0, `回來時補記防守成功與獎勵（擊殺 ${rec?.kills}、金錢 ${rec?.siege?.coins}）`);
+  gs.siege.of().update(0.1);
+  assert(gs.state.defenseLog.length === logN + 1 && !gs.shelter.primary().nightStats, '同一晚只結算一次');
+  // 被突破後重新整理：天亮時不會多出一筆「防守成功」
+  gs.shelter.primary().nightStats = { night: 'x', kills: 5, recover: {}, wallStart: 100, breached: true, boss: null, waves: 2 };
+  gs.siege.sieges.set(id, new BaseSiege(gs, id));
+  const logM = gs.state.defenseLog.length;
+  gs.siege.of().update(0.1);
+  assert(gs.state.defenseLog.length === logM && !gs.shelter.primary().nightStats, '被突破的夜晚不會補記成防守成功');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

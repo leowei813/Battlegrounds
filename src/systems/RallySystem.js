@@ -5,6 +5,8 @@ import { NPC_REWARD_MUL, RALLY_SHARE_FLOOR } from '../config/npcs.js';
 
 /** 集結：出發倒數可選的分鐘數 */
 export const RALLY_DELAYS = [5, 10, 15, 20];
+/** 加入集結後的緩衝時間：這段時間內共用資料還沒更新也不會讓隊伍回家 */
+export const RALLY_JOIN_GRACE_MS = 30000;
 /** 查詢範圍（公里） */
 export const RALLY_KM = 20;
 /** 結算鎖定逾時（結算中的人斷線時，其他參加者可以接手） */
@@ -109,6 +111,17 @@ export class RallySystem {
     }).filter(Boolean);
   }
 
+  /**
+   * 集結中的隊伍：倒數結束（或隊伍湊滿提早出發）時才真正出發。
+   * 出發前隊伍留在避難所（地圖顯示「集結中・等待出發」），出發時間依集結的出發時間設定。
+   */
+  setDepartAt(exp, departAt) {
+    if (!exp || !departAt) return;
+    exp.startAt = departAt;
+    exp.gatherUntil = departAt;
+    if (!exp.rallyResult) exp.endAt = departAt + 24 * 3600000;
+  }
+
   /** 出發加入（自己的倖存者成為「集結中」的隊伍，直到結果出來） */
   depart(rallyId, target, memberIds, vehicleIds = []) {
     this.pendingTarget = target;
@@ -116,6 +129,7 @@ export class RallySystem {
     this.pendingTarget = null;
     if (!r.ok) return r;
     r.exp.rallyId = rallyId;
+    r.exp.rallyJoinedAt = Date.now();
     // 集結一起行動：不會單獨遇襲或被攔截
     r.exp.encountered = null;
     r.exp.threats = [];
@@ -138,19 +152,22 @@ export class RallySystem {
     const id = uid('rl');
     const dep = this.depart(id, target, memberIds, vehicleIds);
     if (!dep.ok) return dep;
+    // 寫入共用世界期間不要檢查這個集結（還沒寫入前會被誤判成「已取消」而讓隊伍回家）
+    this.busy.add(id);
     const now = Date.now();
     const me = this.myId();
     const sh = g.shelter.primary();
     const data = {
       owner: me, ownerName: g.state.player.name || '倖存者', target, status: 'gathering', at: now,
       departAt: now + Number(delayMin) * 60000, travelMs: dep.exp.travelMs, maxTeams: this.maxTeams(),
-      teams: [{ player: me, name: g.state.player.name || '倖存者', units: this.units(memberIds), at: now }],
+      teams: [{ player: me, name: g.state.player.name || '倖存者', units: this.units(memberIds), at: now, travelMs: dep.exp.travelMs || 0 }],
     };
-    const r = await g.shared.update('rally', id, (d) => (d ? { fail: '編號重複，請再試一次' } : { data }), { lat: sh.lat, lon: sh.lon });
+    const r = await g.shared.update('rally', id, (d) => (d ? { fail: '編號重複，請再試一次' } : { data }), { lat: sh.lat, lon: sh.lon }).finally(() => this.busy.delete(id));
     if (!r.ok) {
       this.abort(dep.exp);
       return r;
     }
+    this.setDepartAt(dep.exp, data.departAt);
     g.log(`📡 發起集結：目標「${target.name}」，${delayMin} 分鐘後出發（最多 ${data.maxTeams} 支隊伍）`, 'info');
     return { ok: true, id, msg: `已發起集結，好友會收到通知（${delayMin} 分鐘後出發）` };
   }
@@ -166,18 +183,21 @@ export class RallySystem {
     const dep = this.depart(rallyId, d0.target, memberIds, vehicleIds);
     if (!dep.ok) return dep;
     const me = this.myId();
-    const team = { player: me, name: g.state.player.name || '倖存者', units: this.units(memberIds), at: Date.now() };
+    const team = { player: me, name: g.state.player.name || '倖存者', units: this.units(memberIds), at: Date.now(), travelMs: dep.exp.travelMs || 0 };
+    // 寫入共用世界期間不要檢查這個集結（還沒加入名單前會被誤判成「被移出」而讓隊伍回家）
+    this.busy.add(rallyId);
     const r = await g.shared.update('rally', rallyId, (d) => {
       if (!d || d.status !== 'gathering') return { fail: '這個集結已經出發或結束了' };
       if ((d.teams || []).some((x) => x.player === me)) return { fail: '已經參加了' };
       if (d.teams.length >= d.maxTeams) return { fail: '集結隊伍已滿' };
       d.teams.push(team);
       return { data: d };
-    });
+    }).finally(() => this.busy.delete(rallyId));
     if (!r.ok) {
       this.abort(dep.exp);
       return r;
     }
+    this.setDepartAt(dep.exp, r.data?.departAt || d0.departAt);
     g.log(`📡 參加「${d0.ownerName}」的集結：目標「${d0.target.name}」`, 'info');
     return { ok: true, msg: `已加入「${d0.ownerName}」的集結` };
   }
@@ -252,11 +272,18 @@ export class RallySystem {
     const g = this.game;
     const d = this.get(exp.rallyId);
     if (!d || this.busy.has(exp.rallyId)) return;
-    if (d.status === 'cancelled' || (d.status === 'gathering' && !(d.teams || []).some((x) => x.player === this.myId()))) {
+    // 剛加入時共用資料可能還是舊的（名單裡還沒有自己）：給一段緩衝時間，避免誤判成被移出而回家
+    const notListed = d.status === 'gathering' && !(d.teams || []).some((x) => x.player === this.myId());
+    if (notListed && now - (exp.rallyJoinedAt || 0) < RALLY_JOIN_GRACE_MS) return;
+    if (d.status === 'cancelled' || notListed) {
       g.log(`📡 集結「${d.target?.name}」已取消，隊員留在避難所`, 'info');
       this.abort(exp);
       return;
     }
+    // 隊伍湊滿提早出發：出發時間改為實際出發的時間
+    if (d.departedAt && exp.gatherUntil && exp.gatherUntil !== d.departedAt && !exp.rallyResult) this.setDepartAt(exp, d.departedAt);
+    // 開打時間（等最晚抵達的隊伍）：先到的隊伍在目標附近等待
+    if (d.fightAt) exp.rallyFightAt = d.fightAt;
     this.busy.add(exp.rallyId);
     try {
       if (d.status === 'gathering' && (now >= d.departAt || d.teams.length >= d.maxTeams)) {
@@ -264,7 +291,8 @@ export class RallySystem {
           if (!x || x.status !== 'gathering') return { fail: 'done' };
           x.status = 'departed';
           x.departedAt = Math.min(now, x.departAt);
-          x.fightAt = x.departedAt + (x.travelMs || 0);
+          // 各隊從自己的避難所出發：等最晚抵達的那一隊到了才一起開打
+          x.fightAt = x.departedAt + Math.max(x.travelMs || 0, ...(x.teams || []).map((t) => t.travelMs || 0));
           return { data: x };
         });
       } else if ((d.status === 'departed' && now >= d.fightAt) || (d.status === 'resolving' && now - (d.lockAt || 0) > LOCK_MS)) {

@@ -59,13 +59,38 @@ export class BaseSiege {
     this.bossDay = 0;
     this.nextId = 1;
     this.wasActive = false;
-    this.nightKills = 0;
-    this.nightRecover = {};
-    this.nightWallStart = 0;
-    this.breachedTonight = false;
     this.gateLogged = false;
-    this.nightBoss = null;
+    /** 沒有據點時的暫存（今晚統計平常存在據點上） */
+    this.tmpNight = { kills: 0, recover: {}, wallStart: 0, breached: false, boss: null, waves: 0 };
   }
+
+  /**
+   * 今晚的防守統計（擊殺、城牆起始耐久、回收的彈殼箭矢、是否被突破、Boss 戰利品、波數）。
+   * 存在據點上：夜裡重新整理不會歸零；天亮前離開遊戲，回來時也會補記防守結果與獎勵。
+   */
+  nightStats() {
+    return this.base?.nightStats || this.tmpNight;
+  }
+
+  get nightKills() { return this.nightStats().kills || 0; }
+
+  set nightKills(v) { this.nightStats().kills = v; }
+
+  get nightRecover() { return this.nightStats().recover || (this.nightStats().recover = {}); }
+
+  set nightRecover(v) { this.nightStats().recover = v; }
+
+  get nightWallStart() { return this.nightStats().wallStart || 0; }
+
+  set nightWallStart(v) { this.nightStats().wallStart = v; }
+
+  get breachedTonight() { return !!this.nightStats().breached; }
+
+  set breachedTonight(v) { this.nightStats().breached = !!v; }
+
+  get nightBoss() { return this.nightStats().boss || null; }
+
+  set nightBoss(v) { this.nightStats().boss = v; }
 
   /** 今晚的編號（夜晚跨過午夜，以入夜那天計） */
   nightKey(now = Date.now()) {
@@ -110,13 +135,21 @@ export class BaseSiege {
     return ids;
   }
 
-  /** 入夜：開始統計今晚的防守 */
+  /** 入夜：開始統計今晚的防守（同一晚重新整理時沿用已存的統計） */
   startNight() {
-    this.wave = Math.max(this.wave, this.savedWaves());
-    this.nightKills = 0;
-    this.nightWallStart = this.game.shelter.wallHp(this.base);
-    this.breachedTonight = false;
     this.gateLogged = false;
+    const night = this.nightKey();
+    // 上一晚沒結算（天亮前離開遊戲）：先補記，再開始今晚
+    if (this.base?.nightStats && this.base.nightStats.night !== night) {
+      this.wave = 0;
+      this.endNight();
+      this.wave = 0;
+    }
+    this.wave = Math.max(this.wave, this.savedWaves());
+    if (!this.base) return;
+    if (!this.base.nightStats) {
+      this.base.nightStats = { night, kills: 0, recover: {}, wallStart: this.game.shelter.wallHp(this.base), breached: false, boss: null, waves: this.wave };
+    }
   }
 
   /** 今晚射擊後回收的彈殼與箭矢：放回物品倉庫，回傳實際放入的數量 */
@@ -126,9 +159,12 @@ export class BaseSiege {
     return Object.fromEntries(Object.entries(got || {}).filter(([, v]) => v > 0));
   }
 
-  /** 天亮：今晚有屍潮來襲且沒有被突破 → 記錄防禦成功 */
+  /** 天亮：今晚有屍潮來襲且沒有被突破 → 記錄防禦成功（天亮時不在遊戲中的話，回來時補記） */
   endNight() {
-    if (this.wave > 0 && !this.breachedTonight && this.base) {
+    const st = this.base?.nightStats;
+    const waves = Math.max(this.wave, st?.waves || 0);
+    if (waves > 0 && !this.breachedTonight && this.base) {
+      this.wave = waves;
       const reward = this.dawnReward();
       reward.recovered = this.collectRecovered();
       const entry = this.game.shelter.recordDefense({
@@ -138,7 +174,7 @@ export class BaseSiege {
       });
       this.game.bus.emit('siege:result', entry);
     }
-    this.nightBoss = null;
+    if (this.base) delete this.base.nightStats;
   }
 
   /** 零件的品階範圍（依文明度） */
@@ -376,6 +412,7 @@ export class BaseSiege {
   startWave() {
     this.wave += 1;
     if (this.base) this.base.nightWaves = { night: this.nightKey(), waves: this.wave };
+    if (this.base?.nightStats) this.base.nightStats.waves = this.wave;
     this.markDefenders();
     this.waveLeft = this.waveSize();
     this.lull = WAVE_LULL * randFloat(0.8, 1.2);
@@ -406,7 +443,8 @@ export class BaseSiege {
     const active = this.active();
     // 入夜與天亮時統計今晚的防守結果
     if (active && !this.wasActive) this.startNight();
-    if (!active && this.wasActive) this.endNight();
+    // 天亮（或白天回到遊戲時還有沒結算的夜晚）：結算防守結果
+    if (!active && (this.wasActive || base?.nightStats)) this.endNight();
     this.wasActive = active;
     if (!active) {
       this.wave = 0;

@@ -348,8 +348,17 @@ export const SiegeMapLayer = L.Layer.extend({
       const km = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)}km` : `${v}m`);
       const stay = p.phase === 'searching' && STAY_NAMES[exp.kind];
       const phName = exp.defeated ? '🏳️ 撤回中' : exp.recalled ? '↩️ 召回中' : stay || `${ph.icon} ${ph.name}`;
-      const line1 = exp.defeated || exp.recalled ? `${phName}・剩 ${km(Math.max(0, p.totalM - p.movedM))}` : p.totalM ? `${phName}・${km(p.movedM)} / ${km(p.totalM)}` : phName;
-      const line2 = `⏱ 剩 ${formatDuration(p.remainingMs)}`;
+      let line1 = exp.defeated || exp.recalled ? `${phName}・剩 ${km(Math.max(0, p.totalM - p.movedM))}` : p.totalM ? `${phName}・${km(p.movedM)} / ${km(p.totalM)}` : phName;
+      let line2 = `⏱ 剩 ${formatDuration(p.remainingMs)}`;
+      // 集結：出發前在避難所等待；交戰結果出來前顯示抵達時間（不顯示預留的回家時間）
+      if (exp.kind === 'rally' && !exp.rallyResult && !exp.recalled) {
+        if (now < exp.startAt) {
+          line1 = '📡 集結中・等待出發';
+          line2 = `⏱ ${formatDuration(exp.startAt - now)} 後出發`;
+        } else if (p.phase === 'outbound') line2 = `⏱ 剩 ${formatDuration(p.phaseRemainingMs)} 抵達`;
+        else if (exp.rallyFightAt && now < exp.rallyFightAt) { line1 = '📡 已抵達・等待其他隊伍'; line2 = `⏱ ${formatDuration(exp.rallyFightAt - now)} 後開打`; }
+        else { line1 = '⚔️ 集結交戰中'; line2 = '⏱ 等待結果'; }
+      }
       ctx.font = 'bold 11px sans-serif';
       const w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + 12;
       const x = m.x - w / 2;

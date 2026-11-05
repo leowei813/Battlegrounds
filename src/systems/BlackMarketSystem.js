@@ -51,6 +51,8 @@ export const BLACK_MARKET = {
   rotateMs: 30 * 60 * 1000,
   /** 每位玩家每一輪可以買幾件 */
   perRound: 1,
+  /** 子彈類每格的基礎數量（再依階級與隨機調整） */
+  ammoQty: 90,
   /** 裝備所占比例（其餘為消耗品：材料、藥品、彈藥） */
   gearShare: 0.15,
   /** 售價倍率（相對於過去流浪商人的價格） */
@@ -127,7 +129,8 @@ export class BlackMarketSystem {
     const keys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].tier === tier);
     const key = pick(keys.length ? keys : SUPPLY_KEYS);
     const sp = SUPPLIES[key];
-    const qty = Math.max(1, Math.round((sp.cat === 'ammo' ? 30 : sp.cat === 'med' ? 2 : 10) * ((6 - sp.tier) / 3) * randFloat(0.6, 1.4)));
+    // 子彈類一格的數量（v10.7.1 起 ×3，單價不變，總價跟著數量計算）
+    const qty = Math.max(1, Math.round((sp.cat === 'ammo' ? BLACK_MARKET.ammoQty : sp.cat === 'med' ? 2 : 10) * ((6 - sp.tier) / 3) * randFloat(0.6, 1.4)));
     return {
       id, slot, gen, kind: 'supply', key, qty, rarity, price: Math.max(1, Math.round(this.supplyPrice(key) * qty * BLACK_MARKET.priceMul)),
     };

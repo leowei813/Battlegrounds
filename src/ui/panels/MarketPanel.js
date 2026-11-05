@@ -1,5 +1,5 @@
 import { exchangeBody, exchangeAction, exchangeForm } from '../ExchangeDialog.js';
-import { blackMarketBody, blackMarketAction, exchangePreview } from '../BlackMarketView.js';
+import { blackMarketBody, blackMarketAction, exchangePreview, exchangeReady } from '../BlackMarketView.js';
 
 /**
  * 市場分頁（導覽列「🏪 市場」）：交易所（玩家之間的刊登）與黑市兩個分頁。
@@ -66,10 +66,12 @@ export class MarketPanel {
       if (e.target.closest?.('.demand-form') || e.target.classList?.contains('d-gear-price')) this.exForm = exchangeForm(el, this.exForm || {});
       // 黑市交換：數量輸入時只更新試算（不重畫，避免打斷輸入）
       if (e.target.dataset?.role === 'bmExQty' && this.ui.bmEx) {
-        const have = this.game.state.supplies?.[this.ui.bmEx.give] || 0;
-        this.ui.bmEx.qty = Math.max(0, Math.min(have, Math.floor(Number(e.target.value) || 0)));
+        // 想換到幾個（可以輸入超過材料的數量：會標紅並停用交換按鈕）
+        this.ui.bmEx.get = Math.max(0, Math.floor(Number(e.target.value) || 0));
         const pv = el.querySelector('.bmx-preview');
         if (pv) pv.innerHTML = exchangePreview(this.game, this.ui.bmEx);
+        const go = el.querySelector('[data-action="bmExDo"]');
+        if (go) go.disabled = !exchangeReady(this.game, this.ui.bmEx);
       }
     };
     el.addEventListener('input', save);
