@@ -18,6 +18,12 @@ export function blackMarketBody(ui, view = 'buy') {
   const bm = g.blackMarket;
   const now = Date.now();
   const next = bm.nextRotate(now);
+  // 打開黑市：這一輪已經看過（導覽列的市場呼吸光停止）
+  g.state.settings = g.state.settings || {};
+  if (g.state.settings.bmSeenTick !== bm.tick(now)) {
+    g.state.settings.bmSeenTick = bm.tick(now);
+    ui.renderBadges?.();
+  }
   const tab = (v, label) => `<button class="chip ${(view || 'buy') === v ? 'active' : ''}" data-action="bmView" data-v="${v}">${label}</button>`;
   const tabs = `<div class="chips">${tab('buy', '🛒 購買')}${tab('sell', '♻️ 出售')}${tab('ex', '🔄 交換')}</div>`;
   const boughtIds = bm.boughtIds(now);
