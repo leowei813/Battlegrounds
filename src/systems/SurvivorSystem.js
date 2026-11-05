@@ -24,6 +24,9 @@ import { canAfford, payCost, scaleCost } from './costUtils.js';
  * 倖存者系統：屬性計算、經驗/升級、工作指派、招募（三選一）、
  * 生命值 / 重傷 / 飢餓 / 永久死亡、驅逐。
  */
+/** 戰鬥結束後生命低於這個比例時，自動用藥品欄的藥補血（補到不溢出） */
+export const POST_BATTLE_HEAL_BELOW = 0.7;
+
 export class SurvivorSystem {
   constructor(game) {
     this.game = game;
@@ -919,6 +922,24 @@ export class SurvivorSystem {
       lo[kind] = null;
     }
     return { ok: true, msg: `已卸下 ${SUPPLIES[key].name}×${qty}` };
+  }
+
+  /**
+   * 戰鬥結束後補血：生命低於 70% 時，從藥品欄吃藥補到不會溢出為止（倒下的人不用）。
+   * @returns {string|null} 報告說明
+   */
+  postBattleHeal(sv) {
+    const lo = this.loadout(sv);
+    if (!lo.med?.qty || sv.severe) return null;
+    const max = this.maxHp(sv);
+    if (this.hpOf(sv) >= max * POST_BATTLE_HEAL_BELOW) return null;
+    const key = lo.med.key;
+    let used = 0;
+    while (lo.med?.qty && this.hpOf(sv) + this.healAmount(sv, key) <= max + 1e-6) {
+      this.setHp(sv, this.hpOf(sv) + this.useLoadoutMed(sv));
+      used += 1;
+    }
+    return used ? `${sv.name} 戰後使用 ${SUPPLIES[key]?.name || '藥品'}×${used}（生命 ${Math.round(this.hpOf(sv))}/${Math.round(max)}）` : null;
   }
 
   /** 戰鬥中使用一個藥品欄的藥（回傳回復量；沒有則 0） */

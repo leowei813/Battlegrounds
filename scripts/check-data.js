@@ -2670,7 +2670,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ga.survivors.setHp(lead, 1);
   const r = ga.combat.simulate([lead], [ga.combat.createEnemy('walker', 1)]);
   ga.combat.applyOutcome([lead], r);
-  assert(r.log.some((l) => l.msg.includes('💊')) && lead.loadout.med.qty < 5, '生命過低時自動使用藥品欄的藥');
+  assert(r.log.some((l) => l.msg.includes('💊')) && (lead.loadout.med?.qty ?? 0) < 5, '生命過低時自動使用藥品欄的藥');
   lead.bag.nail = 10;
   assert(ga.survivors.discardBag(lead.id, 'nail', 4).ok && lead.bag.nail === 6, '背包物品可以指定數量丟棄');
   assert(ga.survivors.discardBag(lead.id, 'nail', Infinity).ok && !lead.bag.nail, '背包物品可以全部丟棄');
@@ -4659,6 +4659,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     assert(!gn.npcs.waitingShared(), '讀到共用資料後照常更新 NPC');
   }
   void saved;
+}
+
+// ---- 115. 戰鬥結束後生命低於 70%：從藥品欄吃藥補到不溢出 ----
+{
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const gh = Game.newGame({ playerName: 'H115', classId: 'warrior', lat: 25, lon: 121 });
+  const sv = createSurvivor('傑', 'engineer', 20, 'rare');
+  gh.state.survivors.push(sv);
+  const max = gh.survivors.maxHp(sv);
+  gh.survivors.setHp(sv, max * 0.43);
+  sv.loadout = { ammo: null, med: { key: 'vitamin', qty: 10 } };
+  const r1 = gh.survivors.postBattleHeal(sv);
+  const hp1 = gh.survivors.hpOf(sv);
+  const heal = gh.survivors.healAmount(sv, 'vitamin');
+  assert(r1 && hp1 <= max + 1e-6 && hp1 + heal > max && sv.loadout.med.qty < 10, `生命 43% 戰後吃維他命補到不溢出（${Math.round(hp1)}/${Math.round(max)}，剩 ${sv.loadout.med.qty} 個）`);
+  gh.survivors.setHp(sv, max * 0.75);
+  const q = sv.loadout.med.qty;
+  assert(!gh.survivors.postBattleHeal(sv) && sv.loadout.med.qty === q, '生命還有 70% 以上時不吃藥');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
