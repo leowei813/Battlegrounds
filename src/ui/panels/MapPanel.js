@@ -494,8 +494,8 @@ export class MapPanel {
     const coming = v.occ.filter((x) => x.a > now).sort((a, b) => a.a - b.a)[0];
     if (v.empty) rows.push(`<div class="poi-st empty">🕸️ 已被搜空${v.by ? `（${escapeHtml(v.by)}）` : ''}・<b>${hm(v.until)}</b> 恢復（約 ${formatDuration(Math.max(0, v.until - now))}）</div>`);
     else {
-      if (busy) rows.push(`<div class="poi-st busy">🔍 ${busy.npc ? escapeHtml(busy.n) : `玩家「${escapeHtml(busy.n)}」`}正在探索，預計 <b>${hm(busy.l)}</b> 離開（約 ${formatDuration(Math.max(0, busy.l - now))}）</div>`);
-      if (coming) rows.push(`<div class="poi-st busy">🚶 ${coming.npc ? escapeHtml(coming.n) : `玩家「${escapeHtml(coming.n)}」`}的隊伍預計 <b>${hm(coming.a)}</b> 抵達，比他晚到的隊伍要等他搜完</div>`);
+      if (busy) rows.push(`<div class="poi-st busy ${busy.npc ? 'npc' : busy.rel === 'friend' ? 'friend' : ''}">🔍 ${busy.npc ? escapeHtml(busy.n) : `玩家「${escapeHtml(busy.n)}」`}正在探索，預計 <b>${hm(busy.l)}</b> 離開（約 ${formatDuration(Math.max(0, busy.l - now))}）</div>`);
+      if (coming) rows.push(`<div class="poi-st busy ${coming.npc ? 'npc' : coming.rel === 'friend' ? 'friend' : ''}">🚶 ${coming.npc ? escapeHtml(coming.n) : `玩家「${escapeHtml(coming.n)}」`}的隊伍預計 <b>${hm(coming.a)}</b> 抵達，比他晚到的隊伍要等他搜完</div>`);
       if (v.left) {
         const left = Math.max(0, (v.left.total || 1) - (v.left.done || 0));
         rows.push(left ? `<div class="poi-st part">⏳ 已被搜過一部分：剩 <b>${left} / ${v.left.total}</b> 個檢核點（從剩下的檢核點繼續，只找得到剩下的物資）</div>`

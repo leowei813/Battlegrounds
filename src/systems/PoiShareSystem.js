@@ -70,7 +70,10 @@ export class PoiShareSystem {
       by = by || `NPC「${nb.name}」`;
     }
     const left = !empty && d?.r && d.r.g === gen && Object.keys(d.r.res || {}).length ? d.r : null;
-    const occ = (d?.o || []).filter((x) => x && x.l + POI_SHARE.graceMs > at);
+    // 標記關係（地圖顏色用）：自己、友好玩家、其他玩家
+    const me = this.me();
+    const occ = (d?.o || []).filter((x) => x && x.l + POI_SHARE.graceMs > at)
+      .map((x) => ({ ...x, rel: x.p === me ? 'me' : this.game.territory?.relation?.(x.p) === 'friend' ? 'friend' : 'other' }));
     // NPC 正在探索這個地點
     (this.game.npcs?.list || []).forEach((n) => {
       const t = n.trip;

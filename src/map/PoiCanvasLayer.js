@@ -127,7 +127,8 @@ export const PoiCanvasLayer = L.Layer.extend({
         ctx.beginPath();
         ctx.arc(pt.x, pt.y, rr + 2.5, 0, Math.PI * 2);
         ctx.lineWidth = 3;
-        ctx.strokeStyle = busy ? '#4fc3f7' : '#ffb300';
+        // NPC 探索中用紅色、友好玩家綠色，其他玩家（含自己）藍色
+        ctx.strokeStyle = busy ? (busy.npc ? '#ef5350' : busy.rel === 'friend' ? '#66bb6a' : '#4fc3f7') : '#ffb300';
         ctx.stroke();
       }
       // 放大時才顯示文字（誰在探索・還要多久／剩幾個檢核點／幾點恢復）
@@ -136,7 +137,7 @@ export const PoiCanvasLayer = L.Layer.extend({
         let text = '';
         let bg = '';
         if (st.empty) { text = `🕸️ ${hm(st.until)}`; bg = '#424242'; }
-        else if (busy) { text = `🔍 ${String(busy.n).replace(/^NPC「(.*)」$/, 'NPC $1').slice(0, 8)} ${Math.max(1, Math.ceil((busy.l - now) / 60000))}分`; bg = '#01579b'; }
+        else if (busy) { text = `🔍 ${String(busy.n).replace(/^NPC「(.*)」$/, 'NPC $1').slice(0, 8)} ${Math.max(1, Math.ceil((busy.l - now) / 60000))}分`; bg = busy.npc ? '#b71c1c' : busy.rel === 'friend' ? '#2e7d32' : '#01579b'; }
         else if (st.left && st.left.total > st.left.done) { text = `⏳ 剩 ${st.left.total - st.left.done}/${st.left.total}`; bg = '#8a6d1d'; }
         if (text) badges.push({ x: pt.x, y: pt.y - rr - 9, text, bg });
       }
