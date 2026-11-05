@@ -122,17 +122,19 @@ export class SurvivorPanel {
     return 'home';
   }
 
-  /** 卡片血條：8px 粗條＋生命（滿血顯示數值、受傷顯示百分比），依血量變色 */
+  /** 卡片血條：8px 粗條＋生命（一律顯示 目前/上限），依血量變色 */
   hpRow(sv, ratio) {
     const g = this.game;
     const r = Math.max(0, Math.min(1, ratio));
     const pct = Math.round(r * 100);
     const cls = r >= 0.7 ? 'ok' : r >= 0.3 ? 'mid' : 'low';
-    const text = r >= 0.999 ? `${Math.floor(g.survivors.hpOf(sv))}/${g.survivors.maxHp(sv)}` : `${pct}%`;
-    return `<span class="sv-mini-hp-row"><span class="sv-mini-hp"><i style="width:${pct}%" class="${cls}"></i></span><b class="sv-mini-hpn ${cls}">❤️ ${text}</b></span>`;
+    return `<span class="sv-mini-hp-row"><span class="sv-mini-hp"><i style="width:${pct}%" class="${cls}"></i></span><b class="sv-mini-hpn ${cls}">❤️ ${Math.floor(g.survivors.hpOf(sv))}/${g.survivors.maxHp(sv)}</b></span>`;
   }
 
-  /** 列表的小卡片（一列兩位） */
+  /**
+   * 列表的小卡片（一列兩位），每張固定 5 行：
+   * ①名字＋品級＋狀態 ②職業 Lv・戰力 ③血條 ④目前在做什麼（外出顯示倒數；在家右側為換裝按鈕） ⑤背包・素質
+   */
   rosterCard(sv) {
     const g = this.game;
     const cls = CLASSES[sv.classId];
@@ -140,45 +142,64 @@ export class SurvivorPanel {
     const hp = g.survivors.hpOf(sv) / g.survivors.maxHp(sv);
     const k = this.stateOf(sv);
     const exp = k === 'out' ? g.state.expeditions.find((e) => e.memberIds.includes(sv.id)) : null;
-    const where = exp ? `${g.exploration.poi(exp.poiId)?.name || '外出'}・剩 ${formatDuration(Math.max(0, exp.endAt - Date.now()))}` : null;
-    const job = k === 'hurt' ? '重傷・需要治療' : where || `${JOBS[sv.job]?.icon || ''} ${JOBS[sv.job]?.name || '閒置'}`;
-    const tag = { home: '<span class="sv-tag home">在家</span>', out: '<span class="sv-tag out">外出</span>', hurt: '<span class="sv-tag hurt">🩸 重傷</span>' }[k];
+    const act = k === 'hurt'
+      ? '<span class="sv-mini-job hurt">🩸 重傷・需要治療</span>'
+      : exp
+        ? `<span class="sv-mini-job cd">⏱ ${formatDuration(Math.max(0, exp.endAt - Date.now()))}</span>`
+        : `<span class="sv-mini-job">${JOBS[sv.job]?.icon || ''} ${JOBS[sv.job]?.name || '閒置'}</span>${towerTag(g, sv)}`;
+    const tag = { home: '<span class="sv-tag home">在家</span>', out: '<span class="sv-tag out">外出</span>', hurt: '<span class="sv-tag hurt">重傷</span>' }[k];
     const load = Math.floor(g.survivors.bagLoad(sv));
     const r = sv.isLeader ? '#ffd54f' : (RARITIES[sv.rarity] || RARITIES.common).color;
-    return `<button class="sv-mini ${this.selId === sv.id ? 'on' : ''}" data-action="selSv" data-id="${sv.id}" data-sv="${sv.id}" style="--rc:${r}">
-      <span class="sv-drag" data-drag="${sv.id}" title="按住拖移調整順序">⠿</span>
-      <span class="sv-mini-top"><b>${cls.icon} ${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b>${sv.isLeader ? '' : `${rarityTag(sv.rarity)}${this.qTag(g.survivors.avgQuality(sv))}`}<i class="sv-mini-sp"></i>${tag}</span>
-      <small class="muted">${cls.name} Lv${sv.level}・戰力 ${s.power}</small>
-      ${this.hpRow(sv, hp)}
-      <span class="sv-mini-jobrow"><small class="muted sv-mini-job">${job}</small>${towerTag(g, sv)}</span>
-      <span class="sv-mini-bagrow"><small class="muted">🎒 ${load}/${g.survivors.bagCap(sv)}</small>${sv.status === 'idle' ? `<span class="sv-qe">
+    const qe = sv.status === 'idle' ? `<span class="sv-qe">
         <span class="sv-qe-btn up" role="button" data-action="miniQuickEquip" data-id="${sv.id}" title="快速換裝">👕<i>▲</i></span>
-        <span class="sv-qe-btn down" role="button" data-action="miniQuickUnequip" data-id="${sv.id}" title="快速脫裝">👕<i>▼</i></span></span>` : ''}</span>
+        <span class="sv-qe-btn down" role="button" data-action="miniQuickUnequip" data-id="${sv.id}" title="快速脫裝">👕<i>▼</i></span></span>` : '';
+    return `<button class="sv-mini v2 ${this.selId === sv.id ? 'on' : ''}" data-action="selSv" data-id="${sv.id}" data-sv="${sv.id}" style="--rc:${r}" title="長按可拖移調整順序">
+      <span class="sv-mini-top"><b>${cls.icon} ${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b>${sv.isLeader ? '' : rarityTag(sv.rarity)}<i class="sv-mini-sp"></i>${tag}</span>
+      <small class="muted sv-mini-sub">${cls.name} Lv${sv.level}・戰力 <b>${s.power}</b></small>
+      ${this.hpRow(sv, hp)}
+      <span class="sv-mini-act"><span class="sv-mini-actl">${act}</span>${qe}</span>
+      <span class="sv-mini-foot"><small class="muted">🎒 ${load}/${g.survivors.bagCap(sv)}</small>${sv.isLeader ? '' : this.qTag(g.survivors.avgQuality(sv))}</span>
     </button>`;
   }
 
   /**
-   * 拖移排序：按住卡片左側的 ⠿ 拖到其他卡片上放開（滑鼠與觸控共用 Pointer 事件）。
+   * 拖移排序：長按卡片（約 0.45 秒）後拖到其他卡片上放開（滑鼠與觸控共用 Pointer 事件）。
+   * 長按前移動手指就當作一般捲動。
    */
   bindDrag() {
     const root = this.ui.panelEl;
     if (!root || this.dragBound) return;
     this.dragBound = true;
+    const HOLD_MS = 450;
     let drag = null;
+    let hold = null;
     const clear = () => root.querySelectorAll('.sv-mini.drop-before, .sv-mini.drop-after').forEach((x) => x.classList.remove('drop-before', 'drop-after'));
+    // 長按期間暫停畫面每秒重繪（否則按住的卡片會被換掉）
+    const cancelHold = () => { if (hold) { clearTimeout(hold.timer); if (!drag) this.ui.dragging = false; } hold = null; };
     root.addEventListener('pointerdown', (e) => {
-      const h = e.target.closest?.('.sv-drag');
-      if (!h) return;
-      e.preventDefault();
-      const card = h.closest('.sv-mini');
-      drag = { id: h.dataset.drag, card, target: null, after: false, moved: false };
-      card.classList.add('dragging');
+      let card = e.target.closest?.('.sv-mini[data-sv]');
+      if (!card || e.target.closest('.sv-qe-btn') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      cancelHold();
+      const sid = card.dataset.sv;
       this.ui.dragging = true;
-      h.setPointerCapture?.(e.pointerId);
+      hold = { x: e.clientX, y: e.clientY, id: e.pointerId, timer: setTimeout(() => {
+        const h = hold;
+        hold = null;
+        card = card.isConnected ? card : root.querySelector(`.sv-mini[data-sv="${sid}"]`);
+        if (!h || !card) { this.ui.dragging = false; return; }
+        drag = { id: card.dataset.sv, card, target: null, after: false };
+        card.classList.add('dragging');
+        this.ui.dragging = true;
+        navigator.vibrate?.(30);
+        try { card.setPointerCapture?.(h.id); } catch { /* 已放開 */ }
+      }, HOLD_MS) };
     });
+    // 拖移中擋掉觸控捲動
+    root.addEventListener('touchmove', (e) => { if (drag) e.preventDefault(); }, { passive: false });
+    root.addEventListener('contextmenu', (e) => { if (drag || e.target.closest?.('.sv-mini[data-sv]')) e.preventDefault(); });
     root.addEventListener('pointermove', (e) => {
+      if (hold && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) cancelHold();
       if (!drag) return;
-      drag.moved = true;
       const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.sv-mini');
       clear();
       if (!el || el === drag.card || !el.dataset.sv) { drag.target = null; return; }
@@ -189,6 +210,7 @@ export class SurvivorPanel {
       el.classList.add(drag.after ? 'drop-after' : 'drop-before');
     });
     const end = () => {
+      cancelHold();
       if (!drag) return;
       const d = drag;
       drag = null;

@@ -455,7 +455,15 @@ export class NpcSystem {
     });
   }
 
-  /** NPC 人員傷亡（每人 20 分鐘補回） */
+  /**
+   * 攻打據點（守軍為平時的 NPC_ASSAULT.count 倍）時擊倒的人數換算成據點傷亡：
+   * 擊倒幾名守軍，下次攻打就只少幾名（不再加倍扣除）。
+   */
+  assaultWound(n, kills, now = Date.now()) {
+    return this.wound(n, Math.min(Math.ceil(kills / NPC_ASSAULT.count), this.fullCount(n)), now);
+  }
+
+  /** NPC 人員傷亡（依 woundHealMs 逐一補回） */
   wound(n, count, now = Date.now()) {
     if (count <= 0) return;
     n.wounded = Math.min(this.fullCount(n), (n.wounded || 0) + count);
@@ -877,7 +885,7 @@ export class NpcSystem {
       return report;
     }
     const enemies = this.garrison(n, { assault: true });
-    report.events.push(`⚔️ 攻打「${n.name}」（Lv${n.level}）：守軍 ${enemies.length} 人${n.wounded ? `（另有 ${n.wounded} 人傷亡中）` : ''}`);
+    report.events.push(`⚔️ 攻打「${n.name}」（Lv${n.level}）：守軍 ${enemies.length} 人${n.wounded ? `（另有 ${n.wounded * NPC_ASSAULT.count} 人傷亡中）` : ''}`);
     // 1. 先打破 NPC 據點的圍牆：期間據點的防禦火力持續射擊，被擊倒的隊員重傷
     const df = this.defense(n);
     const attackers = members.map((m) => ({ sv: m, maxHp: Math.max(1, g.survivors.hpOf(m)), atk: g.survivors.stats(m).atk }));
@@ -900,7 +908,7 @@ export class NpcSystem {
     report.xp += result.xp;
     if (!result.victory) {
       g.state.stats.battlesLost += 1;
-      this.wound(n, Math.min(result.kills.length, this.fullCount(n)), exp.endAt);
+      this.assaultWound(n, result.kills.length, exp.endAt);
       report.events.push(`💀 攻打失敗，隊伍撤退！${result.kills.length ? `（擊倒對方 ${result.kills.length} 人，對方需要時間補回人手）` : ''}`);
       return report;
     }
