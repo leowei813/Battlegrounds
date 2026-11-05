@@ -366,7 +366,7 @@ export class RallySystem {
         g.npcs.destroy(n, now);
         res.summary = `🏆 集結攻陷 NPC 據點「${n.name}」（${people} 人參戰）`;
       } else {
-        g.npcs.wound(n, Math.min(result ? result.kills.length : as.killed, g.npcs.fullCount(n)), now);
+        if (result) g.npcs.assaultWound(n, result.kills.length, now); // 沒打破圍牆就沒有擊倒守軍
         res.summary = `💀 集結攻打「${n.name}」失敗（${as.breached ? '與守軍交戰落敗' : '沒能打破圍牆'}）`;
       }
     } else {

@@ -4520,6 +4520,20 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(hs.ok, `飢餓時一樣可以治療（${hs.msg || hs.reason}）`);
 }
 
+// ---- 108. 攻打 NPC 失敗：擊倒幾名守軍就只少幾名，每分鐘補回 1 名；攻陷獎勵 ×4 ----
+{
+  const { NPC_CONFIG, NPC_ASSAULT, NPC_REWARD_MUL } = await import('../src/config/npcs.js');
+  const gn = Game.newGame({ playerName: 'N108', classId: 'warrior', lat: 25, lon: 121 });
+  const n = { id: 'npc108', level: 33, wounded: 0, healAt: 0 };
+  const full = gn.npcs.garrison(n, { assault: true }).length;
+  const t0 = Date.now();
+  gn.npcs.assaultWound(n, 10, t0);
+  const after = gn.npcs.garrison(n, { assault: true }).length;
+  assert(full - after === 10, `擊倒 10 名守軍，下次攻打只少 10 名（${full}→${after}）`);
+  assert(n.healAt - t0 === NPC_CONFIG.woundHealMs && NPC_CONFIG.woundHealMs / NPC_ASSAULT.count === 60000, '守軍每分鐘補回 1 名');
+  assert(NPC_REWARD_MUL === 4, '攻陷獎勵為 4 倍');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
