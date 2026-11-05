@@ -1,6 +1,6 @@
 import { SUPPLIES, SUPPLY_CATS } from '../config/supplies.js';
 import { RARITIES, RARITY_ORDER } from '../config/equipment.js';
-import { BLACK_MARKET } from '../systems/BlackMarketSystem.js';
+import { BLACK_MARKET, EXCHANGE } from '../systems/BlackMarketSystem.js';
 import { escapeHtml } from '../utils/dom.js';
 import { formatDuration } from '../utils/math.js';
 import { btn, itemCard } from './components.js';
@@ -18,7 +18,8 @@ export function blackMarketBody(ui, view = 'buy') {
   const bm = g.blackMarket;
   const now = Date.now();
   const next = bm.nextRotate(now);
-  const tabs = `<div class="chips"><button class="chip ${view !== 'sell' ? 'active' : ''}" data-action="bmView" data-v="buy">🛒 購買</button><button class="chip ${view === 'sell' ? 'active' : ''}" data-action="bmView" data-v="sell">♻️ 出售</button></div>`;
+  const tab = (v, label) => `<button class="chip ${(view || 'buy') === v ? 'active' : ''}" data-action="bmView" data-v="${v}">${label}</button>`;
+  const tabs = `<div class="chips">${tab('buy', '🛒 購買')}${tab('sell', '♻️ 出售')}${tab('ex', '🔄 交換')}</div>`;
   const boughtIds = bm.boughtIds(now);
   const bought = bm.boughtThisRound(now);
   const per = BLACK_MARKET.perRound;
@@ -27,6 +28,7 @@ export function blackMarketBody(ui, view = 'buy') {
   const quota = bought ? `<span class="bm-quota used">本輪已購買 ${per} / ${per} 件・下次換貨後可再買</span>` : `<span class="bm-quota">本輪已購買 ${boughtIds.length} / ${per} 件・還可以買 ${per - boughtIds.length} 件</span>`;
   const head = `<div class="bm-bar">🕶️ 所有倖存者共用的黑市：${BLACK_MARKET.slots} 項商品<b>每 ${Math.round(BLACK_MARKET.rotateMs / 60000)} 分鐘全部換新</b>・下次換貨 <b>${hm}</b>（約 ${formatDuration(Math.max(0, next.at - now))}）・先搶先贏，每輪每人限買 ${per} 件<br>${quota}</div>
     <p>💰 你的金錢：<b>${g.state.player.coins}</b>${g.shared.online ? '' : ' <small class="muted">（目前未連線：只有自己看得到購買紀錄）</small>'}</p>${tabs}`;
+  if (view === 'ex') return `${head}${exchangeHtml(ui)}`;
   if (view === 'sell') {
     const sup = g.state.supplies || {};
     const keys = Object.keys(sup).filter((k) => SUPPLIES[k] && sup[k] > 0).sort(supplyOrder);
@@ -63,6 +65,53 @@ export function blackMarketBody(ui, view = 'buy') {
   return `${head}<div class="grid">${rows}</div>`;
 }
 
+const exNum = (v) => (Number.isInteger(v) ? v : v.toFixed(1));
+
+/** 交換試算文字（數量輸入時即時更新） */
+export function exchangePreview(g, f) {
+  if (!f.want || !f.give) return '<span class="muted">先選「想換到什麼」，再選「用什麼換」</span>';
+  const q = g.blackMarket.exchangeQuote(f.give, f.want, f.qty || 0);
+  const per = g.blackMarket.exchangeCostPer(f.give, f.want);
+  const gs = SUPPLIES[f.give];
+  const ws = SUPPLIES[f.want];
+  const cross = gs.tier < ws.tier;
+  return `<div class="bmx-flow"><span>給出 <b>${gs.icon} ${gs.name} ×${q.used || 0}</b></span><span class="bmx-arrow">➜</span><span>得到 <b class="bmx-get">${ws.icon} ${ws.name} ×${q.get || 0}</b></span></div>
+    <small class="muted block">每換 1 個${ws.name}要 ${exNum(per)} 個${gs.name}（價值 ${exNum(EXCHANGE.value[f.want])} ÷ ${exNum(EXCHANGE.value[f.give])} × ${EXCHANGE.rate}${cross ? ` × 跨階 ${EXCHANGE.crossMul}` : ''}）・不到 1 個的部分不換${q.ok ? '' : `・<span class="neg">${escapeHtml(q.reason || '')}</span>`}</small>`;
+}
+
+/** 🔄 交換：用倉庫裡的零件或布料換成想要的材料 */
+function exchangeHtml(ui) {
+  const g = ui.game;
+  const bm = g.blackMarket;
+  const sup = g.state.supplies || {};
+  const f = ui.bmEx || (ui.bmEx = { cat: 'part', tier: 1, want: null, give: null, qty: 0 });
+  const chip = (act, val, label, on) => `<button class="chip ${on ? 'active' : ''}" data-action="${act}" data-v="${val}">${label}</button>`;
+  const cell = (k, act, cls = '', disabled = false, note = '') => {
+    const sp = SUPPLIES[k];
+    return `<button class="bmx-it ${cls}" data-action="${act}" data-key="${k}" ${disabled ? 'disabled' : ''}><b>${sp.icon} ${sp.name}</b>
+      <small><span class="bmx-st">${'★'.repeat(sp.tier)}</span> 倉庫 ${sup[k] || 0}・價值 ${exNum(EXCHANGE.value[k])}${note}</small></button>`;
+  };
+  const wants = Object.keys(EXCHANGE.value).filter((k) => bm.exchangeable(k) && SUPPLIES[k].cat === f.cat && SUPPLIES[k].tier === f.tier)
+    .sort((a, b) => EXCHANGE.value[b] - EXCHANGE.value[a] || supplyOrder(a, b));
+  const sources = f.want ? bm.exchangeSources(f.want).sort((a, b) => SUPPLIES[b].tier - SUPPLIES[a].tier || (sup[b] || 0) - (sup[a] || 0) || supplyOrder(a, b)) : [];
+  // 只列出倉庫裡有的材料（沒有的不列，清單才不會太長）
+  const giveList = sources.filter((k) => sup[k] > 0).map((k) => cell(k, 'bmExGive', `give ${f.give === k ? 'on' : ''}`)).join('')
+    || '<p class="muted">倉庫裡沒有可以拿來換的材料。</p>';
+  const maxQ = f.give ? (sup[f.give] || 0) : 0;
+  return `<p class="muted bmx-rule">用倉庫裡的零件或布料，換成同類別的其他材料。黑市抽成很重：<b class="bmx-rate">同價值 ${EXCHANGE.rate} 換 1</b>，用低一階的材料換再 ×${EXCHANGE.crossMul}。只能用同階或低一階的材料交換，${'★'.repeat(EXCHANGE.maxTier + 1)} 最高階不開放。</p>
+    <h4>① 想換到什麼</h4>
+    <div class="chips bmx-cats">${chip('bmExCat', 'part', '🔩 零件', f.cat === 'part')}${chip('bmExCat', 'fabric', '🧵 布料', f.cat === 'fabric')}
+      ${[1, 2, 3, 4].map((t) => chip('bmExTier', t, `★${t}`, f.tier === t)).join('')}</div>
+    <div class="bmx-grid">${wants.map((k) => cell(k, 'bmExWant', `want ${f.want === k ? 'on' : ''}`)).join('') || '<p class="muted">這一階沒有可以交換的材料。</p>'}</div>
+    ${f.want ? `<h4>② 用什麼換 <small class="muted">（只列出 ${'★'.repeat(SUPPLIES[f.want].tier)}${SUPPLIES[f.want].tier > 1 ? ` 與 ${'★'.repeat(SUPPLIES[f.want].tier - 1)}` : ''} 的${SUPPLY_CATS[f.cat].name}，倉庫裡有的才會列出）</small></h4>
+    <div class="bmx-grid">${giveList}</div>` : ''}
+    ${f.want && f.give ? `<div class="bmx-sum">
+      <div class="bmx-preview">${exchangePreview(g, f)}</div>
+      <div class="bmx-q">給出數量 ${btn('−10', 'bmExQty', { d: -10 }, { cls: 'btn-xs' })}<input type="number" min="0" max="${maxQ}" step="1" data-role="bmExQty" value="${f.qty || 0}">${btn('＋10', 'bmExQty', { d: 10 }, { cls: 'btn-xs' })}${btn('最多', 'bmExQty', { max: 1 }, { cls: 'btn-xs' })}</div>
+      <div class="bmx-go">${btn('🔄 交換', 'bmExDo', {}, { cls: 'btn-primary' })}</div>
+    </div>` : ''}`;
+}
+
 /** 黑市分頁的操作；處理了回傳 true */
 export function blackMarketAction(ui, action, data) {
   const g = ui.game;
@@ -79,6 +128,26 @@ export function blackMarketAction(ui, action, data) {
     return true;
   }
   if (action === 'bmSell') { ui.result(bm.sell(data.key, Number(data.qty))); return true; }
+  const f = ui.bmEx || (ui.bmEx = { cat: 'part', tier: 1, want: null, give: null, qty: 0 });
+  if (action === 'bmExCat') { f.cat = data.v; f.want = null; f.give = null; f.qty = 0; return true; }
+  if (action === 'bmExTier') { f.tier = Number(data.v); f.want = null; f.give = null; f.qty = 0; return true; }
+  if (action === 'bmExWant') { f.want = data.key; f.give = null; f.qty = 0; return true; }
+  if (action === 'bmExGive') {
+    f.give = data.key;
+    // 預設帶入剛好換到 1 個的數量
+    f.qty = Math.min(g.state.supplies?.[data.key] || 0, Math.ceil(bm.exchangeCostPer(data.key, f.want) - 1e-9));
+    return true;
+  }
+  if (action === 'bmExQty') {
+    const have = g.state.supplies?.[f.give] || 0;
+    f.qty = data.max ? have : Math.max(0, Math.min(have, (f.qty || 0) + Number(data.d || 0)));
+    return true;
+  }
+  if (action === 'bmExDo') {
+    const r = ui.result(bm.exchange(f.give, f.want, f.qty || 0));
+    if (r?.ok !== false) f.qty = Math.min(f.qty || 0, g.state.supplies?.[f.give] || 0);
+    return true;
+  }
   if (action === 'bmSellItem') { ui.result(bm.sellItem(data.id)); return true; }
   if (action === 'bmSellCommon') {
     if (confirm('確定賣出倉庫裡所有未上鎖的劣質與一般裝備？')) ui.result(bm.sellCommonGear());

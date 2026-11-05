@@ -23,6 +23,26 @@ export const TRADER = {
 };
 
 /**
+ * 黑市「交換物資」：用倉庫裡的零件或布料換成想要的材料（同類別才能換）。
+ * 價值點數依階級與「使用需求 ÷ 產出量」估算；黑市抽成很重：同價值 10 換 1，低一階換高一階再 ×2。
+ * 只能用同階或低一階的材料交換，最高階（★5）不開放，不限制交換次數。
+ */
+export const EXCHANGE = {
+  rate: 10,
+  crossMul: 2,
+  maxTier: 4,
+  value: {
+    // 零件 ★1～★4
+    rubber: 1.5, bolt: 1.5, wire: 1.5, tape: 1, glass: 1, scrap: 1, screw: 1, bulb: 1, nail: 1, ironWire: 1, plastic: 0.5,
+    gear: 5, spring: 5, chain: 3.5, copperCoil: 3.5, rebar: 3, battery: 2.5, hinge: 2.5, switch: 2, ironPlate: 2,
+    valve: 10, bearing: 7, steelPlate: 6, motor: 6, aluminum: 5, steelPipe: 5, circuit: 5, firingPin: 5,
+    hydraulic: 18, piston: 15, barrel: 13, alloyPlate: 12, icBoard: 10, sensor: 7,
+    // 布料 ★1～★4
+    coarse: 1, cotton: 1, linen: 1, nylon: 4, leather: 3, canvas: 2.5, techCotton: 6, reinforced: 13, ballistic: 11,
+  },
+};
+
+/**
  * 黑市：全體玩家共用的 20 格商品，每 30 分鐘全部一起換新（同一時間大家看到的商品相同）。
  * 有人買走後其他人就買不到（伺服器先到先得）；每位玩家每一輪最多買 BLACK_MARKET.perRound 件。價格比過去的流浪商人更高。
  */
@@ -251,5 +271,60 @@ export class BlackMarketSystem {
     g.state.player.coins += price;
     g.log(`🕶️ 賣到黑市 ${SUPPLIES[key].name} ×${n}（💰${price}）`, 'loot');
     return { ok: true, msg: `賣出 ${SUPPLIES[key].name} ×${n}，得到 💰${price}` };
+  }
+
+  /** 可以拿來交換（換入或換出）的材料 */
+  exchangeable(key) {
+    const sp = SUPPLIES[key];
+    return !!(sp && ['part', 'fabric'].includes(sp.cat) && sp.tier <= EXCHANGE.maxTier && EXCHANGE.value[key]);
+  }
+
+  /** 想換到 want 時，可以拿來換的材料（同類別、同階或低一階） */
+  exchangeSources(want) {
+    const w = SUPPLIES[want];
+    if (!this.exchangeable(want)) return [];
+    return Object.keys(EXCHANGE.value).filter((k) => k !== want && this.exchangeable(k)
+      && SUPPLIES[k].cat === w.cat && (SUPPLIES[k].tier === w.tier || SUPPLIES[k].tier === w.tier - 1));
+  }
+
+  /** 換到 1 個 want 需要幾個 give（可能不是整數） */
+  exchangeCostPer(give, want) {
+    const cross = SUPPLIES[give].tier < SUPPLIES[want].tier ? EXCHANGE.crossMul : 1;
+    return (EXCHANGE.value[want] / EXCHANGE.value[give]) * EXCHANGE.rate * cross;
+  }
+
+  /**
+   * 試算：拿 qty 個 give 能換到幾個 want、實際只會用掉幾個（不到 1 個的部分不換）。
+   * @returns {{ok:boolean, reason?:string, get?:number, used?:number, per?:number}}
+   */
+  exchangeQuote(give, want, qty) {
+    if (!this.exchangeable(want) || !this.exchangeable(give)) return { ok: false, reason: '黑市不交換這種材料' };
+    if (!this.exchangeSources(want).includes(give)) return { ok: false, reason: '只能用同類別、同階或低一階的材料交換' };
+    const per = this.exchangeCostPer(give, want);
+    const have = this.game.state.supplies?.[give] || 0;
+    const n = Math.min(have, Math.max(0, Math.floor(qty)));
+    const get = Math.floor(n / per + 1e-9);
+    const used = get > 0 ? Math.min(n, Math.ceil(get * per - 1e-9)) : 0;
+    return { ok: get > 0, reason: get > 0 ? undefined : `至少要 ${Math.ceil(per - 1e-9)} 個${SUPPLIES[give].name}才能換到 1 個`, get, used, per };
+  }
+
+  /** 交換：扣掉 give，加入 want（倉庫放不下時取消並退回） */
+  exchange(give, want, qty) {
+    const g = this.game;
+    const q = this.exchangeQuote(give, want, qty);
+    if (!q.ok) return q;
+    const st = g.state;
+    st.supplies[give] -= q.used;
+    if (st.supplies[give] <= 0) delete st.supplies[give];
+    const added = g.equipment.addSupplies({ [want]: q.get })[want] || 0;
+    if (added < q.get) {
+      // 倉庫放不下：退回這次交換
+      if (added) { st.supplies[want] -= added; if (st.supplies[want] <= 0) delete st.supplies[want]; }
+      st.supplies[give] = (st.supplies[give] || 0) + q.used;
+      return { ok: false, reason: '倉庫空間不足，放不下換到的材料' };
+    }
+    st.stats.bmExchanges = (st.stats.bmExchanges || 0) + 1;
+    g.log(`🕶️ 黑市交換：${SUPPLIES[give].name} ×${q.used} → ${SUPPLIES[want].name} ×${q.get}`, 'loot');
+    return { ok: true, msg: `用 ${SUPPLIES[give].name} ×${q.used} 換到 ${SUPPLIES[want].name} ×${q.get}` };
   }
 }

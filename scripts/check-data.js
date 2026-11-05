@@ -4553,6 +4553,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(spots.supermarket > 0 && spots.residential > 0 && spots.school > 0, '超市、住宅、學校有機會找到塑膠外殼');
 }
 
+// ---- 110. 黑市交換：同價值 10 換 1、跨階 ×2、只能同階或低一階、★5 不開放、不到 1 個不換 ----
+{
+  const gx = Game.newGame({ playerName: 'X110', classId: 'warrior', lat: 25, lon: 121 });
+  const bm = gx.blackMarket;
+  gx.state.supplies = { steelPlate: 40, spring: 100, nail: 500, hinge: 3 };
+  const q1 = bm.exchangeQuote('steelPlate', 'valve', 40);
+  assert(q1.ok && q1.get === 2 && q1.used === 34, `同階：鋼板 40 → 閥門 2，只用掉 34（${q1.get}/${q1.used}）`);
+  const q2 = bm.exchangeQuote('spring', 'valve', 100);
+  assert(q2.ok && q2.get === 2 && q2.used === 80, `低一階：彈簧 100 → 閥門 2（每個 40）（${q2.get}/${q2.used}）`);
+  assert(!bm.exchangeQuote('nail', 'valve', 500).ok, '不能用低兩階的材料交換');
+  assert(!bm.exchangeQuote('valve', 'spring', 10).ok, '不能用高階換低階');
+  assert(!bm.exchangeable('precision') && !bm.exchangeable('kevlar'), '★5 最高階不開放');
+  assert(!bm.exchangeQuote('nail', 'cotton', 100).ok, '零件與布料不能互換');
+  assert(!bm.exchangeQuote('hinge', 'spring', 3).ok, '不到 1 個不能換');
+  const r = bm.exchange('steelPlate', 'valve', 40);
+  assert(r.ok && gx.state.supplies.valve === 2 && gx.state.supplies.steelPlate === 6, `交換後倉庫正確（閥門 ${gx.state.supplies.valve}，鋼板 ${gx.state.supplies.steelPlate}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

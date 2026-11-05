@@ -1235,3 +1235,22 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .odds-pop { position: absolute; left: 0; right: 0; top: calc(100% + 8px); z-index: 20; padding: 10px 12px; border-radius: 12px; background: #1f2a30; border: 1px solid #90caf966; box-shadow: 0 8px 24px #000a; }
 .odds-pop .odds { margin: 6px 0; }
 .odds-x { position: absolute; top: 6px; right: 8px; background: none; border: 0; color: var(--muted); font: inherit; font-size: 15px; cursor: pointer; padding: 2px 4px; }
+/* 黑市 🔄 交換 */
+.bmx-rule { font-size: 12px; }
+.bmx-rate { color: #ffcc80; }
+.bmx-cats { flex-wrap: wrap; }
+.bmx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.bmx-it { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 6px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.bmx-it b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bmx-it small { font-size: 11px; color: var(--muted); }
+.bmx-it:disabled { opacity: .4; cursor: not-allowed; }
+.bmx-it.want.on { border-color: #81d4fa; background: #0d2a4a; }
+.bmx-it.give.on { border-color: #ffb300; background: #3e2c0055; }
+.bmx-st { color: #ffd54f; letter-spacing: -1px; }
+.bmx-sum { margin-top: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid #81d4fa44; background: linear-gradient(160deg, #222d33, #1a2226); }
+.bmx-flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; }
+.bmx-arrow { font-size: 18px; color: #81d4fa; }
+.bmx-get { color: #81d4fa; }
+.bmx-q { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0; font-size: 12.5px; }
+.bmx-q input { width: 80px; }
+.bmx-go { text-align: right; }
