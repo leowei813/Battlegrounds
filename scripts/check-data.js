@@ -4617,6 +4617,40 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   }
 }
 
+// ---- 113. 屍潮防守紀錄：夜裡重新整理不會讓擊殺歸零；天亮前離開，回來時補記防守成功與獎勵 ----
+{
+  const { BaseSiege } = await import('../src/systems/SiegeSystem.js');
+  const gs = Game.newGame({ playerName: 'S113', classId: 'warrior', lat: 25, lon: 121 });
+  gs.state.map.pois = fillPois([], 25, 121);
+  gs.shelter.establish(gs.state.map.pois.find((p) => gs.shelter.canEstablish(p).ok));
+  gs.shelter.primary().facilities.wall.level = 10;
+  setHour(gs, 21);
+  const s1 = gs.siege.of();
+  for (let i = 0; i < 1200; i += 1) { s1.update(0.1); gs.shelter.primary().wallHp = null; }
+  const killsBefore = s1.nightKills;
+  // 模擬重新整理：換一個新的屍潮物件（記憶體中的統計消失）
+  const id = gs.shelter.primary().id;
+  gs.siege.sieges.set(id, new BaseSiege(gs, id));
+  const s2 = gs.siege.of();
+  s2.update(0.1);
+  assert(killsBefore > 0 && s2.nightKills >= killsBefore, `夜裡重新整理後擊殺數沿用（${killsBefore} → ${s2.nightKills}）`);
+  // 模擬天亮前離開：再換一個新物件，直接到白天才回來
+  gs.siege.sieges.set(id, new BaseSiege(gs, id));
+  const logN = gs.state.defenseLog.length;
+  setHour(gs, 9);
+  gs.siege.of().update(0.1);
+  const rec = gs.state.defenseLog[0];
+  assert(gs.state.defenseLog.length === logN + 1 && rec.success && rec.kills >= killsBefore && rec.siege?.coins > 0, `回來時補記防守成功與獎勵（擊殺 ${rec?.kills}、金錢 ${rec?.siege?.coins}）`);
+  gs.siege.of().update(0.1);
+  assert(gs.state.defenseLog.length === logN + 1 && !gs.shelter.primary().nightStats, '同一晚只結算一次');
+  // 被突破後重新整理：天亮時不會多出一筆「防守成功」
+  gs.shelter.primary().nightStats = { night: 'x', kills: 5, recover: {}, wallStart: 100, breached: true, boss: null, waves: 2 };
+  gs.siege.sieges.set(id, new BaseSiege(gs, id));
+  const logM = gs.state.defenseLog.length;
+  gs.siege.of().update(0.1);
+  assert(gs.state.defenseLog.length === logM && !gs.shelter.primary().nightStats, '被突破的夜晚不會補記成防守成功');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
