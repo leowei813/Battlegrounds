@@ -44,21 +44,21 @@ export class SurvivorPanel {
     }).join('')}</div>`;
   }
 
-  /** 候選人的能力格：每格同時顯示數值與素質（素質條＋百分比，100% 金色） */
+  /** 候選人的能力格（兩欄小方塊）：圖示＋能力、數值靠右，下方細素質條＋素質 %（100% 金色） */
   abilityGrid(sv, s) {
     const g = this.game;
     const val = {
       hp: s.hp, atk: s.atk, def: s.def, crit: `${(s.crit * 100).toFixed(1)}%`, dodge: `${(s.dodge * 100).toFixed(1)}%`, atkSpeed: s.atkSpeed,
     };
-    const avg = g.survivors.avgQuality(sv);
+    const icon = { hp: '❤️', atk: '⚔️', def: '🛡️', crit: '💥', dodge: '💨', atkSpeed: '⚡' };
     const cls = (q) => (q >= 100 ? 'max' : q >= 70 ? 'hi' : q >= 40 ? 'mid' : 'lo');
-    return `<div class="ab-grid-head"><span>能力</span><span class="ab-avg ${cls(avg)}">平均素質 <b>${avg}%</b></span></div>
-      <div class="ab-grid">${QUALITY_KEYS.map((k) => {
-        const q = g.survivors.qualityOf(sv, k);
-        return `<div class="ab-cell ${cls(q)}"><small>${QUALITY_NAMES[k]}</small><b>${val[k]}</b>
-          <span class="ab-bar ${q >= 100 ? 'max' : q >= 70 ? 'hi' : q >= 40 ? 'mid' : ''}"><i style="width:${q}%"></i></span><small class="ab-cq">素質 ${q}%</small></div>`;
-      }).join('')}</div>
-      <small class="muted ab-legend">素質 0～100%：越高能力與升級成長越好（招募後不會改變）</small>`;
+    // 兩欄：左欄生命／攻擊／防禦，右欄暴擊／閃避／攻速
+    const order = ['hp', 'crit', 'atk', 'dodge', 'def', 'atkSpeed'].filter((k) => QUALITY_KEYS.includes(k));
+    return `<div class="cd-grid">${order.map((k) => {
+      const q = g.survivors.qualityOf(sv, k);
+      return `<div class="cd-t ${cls(q)}"><div class="cd-r1"><span class="cd-k">${icon[k]} ${QUALITY_NAMES[k]}</span><b class="cd-v">${val[k]}</b></div>
+        <div class="cd-r2"><span class="cd-bar"><i style="width:${Math.max(2, q)}%"></i></span><span class="cd-q">素質 ${q}%</span></div></div>`;
+    }).join('')}</div>`;
   }
 
   /** 候選人卡片（招募三選一與探索遭遇共用） */
@@ -67,12 +67,15 @@ export class SurvivorPanel {
     const cls = CLASSES[c.classId];
     const r = RARITIES[c.rarity] || RARITIES.common;
     const s = g.survivors.stats(c);
-    return `<div class="card recruit sv-card r-${c.rarity}" style="--rc:${r.color};--cc:${cls.color}">
-      <div class="sv-head"><span class="sv-icon">${cls.icon}</span>
-        <div class="sv-title"><b>${escapeHtml(c.name)}</b><small>${rarityTag(c.rarity)} ${cls.name} Lv${c.level}・成長 ×${g.survivors.growthMul(c)}</small></div></div>
+    const avg = g.survivors.avgQuality(c);
+    const ring = avg >= 100 ? '#f2b134' : avg >= 70 ? '#66bb6a' : avg >= 40 ? '#ffb300' : '#ef5350';
+    return `<div class="card recruit sv-card cd-card r-${c.rarity}" style="--rc:${r.color};--cc:${cls.color}">
+      <div class="cd-head"><span class="sv-icon">${cls.icon}</span>
+        <div class="sv-title"><b>${escapeHtml(c.name)}</b><small>${rarityTag(c.rarity)} ${cls.name} Lv${c.level}・成長 ×${g.survivors.growthMul(c)}</small></div>
+        <div class="cd-avg" title="平均素質"><span class="cd-ring" style="--p:${avg};--ring:${ring}"><span>${avg}%</span></span><small>平均素質</small></div></div>
       ${this.abilityGrid(c, s)}
-      <small class="muted">可解放技能 ${g.survivors.skillSlots(c)}/${cls.skills.length}・${cls.skills[0].name}：${cls.skills[0].desc}</small>
-      <div class="btn-row">${actions}</div>
+      <div class="cd-skill">✨ 可解放技能 ${g.survivors.skillSlots(c)}/${cls.skills.length}・${cls.skills[0].name}：${cls.skills[0].desc}</div>
+      <div class="cd-foot"><small class="muted" title="素質 0～100%：越高能力與升級成長越好（招募後不會改變）">ⓘ 素質越高，能力與成長越好</small><div class="btn-row">${actions}</div></div>
     </div>`;
   }
 
@@ -97,7 +100,12 @@ export class SurvivorPanel {
     const nextOdds = tech < 15 ? fmtOdds(survivorRarityTable(tech + 1)) : '';
     const cap = g.survivors.housingBreakdown();
     const { net } = g.resources.rates();
-    return `<div class="sv-pane-head">${btn('‹ 返回', 'svBack', {}, { cls: 'btn-sm sv-back' })}<h3>📻 招募倖存者</h3></div>
+    // 招募品級機率：標題旁的 ? 按鈕，點擊才浮出說明
+    const oddsPop = this.showOdds ? `<div class="odds-pop"><button class="odds-x" data-action="oddsToggle" aria-label="關閉">✕</button><b>🎲 招募品級機率</b>
+        <div class="odds">${fmtOdds(g.survivors.rarityOdds())}</div>
+        <small class="muted block">研究「招募技術」可提高高品級機率：目前 Lv${tech}/15${tech < 15 ? '，升到下一級後：' : '（已滿級）'}</small>
+        ${nextOdds ? `<div class="odds dim">${nextOdds}</div>` : ''}</div>` : '';
+    return `<div class="sv-pane-head odds-anchor">${btn('‹ 返回', 'svBack', {}, { cls: 'btn-sm sv-back' })}<h3>📻 招募倖存者</h3><button class="odds-q ${this.showOdds ? 'on' : ''}" data-action="oddsToggle" title="招募品級機率" aria-label="招募品級機率說明">?</button>${oddsPop}</div>
       ${fullNote}
       ${offer ? `<h4>📻 招募候選人（三選一）</h4><div class="grid">${offer}</div><div class="btn-row">${btn('放棄此次招募（不退費）', 'abandon', {}, { cls: 'btn-ghost btn-sm' })}</div>` : `
       <div class="card row-between">
@@ -107,11 +115,6 @@ export class SurvivorPanel {
       ${pool ? `<h4>🙋 等待加入（探索中遇到，停留 1 小時）</h4><div class="grid">${pool}</div>` : ''}
       <h4>🏕️ 附近的倖存者 <small class="muted">每小時更新（${formatDuration(Math.max(0, st.recruitBoard.refreshAt - Date.now()))}後）</small></h4>
       <div class="grid">${board || '<p class="muted">目前沒有人。</p>'}</div>
-      <div class="card odds-card"><b>🎲 招募品級機率</b>
-        <div class="odds">${fmtOdds(g.survivors.rarityOdds())}</div>
-        <small class="muted block">研究「招募技術」可提高高品級機率：目前 Lv${tech}/15${tech < 15 ? '，升到下一級後：' : '（已滿級）'}</small>
-        ${nextOdds ? `<div class="odds dim">${nextOdds}</div>` : ''}
-      </div>
       <details class="civ-more" data-keep="cap" ${this.keepOpen?.cap ? 'open' : ''}><summary>人數上限與食物說明</summary><p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 3（${cap.leader}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），等級越高吃得越多（每高 1 級 +${Math.round(FOOD_LEVEL_STEP * 100)}%），目前食物淨收入 ${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時。</p></details>`;
   }
 
@@ -266,6 +269,7 @@ export class SurvivorPanel {
       return;
     }
     if (action === 'svFilter') this.filter = data.f;
+    if (action === 'oddsToggle') this.showOdds = !this.showOdds;
     if (action === 'svRecruit') {
       this.view = 'recruit';
       this.paneOpen = true;

@@ -3659,11 +3659,15 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const helm99 = gc.equipment.generate({ level: 5, type: 'helmet' });
   e2.carried = e2.carried || { gained: {}, items: [], blueprints: [], vehicles: [] };
   e2.carried.items.push(helm99);
+  e2.carried.gained.wood = (e2.carried.gained.wood || 0) + 7777; // 前幾站背著的物資（容易辨識的數量）
+  const wood99 = gc.state.resources.wood;
   ex.update(e2.endAt + 1);
   const rep99 = gc.state.reports[0];
   assert(gc.equipment.items.filter((i) => i.id === helm99.id).length === 1 && !rep99.items.some((i) => i.id === helm99.id) && rep99.events.some((t) => t.includes(helm99.name)), '前幾站背回的裝備入庫一次，最後一站報告不重複列出（事件中說明）');
   assert(!ex.list.includes(e2) && Object.keys(carriedNow).every((k) => !['food', 'wood', 'fuel'].includes(k) || gc.state.resources[k] >= woodBefore * 0 ), '最後一站回到避難所');
-  assert(gc.state.reports[0].events.some((t) => t.includes('背包物資入庫')), '回到避難所時背著的物資入庫');
+  assert(gc.state.reports[0].events.some((t) => t.includes('前幾站背回的物資一起入庫')), '回到避難所時背著的物資入庫');
+  assert((rep99.resources?.wood || 0) < 7777 && gc.state.resources.wood > wood99, `最後一站報告只列這一站的收穫，前幾站背回的物資照樣入庫（報告木材 ${rep99.resources?.wood || 0}）`);
+
   // 負重達 90%：回家卸貨（探索途中可能受傷，先治好）
   const heal = () => { L.severe = false; L.hp = null; L.status = 'idle'; };
   heal();
@@ -4532,6 +4536,64 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(full - after === 10, `擊倒 10 名守軍，下次攻打只少 10 名（${full}→${after}）`);
   assert(n.healAt - t0 === NPC_CONFIG.woundHealMs && NPC_CONFIG.woundHealMs / NPC_ASSAULT.count === 60000, '守軍每分鐘補回 1 名');
   assert(NPC_REWARD_MUL === 4, '攻陷獎勵為 4 倍');
+}
+
+// ---- 109. 塑膠外殼較容易取得：出現機率提高、超市／住宅／學校有機會找到、回收站電子零件較多 ----
+{
+  const { pickSupply: ps, PLASTIC_SPOTS: spots } = await import('../src/systems/LootStock.js');
+  const { SUPPLIES: SP } = await import('../src/config/supplies.js');
+  let s1 = 11;
+  const rnd = () => { s1 = (s1 * 16807) % 2147483647; return s1 / 2147483647; };
+  const rate = (type, pred) => { let n = 0; for (let i = 0; i < 6000; i += 1) if (pred(ps('part', rnd, 1, type))) n += 1; return n / 6000; };
+  const elecRec = rate('recycling', (k) => SP[k].tag === 'elec');
+  const elecFac = rate('factory', (k) => SP[k].tag === 'elec');
+  assert(elecRec > elecFac * 1.4, `資源回收站的電子零件比較多（${Math.round(elecRec * 100)}% vs ${Math.round(elecFac * 100)}%）`);
+  const pl = rate('factory', (k) => k === 'plastic');
+  assert(pl > 0.06, `塑膠外殼是常見的零件（${(pl * 100).toFixed(1)}%）`);
+  assert(spots.supermarket > 0 && spots.residential > 0 && spots.school > 0, '超市、住宅、學校有機會找到塑膠外殼');
+}
+
+// ---- 110. 黑市交換：同價值 10 換 1、跨階 ×2、只能同階或低一階、★5 不開放、不到 1 個不換 ----
+{
+  const gx = Game.newGame({ playerName: 'X110', classId: 'warrior', lat: 25, lon: 121 });
+  const bm = gx.blackMarket;
+  gx.state.supplies = { steelPlate: 40, spring: 100, nail: 500, hinge: 3 };
+  const q1 = bm.exchangeQuote('steelPlate', 'valve', 40);
+  assert(q1.ok && q1.get === 2 && q1.used === 34, `同階：鋼板 40 → 閥門 2，只用掉 34（${q1.get}/${q1.used}）`);
+  const q2 = bm.exchangeQuote('spring', 'valve', 100);
+  assert(q2.ok && q2.get === 2 && q2.used === 80, `低一階：彈簧 100 → 閥門 2（每個 40）（${q2.get}/${q2.used}）`);
+  assert(!bm.exchangeQuote('nail', 'valve', 500).ok, '不能用低兩階的材料交換');
+  assert(!bm.exchangeQuote('valve', 'spring', 10).ok, '不能用高階換低階');
+  assert(!bm.exchangeable('precision') && !bm.exchangeable('kevlar'), '★5 最高階不開放');
+  assert(!bm.exchangeQuote('nail', 'cotton', 100).ok, '零件與布料不能互換');
+  assert(!bm.exchangeQuote('hinge', 'spring', 3).ok, '不到 1 個不能換');
+  const r = bm.exchange('steelPlate', 'valve', 40);
+  assert(r.ok && gx.state.supplies.valve === 2 && gx.state.supplies.steelPlate === 6, `交換後倉庫正確（閥門 ${gx.state.supplies.valve}，鋼板 ${gx.state.supplies.steelPlate}）`);
+}
+
+// ---- 111. 快速換裝不會降低戰力；材料節約也套用到彈藥與藥品 ----
+{
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const gq = Game.newGame({ playerName: 'Q111', classId: 'warrior', lat: 25, lon: 121 });
+  let drops = 0;
+  for (let t = 0; t < 120; t += 1) {
+    gq.state.survivors = gq.state.survivors.slice(0, 1);
+    gq.equipment.items.length = 0;
+    const sv = createSurvivor('q', ['warrior', 'scout', 'medic', 'engineer', 'farmer'][t % 5], 20, 'epic');
+    gq.state.survivors.push(sv);
+    for (let i = 0; i < 14; i += 1) gq.equipment.items.push({ ...gq.equipment.generate({ level: 10 + ((i * 3) % 25) }), loc: 'store' });
+    gq.state.supplies = { ammo9: 500, shell12: 500, ammo556: 500, ammo762: 500, ammo308: 500, arrow: 500 };
+    SLOT_KEYS.forEach((slot) => { const c = gq.equipment.items.find((i) => i.slot === slot); if (c) gq.equipment.equipRaw(sv.id, c.id); });
+    const p0 = gq.survivors.stats(sv).power;
+    gq.equipment.quickEquip(sv.id);
+    if (gq.survivors.stats(sv).power < p0) drops += 1;
+  }
+  assert(drops === 0, `快速換裝不會降低戰力（120 次中降低 ${drops} 次）`);
+  const base = gq.equipment.ammoCost('shell12', 10).plastic;
+  gq.state.research.levels.c_cost = 10;
+  gq.research.invalidate();
+  const cut = gq.equipment.ammoCost('shell12', 10).plastic;
+  assert(base === 10 && cut === 7, `材料節約 Lv10 套用到彈藥：10 批霰彈塑膠外殼 ${base}→${cut}`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

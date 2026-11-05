@@ -459,15 +459,37 @@ export class EquipmentSystem {
     if (sv.status !== 'idle') return { ok: false, reason: '已派出的倖存者無法更換裝備' };
     const homeIds = new Set(g.state.survivors.filter((s) => g.survivors.atShelter(s)).map((s) => s.id));
     const changed = [];
+    // 換上某件裝備後這位倖存者的實際戰力（裝備本身的戰力分數含運氣、背包格數等非戰鬥加成，不能直接比）
+    // 武器欄用該武器自己的模式比較（遠程武器沒有彈藥也照樣比較遠程戰力）
+    const modeOf = (slot) => (slot === 'weapon' ? 'ranged' : slot === 'melee' ? 'melee' : 'auto');
+    const powerWith = (slot, id) => {
+      const prev = sv.equipment[slot];
+      sv.equipment[slot] = id;
+      const p = g.survivors.stats(sv, modeOf(slot)).power;
+      sv.equipment[slot] = prev;
+      return p;
+    };
+    const slotsOf = (it) => it?.stats?.slots || 0;
     SLOT_KEYS.forEach((slot) => {
       const cur = this.getItem(sv.equipment[slot]);
       const pool = this.items.filter((i) => i.slot === slot && !this.equippedBy(i.id)
-        && ((i.loc || 'store') === 'store' || homeIds.has(i.loc)));
+        && ((i.loc || 'store') === 'store' || homeIds.has(i.loc))
+        // 背包：不會換成格數比較少的
+        && (slot !== 'backpack' || slotsOf(i) >= slotsOf(cur)));
       // 遠程武器也一律換戰力最高的（沒有彈藥時武器卡片會提示，自動補給會設成它的彈藥）
-      const best = pool.sort((a, b) => b.power - a.power)[0];
-      if (!best || best.power <= (cur?.power || 0)) return;
-      const r = this.equip(sv.id, best.id);
-      if (r.ok) changed.push(`${SLOTS[slot].name}：${best.name}`);
+      const now = g.survivors.stats(sv, modeOf(slot)).power;
+      let best = null;
+      let bestPow = now;
+      pool.forEach((it) => {
+        const p = powerWith(slot, it.id);
+        if (p > bestPow || (p === bestPow && best && it.power > best.power)) { best = it; bestPow = p; }
+      });
+      // 只在實際戰力提高時才換（背包格數較多但戰力相同時也換）
+      const roomier = slot === 'backpack' && !best && pool.find((i) => slotsOf(i) > slotsOf(cur) && powerWith(slot, i.id) >= now);
+      const pick = best || roomier;
+      if (!pick) return;
+      const r = this.equip(sv.id, pick.id);
+      if (r.ok) changed.push(`${SLOTS[slot].name}：${pick.name}`);
     });
     const ammo = this.syncAmmo(sv);
     const parts = [...changed, ...(ammo.notes || [])];
@@ -818,7 +840,9 @@ export class EquipmentSystem {
   /** 依批數相乘後的材料 */
   ammoCost(key, batches = 1) {
     const rc = this.recipeOf(key);
-    return Object.fromEntries(Object.entries(rc?.cost || {}).map(([k, v]) => [k, v * batches]));
+    // 研究「材料節約」也套用到彈藥、箭矢與藥品：以總數計算折扣再取整數，每種材料至少 1 個
+    const mul = Math.max(0.4, 1 - this.game.research.bonus('craftCostReduce'));
+    return Object.fromEntries(Object.entries(rc?.cost || {}).map(([k, v]) => [k, Math.max(1, Math.round(v * batches * mul))]));
   }
 
   /**

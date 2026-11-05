@@ -119,7 +119,7 @@ export const RESEARCH = {
   i_build: r('industry', 2, '建築學', '建造與升級費用降低', { buildCostReduce: 0.02 }),
   i_fast: r('industry', 2, '快速施工', '建造與升級時間縮短', { buildTimeReduce: 0.03 }),
   // ---- 生存 ----
-  s_scout: r('survival', 1, '斥候訓練', '探索速度提升，解鎖「自動探索」', { exploreSpeed: 0.02 }, { unlock: ['autoExplore'] }),
+  s_scout: r('survival', 1, '斥候訓練', '探索速度提升', { exploreSpeed: 0.02 }),
   s_queue: r('survival', 2, '行動規劃', '每支臨時小隊的探索佇列 +1 個地點（基本 2 個，最多 5 個）；Lv1 需要研究中心 Lv4、Lv2 需要 Lv7、Lv3 需要 Lv10', { queueSlots: 1 }, { max: 3, labReq: [4, 7, 10] }),
   s_parts: r('survival', 2, '零件辨識', '探索時有機率多找到一種零件', { partKindPct: 0.05 }, { max: 10, req: [['s_loot', 2]] }),
   s_loot: r('survival', 1, '拾荒技巧', '探索物資提升', { lootPct: 0.03 }),
@@ -140,7 +140,7 @@ export const RESEARCH = {
   v_garage: r('vehicles', 2, '車庫擴建', '車庫容量提升（每 2 級 +1）', { garageSlots: 0.5 }),
   // ---- 製作 ----
   c_tech: r('crafting', 1, '製作技術', '製作出高品級裝備的機率提升（滿級時傳奇 3%）', { craftTech: 1 }),
-  c_cost: r('crafting', 1, '材料節約', '製作費用降低', { craftCostReduce: 0.03 }),
+  c_cost: r('crafting', 1, '材料節約', '製作裝備、彈藥與藥品的材料降低', { craftCostReduce: 0.03 }),
   c_gun: r('crafting', 2, '槍械製造', '解鎖槍械製作：Lv1 手槍、Lv2 十字弓、Lv3 衝鋒槍、Lv4 散彈槍、Lv5 步槍、Lv7 狙擊槍、Lv9 輕機槍', { gunCraft: 1 }, { req: [['c_tech', 1]] }),
   c_level: r('crafting', 2, '精工', '製作的裝備等級提升', { craftLevelAdd: 1 }, { req: [['c_tech', 2]] }),
   c_bp: r('crafting', 3, '設計圖解析', '用設計圖製作時有機會提升一個品級', { craftBpBoost: 0.01 }, { req: [['c_tech', 3]] }),

@@ -15,6 +15,7 @@ import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { INFECTED } from '../../systems/InfectedSystem.js';
 import { RALLY_DELAYS } from '../../systems/RallySystem.js';
 import { AUTO_HOME_HOUR } from '../../systems/AutoHomeSystem.js';
+import { PLASTIC_SPOTS } from '../../systems/LootStock.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { openMessages, unreadCount } from '../MessageDialog.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
@@ -501,7 +502,8 @@ export class MapPanel {
         rows.push(left ? `<div class="poi-st part">⏳ 已被搜過一部分：剩 <b>${left} / ${v.left.total}</b> 個檢核點（從剩下的檢核點繼續，只找得到剩下的物資）</div>`
           : `<div class="poi-st part">📦 已搜完，裡面還有帶不走留下的物資：${Object.entries(v.left.res || {}).map(([k, n]) => `${metaOf(k).icon}${metaOf(k).name} ${n}`).join('、')}</div>`);
       } else {
-        const list = Object.keys(POI_TYPES[poi.type].loot).map((k) => `${LOOT_CATS[k].icon}${LOOT_CATS[k].name}`).join('、');
+        const list = Object.keys(POI_TYPES[poi.type].loot).map((k) => `${LOOT_CATS[k].icon}${LOOT_CATS[k].name}`).join('、')
+          + (PLASTIC_SPOTS[poi.type] ? '、📦塑膠外殼（少量）' : '') + (poi.type === 'recycling' ? '（電子零件較多）' : '');
         rows.push(`<div class="muted">📦 可能出現：${list}（實際所得於探索時隨機）</div>`);
       }
     }

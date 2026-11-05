@@ -81,9 +81,8 @@ export function openTeamPicker(ui, opts) {
   let squadId = null;
   const squads = opts.squads ? game.exploration.squads() : [];
   let duration = EXPLORE_DURATIONS[1];
-  const autoUnlocked = game.research.hasUnlock('autoExplore');
-  // 自動探索：解鎖後預設勾選
-  let auto = autoUnlocked;
+  // 探索一律自動進行（不再提供開關）
+  const auto = true;
   // 載具很多時預設收合：只顯示已選的與最適合的 1 台
   let showAllCars = false;
 
@@ -113,9 +112,7 @@ export function openTeamPicker(ui, opts) {
     const power = ids.reduce((sum, id) => sum + (game.survivors.get(id) ? game.survivors.stats(game.survivors.get(id)).power : 0), 0);
     const vehicles = opts.vehicles ? vehicleHtml(game, cars, ids.map((id) => game.survivors.get(id)).filter(Boolean), opts.distanceM || 0, squad, showAllCars) : '';
     const durs = opts.withDuration
-      ? `${opts.fixedDuration ? '' : `<div class="label">探索時長</div><div class="chips">${EXPLORE_DURATIONS.map((d) => `<button class="chip ${d === duration ? 'active' : ''}" data-action="dur" data-d="${d}">${d} 分鐘</button>`).join('')}</div>`}
-         <label class="toggle ${autoUnlocked ? '' : 'disabled'}"><input type="checkbox" data-role="auto" ${auto ? 'checked' : ''} ${autoUnlocked ? '' : 'disabled'}> 🔁 自動探索（完成後自動再出發）${autoUnlocked ? '' : '<small>（需研究「斥候訓練」）</small>'}</label>
-         ${autoUnlocked ? '<small class="muted block">同一個地點的物資拿光才結束；有探索佇列時接著前往下一個地點。隊員重傷、戰敗，或背包與倉庫都滿了時停止。</small>' : ''}`
+      ? `${opts.fixedDuration ? '' : `<div class="label">探索時長</div><div class="chips">${EXPLORE_DURATIONS.map((d) => `<button class="chip ${d === duration ? 'active' : ''}" data-action="dur" data-d="${d}">${d} 分鐘</button>`).join('')}</div>`}`
       : '';
     const squadPower = (e) => e.memberIds.reduce((sum, id) => { const m = game.survivors.get(id); return sum + (m ? game.survivors.stats(m).power : 0); }, 0);
     const squadFull = (e) => (e.queue || []).length >= game.exploration.queueLimit();
@@ -145,8 +142,8 @@ export function openTeamPicker(ui, opts) {
       ${vehicles}
       ${opts.routeOption ? '<small class="muted block">🛡️ 路線會自動繞開 NPC、敵對與中立玩家據點的警戒範圍；友好玩家的範圍可以直接通過。</small>' : ''}
       ${durs}
-      ${opts.quickQueue ? `<label class="toggle"><input type="checkbox" data-role="qq" ${game.exploration.quickQueueOn() ? 'checked' : ''}> ⚡ 快速佇列：自動加入附近的探索點（最多 ${game.exploration.queueLimit()} 個）</label>` : ''}
       <div class="pick-foot"><div class="pk-sum">${footHtml(game, opts.trip, ids, vids, avoidHostile, power, squad)}</div>
+        ${opts.quickQueue ? (() => { const on = game.exploration.quickQueueOn(); return `<button class="pk-qq ${on ? 'on' : ''}" data-action="qqToggle" title="出發時自動把附近的探索點加入佇列（最多 ${game.exploration.queueLimit()} 個）">⚡ 快速佇列<small>${on ? `開・最多 ${game.exploration.queueLimit()} 個` : '關'}</small></button>`; })() : ''}
         <button class="btn btn-primary" data-action="confirm" ${ids.length || squadId ? '' : 'disabled'}>${squadId ? '加入小隊佇列' : opts.confirmLabel}</button></div>`;
   };
 
@@ -165,6 +162,8 @@ export function openTeamPicker(ui, opts) {
       } else if (action === 'car') {
         if (cars.has(data.id)) cars.delete(data.id);
         else cars.add(data.id);
+      } else if (action === 'qqToggle') {
+        game.exploration.setQuickQueue(!game.exploration.quickQueueOn());
       } else if (action === 'carsMore') {
         showAllCars = !showAllCars;
       } else if (action === 'dur') {
@@ -179,9 +178,7 @@ export function openTeamPicker(ui, opts) {
     },
   });
   modal.body.addEventListener('change', (e) => {
-    if (e.target.dataset.role === 'auto') auto = e.target.checked;
     if (e.target.dataset.role === 'avoid') avoidHostile = e.target.checked;
-    if (e.target.dataset.role === 'qq') game.exploration.setQuickQueue(e.target.checked);
   });
   return modal;
 }

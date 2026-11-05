@@ -1,5 +1,5 @@
 import { exchangeBody, exchangeAction, exchangeForm } from '../ExchangeDialog.js';
-import { blackMarketBody, blackMarketAction } from '../BlackMarketView.js';
+import { blackMarketBody, blackMarketAction, exchangePreview } from '../BlackMarketView.js';
 
 /**
  * 市場分頁（導覽列「🏪 市場」）：交易所（玩家之間的刊登）與黑市兩個分頁。
@@ -64,6 +64,13 @@ export class MarketPanel {
     const save = (e) => {
       if (this.ui.tab !== 'market') return;
       if (e.target.closest?.('.demand-form') || e.target.classList?.contains('d-gear-price')) this.exForm = exchangeForm(el, this.exForm || {});
+      // 黑市交換：數量輸入時只更新試算（不重畫，避免打斷輸入）
+      if (e.target.dataset?.role === 'bmExQty' && this.ui.bmEx) {
+        const have = this.game.state.supplies?.[this.ui.bmEx.give] || 0;
+        this.ui.bmEx.qty = Math.max(0, Math.min(have, Math.floor(Number(e.target.value) || 0)));
+        const pv = el.querySelector('.bmx-preview');
+        if (pv) pv.innerHTML = exchangePreview(this.game, this.ui.bmEx);
+      }
     };
     el.addEventListener('input', save);
     el.addEventListener('change', save);
