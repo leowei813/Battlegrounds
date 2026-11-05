@@ -25,9 +25,9 @@ export const INFECTED = {
   refreshHour: 12,
   /** 守軍組成 */
   roster: { boss: 2, elite: 12, normal: 48 },
-  /** 守軍強度倍率 */
-  mul: { hp: 2.6, atk: 1.9 },
-  bossMul: { hp: 4, atk: 2.2 },
+  /** 守軍強度倍率（v10.9：生命 ×2、攻擊 ×1.5，強隊約需 2～5 場或多人累積才能消滅） */
+  mul: { hp: 5.2, atk: 2.85 },
+  bossMul: { hp: 8, atk: 3.3 },
   /** 與玩家據點警戒範圍至少保持的距離（公尺） */
   clearM: 120,
   /** 圖示大小（比巨型據點略大） */
