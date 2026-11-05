@@ -842,7 +842,7 @@ export class ExplorationSystem {
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
         const report = exp.kind === 'rally' ? this.game.rally.report(exp)
-          : exp.kind === 'assist' && !exp.defeated && !exp.recalled ? this.game.assist.report(exp)
+          : exp.kind === 'assist' && !exp.defeated ? this.game.assist.report(exp)
           : exp.recalled ? (exp.kind === 'explore' ? this.finishExplore(exp, { recalled: true }) : this.recalledReport(exp))
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)

@@ -4045,6 +4045,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(mig.bmVip && Array.isArray(mig.bmVip.slots), '舊存檔遷移：建立專屬保留區');
 }
 
+// ---- 96. 協防：召回的協防隊也顯示協防戰果；回家後才收到的戰果會補進報告 ----
+{
+  const ga = Game.newGame({ playerName: 'A96', classId: 'warrior', lat: 25, lon: 121 });
+  const L = ga.survivors.leader();
+  const exp = { kind: 'assist', recalled: true, assistTarget: { playerId: 'P96', name: '胖胖' }, memberIds: [L.id], travelEvents: ['↩️ 收到召回命令，隊伍折返避難所'], endAt: Date.now() };
+  const rep = ga.assist.report(exp);
+  assert(rep.success && rep.events.some((e) => e.includes('對方尚未回報戰果')) && !rep.events.some((e) => e.includes('沒有收穫')), '召回的協防隊使用協防報告（不再寫「這趟沒有收穫」）');
+  ga.state.reports = [rep, ...(ga.state.reports || [])];
+  assert(ga.assist.patchReport('P96', '🛡️ 協防「胖胖」戰報：擊殺 12 隻；✅ 成功守住', 12) && rep.events.some((e) => e.includes('成功守住')) && !rep.events.some((e) => e.includes('尚未回報')) && rep.kills === 12, '回家後收到的協防戰果補進報告');
+  assert(!ga.assist.patchReport('P96', 'x', 1), '同一份報告只補一次');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
