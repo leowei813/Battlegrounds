@@ -370,11 +370,17 @@ export class MapPanel {
       if (!myAssist) return '';
       const ap = tripProgress(myAssist, now);
       const pub = g.assist.published(now);
-      const r = g.assist.myResult(p);
+      // 只顯示這次協防出發之後的戰果：今晚的屍潮、或出發後抵達的 NPC／玩家攻打（不顯示上一場的舊結果）
+      const r0 = g.assist.myResult(p);
+      const r = r0 && String(r0.night) === String(g.time.nightKey(now)) && g.time.phase(now).zombies ? r0 : null;
+      const ra = (p.bases || []).map((b) => b.raidAssist).find((x) => x && x.at >= myAssist.startAt && x.list?.[g.world?.myId]);
+      const raMine = ra ? ra.list[g.world.myId] : null;
       const idle = p.updatedAt && now - p.updatedAt > 90000;
       return `<div class="card"><b>🛡️ 我的協防隊</b> <small class="muted">${ap.phase === 'searching' ? '已抵達，協防中' : ap.phase === 'returning' ? '回程中' : `前往中・約 ${formatDuration(ap.phaseRemainingMs)}後抵達`}</small>
         ${pub ? `<small class="block">每秒提供約 ${pub.dps} 傷害（${pub.count} 人）</small>` : ''}
-        <small class="block">${r ? `對方回報：你造成 ${r.dmg} 傷害、擊殺 ${r.kills} 隻${r.result === 'ok' ? '・✅ 守住了' : r.result === 'breached' ? '・💥 被突破' : ''}` : '對方尚未回報戰果（殭屍出現並被協防隊攻擊後才會有）'}</small>
+        ${raMine ? `<small class="block">對方回報：抵禦${escapeHtml(ra.attacker)}，你的協防隊擊倒 ${raMine.kills} 人${ra.result === 'ok' ? '・✅ 守住了' : '・💥 被攻破'}</small>` : ''}
+        ${r ? `<small class="block">今晚屍潮：你造成 ${r.dmg} 傷害、擊殺 ${r.kills} 隻${r.result === 'ok' ? '・✅ 守住了' : r.result === 'breached' ? '・💥 被突破' : ''}</small>` : ''}
+        ${!raMine && !r ? '<small class="block muted">對方尚未回報戰果（敵人抵達、與協防隊交戰後才會有）</small>' : ''}
         ${idle ? `<small class="neg block">⚠️ 對方約 ${formatDuration(now - p.updatedAt)}沒有更新：屍潮只在對方開著遊戲時進行，協防也只在那時生效</small>` : ''}</div>`;
     })();
     const assistRow = rel !== 'friend' ? '' : `${assistInfo}<div class="btn-row">${myAssist

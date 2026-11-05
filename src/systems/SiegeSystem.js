@@ -260,7 +260,8 @@ export class BaseSiege {
   zombieLevel() {
     const phase = this.game.time.phase();
     const dangerBonus = Math.floor((this.danger() - 1) * SIEGE_SCALING.dangerLevelMul);
-    return Math.max(1, 1 + this.game.civilization.levelBonus() + dangerBonus + this.zone().siegeLevel + (phase.danger > 1.5 ? 1 : 0));
+    const lv = 1 + this.game.civilization.levelBonus() + dangerBonus + this.zone().siegeLevel + (phase.danger > 1.5 ? 1 : 0);
+    return Math.max(1, Math.min(SIEGE_SCALING.maxZombieLevel ?? Infinity, lv));
   }
 
   /** 屍潮數量倍率：據點越大越難防守、區域越危險屍潮越多 */
