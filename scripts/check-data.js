@@ -4596,6 +4596,27 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(base === 10 && cut === 7, `材料節約 Lv10 套用到彈藥：10 批霰彈塑膠外殼 ${base}→${cut}`);
 }
 
+// ---- 112. 黑市子彈類數量 ×3（單價不變）----
+{
+  const { BLACK_MARKET: BMC } = await import('../src/systems/BlackMarketSystem.js');
+  const { SUPPLIES } = await import('../src/config/supplies.js');
+  const gb = Game.newGame({ playerName: 'B112', classId: 'warrior', lat: 25, lon: 121 });
+  const ammo = [];
+  for (let gen = 0; gen < 400 && ammo.length < 30; gen += 1) {
+    for (let slot = 0; slot < BMC.slots; slot += 1) {
+      const x = gb.blackMarket.good(slot, gen);
+      if (x.kind === 'supply' && SUPPLIES[x.key]?.cat === 'ammo') ammo.push(x);
+    }
+  }
+  assert(BMC.ammoQty === 90, '子彈類基礎數量為 90');
+  assert(ammo.length > 0, '黑市會出現子彈');
+  if (ammo.length) {
+    const t1 = ammo.filter((x) => SUPPLIES[x.key].tier === 1);
+    assert(!t1.length || t1.every((x) => x.qty >= 54), `★1 子彈每格至少 54 個（${t1.map((x) => x.qty).join('/')}）`);
+    assert(ammo.every((x) => x.price === Math.max(1, Math.round(gb.blackMarket.supplyPrice(x.key) * x.qty * BMC.priceMul))), '單價不變，總價依數量計算');
+  }
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

@@ -91,9 +91,11 @@ function exchangeHtml(ui) {
     return `<button class="bmx-it ${cls}" data-action="${act}" data-key="${k}" ${disabled ? 'disabled' : ''}><b>${sp.icon} ${sp.name}</b>
       <small><span class="bmx-st">${'★'.repeat(sp.tier)}</span> 倉庫 ${sup[k] || 0}・價值 ${exNum(EXCHANGE.value[k])}${note}</small></button>`;
   };
+  // 固定順序（階級高的在前，再依價值、名稱），不依倉庫數量排序，交換後順序不會跳動；兩排的排法一致
+  const exOrder = (a, b) => SUPPLIES[b].tier - SUPPLIES[a].tier || EXCHANGE.value[b] - EXCHANGE.value[a] || supplyOrder(a, b);
   const wants = Object.keys(EXCHANGE.value).filter((k) => bm.exchangeable(k) && SUPPLIES[k].cat === f.cat && SUPPLIES[k].tier === f.tier)
-    .sort((a, b) => EXCHANGE.value[b] - EXCHANGE.value[a] || supplyOrder(a, b));
-  const sources = f.want ? bm.exchangeSources(f.want).sort((a, b) => SUPPLIES[b].tier - SUPPLIES[a].tier || (sup[b] || 0) - (sup[a] || 0) || supplyOrder(a, b)) : [];
+    .sort((a, b) => exOrder(a, b));
+  const sources = f.want ? bm.exchangeSources(f.want).sort(exOrder) : [];
   // 只列出倉庫裡有的材料（沒有的不列，清單才不會太長）
   const giveList = sources.filter((k) => sup[k] > 0).map((k) => cell(k, 'bmExGive', `give ${f.give === k ? 'on' : ''}`)).join('')
     || '<p class="muted">倉庫裡沒有可以拿來換的材料。</p>';
