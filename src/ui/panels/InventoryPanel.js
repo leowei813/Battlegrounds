@@ -279,7 +279,7 @@ export class InventoryPanel {
     return this.game.state.inventory.items.filter((i) => !eq.equippedBy(i.id));
   }
 
-  /** 倉庫格子：材料依種類（零件→布料→藥品→彈藥）、階級排列，每 999 個一格；裝備依部位、品級、戰力排列 */
+  /** 倉庫格子：材料依種類（零件→布料→藥品→彈藥）、階級排列，每 9999 個一格；裝備依部位、品級、戰力排列 */
   storeCells() {
     const g = this.game;
     const sup = g.state.supplies || {};

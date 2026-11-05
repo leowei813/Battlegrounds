@@ -749,7 +749,7 @@ export class SurvivorSystem {
     return { ok: true, n };
   }
 
-  /** 這種消耗品還能放多少（只看格子：每格堆疊 999） */
+  /** 這種消耗品還能放多少（只看格子：每格堆疊 9999） */
   stackRoom(sv, key) {
     const eq = this.game.equipment;
     const cur = this.bagOf(sv)[key] || 0;
@@ -763,7 +763,7 @@ export class SurvivorSystem {
     if (!this.atShelter(sv)) return { ok: false, reason: '不在避難所，無法存取倉庫' };
     const bag = this.bagOf(sv);
     const res = this.storePool(key);
-    // 同種類消耗品堆疊（每格最多 999），需要新格子時要有空格
+    // 同種類消耗品堆疊（每格最多 9999），需要新格子時要有空格
     const slotRoom = this.stackRoom(sv, key);
     if (slotRoom <= 0) return { ok: false, reason: '背包格子已滿' };
     const room = Math.floor(Math.max(0, this.bagCap(sv) - this.bagLoad(sv)) / unitWeight(key));

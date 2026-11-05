@@ -272,7 +272,7 @@ export class EquipmentSystem {
     return this.items.filter((i) => (i.loc || 'store') === 'store' && !this.isWorn(i));
   }
 
-  /** 物品倉庫已用格數：每件裝備 1 格，每種材料物品每 999 個 1 格 */
+  /** 物品倉庫已用格數：每件裝備 1 格，每種材料物品每 9999 個 1 格 */
   storeUsed() {
     return this.storeItems().reduce((s, i) => s + itemSize(i), 0) + this.supplySlots();
   }

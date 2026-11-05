@@ -244,7 +244,7 @@ export const MODEL_KEYS = Object.keys(ITEM_MODELS);
  */
 export const BAG_BASE_SLOTS = 10;
 /** 消耗品每格堆疊上限 */
-export const STACK_MAX = 999;
+export const STACK_MAX = 9999;
 export const STORE_BASE_SLOTS = 30;
 export const STORE_SLOTS_PER_LEVEL = 13;
 

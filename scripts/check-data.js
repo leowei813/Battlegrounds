@@ -1034,14 +1034,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   home.facilities.itemStore.level = 3;
   assert(gq.equipment.storeCap() === slots0 + 26, '物品倉庫提高物品格子');
   assert(gq.shelter.sizeInfo(home).total <= 20, '據點建築總數上限仍為 20');
-  // 堆疊上限 999
+  // 堆疊上限 9999
   const lead = gq.survivors.leader();
-  gq.vehicles.memberCarry = () => 1e6;
-  gq.state.resources.food = 5000;
-  home.facilities.warehouse.level = 10;
-  assert(gq.survivors.withdraw(lead.id, 'food', 1500).ok && gq.equipment.bagSlotsUsed(lead) === 2, `消耗品每格最多堆疊 ${STACK_MAX}（1500 佔 2 格）`);
-  lead.bag = {};
+  gq.vehicles.memberCarry = () => 1e7;
   gq.state.resources.food = 50000;
+  home.facilities.warehouse.level = 10;
+  assert(STACK_MAX === 9999 && gq.survivors.withdraw(lead.id, 'food', STACK_MAX + 500).ok && gq.equipment.bagSlotsUsed(lead) === 2, `消耗品每格最多堆疊 ${STACK_MAX}（${STACK_MAX + 500} 佔 2 格）`);
+  lead.bag = {};
+  gq.state.resources.food = 2e6;
   const max = gq.survivors.withdraw(lead.id, 'food', 1e6);
   assert(max.n === gq.equipment.bagSlotCap(lead) * STACK_MAX, '背包格子決定可攜帶的消耗品上限');
   lead.bag = {};
