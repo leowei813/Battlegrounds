@@ -1167,3 +1167,21 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .sv-heal-chip.off { opacity: .45; cursor: default; }
 .sv-heal-chip + .sv-recruit-chip { margin-left: 0; }
 .sq-dist { color: #81d4fa; }
+/* 倖存者小卡片 v2：固定 5 行、長按拖移 */
+.sv-mini.v2 { padding: 8px 10px 8px 12px; gap: 4px; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.sv-mini.v2 .sv-mini-top { flex-wrap: nowrap; }
+.sv-mini.v2 .sv-mini-top b { flex: 0 1 auto !important; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sv-mini.v2 .sv-mini-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-mini.v2 .sv-mini-sub b { color: var(--text); }
+.sv-mini-act { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 30px; }
+.sv-mini-actl { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted, #b0bec5); white-space: nowrap; overflow: hidden; }
+.sv-mini-actl .sv-mini-job { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sv-mini-actl .sv-mini-job.cd { color: #90caf9; font-weight: 700; }
+.sv-mini-actl .sv-mini-job.hurt { color: #ef9a9a; }
+.sv-mini-actl .tw-tag { font-size: 11px; white-space: nowrap; flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sv-mini-act .sv-qe { flex: 0 0 auto; margin-left: auto; gap: 6px; }
+.sv-mini-act .sv-qe-btn { width: 28px; height: 28px; font-size: 15px; }
+.sv-mini-foot { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.sv-mini-foot .sv-q { font-size: 11px; }
+.sv-mini.v2 .sv-mini-top b { flex: 0 1 auto !important; min-width: 3.2em; }
+.sv-mini.v2 .sv-mini-top .rarity { flex-shrink: 1; min-width: 0; overflow: hidden; }

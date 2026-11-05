@@ -44,7 +44,7 @@ export const NPC_CONFIG = {
  * 攻打 NPC 據點時的守軍強度（v10）：一支隊伍很難單獨打下，需要找其他玩家集結。
  * 只影響攻打 NPC 據點（含集結），NPC 出來掠奪的隊伍強度不變。
  */
-export const NPC_ASSAULT = { hp: 5, atk: 2.4, count: 2, wall: 1.5, dps: 1.2 };
+export const NPC_ASSAULT = { hp: 9, atk: 4.5, count: 2, wall: 1.5, dps: 1.2 };
 /** 攻陷 NPC 據點的獎勵倍率（金錢、物資、裝備數量） */
 export const NPC_REWARD_MUL = 3;
 /** 集結攻陷時的分配：保底比例（平均分給每支隊伍），其餘依造成的傷害分配 */
