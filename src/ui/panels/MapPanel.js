@@ -14,6 +14,7 @@ import {
 import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { INFECTED } from '../../systems/InfectedSystem.js';
 import { RALLY_DELAYS } from '../../systems/RallySystem.js';
+import { AUTO_HOME_HOUR } from '../../systems/AutoHomeSystem.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { openMessages, unreadCount } from '../MessageDialog.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
@@ -302,6 +303,7 @@ export class MapPanel {
         ${btn(`🔔<small class="alert-lbl ${this.game.shelter.alert ? 'on' : ''}">${this.game.shelter.alert ? '警戒中' : '正常'}</small>`, 'mapAlert', {}, { cls: `btn-icon alert-btn ${this.game.shelter.alert ? 'on' : ''}`, disabled: !has, title: this.game.shelter.alert ? '警戒中：按一下解除警戒' : '按一下切換警戒（全部倖存者暫時防禦駐守）' })}
         ${btn(`💬${unreadCount(this.game) ? `<small class="unread">${unreadCount(this.game)}</small>` : ''}`, 'messages', {}, { cls: 'btn-icon', title: '消息：探索報告與避難所紀錄' })}
         ${btn(`🗨️${this.game.chat.unread() ? `<small class="unread">${Math.min(99, this.game.chat.unread())}</small>` : ''}`, 'chat', {}, { cls: `btn-icon ${this.ui.chatView?.isOpen ? 'on' : ''}`, title: '全服聊天：所有玩家都看得到' })}
+        ${btn(`🏠<small class="home-lbl ${this.game.autoHome.on() ? 'on' : ''}">${this.game.autoHome.on() ? `${AUTO_HOME_HOUR}:00 回家` : '關閉'}</small>`, 'autoHome', {}, { cls: `btn-icon home-btn ${this.game.autoHome.on() ? 'on' : ''}`, title: this.game.autoHome.on() ? `自動回家：遊戲時間 ${AUTO_HOME_HOUR}:00 所有外派隊伍自動回家（按一下關閉）` : '自動回家已關閉（按一下打開）' })}
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
         ${btn('☣️', 'zoneMode', {}, { cls: `btn-icon ${this.service.zoneMode?.() === 'off' ? '' : 'on'}`, title: '危險度圖層：淡／關閉' })}
       </div>
@@ -565,6 +567,14 @@ export class MapPanel {
     if (action === 'messages') openMessages(this.ui);
     if (action === 'chat') this.ui.chatView.toggle();
     if (action === 'legend') this.showLegend();
+    if (action === 'autoHome') {
+      const r = this.game.autoHome.toggle();
+      this.ui.toastEl.show(r.msg, 'info');
+      this.lastOverlay = '';
+      this.renderOverlay();
+      this.game.requestSave?.();
+      return;
+    }
     if (action === 'mapAlert' && sh) {
       const on = !this.game.shelter.alert;
       const r = this.game.shelter.setAlert(on);
