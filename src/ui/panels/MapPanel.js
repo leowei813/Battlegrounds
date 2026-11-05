@@ -499,7 +499,7 @@ export class MapPanel {
         rows.push(`<div class="muted">📦 可能出現：${list}（實際所得於探索時隨機）</div>`);
       }
     }
-    rows.push(`<small class="muted block">同一時間只有一支隊伍能探索（依抵達時間先後）；搜空後 ${Math.round(POI_SHARE.recoverMs / 3600000)} 小時恢復</small>`);
+    rows.push(`<small class="muted block">同一時間只有一支隊伍能探索（依抵達時間先後）；搜空後 ${formatDuration(POI_SHARE.recoverMs)}恢復</small>`);
     return rows.join('');
   }
 

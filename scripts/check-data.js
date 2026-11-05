@@ -430,7 +430,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(base.facilities.wall.level >= 1, '圍牆最低保留 1 級');
 }
 {
-  // 物資（v10）：依地點與世代產生；搜空後 3 小時恢復並重新產生；搜過一部分時只剩下的物資
+  // 物資（v10）：依地點與世代產生；搜空後一段時間恢復並重新產生；搜過一部分時只剩下的物資
   const { stockOf } = await import('../src/systems/LootStock.js');
   const poi = { id: 'osm_w1', type: 'shop', name: 'x', lat: 0, lon: 0 };
   const today = stockOf(poi);
@@ -4190,7 +4190,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gm.state.map.pois.find((p) => p.id === p0.id)?.lootedDay === 123 && gm.state.map.source === 'generated', '重新產生地圖時保留每個地點的搜刮紀錄');
 }
 
-// ---- 101. v10 地點探索佔用規則（多人共用）：先到先探索、晚到跳下一站、接續檢核點、搜空 3 小時恢復 ----
+// ---- 101. v10 地點探索佔用規則（多人共用）：先到先探索、晚到跳下一站、接續檢核點、搜空 90 分鐘恢復 ----
 {
   const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
   const { POI_SHARE } = await import('../src/systems/PoiShareSystem.js');
@@ -4290,10 +4290,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const vE = A.poiShare.view(T, after);
   assert(vE.empty && vE.by && vE.by.includes('C101'), `全部搜完：所有玩家看到已被搜空（${vE.by}）`);
   assert(!A.exploration.hasStock(T, after) && A.exploration.emptyReason(T, after).includes('恢復'), '已搜空的地點沒有物資，並顯示恢復時間');
-  // 3. 3 小時後恢復：物資重新產生（下一個世代）
+  // 3. 90 分鐘後恢復：物資重新產生（下一個世代）
   const later = vE.until + 1000;
   const vR = A.poiShare.view(T, later);
-  assert(!vR.empty && vR.gen === (store.get ? vR.gen : vR.gen) && A.exploration.hasStock(T, later) && vE.until - (rc.exp.startAt + rc.exp.travelMs + rc.exp.searchMs) <= POI_SHARE.recoverMs + 1000, '搜空 3 小時後恢復');
+  assert(POI_SHARE.recoverMs === 90 * 60000, '資源點搜空後 90 分鐘恢復');
+  assert(!vR.empty && vR.gen === (store.get ? vR.gen : vR.gen) && A.exploration.hasStock(T, later) && vE.until - (rc.exp.startAt + rc.exp.travelMs + rc.exp.searchMs) <= POI_SHARE.recoverMs + 1000, '搜空 90 分鐘後恢復');
   // 4. 兩人前往同一個地點：先抵達的人探索；晚抵達的人手動派遣會被擋下，或抵達時讓位
   const T4 = big[3];
   reset(A); reset(B);
