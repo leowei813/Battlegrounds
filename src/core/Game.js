@@ -22,6 +22,7 @@ import { GpsSystem } from '../systems/GpsSystem.js';
 import { grant } from '../systems/costUtils.js';
 import { isSupply } from '../config/supplies.js';
 import { generatePois } from '../map/WorldGen.js';
+import { PoiShareSystem } from '../systems/PoiShareSystem.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import { haversine } from '../utils/math.js';
 import { POI_THIN_VERSION } from '../config/constants.js';
@@ -47,6 +48,7 @@ export class Game {
     this.started = false;
 
     this.shared = new SharedWorld(this);
+    this.poiShare = new PoiShareSystem(this);
     this.chat = new ChatSystem(this);
     this.time = new TimeSystem(this);
     this.research = new ResearchSystem(this);

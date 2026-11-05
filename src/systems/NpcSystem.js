@@ -644,7 +644,7 @@ export class NpcSystem {
     n.nextExploreAt = now + rand(NPC_CONFIG.exploreEveryMs);
     const targets = this.game.state.map.pois.filter((p) => !this.game.shelter.baseAtPoi(p.id)
       && !this.list.some((m) => m.poiId === p.id)
-      && (p.lootedDay !== dayKey(now) || this.game.state.map.remain?.[p.id])
+      && POI_TYPES[p.type] && !this.game.poiShare.view(p, now).empty
       && haversine(n.lat, n.lon, p.lat, p.lon) <= NPC_CONFIG.exploreRadiusM);
     const poi = pick(targets);
     if (!poi) return;
@@ -722,14 +722,12 @@ export class NpcSystem {
         const night = this.game.time.phase(at).zombies ? 1.6 : 1;
         if (chance(NPC_CONFIG.exploreInjuryChance * this.game.zombies.encounterMul(poi.lat, poi.lon) * night)) this.wound(n, chance(0.3) ? 2 : 1, now);
       }
-      const remain = this.game.state.map.remain || {};
-      if (!poi || (poi.lootedDay === dayKey(at) && !remain[poi.id])) return;
-      const stock = stockOf(poi, at, remain);
+      const view = poi && this.game.poiShare.view(poi, at);
+      if (!poi || view.empty) return;
+      const stock = stockOf(poi, at, view);
       this.addResources(n, Object.fromEntries(Object.entries(stock.resources).map(([k, v]) => [k, Math.round(v * 0.6)])));
-      // NPC 探索過的建築資源一併消失（包含殘留的物資）
-      poi.lootedDay = dayKey(at);
-      poi.lootedBy = { kind: 'npc', name: n.name, day: dayKey(at) };
-      delete remain[poi.id];
+      // NPC 探索過的建築（自己的地圖）：3 小時內沒有物資
+      this.game.poiShare.markNpc(poi, at + (trip.searchMs || 0), n.name);
       this.game.bus.emit('map:changed');
     }
   }

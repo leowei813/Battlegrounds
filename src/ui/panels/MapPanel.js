@@ -6,13 +6,12 @@ import { ALL_ENEMIES } from '../../config/enemies.js';
 import { BASE_SIZES, FACILITY_COUNT } from '../../config/civilization.js';
 import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
-import { isLooted, msToReset } from '../../systems/LootStock.js';
+import { POI_SHARE } from '../../systems/PoiShareSystem.js';
 import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
 import {
   btn, costHtml, metaOf, itemCard, progressBar,
 } from '../components.js';
 import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
-import { remainOf } from '../../systems/LootStock.js';
 import { INFECTED } from '../../systems/InfectedSystem.js';
 import { RALLY_DELAYS } from '../../systems/RallySystem.js';
 import { openTeamPicker } from '../TeamPicker.js';
@@ -474,18 +473,32 @@ export class MapPanel {
     });
   }
 
-  /** 可能出現的物資（實際種類與數量要探索時才知道；探索後清空，每天 06:00、18:00 刷新） */
+  /**
+   * 地點狀態與可能出現的物資（v10 所有玩家共用）：
+   * 有人探索中、搜過一部分（剩幾個檢核點）、已搜空（幾點恢復），或可能出現的物資種類。
+   */
   stockHtml(poi) {
-    const reset = `每天 06:00、18:00 刷新（${formatDuration(msToReset())}後）`;
-    const fmt = (res) => Object.entries(res).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} ${v}`).join('、');
-    // 上次探索帶不走而殘留的物資：直接顯示剩餘數量
-    const left = remainOf(poi, this.game.state.map.remain);
-    // 沒有完成探索：還有物資但不知道是什麼、有多少
-    if (left && this.game.state.map.remain[poi.id]?.hidden) return `<div class="muted">🔍 上次沒有搜索完，裡面可能還有物資（數量不明）・${reset}</div>`;
-    if (left) return `<div class="pos">📦 殘留物資（上次帶不走留下的）：${fmt(left)}・${reset}</div>`;
-    if (isLooted(poi)) return `<div class="muted">🕸️ 今日已被搜刮一空・${reset}</div>`;
-    const list = Object.keys(POI_TYPES[poi.type].loot).map((k) => `${LOOT_CATS[k].icon}${LOOT_CATS[k].name}`).join('、');
-    return `<div class="muted">📦 可能出現：${list}（實際所得於探索時隨機）・${reset}</div>`;
+    const now = Date.now();
+    const v = this.game.poiShare.view(poi, now);
+    const hm = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+    const rows = [];
+    const busy = v.occ.filter((x) => x.a <= now && x.l > now).sort((a, b) => a.a - b.a)[0];
+    const coming = v.occ.filter((x) => x.a > now).sort((a, b) => a.a - b.a)[0];
+    if (v.empty) rows.push(`<div class="poi-st empty">🕸️ 已被搜空${v.by ? `（${escapeHtml(v.by)}）` : ''}・<b>${hm(v.until)}</b> 恢復（約 ${formatDuration(Math.max(0, v.until - now))}）</div>`);
+    else {
+      if (busy) rows.push(`<div class="poi-st busy">🔍 ${busy.npc ? escapeHtml(busy.n) : `玩家「${escapeHtml(busy.n)}」`}正在探索，預計 <b>${hm(busy.l)}</b> 離開（約 ${formatDuration(Math.max(0, busy.l - now))}）</div>`);
+      if (coming) rows.push(`<div class="poi-st busy">🚶 ${coming.npc ? escapeHtml(coming.n) : `玩家「${escapeHtml(coming.n)}」`}的隊伍預計 <b>${hm(coming.a)}</b> 抵達，比他晚到的隊伍要等他搜完</div>`);
+      if (v.left) {
+        const left = Math.max(0, (v.left.total || 1) - (v.left.done || 0));
+        rows.push(left ? `<div class="poi-st part">⏳ 已被搜過一部分：剩 <b>${left} / ${v.left.total}</b> 個檢核點（從剩下的檢核點繼續，只找得到剩下的物資）</div>`
+          : `<div class="poi-st part">📦 已搜完，裡面還有帶不走留下的物資：${Object.entries(v.left.res || {}).map(([k, n]) => `${metaOf(k).icon}${metaOf(k).name} ${n}`).join('、')}</div>`);
+      } else {
+        const list = Object.keys(POI_TYPES[poi.type].loot).map((k) => `${LOOT_CATS[k].icon}${LOOT_CATS[k].name}`).join('、');
+        rows.push(`<div class="muted">📦 可能出現：${list}（實際所得於探索時隨機）</div>`);
+      }
+    }
+    rows.push(`<small class="muted block">同一時間只有一支隊伍能探索（依抵達時間先後）；搜空後 ${Math.round(POI_SHARE.recoverMs / 3600000)} 小時恢復</small>`);
+    return rows.join('');
   }
 
   /**
@@ -718,7 +731,7 @@ export class MapPanel {
         : '<small class="block pos">✅ 搬遷保留的設施都不會降級</small>') : ''}`;
     } else {
       const check = g.shelter.canEstablish(poi);
-      actions.push(btn('🧭 派遣探索', 'explore', {}, { cls: 'btn-primary' }));
+      { const ve = g.poiShare.view(poi); actions.push(btn(ve.empty ? '🕸️ 已搜空' : ve.left ? '🧭 繼續探索' : '🧭 派遣探索', 'explore', {}, { cls: 'btn-primary', disabled: ve.empty })); }
       actions.push(btn(`🏴 建立前哨站（${g.shelter.outposts().length}/${g.shelter.outpostLimit()}）`, 'setShelter', {}, { cls: 'btn-ghost', disabled: !check.ok, title: check.reason || '' }));
       establish = `${sizeLine}<small class="muted block">前哨站只有防禦功能。建立費用：<span class="costs inline">${costHtml(g.state, g.shelter.establishCost())}</span>${check.ok ? '' : `（${check.reason}）`}</small>`;
     }
@@ -776,7 +789,7 @@ export class MapPanel {
     openTeamPicker(this.ui, {
       title: `🧭 探索：${poi.name}`,
       intro: `<p class="muted">${POI_TYPES[poi.type].name}・危險度 ${stars(g.zombies.areaDanger(poi))}・敵人等級約 Lv${g.zombies.buildingLevel(poi, g.time.phase())}</p>
-        <p class="muted">🔍 基本搜索時間 ${formatDuration(g.exploration.searchMinutes(poi) * 60000)}${g.state.map.remain?.[poi.id] ? (g.state.map.remain[poi.id].hidden ? '（上次沒搜完，只需剩餘時間）' : '（回來拿帶不走的物資，只需很短時間）') : ''}（依地點大小與危險度；偵察兵、裝備、研究與隊員人數可縮短）。移動時間依距離、隊員速度與載具另外計算。</p>`,
+        <p class="muted">🔍 基本搜索時間 ${formatDuration(g.exploration.searchMinutes(poi) * 60000)}${g.poiShare.view(poi).left ? '（搜過一部分，只需剩餘的時間）' : ''}（依地點大小與危險度；偵察兵、裝備、研究與隊員人數可縮短）。移動時間依距離、隊員速度與載具另外計算。</p>`,
       withDuration: true,
       fixedDuration: true,
       vehicles: true,

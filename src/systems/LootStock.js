@@ -128,17 +128,20 @@ const LOOT_AMOUNT_MUL = 0.85;
 export const riskAmountMul = (risk) => Math.min(0.9, Math.max(0.45, 0.45 + 0.06 * Math.max(0, risk)));
 
 /**
- * 今日物資。已被搜刮則回傳空物資；有殘留物資時回傳殘留的部分（並標記 partial）。
+ * 地點目前的物資（v10：所有玩家共用）。已被搜空回傳空物資；搜過一部分時回傳剩下的部分（並標記 partial）。
+ * 物資依「地點 ID + 世代」產生：搜空 3 小時後換下一個世代、重新產生。
  * resources 的鍵為基本資源或具體的材料物品（例如 nail、bandage）。
- * @param {object} [remainMap] state.map.remain
+ * @param {{gen:number, empty:boolean, left:{res:object}|null}} [view] PoiShareSystem.view() 的結果；沒有時視為第 0 世代、沒被搜過
  * @returns {{resources: Record<string, number>, itemMul:number, empty:boolean, partial?:boolean, gear:boolean, vehicle:boolean}}
  */
-export function stockOf(poi, at = Date.now(), remainMap = null) {
-  const left = remainOf(poi, remainMap, at);
-  if (left) return { resources: { ...left }, itemMul: 0, empty: false, partial: true, gear: false, vehicle: false };
-  if (isLooted(poi, at)) return { resources: {}, itemMul: 0, empty: true, gear: false, vehicle: false };
+export function stockOf(poi, at = Date.now(), view = null) {
+  if (view?.empty) return { resources: {}, itemMul: 0, empty: true, gear: false, vehicle: false };
+  if (view?.left) {
+    const left = Object.fromEntries(Object.entries(view.left.res || {}).map(([k, v]) => [k, Math.min(REMAIN_MAX, Math.max(0, Math.floor(v) || 0))]).filter(([, v]) => v > 0));
+    if (Object.keys(left).length) return { resources: left, itemMul: 0, empty: false, partial: true, gear: false, vehicle: false };
+  }
   const pt = POI_TYPES[poi.type];
-  const rnd = seeded(hashString(`${poi.id}|${dayKey(at)}`));
+  const rnd = seeded(hashString(`${poi.id}|g${view?.gen || 0}`));
   // 種類：多半來自該類建築的物資表
   const pool = Object.entries(pt.loot).filter(([k]) => k !== 'gear' && k !== 'vehicle');
   const total = pool.reduce((s, [, w]) => s + w, 0);

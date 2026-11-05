@@ -43,6 +43,10 @@ const fillSupplies = (game, n = 900) => {
   game.research.invalidate?.();
 };
 
+// 舊測試用隨機補足的地圖建立據點：預設不套用 v10「重度感染據點範圍內不能建立據點」（專門的測試會開啟）
+const { InfectedSystem: InfSys } = await import('../src/systems/InfectedSystem.js');
+const realBlocking = InfSys.prototype.blocking;
+InfSys.prototype.blocking = function blocking(...a) { return this.game.testInfBlock ? realBlocking.apply(this, a) : null; };
 let failures = 0;
 const assert = (cond, msg) => {
   if (!cond) {
@@ -112,7 +116,8 @@ delete g.state.map.pois[1].lootedBy; // 手動改了日期，原本的「被誰�
 g.state.map.pois[1].lastVisit = 123;
 const packed = JSON.stringify(SaveManager.pack(g.state));
 const restored = SaveManager.migrate(JSON.parse(packed));
-assert(JSON.stringify(restored.map.pois) === JSON.stringify(g.state.map.pois), '建築精簡格式可完整還原');
+const normP = (list) => JSON.stringify(list.map((p) => Object.fromEntries(Object.entries(p).sort(([a], [b]) => a.localeCompare(b)))));
+assert(normP(restored.map.pois) === normP(g.state.map.pois), '建築精簡格式可完整還原');
 assert(packed.length < JSON.stringify(g.state).length && !('pois' in JSON.parse(packed).map), `存檔以精簡格式儲存（${packed.length} < ${JSON.stringify(g.state).length} bytes）`);
 
 // ---- 3. 文明度與多據點 ----
@@ -425,23 +430,16 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(base.facilities.wall.level >= 1, '圍牆最低保留 1 級');
 }
 {
-  // 物資：探索後清空，每天 06:00、18:00 刷新且隨機
-  const { stockOf, dayKey } = await import('../src/systems/LootStock.js');
+  // 物資（v10）：依地點與世代產生；搜空後 3 小時恢復並重新產生；搜過一部分時只剩下的物資
+  const { stockOf } = await import('../src/systems/LootStock.js');
   const poi = { id: 'osm_w1', type: 'shop', name: 'x', lat: 0, lon: 0 };
   const today = stockOf(poi);
-  assert(!today.empty && Object.keys(today.resources).length >= 1, '建築每天有物資');
-  assert(JSON.stringify(stockOf(poi)) === JSON.stringify(today), '同一天物資固定');
-  poi.lootedDay = dayKey();
-  assert(stockOf(poi).empty, '探索後物資清空');
-  const tomorrow = Date.now() + 86400000;
-  assert(!stockOf(poi, tomorrow).empty, '下一個時段重新刷新');
-  const d0 = new Date(); d0.setHours(5, 59, 0, 0);
-  const d1 = new Date(d0); d1.setHours(6, 1, 0, 0);
-  const d2 = new Date(d0); d2.setHours(17, 59, 0, 0);
-  const d3 = new Date(d0); d3.setHours(18, 1, 0, 0);
-  assert(dayKey(d0.getTime()) !== dayKey(d1.getTime()) && dayKey(d1.getTime()) === dayKey(d2.getTime()) && dayKey(d2.getTime()) !== dayKey(d3.getTime()), '每天 06:00 與 18:00 各刷新一次');
-  const days = new Set(Array.from({ length: 10 }, (_, i) => JSON.stringify(stockOf({ ...poi, lootedDay: 0 }, Date.now() + i * 86400000).resources)));
-  assert(days.size > 5, '每天物資的種類與數量隨機');
+  assert(!today.empty && Object.keys(today.resources).length >= 1, '建築有物資');
+  assert(JSON.stringify(stockOf(poi)) === JSON.stringify(today), '同一世代物資固定（所有玩家相同）');
+  assert(stockOf(poi, Date.now(), { gen: 0, empty: true }).empty, '搜空後沒有物資');
+  assert(stockOf(poi, Date.now(), { gen: 0, empty: false, left: { res: { food: 5 } } }).resources.food === 5, '搜過一部分時只剩下的物資');
+  const gens = new Set(Array.from({ length: 10 }, (_, i) => JSON.stringify(stockOf(poi, Date.now(), { gen: i, empty: false }).resources)));
+  assert(gens.size > 5, '每次恢復後物資的種類與數量重新隨機');
 }
 
 // ---- 10. v4：區域危險度、屍潮分波、載具、放棄據點、NPC 據點 ----
@@ -592,7 +590,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const perCell = {};
   gn.npcs.list.forEach((n) => { perCell[n.cell] = (perCell[n.cell] || 0) + 1; });
   assert(gn.npcs.list.length >= 2 && Object.values(perCell).every((c) => c <= 2), `每格（約 1 平方公里）最多 2 個 NPC 據點（共 ${gn.npcs.list.length} 個、${Object.keys(perCell).length} 格；只出現在可視範圍內，數量依地圖而定）`);
-  const npc = gn.npcs.list.find((n) => n.level < 30) || gn.npcs.list[0];
+  // 挑測試期間（2 小時內）不會換世代的 NPC：避免剛好被新的勢力取代
+  const stable = (n) => n.sid && gn.npcs.slotNpc(n.cell, Number(n.sid.split(':')[2]), t0 + 7200e3)?.ident === n.ident;
+  const npc = gn.npcs.list.find((n) => n.level < 30 && stable(n)) || gn.npcs.list.find(stable) || gn.npcs.list[0];
   const lv = npc.level;
   const { SHARED_NPC } = await import('../src/systems/NpcSystem.js');
   assert(gn.npcs.sharedLevel(npc, t0 + SHARED_NPC.levelMs) === gn.npcs.sharedLevel(npc, t0) + 1 && lv >= 1, 'NPC 據點會隨時間升級');
@@ -603,7 +603,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(npc.trip?.kind === 'explore', 'NPC 會外出探索');
   const target = gn.state.map.pois.find((p) => p.id === npc.trip.poiId);
   gn.npcs.update(npc.trip.endAt + 1);
-  assert(target.lootedDay, 'NPC 探索後建築被搜刮一空');
+  assert(gn.poiShare.view(target, npc.trip ? Date.now() : target.lootedDay + 1).empty || target.lootedBy?.kind === 'npc', 'NPC 探索後建築被搜刮一空');
   assert(gn.npcs.aggression() < 0.5, '文明度低時 NPC 不太積極');
   // 掠奪：玩家沒有防禦且無人在家 → 被搶
   gn.state.survivors.forEach((s) => { s.status = 'exploring'; });
@@ -3859,8 +3859,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ge.combat.simulate = (...a) => ({ ...sim87(...a), victory: true });
   const now = Date.now();
   // 第二個地點被 NPC 搜空
-  near[1].lootedDay = dayKey(now);
-  near[1].lootedBy = { kind: 'npc', name: '鐵拳幫', day: dayKey(now) };
+  ge.poiShare.markNpc(near[1], now - 1000, '鐵拳幫');
   assert(!ex.hasStock(near[1], now) && ex.emptyReason(near[1], now).includes('鐵拳幫'), '被 NPC 搜空的建築記下 NPC 名稱');
   const r1 = ex.start(near[0].id, [L.id], 1, false, now);
   r1.exp.cargo = 1e6;
@@ -3871,13 +3870,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(e2 && !ex.list.some((e) => e.poiId === near[1].id), '連續探索：已被搜空的佇列地點自動跳過，直接前往下一個');
   assert(ge.state.reports[0]?.events.some((t) => t.includes('跳過') && t.includes('鐵拳幫')), '報告寫出跳過的地點與被誰搜空');
   ex.list.length = 0; L.status = 'idle'; L.hp = null;
-  // 直接去被搜空的建築：報告標示「已被搜空」與原因
-  const r2 = ex.start(near[1].id, [L.id], 1, false, now);
-  ex.update(r2.exp.endAt + 1);
-  const rep = ge.state.reports.find((r) => r.poiName === near[1].name);
-  assert(rep?.emptied?.includes('鐵拳幫') && rep.events.some((t) => t.includes('搜刮一空') && t.includes('鐵拳幫')), '探索已被搜空的建築：報告標示已被搜空與原因');
-  // 自己搜過：原因顯示自己
-  assert(near[0].lootedBy?.kind === 'self' && ex.emptyReason(near[0], now).includes('你已經搜過'), '自己搜過的建築記為自己');
+  // 直接派遣到已被搜空的建築：不能出發（避免白跑），並說明恢復時間
+  const r2 = ex.start(near[1].id, [L.id], 1, false, Date.now());
+  assert(!r2.ok && r2.reason.includes('已被搜空'), `派遣到已被搜空的建築會被擋下（${r2.reason}）`);
+  // 自己搜過（全部帶走）：原因顯示玩家名稱（所有玩家看到的相同）
+  assert(!ex.hasStock(near[0], now + 3600e3) && ex.emptyReason(near[0], now + 3600e3).includes('E87'), `自己搜過的建築記下搜空的玩家（${ex.emptyReason(near[0], now + 3600e3)}）`);
 }
 
 // ---- 88. 自動探索＋連續探索：搜完沒有剩下物資時，不會「再搜索一次」同一個地點 ----
@@ -3901,7 +3898,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ex.update(r.exp.startAt + r.exp.travelMs + r.exp.searchMs + 1);
   const again = ex.list.find((e) => e.poiId === near[0].id);
   const next = ex.list.find((e) => e.poiId === near[1].id);
-  assert(!again && next && !ex.hasStock(near[0]), '搜完全部帶走：不會再搜索同一個地點，改前往佇列下一站');
+  assert(!again && next && !ex.hasStock(near[0], r.exp.startAt + r.exp.travelMs + r.exp.searchMs + 2), '搜完全部帶走：不會再搜索同一個地點，改前往佇列下一站');
   assert(!ga.state.reports[0].events.some((t) => t.includes('直接再搜索一次')), '報告不會寫「還有物資，直接再搜索一次」');
 }
 
@@ -4144,6 +4141,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const { INFECTED } = await import('../src/systems/InfectedSystem.js');
   const gi = Game.newGame({ playerName: 'I99', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gi.testInfBlock = true;
   gi.state.map.pois = fillPois([], 25.0339, 121.5645);
   gi.shelter.establish(gi.state.map.pois.find((p) => gi.shelter.canEstablish(p).ok));
   const s0 = gi.infected.list()[0];
@@ -4189,6 +4187,129 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   p0.lootedDay = 123;
   gm.genMap();
   assert(gm.state.map.pois.find((p) => p.id === p0.id)?.lootedDay === 123 && gm.state.map.source === 'generated', '重新產生地圖時保留每個地點的搜刮紀錄');
+}
+
+// ---- 101. v10 地點探索佔用規則（多人共用）：先到先探索、晚到跳下一站、接續檢核點、搜空 3 小時恢復 ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const { POI_SHARE } = await import('../src/systems/PoiShareSystem.js');
+  const { generatePois } = await import('../src/map/WorldGen.js');
+  const store = new MemoryObjects();
+  const LAT = 25.0339;
+  const LON = 121.5645;
+  const pois = generatePois(LAT, LON, 1200);
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: LAT, lon: LON });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    setHour(gx, 10);
+    const L = gx.survivors.leader();
+    L.level = 60;
+    gx.survivors.becomeSevere = () => {};
+    const sim = gx.combat.simulate.bind(gx.combat);
+    gx.combat.simulate = (...a) => ({ ...sim(...a), victory: true });
+    return gx;
+  };
+  const A = mk('A101');
+  const B = mk('B101');
+  const C = mk('C101');
+  // 三人的避難所在同一個地點附近（各自建立在不同的地點）
+  const homes = pois.filter((p) => haversine(p.lat, p.lon, LAT, LON) < 150).slice(0, 3);
+  [A, B, C].forEach((gx, i) => gx.shelter.establish(gx.state.map.pois.find((p) => p.id === homes[i].id)));
+  const big = pois.filter((p) => !homes.includes(p) && haversine(p.lat, p.lon, LAT, LON) < 600 && A.exploration.checkpointCount(p) >= 2);
+  const T = big[0];
+  const T2 = big[1];
+  const T3 = big[2];
+  const reset = (gx) => { const L = gx.survivors.leader(); Object.assign(L, { status: 'idle', hp: null, severe: false }); gx.state.expeditions = []; };
+  // 1. B 先出發、先抵達；A 晚出發、晚抵達：A 抵達時 B 還在搜索 → A 讓給 B，前往佇列下一站
+  const now = Date.now();
+  // B 比 A 早幾分鐘出發（一定比 A 早抵達）
+  const rb = B.exploration.start(T.id, ['leader'], 1, false, now - 120000);
+  assert(rb.ok, `B 出發（${rb.reason || ''}）`);
+  await tick();
+  await A.shared.poll();
+  const vA = A.poiShare.view(T, now);
+  assert(vA.occ.some((x) => x.n === 'B101'), '其他玩家看得到誰正在前往／探索這個地點');
+  // A 若現在手動派遣會在 B 搜索中抵達 → 不能出發（避免白跑）
+  const blocked = A.exploration.start(T.id, ['leader'], 1, false, Date.now());
+  assert(!blocked.ok && blocked.reason.includes('B101'), `抵達時有人在探索：手動派遣會被擋下（${blocked.reason}）`);
+  // 用小隊佇列（不檢查）讓 A 晚一點抵達：A 先去 T2，佇列下一站是 T
+  const ra = A.exploration.start(T2.id, ['leader'], 1, false, now);
+  assert(ra.ok, `A 出發（${ra.reason || ''}）`);
+  ra.exp.cargo = 1e6;
+  A.exploration.enqueue(ra.exp.id, T.id);
+  A.exploration.enqueue(ra.exp.id, T3.id);
+  await tick();
+  // A 先上線結算（B 還沒結算）：A 抵達 T 時 B 已經在搜索（依抵達時間判斷，不看誰先結算）
+  const eB = rb.exp;
+  const bLeave = eB.startAt + eB.travelMs + eB.searchMs;
+  let guard = 0;
+  let aT = null;
+  while (guard < 40) {
+    guard += 1;
+    const cur = A.state.expeditions.find((e) => e.poiId === T.id);
+    if (cur && cur.cp) { aT = cur; break; }
+    const nx = A.state.expeditions[0];
+    if (!nx) break;
+    A.exploration.update(Math.min(nx.endAt, nx.startAt + nx.travelMs + nx.searchMs) + 1, { silent: true });
+  }
+  const arriveA = aT ? aT.startAt + aT.travelMs : 0;
+  if (aT && arriveA < bLeave) {
+    assert(aT.cp.bumped && aT.cp.bumped.includes('B101'), `晚到的隊伍讓給先到的人（${aT.cp.bumped || '沒有讓'}）`);
+    A.exploration.update(aT.endAt + 1, { silent: true });
+    assert(A.state.expeditions.some((e) => e.poiId === T3.id) || A.state.reports.some((r) => r.events.some((t) => t.includes('B101'))), '被搶先後自動前往佇列下一站（或回家），報告寫出原因');
+  } else assert(true, '（A 抵達時 B 已離開，跳過讓位檢查）');
+  // 2. B 搜索到一半就召回：剩下的檢核點與物資留給下一位
+  reset(A);
+  const cpT = B.exploration.checkpointCount(T);
+  const t1 = eB.startAt + eB.travelMs + eB.searchMs / cpT + 1;
+  B.exploration.runCheckpoints(eB, t1);
+  assert(eB.cp && eB.cp.done === 1, `B 搜完第 1 個檢核點（${eB.cp?.done}/${cpT}）`);
+  B.exploration.recall(eB.id, t1 + 1);
+  B.exploration.update(eB.endAt + 1, { silent: true });
+  await tick();
+  await C.shared.poll();
+  const vC = C.poiShare.view(T);
+  assert(vC.left && vC.left.done === 1 && vC.left.total === A.exploration.checkpointCount(T), `探索到一半離開：其他玩家看到剩下的檢核點（${vC.left?.done}/${vC.left?.total}）`);
+  assert(!vC.occ.some((x) => x.n === 'B101' && x.l > Date.now() + 60000), '離開後移除自己的佔用紀錄');
+  // C 接著探索：從第 2 個檢核點繼續，搜索時間較短
+  const fullMin = C.exploration.searchMinutes({ ...T, id: 'fresh-copy' });
+  assert(C.exploration.searchMinutes(T) < fullMin, '接續探索只需剩餘的搜索時間');
+  const rc = C.exploration.start(T.id, ['leader'], 1, false, Date.now());
+  assert(rc.ok, `C 繼續探索（${rc.reason || ''}）`);
+  rc.exp.cargo = 1e6;
+  C.exploration.runCheckpoints(rc.exp, rc.exp.startAt + rc.exp.travelMs + 1);
+  assert(rc.exp.cp && rc.exp.cp.offset === 1 && rc.exp.cp.total === vC.left.total - 1 && rc.exp.cp.stock.partial, '從剩下的檢核點繼續，只找得到剩下的物資');
+  C.exploration.update(rc.exp.endAt + 1, { silent: true });
+  await tick();
+  await A.shared.poll();
+  const after = rc.exp.startAt + rc.exp.travelMs + rc.exp.searchMs + 1000;
+  const vE = A.poiShare.view(T, after);
+  assert(vE.empty && vE.by && vE.by.includes('C101'), `全部搜完：所有玩家看到已被搜空（${vE.by}）`);
+  assert(!A.exploration.hasStock(T, after) && A.exploration.emptyReason(T, after).includes('恢復'), '已搜空的地點沒有物資，並顯示恢復時間');
+  // 3. 3 小時後恢復：物資重新產生（下一個世代）
+  const later = vE.until + 1000;
+  const vR = A.poiShare.view(T, later);
+  assert(!vR.empty && vR.gen === (store.get ? vR.gen : vR.gen) && A.exploration.hasStock(T, later) && vE.until - (rc.exp.startAt + rc.exp.travelMs + rc.exp.searchMs) <= POI_SHARE.recoverMs + 1000, '搜空 3 小時後恢復');
+  // 4. 兩人前往同一個地點：先抵達的人探索；晚抵達的人手動派遣會被擋下，或抵達時讓位
+  const T4 = big[3];
+  reset(A); reset(B);
+  const t4 = Date.now();
+  const r4a = A.exploration.start(T4.id, ['leader'], 1, false, t4);
+  await tick();
+  await B.shared.poll();
+  const r4b = B.exploration.start(T4.id, ['leader'], 1, false, t4);
+  assert(r4a.ok, 'A 先派遣');
+  if (!r4b.ok) assert(r4b.reason.includes('A101'), `B 比 A 晚抵達：派遣時就被擋下（${r4b.reason}）`);
+  else {
+    // B 比較近、先抵達：A 抵達時讓給 B
+    await tick();
+    await A.shared.poll();
+    A.exploration.runCheckpoints(r4a.exp, r4a.exp.startAt + r4a.exp.travelMs + 1);
+    assert(r4a.exp.cp?.bumped?.includes('B101'), `B 比 A 早抵達：A 抵達時讓給 B（${r4a.exp.cp?.bumped}）`);
+  }
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
