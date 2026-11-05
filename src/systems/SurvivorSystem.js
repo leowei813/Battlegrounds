@@ -461,9 +461,15 @@ export class SurvivorSystem {
     return { ok: true, msg: `${sv.name} 使用${med.name}恢復了生命${saved ? '（藥品節約：沒有消耗）' : ''}${sv.severe ? '' : '，已可行動'}` };
   }
 
-  /** 在家、生命沒滿、可以接受治療的倖存者（全員治療用） */
+  /** 在家、生命沒滿，而且倉庫有不會溢出的藥品可用的倖存者（全員治療用） */
   healableAtHome() {
-    return this.list.filter((sv) => this.atShelter(sv) && sv.status !== 'exploring' && this.hpOf(sv) < this.maxHp(sv) - 0.5);
+    const st = this.game.state;
+    const keys = suppliesOf('med').filter((k) => SUPPLIES[k]?.heal > 0 && (st.supplies?.[k] || 0) > 0);
+    return this.list.filter((sv) => {
+      if (!this.atShelter(sv) || sv.status === 'exploring') return false;
+      const lost = this.maxHp(sv) - this.hpOf(sv);
+      return lost > 0.5 && keys.some((k) => this.healAmount(sv, k) <= lost + 0.5);
+    });
   }
 
   /**
@@ -475,7 +481,7 @@ export class SurvivorSystem {
     const st = this.game.state;
     const list = this.healableAtHome()
       .sort((a, b) => (b.severe ? 1 : 0) - (a.severe ? 1 : 0) || this.hpOf(a) / this.maxHp(a) - this.hpOf(b) / this.maxHp(b));
-    if (!list.length) return { ok: false, reason: '在家的倖存者生命都是滿的' };
+    if (!list.length) return { ok: false, reason: '沒有需要治療的人，或倉庫沒有不會溢出的藥品' };
     // 低階到高階：依回復比例由小到大
     const keys = suppliesOf('med').filter((k) => SUPPLIES[k]?.heal > 0).sort((a, b) => SUPPLIES[a].heal - SUPPLIES[b].heal);
     if (!keys.some((k) => (st.supplies?.[k] || 0) > 0)) return { ok: false, reason: '倉庫沒有藥品' };
