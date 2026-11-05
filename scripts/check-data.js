@@ -1804,6 +1804,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
       B.shared.cache.set(key, saved?.data ? { ...saved, data: staleRally } : staleRally);
       await B.rally.step(exB, Date.now());
       assert(B.state.expeditions.includes(exB), '加入集結後即使資料還沒更新，隊伍也不會回家');
+      const bl = B.survivors.leader();
+      const poiB = B.state.map.pois.find((p) => B.exploration.poi(p.id));
+      assert(!B.survivors.isAvailable(bl) && (!poiB || !B.exploration.start(poiB.id, [bl.id], 5, true).ok), '集結成員在倒數期間不能再派出去探索');
       B.shared.cache.set(key, saved);
     } else assert(!!exB, '加入集結後隊伍在集結中');
   }
