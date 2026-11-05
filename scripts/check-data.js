@@ -4571,6 +4571,31 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(r.ok && gx.state.supplies.valve === 2 && gx.state.supplies.steelPlate === 6, `交換後倉庫正確（閥門 ${gx.state.supplies.valve}，鋼板 ${gx.state.supplies.steelPlate}）`);
 }
 
+// ---- 111. 快速換裝不會降低戰力；材料節約也套用到彈藥與藥品 ----
+{
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const gq = Game.newGame({ playerName: 'Q111', classId: 'warrior', lat: 25, lon: 121 });
+  let drops = 0;
+  for (let t = 0; t < 120; t += 1) {
+    gq.state.survivors = gq.state.survivors.slice(0, 1);
+    gq.equipment.items.length = 0;
+    const sv = createSurvivor('q', ['warrior', 'scout', 'medic', 'engineer', 'farmer'][t % 5], 20, 'epic');
+    gq.state.survivors.push(sv);
+    for (let i = 0; i < 14; i += 1) gq.equipment.items.push({ ...gq.equipment.generate({ level: 10 + ((i * 3) % 25) }), loc: 'store' });
+    gq.state.supplies = { ammo9: 500, shell12: 500, ammo556: 500, ammo762: 500, ammo308: 500, arrow: 500 };
+    SLOT_KEYS.forEach((slot) => { const c = gq.equipment.items.find((i) => i.slot === slot); if (c) gq.equipment.equipRaw(sv.id, c.id); });
+    const p0 = gq.survivors.stats(sv).power;
+    gq.equipment.quickEquip(sv.id);
+    if (gq.survivors.stats(sv).power < p0) drops += 1;
+  }
+  assert(drops === 0, `快速換裝不會降低戰力（120 次中降低 ${drops} 次）`);
+  const base = gq.equipment.ammoCost('shell12', 10).plastic;
+  gq.state.research.levels.c_cost = 10;
+  gq.research.invalidate();
+  const cut = gq.equipment.ammoCost('shell12', 10).plastic;
+  assert(base === 10 && cut === 7, `材料節約 Lv10 套用到彈藥：10 批霰彈塑膠外殼 ${base}→${cut}`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
