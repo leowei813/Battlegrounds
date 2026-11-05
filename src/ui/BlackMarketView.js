@@ -22,7 +22,7 @@ export function blackMarketBody(ui, view = 'buy') {
   const bought = bm.boughtThisRound(now);
   const t = new Date(next.at);
   const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-  const quota = bought ? '<span class="bm-quota used">本輪已購買 1 / 1 件・下次換貨後可再買</span>' : '<span class="bm-quota">本輪可購買 1 / 1 件</span>';
+  const quota = bought ? '<span class="bm-quota used">本輪已購買 1 / 1 件・下次換貨後可再買</span>' : '<span class="bm-quota">本輪已購買 0 / 1 件・還可以買 1 件</span>';
   const head = `<div class="bm-bar">🕶️ 所有倖存者共用的黑市：${BLACK_MARKET.slots} 項商品<b>每 10 分鐘全部換新</b>・下次換貨 <b>${hm}</b>（約 ${formatDuration(Math.max(0, next.at - now))}）・先搶先贏，每輪每人限買 1 件<br>${quota}</div>
     <p>💰 你的金錢：<b>${g.state.player.coins}</b>${g.shared.online ? '' : ' <small class="muted">（目前未連線：只有自己看得到購買紀錄）</small>'}</p>${tabs}`;
   if (view === 'sell') {
