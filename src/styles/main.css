@@ -805,8 +805,11 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .sv-tag.home { background: #1d2a1a; color: #8fd88a; }
 .sv-tag.out { background: #182633; color: #8fc3ff; }
 .sv-tag.hurt { background: #3a1d1b; color: #ff8f88; }
-.sv-recruit-btn { min-height: 44px; border-radius: 10px; border: 1px dashed #8a6d1d; background: transparent; color: var(--accent); font: inherit; cursor: pointer; }
-.sv-recruit-btn.on { background: #ffb30018; border-style: solid; }
+.sv-roster-head { display: flex; align-items: center; gap: 10px; }
+.sv-recruit-chip { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 3px 12px; border-radius: 16px; border: 1px solid #ffb300; background: #ffb30018; color: var(--accent); font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.sv-recruit-chip .n { background: #ffb300; color: #000; border-radius: 9px; padding: 0 6px; font-size: 12px; }
+.sv-recruit-chip.on { background: #ffb300; color: #000; }
+.sv-recruit-chip.on .n { background: #000; color: #ffb300; }
 .sv-pane { flex: 1; min-width: 0; padding: 16px 20px 32px; display: flex; flex-direction: column; gap: 12px; max-width: 1100px; }
 .sv-detail2 { display: flex; flex-direction: column; gap: 12px; }
 .sv-pane-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
