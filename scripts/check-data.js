@@ -1599,17 +1599,6 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   A.npcs.update(later);
   B.npcs.update(later);
   assert(ids(A) === ids(B), '重生後兩位玩家看到的仍然相同');
-  // 夜晚屍群：結果相同且只結算一次
-  const n2 = A.npcs.list.find((n) => n.sid);
-  const n2b = B.npcs.get(n2.id);
-  const night = A.time.nightKey(later);
-  A.npcs.nightSiege(n2, night, later);
-  B.npcs.nightSiege(n2b, night, later);
-  assert(n2.lastSiege.result === n2b.lastSiege.result, '同一晚 NPC 抵禦屍群的結果所有玩家相同');
-  await new Promise((r) => setTimeout(r, 5));
-  await A.shared.poll();
-  const d = A.shared.get('npc', n2.sid);
-  assert(d.siegeNight === night, '屍群結果寫入共用資料（每晚只結算一次）');
   // 單機（沒有伺服器）：摧毀的 NPC 重新開啟後仍然消失
   const S = Game.newGame({ playerName: 'S', classId: 'warrior', lat: 25.02, lon: 121.02 });
   S.state.map.pois = JSON.parse(JSON.stringify(pois));
@@ -2156,15 +2145,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   n.healAt = Date.now() - 10 * 20 * 60000;
   gq.npcs.update(Date.now());
   assert(!n.wounded && gq.npcs.garrison(n).length > g0, 'NPC 傷亡人員會隨時間補回');
-  // 夜晚：NPC 也要抵禦屍群（每晚一次）
+  // 夜晚：NPC 據點不再抵禦屍潮（v10.9 移除），等級不會因此下降
   setHour(gq, 22);
   n.wounded = 0;
+  const lv22 = n.level;
+  const loss22 = n.levelLoss || 0;
   gq.npcs.update(Date.now());
-  const night = gq.time.nightKey();
-  assert(n.siegeNight === night || !gq.npcs.get(n.id), 'NPC 據點在夜晚抵禦屍群');
-  const last = JSON.stringify(n.lastSiege);
-  gq.npcs.update(Date.now());
-  assert(JSON.stringify(n.lastSiege) === last, '每晚只結算一次');
+  assert(!n.lastSiege && (n.levelLoss || 0) === loss22 && n.level >= lv22 && !n.wounded, 'NPC 據點夜晚不會抵禦屍潮、等級不會下降');
   // 偵查情報
   gq.state.research.levels = {};
   gq.research._cache = null;
@@ -3345,42 +3332,6 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const prices = Object.keys(AR).map((k) => bm.supplyPrice(k));
   assert(Math.max(...prices) <= 6 && Math.min(...prices) >= 4, `彈藥售價不再依階級大幅提高（${prices.join('/')}）`);
   assert(bm.supplyPrice('ammo308') < 85 && SP.ammo308.cat === 'ammo', '.308 狙擊彈不再是高價');
-}
-
-// ---- 75. 同一晚多位玩家都結算 NPC 抵禦屍群：不重複扣等級 ----
-{
-  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
-  const store = new MemoryObjects();
-  const pois = fillPois([], 25.3, 121.3);
-  const mk = (name) => {
-    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.3, lon: 121.3 });
-    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
-    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
-    gx.shared.backend = store;
-    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
-    gx.npcs.fillCells(Date.now(), { silent: true });
-    return gx;
-  };
-  const A = mk('A');
-  const B = mk('B');
-  let night = null;
-  let nA = null;
-  for (let k = 0; k < 300 && !night; k += 1) {
-    nA = A.npcs.list[k % A.npcs.list.length];
-    const save = JSON.parse(JSON.stringify(nA));
-    const before = nA.levelLoss || 0;
-    A.npcs.nightSiege(nA, `t${k}`, Date.now());
-    await new Promise((r) => setTimeout(r, 2));
-    if ((nA.levelLoss || 0) > before && A.npcs.list.includes(nA)) night = `t${k}`;
-    else Object.assign(nA, save);
-  }
-  assert(!!night, '找到 NPC 被屍群突破而降級的夜晚');
-  const nB = B.npcs.list.find((x) => x.ident === nA.ident);
-  // B 還沒同步到 A 的結算就自己也結算了同一晚
-  B.npcs.nightSiege(nB, night, Date.now());
-  await new Promise((r) => setTimeout(r, 20));
-  const server = store.map.get(`npc:${nA.sid}`)?.data?.levelLoss;
-  assert(nB.levelLoss === server && nA.levelLoss === server, `別人已經結算過的夜晚不會在本機重複扣等級（A ${nA.levelLoss}／B ${nB.levelLoss}／伺服器 ${server}）`);
 }
 
 // ---- 76. 屍潮平衡：前期加強、駐守倍率；天亮結算獎勵與突破懲罰 ----
