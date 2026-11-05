@@ -119,7 +119,7 @@ export function createInitialState({ playerName, classId, lat, lon }) {
     recruitPool: [],
     recruitOffer: null, // 招募中的三位候選人
     recruitBoard: { list: [], refreshAt: 0 }, // 每小時固定出現的可招募倖存者
-    bmBought: null, // 黑市：這一輪買過的商品（每 10 分鐘一輪，每輪限買 1 件）
+    bmBought: null, // 黑市：這一輪買過的商品 { tick, ids }（每 30 分鐘一輪，每輪限買 2 件）
     expeditions: [],
     reports: [],
     defenseLog: [], // 據點遭襲紀錄（屍潮、NPC、其他玩家）

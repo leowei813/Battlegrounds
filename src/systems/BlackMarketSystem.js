@@ -23,12 +23,14 @@ export const TRADER = {
 };
 
 /**
- * 黑市：全體玩家共用的 20 格商品，每 10 分鐘全部一起換新（同一時間大家看到的商品相同）。
- * 有人買走後其他人就買不到（伺服器先到先得）；每位玩家每一輪只能買 1 件。價格比過去的流浪商人更高。
+ * 黑市：全體玩家共用的 20 格商品，每 30 分鐘全部一起換新（同一時間大家看到的商品相同）。
+ * 有人買走後其他人就買不到（伺服器先到先得）；每位玩家每一輪最多買 BLACK_MARKET.perRound 件。價格比過去的流浪商人更高。
  */
 export const BLACK_MARKET = {
   slots: 20,
-  rotateMs: 10 * 60 * 1000,
+  rotateMs: 30 * 60 * 1000,
+  /** 每位玩家每一輪可以買幾件 */
+  perRound: 2,
   /** 裝備所占比例（其餘為消耗品：材料、藥品、彈藥） */
   gearShare: 0.15,
   /** 售價倍率（相對於過去流浪商人的價格） */
@@ -68,10 +70,16 @@ export class BlackMarketSystem {
     return { at: (this.tick(now) + 1) * BLACK_MARKET.rotateMs };
   }
 
-  /** 這一輪自己買過的商品編號（每輪只能買 1 件）；沒買過回傳 null */
-  boughtThisRound(now = Date.now()) {
+  /** 這一輪自己買過的商品編號（每輪最多 perRound 件） */
+  boughtIds(now = Date.now()) {
     const b = this.game.state.bmBought;
-    return b && b.tick === this.tick(now) ? b.id : null;
+    if (!b || b.tick !== this.tick(now)) return [];
+    return Array.isArray(b.ids) ? b.ids : b.id ? [b.id] : [];
+  }
+
+  /** 這一輪是否已經買滿 */
+  boughtThisRound(now = Date.now()) {
+    return this.boughtIds(now).length >= BLACK_MARKET.perRound;
   }
 
   /** 由（格子, 世代）決定性產生商品：所有玩家看到的完全相同 */
@@ -131,7 +139,7 @@ export class BlackMarketSystem {
     if (!(slot >= 0 && slot < BLACK_MARKET.slots) || this.genOf(slot, now) !== gen) return { ok: false, reason: '這項商品已經下架了' };
     const good = this.good(slot, gen);
     if (this.soldMap()[good.id]) return { ok: false, reason: '已經被其他玩家買走了' };
-    if (this.boughtThisRound(now)) return { ok: false, reason: '這一輪已經買過 1 件了，下次換貨後可以再買' };
+    if (this.boughtThisRound(now)) return { ok: false, reason: `這一輪已經買了 ${BLACK_MARKET.perRound} 件，下次換貨後可以再買` };
     if (g.state.player.coins < good.price) return { ok: false, reason: `金錢不足（需要 💰${good.price}）` };
     if (good.kind === 'gear') {
       if (!g.equipment.fits(good.item, 'store')) return { ok: false, reason: '倉庫空間不足' };
@@ -141,7 +149,8 @@ export class BlackMarketSystem {
     const r = await g.shared.update('bm', 'sold', (d) => {
       const data = d && typeof d === 'object' && d.sold ? d : { sold: {} };
       if (data.sold[good.id]) return { fail: '已經被其他玩家買走了' };
-      Object.keys(data.sold).forEach((k) => { if (Number(k.split(':')[1]) < minGen) delete data.sold[k]; });
+      // 清掉過期的紀錄（含換貨週期調整前留下、世代編號不在目前範圍內的紀錄）
+      Object.keys(data.sold).forEach((k) => { const gn = Number(k.split(':')[1]); if (gn < minGen || gn > minGen + 2) delete data.sold[k]; });
       data.sold[good.id] = g.state.player.name || '倖存者';
       return { data };
     });
@@ -150,7 +159,7 @@ export class BlackMarketSystem {
       g.bus.emit('trader:changed');
       return r;
     }
-    g.state.bmBought = { tick: this.tick(now), id: good.id };
+    g.state.bmBought = { tick: this.tick(now), ids: [...this.boughtIds(now), good.id] };
     if (good.kind === 'gear') g.equipment.addItem({ ...JSON.parse(JSON.stringify(good.item)), id: uid('it') }, '黑市');
     else g.equipment.addSupplies({ [good.key]: good.qty });
     const name = good.kind === 'gear' ? `「${good.item.name}」` : `${SUPPLIES[good.key].name} ×${good.qty}`;
