@@ -232,7 +232,8 @@ export class WorldStore {
       if (o.lat != null && (Math.abs(o.lat - lat) > dLat || Math.abs(o.lon - lon) > dLon)) return;
       out.push(o);
     });
-    return out.slice(0, 500);
+    // 最近更新的優先（超過上限時先截掉很久沒變動的）
+    return out.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 500);
   }
 
   /**

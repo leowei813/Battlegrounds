@@ -4692,6 +4692,27 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(waves.every((w) => w <= 6), `新文明之後每晚最多仍為 6 波（${waves.join('/')}）`);
 }
 
+// ---- 117. 共用物件清單被伺服器上限截斷時改為合併：已知的紀錄（例如已搜空的地點）不會時有時無 ----
+{
+  const { OBJ_LIST_LIMIT } = await import('../src/multiplayer/SharedWorld.js');
+  const gw = Game.newGame({ playerName: 'W117', classId: 'warrior', lat: 25, lon: 121 });
+  const sh = gw.shared;
+  const now = Date.now();
+  const mk = (i, ver = 1) => ({ kind: 'poi', id: `p${i}`, lat: 25, lon: 121, data: { e: now - 1000 }, ver, updatedAt: now });
+  sh.replace(['poi'], [mk('empty')]);
+  assert(!!sh.get('poi', 'pempty'), '讀到已搜空的地點紀錄');
+  // 下一次同步回傳了 500 筆（達上限、被截斷），剛好沒有包含這一筆
+  sh.replace(['poi'], Array.from({ length: OBJ_LIST_LIMIT }, (_, i) => mk(i)));
+  assert(!!sh.get('poi', 'pempty'), '清單被截斷時保留已知的紀錄（不會讓已搜空的地點又變成可探索）');
+  // 沒有被截斷時照常以伺服器結果為準
+  sh.replace(['poi'], [mk(1)]);
+  assert(!sh.get('poi', 'pempty') && !!sh.get('poi', 'p1'), '沒有截斷時以伺服器結果為準');
+  // 已知的版本較新時不會被舊資料蓋掉
+  sh.replace(['poi'], [mk('v', 5)]);
+  sh.replace(['poi'], [mk('v', 3)]);
+  assert(sh.cache.get(sh.key('poi', 'pv')).ver === 5, '伺服器回傳較舊的版本時保留較新的');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
