@@ -1105,3 +1105,6 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .vip-card .card, .card.vip-card { border-color: #ab47bc66; }
 .vip-next { position: absolute; top: -7px; right: 6px; z-index: 1; font-size: 10px; background: #ffb300; color: #000; border-radius: 6px; padding: 0 5px; font-weight: 700; }
 .vip-lock { border-style: dashed; opacity: .6; text-align: center; }
+/* 派遣選單：可選與不可選之間的分隔 */
+.pick-sep { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin: 4px 0 2px; }
+.pick-sep::before, .pick-sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
