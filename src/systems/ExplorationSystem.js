@@ -230,6 +230,38 @@ export class ExplorationSystem {
     return { ok: true, poi, members };
   }
 
+  /**
+   * 行程預估：目前這一站、佇列每一站（從上一站移動＋搜索）、最後回家，與總剩餘時間。
+   * 用和出發時相同的公式估算；途中戰鬥或背包裝滿提早回家時會有變動。
+   * @returns {{phase:string, currentMs:number, stops:{poi:object, travelMs:number, searchMs:number, totalMs:number}[], backMs:number, totalMs:number, endAt:number}}
+   */
+  itinerary(exp, now = Date.now()) {
+    const p = this.progress(exp, now);
+    const remaining = p ? p.remainingMs : Math.max(0, exp.endAt - now);
+    const phase = exp.defeated || exp.recalled ? 'returning' : p?.phase || 'searching';
+    const queue = (exp.queue || []).map((id) => this.poi(id)).filter(Boolean);
+    // 返程中、召回、或沒有佇列：剩餘時間就是到家的時間
+    if (phase === 'returning' || !queue.length || exp.kind !== 'explore') {
+      return { phase, currentMs: remaining, stops: [], backMs: phase === 'returning' ? remaining : 0, totalMs: remaining, endAt: now + remaining, queueOnHold: phase === 'returning' && queue.length > 0 };
+    }
+    const currentMs = Math.max(0, exp.startAt + (exp.travelMs || 0) + (exp.searchMs || 0) - now);
+    const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+    const vehicles = (exp.vehicleIds || []).map((id) => this.game.vehicles.get(id)).filter(Boolean);
+    let from = this.poi(exp.poiId);
+    let t = now + currentMs;
+    let backMs = 0;
+    const stops = queue.map((poi) => {
+      const pl = this.plan(poi, members, this.searchMinutes(poi), t, vehicles, { from: { lat: from.lat, lon: from.lon } });
+      const totalMs = pl.travelMs + pl.searchMs;
+      t += totalMs;
+      backMs = pl.backMs;
+      from = poi;
+      return { poi, travelMs: pl.travelMs, searchMs: pl.searchMs, totalMs };
+    });
+    const totalMs = currentMs + stops.reduce((sum, x) => sum + x.totalMs, 0) + backMs;
+    return { phase, currentMs, stops, backMs, totalMs, endAt: now + totalMs };
+  }
+
   /** 每支臨時小隊的探索佇列上限：基本 2 個，研究「行動規劃」每級 +1（最多 5 個） */
   queueLimit() {
     return Math.min(5, 2 + Math.floor(this.game.research.bonus('queueSlots')));

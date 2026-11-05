@@ -1105,3 +1105,15 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 /* 派遣選單：可選與不可選之間的分隔 */
 .pick-sep { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin: 4px 0 2px; }
 .pick-sep::before, .pick-sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+/* 我的探索隊：每一站的預估時間 */
+.it-sum { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.it-sum span { background: var(--card2); border-radius: 8px; padding: 2px 9px; font-size: 13px; }
+.it-sum b { color: var(--accent); }
+.it-step { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; margin-bottom: 5px; }
+.it-step.now { border-color: #4fc3f7; background: #1b3a4b; }
+.it-step.home { border-style: dashed; }
+.it-step .no { font-weight: 800; color: var(--muted); text-align: center; }
+.it-step.now .no { color: #4fc3f7; }
+.it-step small { display: block; color: var(--muted); }
+.it-step .t { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 12px; white-space: nowrap; }
+.it-step .t b { font-size: 13px; }
