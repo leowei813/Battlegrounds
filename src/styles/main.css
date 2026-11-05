@@ -1147,3 +1147,13 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .map-tools .btn.home-btn.on { border-color: #66bb6a; box-shadow: 0 0 0 2px #66bb6a55; }
 .poi-st.busy.npc { background: #b71c1c44; border-color: #ef5350aa; }
 .poi-st.busy.friend { background: #2e7d3244; border-color: #66bb6aaa; }
+/* 名單卡片：快速換裝（👕▲）／快速脫裝（👕▼） */
+.sv-mini-bagrow { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.sv-qe { display: inline-flex; gap: 7px; }
+.sv-qe-btn { position: relative; width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; background: var(--card2, #263238); border: 1px solid #ffffff26; cursor: pointer; }
+.sv-qe-btn i { position: absolute; right: -4px; bottom: -4px; width: 14px; height: 14px; border-radius: 50%; font-style: normal; font-size: 8px; font-weight: 900; display: flex; align-items: center; justify-content: center; color: #fff; border: 2px solid var(--card, #1d272d); }
+.sv-qe-btn.up { border-color: #43a04788; }
+.sv-qe-btn.up i { background: #43a047; }
+.sv-qe-btn.down { border-color: #e5393588; }
+.sv-qe-btn.down i { background: #e53935; }
+.sv-qe-btn:hover { filter: brightness(1.25); }

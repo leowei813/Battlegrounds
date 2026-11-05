@@ -151,7 +151,9 @@ export class SurvivorPanel {
       <small class="muted">${cls.name} Lv${sv.level}・戰力 ${s.power}</small>
       ${this.hpRow(sv, hp)}
       <span class="sv-mini-jobrow"><small class="muted sv-mini-job">${job}</small>${towerTag(g, sv)}</span>
-      <small class="muted">🎒 ${load}/${g.survivors.bagCap(sv)}</small>
+      <span class="sv-mini-bagrow"><small class="muted">🎒 ${load}/${g.survivors.bagCap(sv)}</small>${sv.status === 'idle' ? `<span class="sv-qe">
+        <span class="sv-qe-btn up" role="button" data-action="miniQuickEquip" data-id="${sv.id}" title="快速換裝">👕<i>▲</i></span>
+        <span class="sv-qe-btn down" role="button" data-action="miniQuickUnequip" data-id="${sv.id}" title="快速脫裝">👕<i>▼</i></span></span>` : ''}</span>
     </button>`;
   }
 
@@ -312,6 +314,18 @@ export class SurvivorPanel {
       else this.ui.result(r);
     }
     if (action === 'quickUnequip') this.ui.result(g.equipment.unequipAll(id));
+    // 名單卡片上的快速換裝／脫裝：只換裝，不切換右側詳細資料
+    if (action === 'miniQuickEquip' || action === 'miniQuickUnequip') {
+      const sid = data.id;
+      if (action === 'miniQuickEquip') {
+        const r = g.equipment.quickEquip(sid);
+        const name = g.survivors.get(sid)?.name || '';
+        if (r.ok && r.warn) this.ui.toastEl.show(`${name}：${r.msg}`, 'warn', 6000);
+        else this.ui.result(r.ok ? { ...r, msg: `${name}：${r.msg}` } : r);
+      } else this.ui.result(g.equipment.unequipAll(sid));
+      this.ui.refresh(true);
+      return;
+    }
     if (action === 'pickItem') this.pickItem(id, data.slot);
     this.ui.refresh(true);
   }
