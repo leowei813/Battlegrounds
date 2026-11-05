@@ -1129,3 +1129,9 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .bt-item.open { border-color: #4fc3f7; }
 .bt-item > .row-between { cursor: pointer; gap: 8px; }
 .log-list li .bt-item { margin-top: 6px; }
+
+/* 網頁版：左側名單／選單與右側佇列欄比畫面長時單獨捲動（右側內容照常隨整頁捲動） */
+@media (min-width: 900px) {
+  .sv-roster, .sh-nav { max-height: var(--panel-h, 100vh); overflow-y: auto; overscroll-behavior: contain; }
+  .sh-fac-side { max-height: calc(var(--panel-h, 100vh) - 32px); overflow-y: auto; overscroll-behavior: contain; }
+}

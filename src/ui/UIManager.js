@@ -58,6 +58,11 @@ export class UIManager {
     this.hud = $('#hud');
     this.nav = $('#nav');
     this.panelEl = $('#panel');
+    // 頁面可視高度：網頁版左側名單／選單比畫面長時，讓它單獨捲動（不必等右側捲到底）
+    const setPanelH = () => document.documentElement.style.setProperty('--panel-h', `${this.panelEl.clientHeight}px`);
+    setPanelH();
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(setPanelH).observe(this.panelEl);
+    else window.addEventListener('resize', setPanelH);
     this.mapRoot = $('#map-root');
     this.toastEl = new Toast($('#toasts'));
     this.modal = new Modal($('#modal-root'));
