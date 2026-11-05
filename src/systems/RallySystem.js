@@ -1,6 +1,7 @@
 import { AssistSystem } from './AssistSystem.js';
 import { uid, pick, randInt } from '../utils/math.js';
 import { haversine } from '../utils/math.js';
+import { NPC_REWARD_MUL, RALLY_SHARE_FLOOR } from '../config/npcs.js';
 
 /** 集結：出發倒數可選的分鐘數 */
 export const RALLY_DELAYS = [5, 10, 15, 20];
@@ -288,16 +289,27 @@ export class RallySystem {
       teams.forEach((t) => { res.teams[t.player].units = (t.units || []).map((u) => ({ i: u.i, hp: u.hp, down: false })); });
       return res;
     }
-    const share = (coins, items, mats) => {
+    /**
+     * 分配戰利品。weights（玩家 → 貢獻）有值時：每支隊伍先平均拿到保底比例，其餘依貢獻分配；
+     * 沒有貢獻資料時平均分配（裝備與材料隨機分給各隊）。
+     */
+    const share = (coins, items, mats, weights = null) => {
       const n = Math.max(1, teams.length);
-      teams.forEach((t) => { res.teams[t.player].coins += Math.floor(coins / n); });
-      items.forEach((it) => { res.teams[pick(teams).player].items.push(it); });
+      const tot = weights ? teams.reduce((s, t) => s + (weights[t.player] || 0), 0) : 0;
+      const frac = (p) => (tot > 0 ? RALLY_SHARE_FLOOR / n + (1 - RALLY_SHARE_FLOOR) * ((weights[p] || 0) / tot) : 1 / n);
+      const pickW = () => {
+        let r = Math.random();
+        for (const t of teams) { r -= frac(t.player); if (r <= 0) return t; }
+        return teams[teams.length - 1];
+      };
+      teams.forEach((t) => { res.teams[t.player].coins += Math.floor(coins * frac(t.player)); });
+      items.forEach((it) => { res.teams[pickW().player].items.push(it); });
       Object.entries(mats).forEach(([k, v]) => {
-        // 每一份隨機分給一支隊伍
+        // 每一份依比例分給一支隊伍
         let left = v;
         while (left > 0) {
           const part = Math.max(1, Math.ceil(v / Math.max(1, teams.length)));
-          const who = res.teams[pick(teams).player].mats;
+          const who = res.teams[pickW().player].mats;
           who[k] = (who[k] || 0) + Math.min(part, left);
           left -= part;
         }
@@ -311,7 +323,7 @@ export class RallySystem {
       const as = g.combat.wallAssault(attackers, df.wall, df.dps);
       const fallen = new Set(attackers.filter((a) => !as.alive.includes(a)).map((a) => a.u.id));
       const fighters = units.filter((u) => !fallen.has(u.id));
-      result = as.breached && fighters.length ? g.combat.simulate([], g.npcs.garrison(n), { allies: fighters, record: false }) : null;
+      result = as.breached && fighters.length ? g.combat.simulate([], g.npcs.garrison(n, { assault: true }), { allies: fighters, record: false }) : null;
       const down = new Set([...fallen, ...(result ? result.team.filter((x) => x.down).map((x) => x.id) : fighters.map((u) => u.id))]);
       units.forEach((u) => {
         const r = result?.team.find((x) => x.id === u.id);
@@ -319,8 +331,11 @@ export class RallySystem {
       });
       res.victory = !!result?.victory;
       if (res.victory) {
-        const items = Array.from({ length: 1 + Math.floor(teams.length / 2) }, () => g.equipment.generate({ level: n.level, boost: 0.4 }));
-        share(Math.round(n.coins * NPC_COIN_LOOT), items, Object.fromEntries(Object.entries(n.resources).filter(([, v]) => v > 0)));
+        // 攻陷獎勵（v10 提高）：依各隊在戰鬥中造成的傷害分配（有保底）
+        const items = Array.from({ length: (1 + Math.floor(teams.length / 2)) * NPC_REWARD_MUL }, () => g.equipment.generate({ level: n.level, boost: 0.4 }));
+        const dealt = {};
+        (result.team || []).forEach((x) => { const p = x.ally?.player; if (p) dealt[p] = (dealt[p] || 0) + (x.dealt || 0); });
+        share(Math.round(n.coins * NPC_COIN_LOOT * NPC_REWARD_MUL), items, Object.fromEntries(Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => [k, Math.floor(v * NPC_REWARD_MUL)])), dealt);
         g.npcs.destroy(n, now);
         res.summary = `🏆 集結攻陷 NPC 據點「${n.name}」（${people} 人參戰）`;
       } else {

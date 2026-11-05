@@ -276,7 +276,7 @@ export class CombatSystem {
       log,
       kills,
       team: team.map((u) => ({
-        id: u.id, name: u.name, hp: Math.max(0, Math.round(u.hp)), maxHp: u.maxHp, down: u.hp <= 0, kills: u.kills || 0, ally: u.ally, medsUsed: u.medsUsed || 0, weapon: u.weapon,
+        id: u.id, name: u.name, hp: Math.max(0, Math.round(u.hp)), maxHp: u.maxHp, down: u.hp <= 0, kills: u.kills || 0, ally: u.ally, medsUsed: u.medsUsed || 0, weapon: u.weapon, dealt: Math.round(u.dealt || 0),
       })),
       foes: foes.map((u) => ({ id: u.id, ally: u.ally, down: u.hp <= 0, hp: Math.max(0, Math.round(u.hp)), kills: u.kills || 0 })),
       enemies: foes.map((f) => ({ name: f.name, icon: f.icon, hp: Math.max(0, Math.round(f.hp)), maxHp: f.maxHp })),

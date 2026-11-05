@@ -650,10 +650,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   hero.hp = null;
   hero.severe = false;
   gn.territory.noticed = () => false; // 只測攻打本身，不讓路上經過的其他 NPC 警戒範圍影響結果
+  // v10：攻打時的守軍比外出掠奪的隊伍多且強（需要多人集結）
+  const raidG = gn.npcs.garrison(weak);
+  const assaultG = gn.npcs.garrison(weak, { assault: true });
+  assert(assaultG.length >= raidG.length && assaultG.at(-1).maxHp > raidG.at(-1).maxHp && assaultG.at(-1).atk > raidG.at(-1).atk, '攻打 NPC 據點時守軍人數與強度提高，外出掠奪的隊伍不變');
+  // 這裡只測攻陷流程：守軍只留首領
+  const gar0 = gn.npcs.garrison.bind(gn.npcs);
+  gn.npcs.garrison = (n, o) => gar0(n).slice(-1);
   const atk = gn.exploration.start(weak.id, ['leader'], 5, false, Date.now(), { kind: 'raid' });
   assert(atk.ok, '派隊攻打 NPC 據點');
   const coinsBefore = gn.state.player.coins;
   const [rr] = gn.exploration.update(Date.now() + 3 * 3600e3, { silent: true });
+  gn.npcs.garrison = gar0;
   assert(rr.success && !gn.npcs.get(weak.id) && gn.state.player.coins > coinsBefore, '攻陷 NPC 據點搶到資源，據點被摧毀');
   assert(gn.npcs.state.cellNext[weak.cell] > Date.now(), '被摧毀後該區域一段時間後才會重新出現 NPC');
 }
@@ -1754,6 +1762,10 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   B.npcs.update(Date.now());
   const n = [...A.npcs.list].filter((x) => x.sid).sort((x, y) => x.level - y.level)[0];
   n.baseLevel = 1; n.levelLoss = 0; n.level = 1; n.wounded = n.wounded || 0;
+  // 這裡測集結流程：守軍強度暫時用一般值（v10 攻打強度另外測試）
+  const { NPC_ASSAULT: NA } = await import('../src/config/npcs.js');
+  const naBak = { ...NA };
+  Object.assign(NA, { hp: 1, atk: 1, count: 1, wall: 1, dps: 1 });
   const target = { kind: 'npc', id: n.id, ident: n.ident, name: n.name, lat: n.lat, lon: n.lon };
   assert(!A.rally.canStart(target).ok, '沒有廣播塔不能發起集結');
   A.shelter.primary().facilities.broadcast.level = 1;
@@ -1796,7 +1808,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!A.rally.trips().length && lead.status === 'idle', '離線的發起人上線後隊伍回家並結算');
   assert(d2.result.victory, `強大的集結隊伍攻陷弱小的 NPC（${d2.result.summary}）`);
   {
-    assert(A.state.player.coins - ca0 === B.state.player.coins - cb0 && A.state.player.coins > ca0, `勝利時金錢平分（${A.state.player.coins - ca0} / ${B.state.player.coins - cb0}）`);
+    assert(A.state.player.coins > ca0 && B.state.player.coins > cb0, `勝利時依貢獻分配金錢，每支隊伍都有保底（${A.state.player.coins - ca0} / ${B.state.player.coins - cb0}）`);
+    Object.assign(NA, naBak);
     await B.shared.poll();
     assert(!B.npcs.get(n.id), '集結攻陷的 NPC 據點在所有人地圖上消失');
   }
