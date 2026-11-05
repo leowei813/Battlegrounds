@@ -58,8 +58,12 @@ export class CivilizationSystem {
   }
 
   /** 超過開局基準的文明度 */
+  /** 計算屍潮強度用的文明度：扣掉新手保護；超過「新文明」的部分只算一部分 */
   effective() {
-    return Math.max(0, this.value() - SIEGE_SCALING.civBaseline);
+    const S = SIEGE_SCALING;
+    const e = Math.max(0, this.value() - S.civBaseline);
+    const soft = Math.max(0, (S.softFrom ?? Infinity) - S.civBaseline);
+    return e <= soft ? e : soft + (e - soft) * (S.softRate ?? 1);
   }
 
   /** 文明度帶來的殭屍等級加成 */

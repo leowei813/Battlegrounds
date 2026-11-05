@@ -3375,7 +3375,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const hp150 = gs.civilization.siegeHpMul();
   assert(Math.abs(hp150 - (1 + 130 * SS.hpPerCiv + SS.hpEarly)) < 1e-9, `文明 150 屍潮生命倍率含前期加強（${hp150.toFixed(3)}）`);
   gs.civilization.value = () => 566;
-  assert(Math.abs(gs.civilization.siegeHpMul() - (1 + 546 * 0.0042)) < 0.01, '文明 566 屍潮生命倍率維持預計強度');
+  assert(Math.abs(gs.civilization.siegeHpMul() - (1 + (530 + 16 * SS.softRate) * SS.hpPerCiv + SS.hpEarly)) < 0.01, '文明 566 屍潮生命倍率（超過 550 的部分只算一半）');
   // 駐守倍率只作用在屍潮；NPC／玩家攻打用原始火力
   const sv = gs.survivors.leader();
   sv.job = 'guard';
@@ -4424,6 +4424,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   await gr.shared.poll();
   assert(res.recalled === 1 && !gr.rally.trips().length && gr.survivors.leader().status === 'idle', '19:00 集結隊伍也會召回（出發前直接留在避難所）');
   assert(gr.rally.get(st.id || st.rally?.id || gr.shared.all('rally')[0]?.id)?.status === 'cancelled' || gr.shared.all('rally').every((o) => o.data.status === 'cancelled'), '自己發起的集結會取消');
+}
+
+// ---- 105. 屍潮強度：文明度超過新文明（550）的部分只算一半；屍潮殭屍最高 Lv60 ----
+{
+  const gz = Game.newGame({ playerName: 'Z105', classId: 'warrior', lat: 25, lon: 121 });
+  gz.state.map.pois = fillPois([], 25, 121);
+  gz.shelter.establish(gz.state.map.pois.find((p) => gz.shelter.canEstablish(p).ok));
+  const civ = gz.civilization;
+  civ.value = () => 550;
+  const e550 = civ.effective();
+  civ.value = () => 1300;
+  const e1300 = civ.effective();
+  assert(e550 === 530 && e1300 === 530 + (1300 - 550) * 0.5, `文明度 550 以上的部分只算一半（${e550} / ${e1300}）`);
+  civ.value = () => 300;
+  assert(civ.effective() === 280, '文明度 550 以下不受影響');
+  civ.value = () => 5000;
+  setHour(gz, 23);
+  assert(gz.siege.of().zombieLevel() === 60, `屍潮殭屍最高 Lv60（${gz.siege.of().zombieLevel()}）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

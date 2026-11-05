@@ -28,6 +28,11 @@ export const CIV_TIERS = [
 /** 屍潮隨文明度成長的係數 */
 export const SIEGE_SCALING = {
   civBaseline: 20, // 新手保護：低於此文明度不加成
+  /** 文明度超過 softFrom（新文明）的部分，只以 softRate 的比例增加屍潮強度（避免後期無限變強） */
+  softFrom: 550,
+  softRate: 0.5,
+  /** 屍潮殭屍最高等級（與倖存者等級上限相同，含據點與區域加成） */
+  maxZombieLevel: 60,
   civPerLevel: 16, // 每 16 文明度，殭屍 +1 級
   spawnPerCiv: 0.0012, // 每點文明度，屍潮頻率 +0.12%
   maxSpawnMul: 2.2, // 文明度造成的頻率倍率上限
