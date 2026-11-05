@@ -302,14 +302,24 @@ export class InfectedSystem {
     report.success = gain > 0;
     const people = members.length;
     this.addPurity(s, gain, at).then((r) => {
-      if (!r.ok) return;
+      if (!r.ok) {
+        report.events.push(`⚠️ 淨化度沒有寫入（${r.reason || '連線失敗'}），這一場不計入`);
+        g.bus.emit('expedition:done', { reports: [] });
+        return;
+      }
       if (r.killed) {
         const rw = this.rewards(s, people);
-        this.grantRewards(rw);
+        const got = this.grantRewards(rw);
+        // 獎勵是在寫入淨化度之後才決定：補進這一場的探索報告（報告產生時還不知道）
+        report.resources = { ...(report.resources || {}), ...Object.fromEntries(Object.entries(got).filter(([, v]) => v > 0)) };
+        report.items = [...(report.items || []), ...rw.items];
+        report.events.push(`🏆 消滅「${s.name}」！獲得 ${rw.items.length} 件裝備、${Object.keys(rw.mats).length} 種高階材料與 💰${rw.coins}`);
         g.log(`🏆 消滅重度感染據點「${s.name}」！獲得 ${rw.items.length} 件裝備、${Object.keys(rw.mats).length} 種高階材料與 💰${rw.coins}`, 'success');
         g.toast(`🏆 消滅重度感染據點「${s.name}」！`, 'success');
+        g.requestSave?.();
       }
       g.bus.emit('npcs:changed');
+      g.bus.emit('expedition:done', { reports: [] });
     });
     return report;
   }

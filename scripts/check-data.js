@@ -1708,6 +1708,20 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!A.infected.get(s.id, t0) && !B.infected.get(s.id, t0), '消滅後所有玩家的地圖上都消失');
   const next = A.infected.nextRefresh(t0);
   assert(A.infected.list(next + 1000).some((x) => x.id === s.id), '下一個中午 12:00 重新出現');
+  // 消滅時的獎勵會補進那一場的探索報告（不會顯示「無」）
+  {
+    const s2 = la.find((x) => x.id !== s.id && A.infected.get(x.id, t0));
+    if (s2) {
+      await A.infected.addPurity(s2, 99.9, t0);
+      const exp = { poiId: s2.id, endAt: t0, memberIds: A.state.survivors.map((x) => x.id), travelEvents: [] };
+      const orig = A.infected.battle.bind(A.infected);
+      A.infected.battle = (...a) => { const o = orig(...a); return { ...o, gain: Math.max(o.gain, 1) }; }; // 確保這一場把淨化度推到 100%
+      const rep = A.infected.resolveAttack(exp);
+      A.infected.battle = orig;
+      for (let i = 0; i < 50 && !rep.events.some((t) => t.includes('消滅')); i += 1) await new Promise((r) => setTimeout(r, 5));
+      assert(rep.events.some((t) => t.includes('消滅')) && (rep.items.length > 0 || Object.keys(rep.resources).length > 0), `消滅獎勵顯示在探索報告（裝備 ${rep.items.length}、物資 ${Object.keys(rep.resources).length} 種）`);
+    }
+  }
   // 獎勵：1 人 3～4 種，每多 1 人上下限 +2，最低優良
   const rw1 = A.infected.rewards(s, 1);
   const n1 = rw1.items.length + Object.keys(rw1.mats).length;
