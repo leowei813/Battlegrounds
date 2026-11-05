@@ -4674,6 +4674,26 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gs.state.defenseLog.length === logM && !gs.shelter.primary().nightStats, '被突破的夜晚不會補記成防守成功');
 }
 
+// ---- 114. 剛開遊戲、還沒讀到共用 NPC 資料時，保留存檔裡的 NPC（不會先顯示錯的等級再突然下降）----
+{
+  const gn = Game.newGame({ playerName: 'N114', classId: 'warrior', lat: 25, lon: 121 });
+  gn.state.map.pois = fillPois([], 25, 121);
+  gn.shelter.establish(gn.state.map.pois.find((p) => gn.shelter.canEstablish(p).ok));
+  gn.npcs.fillCells(Date.now(), { silent: true });
+  const saved = gn.npcs.list.map((n) => `${n.ident}:${n.level}`).join(',');
+  Object.defineProperty(gn.shared, 'online', { get: () => true, configurable: true }); // 模擬連線中
+  assert(gn.npcs.list.length > 0, '有存檔裡的 NPC');
+  if (gn.npcs.list.length) {
+    gn.shared.listedAt = {};
+    gn.npcs.createdAt = Date.now();
+    gn.npcs.list.forEach((n) => { n.level = 99; });
+    assert(gn.npcs.waitingShared() && gn.npcs.fillCells(Date.now(), { silent: true }) === 0 && gn.npcs.list.every((n) => n.level === 99), '還沒讀到共用 NPC 資料時，先保留存檔裡的 NPC');
+    gn.shared.listedAt.npc = Date.now();
+    assert(!gn.npcs.waitingShared(), '讀到共用資料後照常更新 NPC');
+  }
+  void saved;
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

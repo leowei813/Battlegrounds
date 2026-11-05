@@ -52,6 +52,7 @@ export class NpcSystem {
   constructor(game) {
     this.game = game;
     this.pending = [];
+    this.createdAt = Date.now();
     game.shared?.watch('npc', SHARED_NPC.km);
     game.bus?.on?.('shared:changed', () => this.applyShared());
   }
@@ -163,6 +164,13 @@ export class NpcSystem {
     return s && s.ident === ident ? this.materialize(s, now) : null;
   }
 
+  /** 連線中、還沒讀到第一次共用 NPC 資料（最多等 30 秒，讀不到就照常產生） */
+  waitingShared() {
+    const sh = this.game.shared;
+    // 只在有存檔裡的 NPC 可以先顯示時等待（新遊戲直接產生）
+    return !!(sh?.online && !sh.listedAt?.npc && this.state?.list?.length && Date.now() - (this.createdAt || 0) < 30000);
+  }
+
   /** 共用資料（不是同一世代的舊資料視為沒有） */
   sharedOf(sid, gen) {
     const d = this.game.shared?.get('npc', sid);
@@ -256,6 +264,9 @@ export class NpcSystem {
   fillCells(now = Date.now(), { silent = false } = {}) {
     const o = this.origin();
     if (!o) return 0;
+    // 連線中但還沒讀到共用 NPC 資料（剛開遊戲）：先保留存檔裡的 NPC，不要用不完整的資料重建
+    // （否則會先出現已被摧毀的舊勢力或沒扣掉等級損失的等級，資料讀到後等級又突然下降）
+    if (this.waitingShared()) return 0;
     // 玩家據點附近（警戒範圍，或至少 300 公尺）不會有 NPC：所有玩家據點都一樣
     const zones = this.playerZones().map((z) => ({ ...z, r: Math.max(z.r, NPC_CONFIG.minFromShelterM) }));
     const inAlert = (p) => zones.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r);
