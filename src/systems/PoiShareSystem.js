@@ -19,7 +19,20 @@ export const POI_SHARE = {
 export class PoiShareSystem {
   constructor(game) {
     this.game = game;
+    /** 還沒成功寫入伺服器的更新（例如剛建立據點、還沒同步身分前）：每次同步後重送 */
+    this.pending = [];
     game.shared?.watch('poi', POI_SHARE.km);
+    game.bus?.on?.('shared:changed', () => this.flush());
+  }
+
+  /** 重送之前失敗的寫入 */
+  flush() {
+    if (!this.pending.length || this.flushing) return;
+    const list = this.pending.splice(0);
+    this.flushing = true;
+    Promise.all(list.map(({ poi, fn }) => this.write(poi, fn, { retry: false }).then((r) => {
+      if (!r?.ok && Date.now() - (fn.at || 0) < 6 * 3600000) this.pending.push({ poi, fn });
+    }))).finally(() => { this.flushing = false; });
   }
 
   /** 自己的玩家編號（佔用紀錄用） */
@@ -84,17 +97,21 @@ export class PoiShareSystem {
     return first ? { reason: 'busy', who: first.n, l: first.l, npc: !!first.npc } : null;
   }
 
-  /** 寫入共用紀錄（失敗時忽略：下次同步再看） */
-  write(poi, fn) {
+  /** 寫入共用紀錄；失敗時（連線、身分還沒同步）放進待重送清單，下次同步後再送 */
+  write(poi, fn, { retry = true } = {}) {
     const sh = this.game.shared;
     if (!sh || !poi) return Promise.resolve({ ok: false });
+    if (!fn.at) fn.at = Date.now();
     return sh.update('poi', poi.id, (cur) => {
       const d = cur && typeof cur === 'object' ? cur : {};
       const now = Date.now();
       d.o = (d.o || []).filter((x) => x && x.l + POI_SHARE.graceMs > now - 6 * 3600000);
       fn(d);
       return { data: d };
-    }, { lat: poi.lat, lon: poi.lon }).catch(() => ({ ok: false }));
+    }, { lat: poi.lat, lon: poi.lon }).catch(() => ({ ok: false })).then((r) => {
+      if (!r?.ok && retry && this.pending.length < 100) this.pending.push({ poi, fn });
+      return r;
+    });
   }
 
   /** 出發時登記：預計抵達與離開的時間 */

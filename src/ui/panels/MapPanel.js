@@ -739,7 +739,7 @@ export class MapPanel {
       <div class="poi-detail">
         <div class="poi-big" style="--c:${pt.color}">${pt.icon}</div>
         <div>
-          <b>${pt.name}</b>${poi.osm ? ' <small class="tag">OSM</small>' : pt.generated ? ' <small class="tag">資源點</small>' : ' <small class="tag">傳聞</small>'}
+          <b>${pt.name}</b>
           ${base ? `<div><span class="tag tag-amber">${g.shelter.isPrimary(base) ? '⭐ 避難所' : '🏴 前哨站'}</span> 據點危險度 <b>${g.shelter.dangerLevel(base)}</b></div>` : `<div>危險度 <span class="danger">${stars(danger)}</span> ${pt.special ? '<span class="tag tag-red">高級怪物</span>' : ''}</div>`}
           <div><span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span> <small class="muted">物資 ×${zone.lootMul}・殭屍 +${Math.max(0, zone.danger)} 危險度</small></div>
           ${dist != null ? `<div class="muted">距避難所 ${dist} 公尺</div>` : ''}

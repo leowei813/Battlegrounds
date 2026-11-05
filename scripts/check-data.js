@@ -4167,9 +4167,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const { generatePois } = await import('../src/map/WorldGen.js');
   const { zoneIndexAt } = await import('../src/config/zones.js');
-  const a = generatePois(25.0339, 121.5645, 1150);
-  const b = generatePois(25.0339, 121.5645, 1150);
-  assert(a.length > 1250 && a.length < 1550, `避難所周圍 1.15 公里約 1,400 個地點（${a.length}）`);
+  const a = generatePois(25.0339, 121.5645, 1200);
+  const b = generatePois(25.0339, 121.5645, 1200);
+  assert(a.length > 1250 && a.length < 1550, `避難所周圍 1.2 公里約 1,400 個地點（${a.length}）`);
   assert(JSON.stringify(a) === JSON.stringify(b), '同一位置每次（每位玩家）產生的地點完全相同');
   const big = [[25.03, 121.56], [24.8, 121.0], [23.0, 120.2], [22.6, 120.3], [24.15, 120.67]].flatMap(([la, lo]) => generatePois(la, lo, 2500));
   const share = (t) => big.filter((p) => p.type === t).length / big.length;
@@ -4311,6 +4311,30 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     A.exploration.runCheckpoints(r4a.exp, r4a.exp.startAt + r4a.exp.travelMs + 1);
     assert(r4a.exp.cp?.bumped?.includes('B101'), `B 比 A 早抵達：A 抵達時讓給 B（${r4a.exp.cp?.bumped}）`);
   }
+}
+
+// ---- 102. v10 舊存檔遷移：真實建築地圖換成隨機地圖，據點（麵包店）與探索目的地保留 ----
+{
+  const go = Game.newGame({ playerName: 'O102', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  const osm = [
+    { id: 'osm_n1', type: 'bakery', name: '老麵包店', lat: 25.0339, lon: 121.5645, osm: true },
+    { id: 'osm_n2', type: 'shop', name: '便利商店', lat: 25.0349, lon: 121.5655, osm: true },
+    { id: 'osm_n3', type: 'residential', name: '住宅', lat: 25.0359, lon: 121.5665, osm: true },
+  ];
+  go.state.map.pois = osm;
+  go.state.map.source = 'overpass';
+  go.state.map.remain = { osm_n3: { day: 1, res: { food: 3 } } };
+  go.shelter.establish(osm[0]);
+  go.state.version = 26;
+  const data = SaveManager.migrate(JSON.parse(JSON.stringify(SaveManager.pack(go.state))));
+  assert(!data.map.remain && data.version === SAVE_VERSION_NOW, '舊存檔遷移：移除舊的建築殘留物資');
+  go.state = data;
+  go.genMap();
+  const pois = go.state.map.pois;
+  const home = pois.find((p) => p.id === 'osm_n1');
+  assert(home && home.type === 'shop' && go.shelter.primary().poiId === 'osm_n1', '據點所在的麵包店保留下來並改為商店');
+  assert(!pois.some((p) => p.id === 'osm_n3') && pois.filter((p) => p.id.startsWith('w_')).length > 1000 && go.state.map.source === 'generated', '其他真實建築換成隨機產生的地點');
+  assert(!pois.some((p) => p.type === 'bakery'), '地圖上不再有麵包店');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

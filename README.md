@@ -2,7 +2,7 @@
 
 在**你所在城市的真實街道**上建立避難所，派遣倖存者搜刮醫院、警局、加油站，研究科技、打造裝備、架設防禦塔，在日夜循環的屍潮中活下去。離線最多累積 24 小時收益。
 
-**技術**：Vite · Phaser 3 · JavaScript (ES Modules) · Leaflet + OpenStreetMap / Overpass API · LocalStorage · 響應式（桌機與手機）
+**技術**：Vite · Phaser 3 · JavaScript (ES Modules) · Leaflet + OpenStreetMap 底圖（地點由固定格子隨機產生） · LocalStorage · 響應式（桌機與手機）
 
 🎮 **線上試玩：<https://leowei813.github.io/Battlegrounds/>**（需輸入通行碼）
 
