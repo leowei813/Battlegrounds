@@ -43,6 +43,10 @@ const fillSupplies = (game, n = 900) => {
   game.research.invalidate?.();
 };
 
+// 舊測試用隨機補足的地圖建立據點：預設不套用 v10「重度感染據點範圍內不能建立據點」（專門的測試會開啟）
+const { InfectedSystem: InfSys } = await import('../src/systems/InfectedSystem.js');
+const realBlocking = InfSys.prototype.blocking;
+InfSys.prototype.blocking = function blocking(...a) { return this.game.testInfBlock ? realBlocking.apply(this, a) : null; };
 let failures = 0;
 const assert = (cond, msg) => {
   if (!cond) {
@@ -67,7 +71,7 @@ Object.entries(POI_TYPES).forEach(([id, p]) => {
 globalThis.performance ??= { now: () => Date.now() };
 const g = Game.newGame({ playerName: 'CI', classId: 'scout', lat: 25.0339, lon: 121.5645 });
 g.state.map.pois = fillPois([], 25.0339, 121.5645);
-assert(g.shelter.setShelter(g.state.map.pois[0]).ok, 'set shelter');
+assert(g.shelter.setShelter(g.state.map.pois.find((p) => g.shelter.canEstablish(p).ok)).ok, 'set shelter');
 
 // ---- 白天：地圖上沒有殭屍（只在探索的建築內遭遇）----
 setHour(g, 10);
@@ -112,7 +116,8 @@ delete g.state.map.pois[1].lootedBy; // 手動改了日期，原本的「被誰�
 g.state.map.pois[1].lastVisit = 123;
 const packed = JSON.stringify(SaveManager.pack(g.state));
 const restored = SaveManager.migrate(JSON.parse(packed));
-assert(JSON.stringify(restored.map.pois) === JSON.stringify(g.state.map.pois), '建築精簡格式可完整還原');
+const normP = (list) => JSON.stringify(list.map((p) => Object.fromEntries(Object.entries(p).sort(([a], [b]) => a.localeCompare(b)))));
+assert(normP(restored.map.pois) === normP(g.state.map.pois), '建築精簡格式可完整還原');
 assert(packed.length < JSON.stringify(g.state).length && !('pois' in JSON.parse(packed).map), `存檔以精簡格式儲存（${packed.length} < ${JSON.stringify(g.state).length} bytes）`);
 
 // ---- 3. 文明度與多據點 ----
@@ -132,13 +137,13 @@ assert(g.shelter.dangerLevel() === expectDanger && expectDanger > danger0, `主�
 
 const g2 = Game.newGame({ playerName: 'Day', classId: 'warrior', lat: 0, lon: 0 });
 g2.state.map.pois = fillPois([], 0, 0);
-g2.shelter.establish(g2.state.map.pois[0]);
+g2.shelter.establish(g2.state.map.pois.find((p) => g2.shelter.canEstablish(p).ok));
 const lvDay1 = g2.siege.of().zombieLevel();
 g2.state.createdAt -= 20 * DAY_REAL_MS; // 經過 20 天
 g2.civilization.invalidate();
 assert(g2.siege.of().zombieLevel() - lvDay1 <= 1, '天數本身不會提升屍潮強度（夜間 ±1）');
 
-const outpostPoi = g.state.map.pois.find((p) => !g.shelter.baseAtPoi(p.id));
+const outpostPoi = g.state.map.pois.find((p) => !g.shelter.baseAtPoi(p.id) && !g.infected.blocking(p, 200));
 assert(!g.shelter.canEstablish(outpostPoi).ok, '避難所只能一座，未研究前哨站科技不能建第二個據點');
 g.state.research.levels.e_outpost = 1;
 g.research.invalidate();
@@ -166,7 +171,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const g3 = Game.newGame({ playerName: 'Trip', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
   g3.state.map.pois = fillPois([], 25.0339, 121.5645);
-  g3.shelter.establish(g3.state.map.pois[0]);
+  g3.shelter.establish(g3.state.map.pois.find((p) => g3.shelter.canEstablish(p).ok));
   const home = g3.shelter.primary();
   const far = g3.state.map.pois.find((p) => !g3.shelter.baseAtPoi(p.id) && haversine(home.lat, home.lon, p.lat, p.lon) > 600);
   setHour(g3, 21);
@@ -282,7 +287,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(new Set(sameTier).size > 5, '同品級素質為隨機');
   // 製作：品級與素質隨機
   ge.state.map.pois = fillPois([], 0, 0);
-  ge.shelter.establish(ge.state.map.pois[0]);
+  ge.shelter.establish(ge.state.map.pois.find((p) => ge.shelter.canEstablish(p).ok));
   ge.state.player.coins = 1e7;
   Object.keys(ge.state.resources).forEach((k) => { ge.state.resources[k] = 1e7; });
   ge.state.bases[0].facilities.warehouse.level = 10;
@@ -425,23 +430,16 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(base.facilities.wall.level >= 1, '圍牆最低保留 1 級');
 }
 {
-  // 物資：探索後清空，每天 06:00、18:00 刷新且隨機
-  const { stockOf, dayKey } = await import('../src/systems/LootStock.js');
+  // 物資（v10）：依地點與世代產生；搜空後 3 小時恢復並重新產生；搜過一部分時只剩下的物資
+  const { stockOf } = await import('../src/systems/LootStock.js');
   const poi = { id: 'osm_w1', type: 'shop', name: 'x', lat: 0, lon: 0 };
   const today = stockOf(poi);
-  assert(!today.empty && Object.keys(today.resources).length >= 1, '建築每天有物資');
-  assert(JSON.stringify(stockOf(poi)) === JSON.stringify(today), '同一天物資固定');
-  poi.lootedDay = dayKey();
-  assert(stockOf(poi).empty, '探索後物資清空');
-  const tomorrow = Date.now() + 86400000;
-  assert(!stockOf(poi, tomorrow).empty, '下一個時段重新刷新');
-  const d0 = new Date(); d0.setHours(5, 59, 0, 0);
-  const d1 = new Date(d0); d1.setHours(6, 1, 0, 0);
-  const d2 = new Date(d0); d2.setHours(17, 59, 0, 0);
-  const d3 = new Date(d0); d3.setHours(18, 1, 0, 0);
-  assert(dayKey(d0.getTime()) !== dayKey(d1.getTime()) && dayKey(d1.getTime()) === dayKey(d2.getTime()) && dayKey(d2.getTime()) !== dayKey(d3.getTime()), '每天 06:00 與 18:00 各刷新一次');
-  const days = new Set(Array.from({ length: 10 }, (_, i) => JSON.stringify(stockOf({ ...poi, lootedDay: 0 }, Date.now() + i * 86400000).resources)));
-  assert(days.size > 5, '每天物資的種類與數量隨機');
+  assert(!today.empty && Object.keys(today.resources).length >= 1, '建築有物資');
+  assert(JSON.stringify(stockOf(poi)) === JSON.stringify(today), '同一世代物資固定（所有玩家相同）');
+  assert(stockOf(poi, Date.now(), { gen: 0, empty: true }).empty, '搜空後沒有物資');
+  assert(stockOf(poi, Date.now(), { gen: 0, empty: false, left: { res: { food: 5 } } }).resources.food === 5, '搜過一部分時只剩下的物資');
+  const gens = new Set(Array.from({ length: 10 }, (_, i) => JSON.stringify(stockOf(poi, Date.now(), { gen: i, empty: false }).resources)));
+  assert(gens.size > 5, '每次恢復後物資的種類與數量重新隨機');
 }
 
 // ---- 10. v4：區域危險度、屍潮分波、載具、放棄據點、NPC 據點 ----
@@ -471,7 +469,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 屍潮分波 + 據點越大越難守
   const gw = Game.newGame({ playerName: 'W', classId: 'warrior', lat: 0, lon: 0 });
   gw.state.map.pois = fillPois([], 0, 0);
-  gw.shelter.establish(gw.state.map.pois[0]);
+  gw.shelter.establish(gw.state.map.pois.find((p) => gw.shelter.canEstablish(p).ok));
   setHour(gw, 21);
   gw.shelter.primary().facilities.wall.level = 10; // 避免測試中防線被突破
   gw.shelter.primary().wallHp = null;
@@ -545,7 +543,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 運載量限制物資
   const gc = Game.newGame({ playerName: 'C', classId: 'scout', lat: 0, lon: 0 });
   gc.state.map.pois = fillPois([], 0, 0);
-  gc.shelter.establish(gc.state.map.pois[0]);
+  gc.shelter.establish(gc.state.map.pois.find((p) => gc.shelter.canEstablish(p).ok));
   setHour(gc, 10);
   const rich = gc.state.map.pois.find((p) => p.type === 'military');
   gc.exploration.start(rich.id, ['leader'], 60);
@@ -558,7 +556,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 搬遷避難所：取消研究與施工、防禦建築移除退 50%、設施保留、食物木材燃料只剩 10%
   const ga = Game.newGame({ playerName: 'A', classId: 'warrior', lat: 0, lon: 0 });
   ga.state.map.pois = fillPois([], 0, 0);
-  ga.shelter.establish(ga.state.map.pois[0]);
+  ga.shelter.establish(ga.state.map.pois.find((p) => ga.shelter.canEstablish(p).ok));
   const home = ga.shelter.primary();
   home.facilities.farm.level = 3;
   home.facilities.researchCenter.level = 2;
@@ -583,7 +581,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // NPC 據點：生成、升級、探索、掠奪、被攻陷後重生
   const gn = Game.newGame({ playerName: 'N', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
   gn.state.map.pois = fillPois([], 25.0339, 121.5645);
-  gn.shelter.establish(gn.state.map.pois[0]);
+  gn.shelter.establish(gn.state.map.pois.find((p) => gn.shelter.canEstablish(p).ok));
   setHour(gn, 10);
   const t0 = Date.now();
   gn.npcs.update(t0);
@@ -592,7 +590,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const perCell = {};
   gn.npcs.list.forEach((n) => { perCell[n.cell] = (perCell[n.cell] || 0) + 1; });
   assert(gn.npcs.list.length >= 2 && Object.values(perCell).every((c) => c <= 2), `每格（約 1 平方公里）最多 2 個 NPC 據點（共 ${gn.npcs.list.length} 個、${Object.keys(perCell).length} 格；只出現在可視範圍內，數量依地圖而定）`);
-  const npc = gn.npcs.list.find((n) => n.level < 30) || gn.npcs.list[0];
+  // 挑測試期間（2 小時內）不會換世代的 NPC：避免剛好被新的勢力取代
+  const stable = (n) => n.sid && gn.npcs.slotNpc(n.cell, Number(n.sid.split(':')[2]), t0 + 7200e3)?.ident === n.ident;
+  const npc = gn.npcs.list.find((n) => n.level < 30 && stable(n)) || gn.npcs.list.find(stable) || gn.npcs.list[0];
   const lv = npc.level;
   const { SHARED_NPC } = await import('../src/systems/NpcSystem.js');
   assert(gn.npcs.sharedLevel(npc, t0 + SHARED_NPC.levelMs) === gn.npcs.sharedLevel(npc, t0) + 1 && lv >= 1, 'NPC 據點會隨時間升級');
@@ -603,7 +603,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(npc.trip?.kind === 'explore', 'NPC 會外出探索');
   const target = gn.state.map.pois.find((p) => p.id === npc.trip.poiId);
   gn.npcs.update(npc.trip.endAt + 1);
-  assert(target.lootedDay, 'NPC 探索後建築被搜刮一空');
+  assert(gn.poiShare.view(target, npc.trip ? Date.now() : target.lootedDay + 1).empty || target.lootedBy?.kind === 'npc', 'NPC 探索後建築被搜刮一空');
   assert(gn.npcs.aggression() < 0.5, '文明度低時 NPC 不太積極');
   // 掠奪：玩家沒有防禦且無人在家 → 被搶
   gn.state.survivors.forEach((s) => { s.status = 'exploring'; });
@@ -650,10 +650,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   hero.hp = null;
   hero.severe = false;
   gn.territory.noticed = () => false; // 只測攻打本身，不讓路上經過的其他 NPC 警戒範圍影響結果
+  // v10：攻打時的守軍比外出掠奪的隊伍多且強（需要多人集結）
+  const raidG = gn.npcs.garrison(weak);
+  const assaultG = gn.npcs.garrison(weak, { assault: true });
+  assert(assaultG.length >= raidG.length && assaultG.at(-1).maxHp > raidG.at(-1).maxHp && assaultG.at(-1).atk > raidG.at(-1).atk, '攻打 NPC 據點時守軍人數與強度提高，外出掠奪的隊伍不變');
+  // 這裡只測攻陷流程：守軍只留首領
+  const gar0 = gn.npcs.garrison.bind(gn.npcs);
+  gn.npcs.garrison = (n, o) => gar0(n).slice(-1);
   const atk = gn.exploration.start(weak.id, ['leader'], 5, false, Date.now(), { kind: 'raid' });
   assert(atk.ok, '派隊攻打 NPC 據點');
   const coinsBefore = gn.state.player.coins;
   const [rr] = gn.exploration.update(Date.now() + 3 * 3600e3, { silent: true });
+  gn.npcs.garrison = gar0;
   assert(rr.success && !gn.npcs.get(weak.id) && gn.state.player.coins > coinsBefore, '攻陷 NPC 據點搶到資源，據點被摧毀');
   assert(gn.npcs.state.cellNext[weak.cell] > Date.now(), '被摧毀後該區域一段時間後才會重新出現 NPC');
 }
@@ -665,7 +673,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { survivorRarityTable } = await import('../src/config/survivors.js');
   const gr = Game.newGame({ playerName: 'R', classId: 'warrior', lat: 0, lon: 0 });
   gr.state.map.pois = fillPois([], 0, 0);
-  gr.shelter.establish(gr.state.map.pois[0]);
+  gr.shelter.establish(gr.state.map.pois.find((p) => gr.shelter.canEstablish(p).ok));
   // 研究
   assert(Object.keys(RESEARCH).length >= 69, `研究項目至少為原本三倍（${Object.keys(RESEARCH).length}）`);
   assert(Object.values(RESEARCH).every((r) => r.maxLevel >= 1 && r.maxLevel <= MAX_RESEARCH_LEVEL), '每項科技都有等級，最高 10 級');
@@ -774,7 +782,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gs = Game.newGame({ playerName: 'S', classId: 'scout', lat: 25.03, lon: 121.56 });
   gs.state.map.pois = fillPois([], 25.03, 121.56);
-  gs.shelter.establish(gs.state.map.pois[0]);
+  gs.shelter.establish(gs.state.map.pois.find((p) => gs.shelter.canEstablish(p).ok));
   Object.keys(gs.state.resources).forEach((k) => { gs.state.resources[k] = 1e5; });
   gs.state.player.coins = 1e6;
   // 固定種子：讀回同一份存檔，製作結果相同（無法靠重新讀檔刷結果）
@@ -846,7 +854,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gs.research.invalidate();
   fillSupplies(gs);
   gs.state.player.coins = 1e5;
-  gs.shelter.establish(gs.state.map.pois.find((p) => !gs.shelter.baseAtPoi(p.id)));
+  gs.shelter.establish(gs.state.map.pois.find((p) => !gs.shelter.baseAtPoi(p.id) && gs.shelter.canEstablish(p).ok));
   const areas = gs.scanAreas(25.03, 121.56);
   assert(areas.length === 2 && areas[1].radius < areas[0].radius, '重新掃描包含前哨站附近，範圍較小');
 }
@@ -855,7 +863,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gz = Game.newGame({ playerName: 'Z', classId: 'warrior', lat: 0, lon: 0 });
   gz.state.map.pois = fillPois([], 0, 0);
-  gz.shelter.establish(gz.state.map.pois[0]);
+  gz.shelter.establish(gz.state.map.pois.find((p) => gz.shelter.canEstablish(p).ok));
   const gross = gz.resources.rates().gross;
   assert(Object.values(gross).every((v) => v === 0), `遊戲起始沒有任何產出（${JSON.stringify(gross)}）`);
   const leader = gz.survivors.leader();
@@ -954,7 +962,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { BAG_BASE_SLOTS, STORE_BASE_SLOTS, itemSize } = await import('../src/config/equipment.js');
   const gi = Game.newGame({ playerName: 'I', classId: 'warrior', lat: 0, lon: 0 });
   gi.state.map.pois = fillPois([], 0, 0);
-  gi.shelter.establish(gi.state.map.pois[0]);
+  gi.shelter.establish(gi.state.map.pois.find((p) => gi.shelter.canEstablish(p).ok));
   const eq = gi.equipment;
   const lead = gi.survivors.leader();
   assert(eq.storeCap() === STORE_BASE_SLOTS && eq.bagSlotCap(lead) === BAG_BASE_SLOTS, `倉庫初始 ${STORE_BASE_SLOTS} 格、隊員背包初始 ${BAG_BASE_SLOTS} 格`);
@@ -1014,7 +1022,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { FACILITIES } = await import('../src/config/facilities.js');
   const gq = Game.newGame({ playerName: 'Q', classId: 'warrior', lat: 25, lon: 121 });
   gq.state.map.pois = fillPois([], 25, 121);
-  gq.shelter.establish(gq.state.map.pois[0]);
+  gq.shelter.establish(gq.state.map.pois.find((p) => gq.shelter.canEstablish(p).ok));
   const home = gq.shelter.primary();
   assert(FACILITIES.warehouse.name === '消耗品倉庫' && FACILITIES.itemStore.name === '物品倉庫' && home.facilities.itemStore.level === 1, '倉庫分為消耗品倉庫與物品倉庫');
   const cap0 = gq.resources.storageCap();
@@ -1075,7 +1083,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(costs.every((c) => Object.keys(c).every((k) => RESOURCE_KEYS.includes(k) || sup.isSupply(k) || k === 'coins' || k === 'parts')), '成本只含已知的資源與材料');
   const gk = Game.newGame({ playerName: 'K', classId: 'warrior', lat: 25, lon: 121 });
   gk.state.map.pois = fillPois([], 25, 121);
-  gk.shelter.establish(gk.state.map.pois[0]);
+  gk.shelter.establish(gk.state.map.pois.find((p) => gk.shelter.canEstablish(p).ok));
   const { craftRecipe } = await import('../src/systems/EquipmentSystem.js');
   const r1 = craftRecipe(ITEM_MODELS.vest1);
   const r2 = craftRecipe(ITEM_MODELS.vest2);
@@ -1244,7 +1252,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { QuestSystem } = await import('../src/systems/QuestSystem.js');
   const gc = Game.newGame({ playerName: 'Q', classId: 'warrior', lat: 25, lon: 121 });
   gc.state.map.pois = fillPois([], 25, 121);
-  gc.shelter.establish(gc.state.map.pois[0]);
+  gc.shelter.establish(gc.state.map.pois.find((p) => gc.shelter.canEstablish(p).ok));
   gc.quests.ensureDaily();
   assert(!gc.quests.openChest().ok, '未完成每日任務不能開物資箱');
   gc.state.quests.dailies.forEach((d) => { d.claimed = true; });
@@ -1273,7 +1281,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gd = Game.newGame({ playerName: 'D', classId: 'warrior', lat: 25, lon: 121 });
   gd.state.map.pois = fillPois([], 25, 121);
-  gd.shelter.establish(gd.state.map.pois[0]);
+  gd.shelter.establish(gd.state.map.pois.find((p) => gd.shelter.canEstablish(p).ok));
   setHour(gd, 21);
   const lead = gd.survivors.leader();
   const rifle = gd.equipment.generate({ level: 5, model: 'ak47', rarity: 'common' });
@@ -1316,7 +1324,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gs0 = Game.newGame({ playerName: 'N', classId: 'warrior', lat: 25, lon: 121 });
   gs0.state.map.pois = fillPois([], 25, 121);
-  gs0.shelter.establish(gs0.state.map.pois[0]);
+  gs0.shelter.establish(gs0.state.map.pois.find((p) => gs0.shelter.canEstablish(p).ok));
   gs0.state.resources.wood = 1000; // 木材可從樹林取得，這裡只檢查零件與布料
   ['wall', 'warehouse', 'itemStore', 'farm'].forEach((id) => assert(gs0.shelter.canUpgradeFacility(null, id).ok, `開局的零件與布料足夠升級${FACILITIES[id].name}`));
 }
@@ -1325,7 +1333,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gr2 = Game.newGame({ playerName: 'R', classId: 'warrior', lat: 25, lon: 121 });
   gr2.state.map.pois = fillPois([], 25, 121);
-  gr2.shelter.establish(gr2.state.map.pois[0]);
+  gr2.shelter.establish(gr2.state.map.pois.find((p) => gr2.shelter.canEstablish(p).ok));
   const tgt = gr2.state.map.pois.find((p) => p.type === 'residential' && !gr2.shelter.baseAtPoi(p.id));
   const r = gr2.exploration.start(tgt.id, ['leader'], 5);
   assert(gr2.exploration.canRecall(r.exp), '前往中可以召回');
@@ -1338,7 +1346,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gq2 = Game.newGame({ playerName: 'Q2', classId: 'warrior', lat: 25, lon: 121 });
   gq2.state.map.pois = fillPois([], 25, 121);
-  gq2.shelter.establish(gq2.state.map.pois[0]);
+  gq2.shelter.establish(gq2.state.map.pois.find((p) => gq2.shelter.canEstablish(p).ok));
   const range = gq2.equipment.craftStatRange('knife');
   assert(range.atk && range.atk[0] < range.atk[1], `製作畫面顯示能力最小值與最大值（攻擊 ${range.atk}）`);
   let outside = 0;
@@ -1367,7 +1375,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gl = Game.newGame({ playerName: 'L', classId: 'warrior', lat: 25, lon: 121 });
   gl.state.map.pois = fillPois([], 25, 121);
-  gl.shelter.establish(gl.state.map.pois[0]);
+  gl.shelter.establish(gl.state.map.pois.find((p) => gl.shelter.canEstablish(p).ok));
   const base = gl.shelter.primary();
   // 屍潮突破 → 防禦失敗，記錄損失與毀損建築
   setHour(gl, 21);
@@ -1394,7 +1402,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 撐過一夜 → 防禦成功
   const gl2 = Game.newGame({ playerName: 'L2', classId: 'warrior', lat: 25, lon: 121 });
   gl2.state.map.pois = fillPois([], 25, 121);
-  gl2.shelter.establish(gl2.state.map.pois[0]);
+  gl2.shelter.establish(gl2.state.map.pois.find((p) => gl2.shelter.canEstablish(p).ok));
   gl2.shelter.primary().facilities.wall.level = 10;
   setHour(gl2, 21);
   const s2 = gl2.siege.of();
@@ -1424,7 +1432,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const mk = (name) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon: 121 });
     gx.state.map.pois = fillPois([], 25, 121);
-    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
     return gx;
   };
   const gt = mk('T');
@@ -1477,6 +1485,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   await lose.blackMarket.refresh();
   assert(lose.blackMarket.shelf().find((x) => x.id === good.id).soldTo, '另一位玩家立即看到已售出');
   // 每輪限買 1 件：買到的人這一輪不能再買；沒買到（被搶走）的人仍可以買別件
+  assert(BLACK_MARKET.rotateMs === 30 * 60000 && BLACK_MARKET.perRound === 1, '黑市每 30 分鐘換新、每輪限買 1 件');
   const other = win.blackMarket.shelf().find((x) => !x.soldTo && x.id !== good.id && x.kind === 'supply');
   const coinsW = win.state.player.coins;
   const rAgain = await win.blackMarket.buy(other.id);
@@ -1537,7 +1546,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   {
     const gw = Game.newGame({ playerName: 'W', classId: 'warrior', lat: 25.02, lon: 121.02 });
     gw.state.map.pois = JSON.parse(JSON.stringify(pois));
-    gw.shelter.establish(gw.state.map.pois[0]);
+    gw.shelter.establish(gw.state.map.pois.find((p) => gw.shelter.canEstablish(p).ok));
     gw.world = { myId: 'W', identity: () => ({ id: 'W', token: 't' }), provider: { objPut: store.objPut.bind(store), objList: store.objList.bind(store), objListMany: store.objListMany.bind(store) } };
     setHour(gw, 10); // 白天：避免結算 NPC 抵禦屍群而改到共用資料
     gw.npcs.update(t0);
@@ -1602,7 +1611,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 單機（沒有伺服器）：摧毀的 NPC 重新開啟後仍然消失
   const S = Game.newGame({ playerName: 'S', classId: 'warrior', lat: 25.02, lon: 121.02 });
   S.state.map.pois = JSON.parse(JSON.stringify(pois));
-  S.shelter.establish(S.state.map.pois[0]);
+  S.shelter.establish(S.state.map.pois.find((p) => S.shelter.canEstablish(p).ok));
   S.npcs.update(t0);
   const ns = S.npcs.list.find((n) => n.sid);
   S.npcs.destroy(ns, t0);
@@ -1620,7 +1629,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.04, lon: 121.53 });
     // 每位玩家另外有各自隨機補上的建築
     gx.state.map.pois = [...JSON.parse(JSON.stringify(base)), ...fillPois([], 25.04, 121.53).slice(0, 80)];
-    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
     setHour(gx, 10);
     return gx;
   };
@@ -1641,7 +1650,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const mk = (name) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.05, lon: 121.05 });
     gx.state.map.pois = JSON.parse(JSON.stringify(pois));
-    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
     gx.shared.backend = store;
     gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
     setHour(gx, 22);
@@ -1681,7 +1690,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const mk = (name) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.1, lon: 121.1 });
     gx.state.map.pois = JSON.parse(JSON.stringify(pois));
-    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
     gx.shared.backend = store;
     gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
     return gx;
@@ -1738,7 +1747,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const mk = (name) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.15, lon: 121.15 });
     gx.state.map.pois = JSON.parse(JSON.stringify(pois));
-    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
     gx.shared.backend = store;
     gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
     setHour(gx, 10);
@@ -1753,6 +1762,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   B.npcs.update(Date.now());
   const n = [...A.npcs.list].filter((x) => x.sid).sort((x, y) => x.level - y.level)[0];
   n.baseLevel = 1; n.levelLoss = 0; n.level = 1; n.wounded = n.wounded || 0;
+  // 這裡測集結流程：守軍強度暫時用一般值（v10 攻打強度另外測試）
+  const { NPC_ASSAULT: NA } = await import('../src/config/npcs.js');
+  const naBak = { ...NA };
+  Object.assign(NA, { hp: 1, atk: 1, count: 1, wall: 1, dps: 1 });
+  // 兩位玩家各自的 NPC 資料都設成弱小（結算可能由任一位玩家執行）
+  const nb = B.npcs.get(n.id);
+  if (nb) { nb.baseLevel = 1; nb.levelLoss = 0; nb.level = 1; nb.wounded = 0; }
   const target = { kind: 'npc', id: n.id, ident: n.ident, name: n.name, lat: n.lat, lon: n.lon };
   assert(!A.rally.canStart(target).ok, '沒有廣播塔不能發起集結');
   A.shelter.primary().facilities.broadcast.level = 1;
@@ -1795,7 +1811,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!A.rally.trips().length && lead.status === 'idle', '離線的發起人上線後隊伍回家並結算');
   assert(d2.result.victory, `強大的集結隊伍攻陷弱小的 NPC（${d2.result.summary}）`);
   {
-    assert(A.state.player.coins - ca0 === B.state.player.coins - cb0 && A.state.player.coins > ca0, `勝利時金錢平分（${A.state.player.coins - ca0} / ${B.state.player.coins - cb0}）`);
+    assert(A.state.player.coins > ca0 && B.state.player.coins > cb0, `勝利時依貢獻分配金錢，每支隊伍都有保底（${A.state.player.coins - ca0} / ${B.state.player.coins - cb0}）`);
+    Object.assign(NA, naBak);
     await B.shared.poll();
     assert(!B.npcs.get(n.id), '集結攻陷的 NPC 據點在所有人地圖上消失');
   }
@@ -1820,7 +1837,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gf = Game.newGame({ playerName: 'F', classId: 'warrior', lat: 25, lon: 121 });
   gf.state.map.pois = fillPois([], 25, 121);
-  gf.shelter.establish(gf.state.map.pois[0]);
+  gf.shelter.establish(gf.state.map.pois.find((p) => gf.shelter.canEstablish(p).ok));
   setHour(gf, 10);
   gf.survivors.leader().level = 60;
   const forest = gf.state.map.pois.find((p) => p.type === 'forest' && !gf.shelter.baseAtPoi(p.id));
@@ -1894,7 +1911,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(BUILD_QUEUE_SIZE === 3 && MAX_EXPEDITIONS === 5, '施工佇列 3 條、隊伍上限 5 組');
   const gq3 = Game.newGame({ playerName: 'Q3', classId: 'warrior', lat: 25, lon: 121 });
   gq3.state.map.pois = fillPois([], 25, 121);
-  gq3.shelter.establish(gq3.state.map.pois[0]);
+  gq3.shelter.establish(gq3.state.map.pois.find((p) => gq3.shelter.canEstablish(p).ok));
   fillSupplies(gq3);
   Object.keys(gq3.state.resources).forEach((k) => { gq3.state.resources[k] = 1e5; });
   gq3.state.player.coins = 1e6;
@@ -1947,7 +1964,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gf = Game.newGame({ playerName: 'F', classId: 'warrior', lat: 25, lon: 121 });
   gf.state.map.pois = fillPois([], 25, 121);
-  gf.shelter.establish(gf.state.map.pois[0]);
+  gf.shelter.establish(gf.state.map.pois.find((p) => gf.shelter.canEstablish(p).ok));
   const on = gf.resources.rates().upkeep.food;
   const off = gf.resources.rates({ offline: true }).upkeep.food;
   assert(on > off && on === 5 * gf.state.survivors.length, `在線每人吃 5、離線吃較少（${on} / ${off}）`);
@@ -1963,7 +1980,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gh = Game.newGame({ playerName: 'H', classId: 'warrior', lat: 25, lon: 121 });
   gh.state.map.pois = fillPois([], 25, 121);
-  gh.shelter.establish(gh.state.map.pois[0]);
+  gh.shelter.establish(gh.state.map.pois.find((p) => gh.shelter.canEstablish(p).ok));
   setHour(gh, 21);
   gh.zombies.refresh();
   const grp = gh.state.map.zombieGroups[0];
@@ -1984,7 +2001,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gr3 = Game.newGame({ playerName: 'R3', classId: 'warrior', lat: 25, lon: 121 });
   gr3.state.map.pois = fillPois([], 25, 121);
-  gr3.shelter.establish(gr3.state.map.pois[0]);
+  gr3.shelter.establish(gr3.state.map.pois.find((p) => gr3.shelter.canEstablish(p).ok));
   setHour(gr3, 10);
   const sh3 = gr3.shelter.primary();
   const far3 = gr3.state.map.pois.filter((p) => !gr3.shelter.baseAtPoi(p.id)).sort((a, b) => haversine(sh3.lat, sh3.lon, b.lat, b.lon) - haversine(sh3.lat, sh3.lon, a.lat, a.lon))[0];
@@ -2002,7 +2019,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gl = Game.newGame({ playerName: 'L1', classId: 'warrior', lat: 25, lon: 121 });
   gl.state.map.pois = fillPois([], 25, 121);
-  gl.shelter.establish(gl.state.map.pois[0]);
+  gl.shelter.establish(gl.state.map.pois.find((p) => gl.shelter.canEstablish(p).ok));
   const base = gl.shelter.primary();
   const w0 = gl.resources.rates().gross.wood;
   base.facilities.lumberMill.level = 2;
@@ -2026,7 +2043,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gw = Game.newGame({ playerName: 'W1', classId: 'warrior', lat: 25, lon: 121 });
   gw.state.map.pois = fillPois([], 25, 121);
-  gw.shelter.establish(gw.state.map.pois[0]);
+  gw.shelter.establish(gw.state.map.pois.find((p) => gw.shelter.canEstablish(p).ok));
   const bw = gw.shelter.primary();
   bw.wallHp = 0;
   gw.survivors.setJob(gw.survivors.leader().id, 'repair');
@@ -2046,7 +2063,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gn = Game.newGame({ playerName: 'N1', classId: 'warrior', lat: 25, lon: 121 });
   gn.state.map.pois = fillPois([], 25, 121);
-  gn.shelter.establish(gn.state.map.pois[0]);
+  gn.shelter.establish(gn.state.map.pois.find((p) => gn.shelter.canEstablish(p).ok));
   setHour(gn, 22);
   const max = gn.civilization.maxWaves();
   let seen = 0;
@@ -2065,7 +2082,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gz = Game.newGame({ playerName: 'Z1', classId: 'warrior', lat: 25, lon: 121 });
   gz.state.map.pois = fillPois([], 25, 121);
-  gz.shelter.establish(gz.state.map.pois[0]);
+  gz.shelter.establish(gz.state.map.pois.find((p) => gz.shelter.canEstablish(p).ok));
   setHour(gz, 20.5);
   gz.zombies.refresh();
   const n0 = gz.state.map.zombieGroups.length;
@@ -2090,7 +2107,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gq = Game.newGame({ playerName: 'Q8', classId: 'warrior', lat: 25, lon: 121 });
   gq.state.map.pois = fillPois([], 25, 121);
-  gq.shelter.establish(gq.state.map.pois[0]);
+  gq.shelter.establish(gq.state.map.pois.find((p) => gq.shelter.canEstablish(p).ok));
   const bq = gq.shelter.primary();
   const npcPoi = gq.state.map.pois.find((p) => !gq.shelter.baseAtPoi(p.id));
   const n = gq.npcs.spawnAt(npcPoi, 'x', Date.now(), true);
@@ -2142,7 +2159,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gd = Game.newGame({ playerName: 'D1', classId: 'warrior', lat: 25, lon: 121 });
   gd.state.map.pois = fillPois([], 25, 121);
-  gd.shelter.establish(gd.state.map.pois[0]);
+  gd.shelter.establish(gd.state.map.pois.find((p) => gd.shelter.canEstablish(p).ok));
   gd.state.supplies.nail = 100;
   assert(gd.equipment.discardSupply('nail', 30).ok && gd.state.supplies.nail === 70, '可指定數量丟棄材料');
   assert(gd.equipment.discardSupply('nail', Infinity).ok && !gd.state.supplies.nail, '可全部丟棄材料');
@@ -2159,7 +2176,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gm = Game.newGame({ playerName: 'M1', classId: 'warrior', lat: 25, lon: 121 });
   gm.state.map.pois = fillPois([], 25, 121);
-  gm.shelter.establish(gm.state.map.pois[0]);
+  gm.shelter.establish(gm.state.map.pois.find((p) => gm.shelter.canEstablish(p).ok));
   assert(gm.survivors.dormCap() === 3 && gm.survivors.housing() <= 3, '沒有宿舍最多 3 人');
   gm.shelter.primary().facilities.dormitory.level = 3;
   assert(gm.survivors.dormCap() === 6, '宿舍每升一級多住 1 人');
@@ -2176,7 +2193,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gc = Game.newGame({ playerName: 'C1', classId: 'warrior', lat: 25, lon: 121 });
   gc.state.map.pois = fillPois([], 25, 121);
-  gc.shelter.establish(gc.state.map.pois[0]);
+  gc.shelter.establish(gc.state.map.pois.find((p) => gc.shelter.canEstablish(p).ok));
   gc.state.player.coins = 1e5;
   Object.keys(gc.state.resources).forEach((k) => { gc.state.resources[k] = 1e5; });
   const lead = gc.survivors.leader();
@@ -2204,7 +2221,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const mk = (name) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon: 121 });
     gx.state.map.pois = fillPois([], 25, 121);
-    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
     gx.shared.backend = store;
     gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
     return gx;
@@ -2229,7 +2246,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 遠方的玩家（超過 20 公里）也看得到；自己的刊登也顯示在市場並標「我的」
   const far = Game.newGame({ playerName: 'Far', classId: 'warrior', lat: 35, lon: 139 });
   far.state.map.pois = fillPois([], 35, 139);
-  far.shelter.establish(far.state.map.pois[0]);
+  far.shelter.establish(far.state.map.pois.find((p) => far.shelter.canEstablish(p).ok));
   far.shared.backend = store;
   far.world = { others: [], myId: 'Far', identity: () => ({ id: 'Far', token: 't' }) };
   await far.market.refresh();
@@ -2305,7 +2322,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { baseSizeOf: bso } = await import('../src/config/civilization.js');
   const ge = Game.newGame({ playerName: 'E1', classId: 'warrior', lat: 25, lon: 121 });
   ge.state.map.pois = fillPois([], 25, 121);
-  ge.shelter.establish(ge.state.map.pois[0]);
+  ge.shelter.establish(ge.state.map.pois.find((p) => ge.shelter.canEstablish(p).ok));
   setHour(ge, 10);
   const lead = ge.survivors.leader();
   lead.level = 40;
@@ -2370,15 +2387,16 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const gt = Game.newGame({ playerName: 'T1', classId: 'warrior', lat: 25, lon: 121 });
   gt.state.map.pois = fillPois(dense, 25, 121);
   gt.shelter.establish(gt.state.map.pois.find((p) => p.id === 'r3'));
-  gt.thinMap();
-  assert(gt.state.map.pois.some((p) => p.id === 'r3') && gt.state.map.pois.filter((p) => p.type === 'forest').length >= 95 && gt.state.map.pois.filter((p) => p.type === 'pharmacy').length >= 35, '舊地圖整理密度時保留據點，並補足樹林與藥局');
+  // v10：舊地圖（真實建築）換成固定格子產生的地圖，據點所在的舊地點保留
+  gt.genMap();
+  assert(gt.state.map.pois.some((p) => p.id === 'r3') && gt.state.map.pois.filter((p) => p.id.startsWith('w_')).length > 1000, '換成隨機地圖時保留據點所在的地點');
 }
 
 // ---- 42. v8.28：攻擊據點要先破牆、再打贏人員；威脅提示 ----
 {
   const gw = Game.newGame({ playerName: 'W2', classId: 'warrior', lat: 25, lon: 121 });
   gw.state.map.pois = fillPois([], 25, 121);
-  gw.shelter.establish(gw.state.map.pois[0]);
+  gw.shelter.establish(gw.state.map.pois.find((p) => gw.shelter.canEstablish(p).ok));
   setHour(gw, 10);
   const mk = () => Array.from({ length: 3 }, () => gw.combat.createEnemy('raider', 5));
   const hold = gw.combat.wallAssault(mk(), 1e6, 0);
@@ -2416,7 +2434,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { cellarCap, cellarCoins } = await import('../src/config/facilities.js');
   const gc = Game.newGame({ playerName: 'K1', classId: 'warrior', lat: 25, lon: 121 });
   gc.state.map.pois = fillPois([], 25, 121);
-  gc.shelter.establish(gc.state.map.pois[0]);
+  gc.shelter.establish(gc.state.map.pois.find((p) => gc.shelter.canEstablish(p).ok));
   setHour(gc, 10);
   const base = gc.shelter.primary();
   base.facilities.cellar.level = 3;
@@ -2464,7 +2482,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { TIME_PHASES: TP } = await import('../src/config/timePhases.js');
   const gz = Game.newGame({ playerName: 'Z2', classId: 'warrior', lat: 25, lon: 121 });
   gz.state.map.pois = fillPois([], 25, 121);
-  gz.shelter.establish(gz.state.map.pois[0]);
+  gz.shelter.establish(gz.state.map.pois.find((p) => gz.shelter.canEstablish(p).ok));
   const by = {};
   gz.state.map.pois.forEach((p) => { const id = za(p.lat, p.lon).id; (by[id] = by[id] || []).push(p); });
   const maxLv = (id, ph) => Math.max(...(by[id] || []).map((p) => gz.zombies.nightLevel(p, TP[ph])));
@@ -2513,7 +2531,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gn = Game.newGame({ playerName: 'N9', classId: 'warrior', lat: 25, lon: 121 });
   gn.state.map.pois = fillPois([], 25, 121);
-  gn.shelter.establish(gn.state.map.pois[0]);
+  gn.shelter.establish(gn.state.map.pois.find((p) => gn.shelter.canEstablish(p).ok));
   setHour(gn, 10);
   const free = gn.state.map.pois.filter((p) => !gn.shelter.baseAtPoi(p.id));
   const a1 = gn.npcs.spawnAt(free[1], 'x', Date.now(), true);
@@ -2543,7 +2561,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { DEFENSES: DF } = await import('../src/config/defenses.js');
   const ge = Game.newGame({ playerName: 'E9', classId: 'warrior', lat: 25, lon: 121 });
   ge.state.map.pois = fillPois([], 25, 121);
-  ge.shelter.establish(ge.state.map.pois[0]);
+  ge.shelter.establish(ge.state.map.pois.find((p) => ge.shelter.canEstablish(p).ok));
   const base = ge.shelter.primary();
   assert(DF.trap.name === '尖刺陷阱' && DF.electricFence && DF.electricFence.requires === 'd_fence' && RESEARCH.d_fence && RESEARCH.d_volt, '陷阱改名尖刺陷阱，新增電網與相關科技');
   assert(!ge.shelter.isDefenseUnlocked('electricFence'), '電網需要研究解鎖');
@@ -2565,7 +2583,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gn = Game.newGame({ playerName: 'N8', classId: 'warrior', lat: 25, lon: 121 });
   gn.state.map.pois = fillPois([], 25, 121);
-  gn.shelter.establish(gn.state.map.pois[0]);
+  gn.shelter.establish(gn.state.map.pois.find((p) => gn.shelter.canEstablish(p).ok));
   gn.npcs.fillCells(Date.now(), { silent: true });
   const base = gn.shelter.primary();
   const bad = gn.npcs.list.filter((n) => haversine(base.lat, base.lon, n.lat, n.lon) <= gn.territory.alertRadius(base));
@@ -2592,7 +2610,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const ga = Game.newGame({ playerName: 'A1', classId: 'warrior', lat: 25, lon: 121 });
   ga.state.map.pois = fillPois([], 25, 121);
-  ga.shelter.establish(ga.state.map.pois[0]);
+  ga.shelter.establish(ga.state.map.pois.find((p) => ga.shelter.canEstablish(p).ok));
   setHour(ga, 10);
   const lead = ga.survivors.leader();
   ga.state.supplies.bandage = 30;
@@ -2636,7 +2654,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const mk = (name, lon) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon });
     gx.state.map.pois = fillPois([], 25, lon);
-    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
     return gx;
   };
   const A = mk('協防者', 121);
@@ -2708,7 +2726,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gp = Game.newGame({ playerName: 'P', classId: 'warrior', lat: 25, lon: 121 });
   gp.state.map.pois = fillPois([], 25, 121);
-  gp.shelter.establish(gp.state.map.pois[0]);
+  gp.shelter.establish(gp.state.map.pois.find((p) => gp.shelter.canEstablish(p).ok));
   setHour(gp, 10);
   const sh = gp.shelter.primary();
   const to = { id: 'x', lat: sh.lat, lon: sh.lon + 0.01, name: 'x', type: 'residential' };
@@ -2723,7 +2741,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { canAfford: ca, payCost: pc, amountOf: ao } = await import('../src/systems/costUtils.js');
   const gb = Game.newGame({ playerName: 'B', classId: 'warrior', lat: 25, lon: 121 });
   gb.state.map.pois = fillPois([], 25, 121);
-  gb.shelter.establish(gb.state.map.pois[0]);
+  gb.shelter.establish(gb.state.map.pois.find((p) => gb.shelter.canEstablish(p).ok));
   const lead = gb.survivors.leader();
   gb.state.supplies.nail = 5;
   lead.bag = { ...(lead.bag || {}), nail: 10 };
@@ -2749,7 +2767,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const ga = Game.newGame({ playerName: 'Au', classId: 'scout', lat: 25.03, lon: 121.56 });
   ga.state.map.pois = fillPois([], 25.03, 121.56);
-  ga.shelter.establish(ga.state.map.pois[0]);
+  ga.shelter.establish(ga.state.map.pois.find((p) => ga.shelter.canEstablish(p).ok));
   setHour(ga, 10);
   ga.state.research.levels.s_scout = 1;
   ga.research.invalidate();
@@ -2766,6 +2784,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ex.hasStock = (p, at) => (p.id === pois[0].id ? true : orig(p, at));
   const origLeft = ex.leftAfterSearch.bind(ex);
   ex.leftAfterSearch = () => true; // 連續探索：搜完後建築裡還有剩
+  ga.poiShare.blockerAt = () => null; // 這裡用替身模擬「還有物資」，不套用共用的搜空紀錄
   let reps = ex.update(st.exp.endAt + 1, { silent: true });
   let cur = ga.state.expeditions[0];
   assert(cur && cur.poiId === pois[0].id && cur.queue.length === 1, `還有物資時再搜同一個地點、佇列保留（${reps[0]?.events.slice(-1)}）`);
@@ -2802,7 +2821,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const mk = (name, lon) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon });
     gx.state.map.pois = fillPois([], 25, lon);
-    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
     gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
     setHour(gx, 10);
     return gx;
@@ -2859,7 +2878,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   for (let t = 0; t < 8; t += 1) {
     const gn = Game.newGame({ playerName: 'N', classId: 'warrior', lat: 25, lon: 121 });
     gn.state.map.pois = fillPois([], 25, 121);
-    gn.shelter.establish(gn.state.map.pois[0]);
+    gn.shelter.establish(gn.state.map.pois.find((p) => gn.shelter.canEstablish(p).ok));
     gn.survivors.leader().level = 10;
     ['scout', 'medic', 'warrior'].forEach((c) => gn.state.survivors.push(cs(`x${c}`, c, 8, 'rare')));
     gn.state.survivors.forEach((m) => ['weapon', 'armor', 'helmet', 'legs', 'boots', 'gloves'].forEach((slot) => {
@@ -2894,7 +2913,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gq2 = Game.newGame({ playerName: 'Q', classId: 'warrior', lat: 25, lon: 121 });
   gq2.state.map.pois = fillPois([], 25, 121);
-  gq2.shelter.establish(gq2.state.map.pois[0]);
+  gq2.shelter.establish(gq2.state.map.pois.find((p) => gq2.shelter.canEstablish(p).ok));
   const lead = gq2.survivors.leader();
   const weak = gq2.equipment.generate({ level: 3, model: 'knife', rarity: 'poor' });
   const strong = gq2.equipment.generate({ level: 10, model: 'knife', rarity: 'epic' });
@@ -2922,7 +2941,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const ga2 = Game.newGame({ playerName: 'AL', classId: 'warrior', lat: 25, lon: 121 });
   ga2.state.map.pois = fillPois([], 25, 121);
-  ga2.shelter.establish(ga2.state.map.pois[0]);
+  ga2.shelter.establish(ga2.state.map.pois.find((p) => ga2.shelter.canEstablish(p).ok));
   const lead = ga2.survivors.leader();
   ga2.survivors.setJob(lead.id, 'scavenge');
   ga2.shelter.setAlert(true);
@@ -2945,7 +2964,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gq3 = Game.newGame({ playerName: 'QQ', classId: 'scout', lat: 25, lon: 121 });
   gq3.state.map.pois = fillPois([], 25, 121);
-  gq3.shelter.establish(gq3.state.map.pois[0]);
+  gq3.shelter.establish(gq3.state.map.pois.find((p) => gq3.shelter.canEstablish(p).ok));
   setHour(gq3, 10);
   const ex = gq3.exploration;
   const pois = gq3.state.map.pois.filter((p) => !gq3.shelter.baseAtPoi(p.id) && p.type === 'residential').slice(0, 5);
@@ -2991,7 +3010,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const room = new MemoryChat();
   [ca, cb, cc].forEach((x) => { x.chat.backend = room; });
   assert(ca.chat.blockReason() === '建立避難所後才能發言' && !(await ca.chat.send('嗨')).ok, '沒有避難所不能發言');
-  [ca, cb, cc].forEach((x) => x.shelter.establish(x.state.map.pois[0]));
+  [ca, cb, cc].forEach((x) => x.shelter.establish(x.state.map.pois.find((p) => x.shelter.canEstablish(p).ok)));
   assert((await ca.chat.send('  信義區有人要一起打嗎？  ')).ok, '建立避難所後可以發言');
   const slow = await ca.chat.send('再一則');
   assert(!slow.ok && /秒後再試/.test(slow.reason), '每 5 秒最多 1 則');
@@ -3024,7 +3043,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 檢舉：3 人檢舉後自動隱藏；同一人只算一次；不能檢舉自己
   const dd = mkc('D', 'd'.repeat(32));
   dd.chat.backend = room;
-  dd.shelter.establish(dd.state.map.pois[0]);
+  dd.shelter.establish(dd.state.map.pois.find((p) => dd.shelter.canEstablish(p).ok));
   await dd.chat.poll();
   const msgId = ca.chat.messages[0].id;
   assert(!(await ca.chat.report(msgId)).ok, '不能檢舉自己的訊息');
@@ -3086,7 +3105,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gv2 = Game.newGame({ playerName: 'VV', classId: 'scout', lat: 25, lon: 121 });
   gv2.state.map.pois = fillPois([], 25, 121);
-  gv2.shelter.establish(gv2.state.map.pois[0]);
+  gv2.shelter.establish(gv2.state.map.pois.find((p) => gv2.shelter.canEstablish(p).ok));
   setHour(gv2, 10);
   const ex = gv2.exploration;
   const vs = gv2.vehicles;
@@ -3156,7 +3175,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gw5 = Game.newGame({ playerName: 'W5', classId: 'warrior', lat: 25, lon: 121 });
   gw5.state.map.pois = fillPois([], 25, 121);
-  gw5.shelter.establish(gw5.state.map.pois[0]);
+  gw5.shelter.establish(gw5.state.map.pois.find((p) => gw5.shelter.canEstablish(p).ok));
   const b5 = gw5.shelter.primary();
   b5.defenses[0] = { slot: 0, type: 'watchPost', level: 3, garrisonId: null };
   gw5.survivors.leader().job = 'scavenge';
@@ -3213,7 +3232,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gv3 = Game.newGame({ playerName: 'V3', classId: 'scout', lat: 25, lon: 121 });
   gv3.state.map.pois = fillPois([], 25, 121);
-  gv3.shelter.establish(gv3.state.map.pois[0]);
+  gv3.shelter.establish(gv3.state.map.pois.find((p) => gv3.shelter.canEstablish(p).ok));
   setHour(gv3, 10);
   const simV3 = gv3.combat.simulate.bind(gv3.combat);
   gv3.combat.simulate = (sv, _en, o) => simV3(sv, [], o);
@@ -3269,7 +3288,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gp = Game.newGame({ playerName: 'P7', classId: 'warrior', lat: 25, lon: 121 });
   gp.state.map.pois = fillPois([], 25, 121);
-  gp.shelter.establish(gp.state.map.pois[0]);
+  gp.shelter.establish(gp.state.map.pois.find((p) => gp.shelter.canEstablish(p).ok));
   const poi7 = gp.state.map.pois.find((p) => !gp.shelter.baseAtPoi(p.id) && p.type === 'residential');
   // 找一個白天的時間點與 6 小時後（夜晚）的時間點
   let tDay = Date.now();
@@ -3311,7 +3330,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const mk = (name) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.3, lon: 121.3 });
     gx.state.map.pois = JSON.parse(JSON.stringify(pois));
-    gx.shelter.establish(gx.state.map.pois[0]);
+    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
     gx.shared.backend = store;
     gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
     gx.npcs.fillCells(Date.now(), { silent: true });
@@ -3509,7 +3528,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(nextNoon(t) === new Date(2026, 10, 4, 12, 0).getTime() && nextNoon(new Date(2026, 10, 4, 12, 0).getTime()) === new Date(2026, 10, 5, 12, 0).getTime(), '被擊敗的 NPC 據點在下一個中午 12:00 重新出現');
   const g79 = Game.newGame({ playerName: 'N79', classId: 'warrior', lat: 25, lon: 121 });
   g79.state.map.pois = fillPois([], 25, 121);
-  g79.shelter.establish(g79.state.map.pois[0]);
+  g79.shelter.establish(g79.state.map.pois.find((p) => g79.shelter.canEstablish(p).ok));
   const b79 = g79.shelter.primary();
   g79.npcs.fillCells(Date.now(), { silent: true });
   assert(g79.npcs.list.length > 0 && g79.npcs.list.every((n) => haversine(n.lat, n.lon, b79.lat, b79.lon) <= PSR + 1), `NPC 據點只出現在避難所的可視範圍（${PSR} 公尺）內（${g79.npcs.list.length} 個）`);
@@ -3541,7 +3560,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { SUPPLIES } = await import('../src/config/supplies.js');
   const gq = Game.newGame({ playerName: 'Q80', classId: 'warrior', lat: 25, lon: 121 });
   gq.state.map.pois = fillPois([], 25, 121);
-  gq.shelter.establish(gq.state.map.pois[0]);
+  gq.shelter.establish(gq.state.map.pois.find((p) => gq.shelter.canEstablish(p).ok));
   const bq = gq.shelter.primary();
   const rs = gq.research;
   bq.facilities.researchCenter.level = 4;
@@ -3603,7 +3622,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { createSurvivor } = await import('../src/core/GameState.js');
   const gc = Game.newGame({ playerName: 'C81', classId: 'warrior', lat: 25, lon: 121 });
   gc.state.map.pois = fillPois([], 25, 121);
-  gc.shelter.establish(gc.state.map.pois[0]);
+  gc.shelter.establish(gc.state.map.pois.find((p) => gc.shelter.canEstablish(p).ok));
   setHour(gc, 10);
   const ex = gc.exploration;
   const home = gc.shelter.primary();
@@ -3634,7 +3653,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(rep1?.carried && rep1.events.some((t) => t.includes('直接前往')), '探索報告寫出背包還有空間、直接前往下一個地點');
   // 回到避難所：背著的物資一起入庫
   const carriedNow = { ...(e2.carried?.gained || {}) };
+  // 前一站撿到、背在身上的裝備：回家後入庫一次，最後一站的報告不重複列在收穫裡
+  const helm99 = gc.equipment.generate({ level: 5, type: 'helmet' });
+  e2.carried = e2.carried || { gained: {}, items: [], blueprints: [], vehicles: [] };
+  e2.carried.items.push(helm99);
   ex.update(e2.endAt + 1);
+  const rep99 = gc.state.reports[0];
+  assert(gc.equipment.items.filter((i) => i.id === helm99.id).length === 1 && !rep99.items.some((i) => i.id === helm99.id) && rep99.events.some((t) => t.includes(helm99.name)), '前幾站背回的裝備入庫一次，最後一站報告不重複列出（事件中說明）');
   assert(!ex.list.includes(e2) && Object.keys(carriedNow).every((k) => !['food', 'wood', 'fuel'].includes(k) || gc.state.resources[k] >= woodBefore * 0 ), '最後一站回到避難所');
   assert(gc.state.reports[0].events.some((t) => t.includes('背包物資入庫')), '回到避難所時背著的物資入庫');
   // 負重達 90%：回家卸貨（探索途中可能受傷，先治好）
@@ -3708,7 +3733,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gr = Game.newGame({ playerName: 'R84', classId: 'warrior', lat: 25, lon: 121 });
   gr.state.map.pois = fillPois([], 25, 121);
-  gr.shelter.establish(gr.state.map.pois[0]);
+  gr.shelter.establish(gr.state.map.pois.find((p) => gr.shelter.canEstablish(p).ok));
   setHour(gr, 10);
   const ex = gr.exploration;
   const home = gr.shelter.primary();
@@ -3740,7 +3765,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gq = Game.newGame({ playerName: 'Q85', classId: 'warrior', lat: 25, lon: 121 });
   gq.state.map.pois = fillPois([], 25, 121);
-  gq.shelter.establish(gq.state.map.pois[0]);
+  gq.shelter.establish(gq.state.map.pois.find((p) => gq.shelter.canEstablish(p).ok));
   setHour(gq, 10);
   const ex = gq.exploration;
   assert(!ex.quickQueueOn(), '快速佇列預設關閉');
@@ -3823,7 +3848,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { dayKey } = await import('../src/systems/LootStock.js');
   const ge = Game.newGame({ playerName: 'E87', classId: 'warrior', lat: 25, lon: 121 });
   ge.state.map.pois = fillPois([], 25, 121);
-  ge.shelter.establish(ge.state.map.pois[0]);
+  ge.shelter.establish(ge.state.map.pois.find((p) => ge.shelter.canEstablish(p).ok));
   setHour(ge, 10);
   const ex = ge.exploration;
   const home = ge.shelter.primary();
@@ -3835,8 +3860,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ge.combat.simulate = (...a) => ({ ...sim87(...a), victory: true });
   const now = Date.now();
   // 第二個地點被 NPC 搜空
-  near[1].lootedDay = dayKey(now);
-  near[1].lootedBy = { kind: 'npc', name: '鐵拳幫', day: dayKey(now) };
+  ge.poiShare.markNpc(near[1], now - 1000, '鐵拳幫');
   assert(!ex.hasStock(near[1], now) && ex.emptyReason(near[1], now).includes('鐵拳幫'), '被 NPC 搜空的建築記下 NPC 名稱');
   const r1 = ex.start(near[0].id, [L.id], 1, false, now);
   r1.exp.cargo = 1e6;
@@ -3847,20 +3871,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(e2 && !ex.list.some((e) => e.poiId === near[1].id), '連續探索：已被搜空的佇列地點自動跳過，直接前往下一個');
   assert(ge.state.reports[0]?.events.some((t) => t.includes('跳過') && t.includes('鐵拳幫')), '報告寫出跳過的地點與被誰搜空');
   ex.list.length = 0; L.status = 'idle'; L.hp = null;
-  // 直接去被搜空的建築：報告標示「已被搜空」與原因
-  const r2 = ex.start(near[1].id, [L.id], 1, false, now);
-  ex.update(r2.exp.endAt + 1);
-  const rep = ge.state.reports.find((r) => r.poiName === near[1].name);
-  assert(rep?.emptied?.includes('鐵拳幫') && rep.events.some((t) => t.includes('搜刮一空') && t.includes('鐵拳幫')), '探索已被搜空的建築：報告標示已被搜空與原因');
-  // 自己搜過：原因顯示自己
-  assert(near[0].lootedBy?.kind === 'self' && ex.emptyReason(near[0], now).includes('你已經搜過'), '自己搜過的建築記為自己');
+  // 直接派遣到已被搜空的建築：不能出發（避免白跑），並說明恢復時間
+  const r2 = ex.start(near[1].id, [L.id], 1, false, Date.now());
+  assert(!r2.ok && r2.reason.includes('已被搜空'), `派遣到已被搜空的建築會被擋下（${r2.reason}）`);
+  // 自己搜過（全部帶走）：原因顯示玩家名稱（所有玩家看到的相同）
+  assert(!ex.hasStock(near[0], now + 3600e3) && ex.emptyReason(near[0], now + 3600e3).includes('E87'), `自己搜過的建築記下搜空的玩家（${ex.emptyReason(near[0], now + 3600e3)}）`);
 }
 
 // ---- 88. 自動探索＋連續探索：搜完沒有剩下物資時，不會「再搜索一次」同一個地點 ----
 {
   const ga = Game.newGame({ playerName: 'A88', classId: 'warrior', lat: 25, lon: 121 });
   ga.state.map.pois = fillPois([], 25, 121);
-  ga.shelter.establish(ga.state.map.pois[0]);
+  ga.shelter.establish(ga.state.map.pois.find((p) => ga.shelter.canEstablish(p).ok));
   setHour(ga, 10);
   const ex = ga.exploration;
   const home = ga.shelter.primary();
@@ -3877,7 +3899,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ex.update(r.exp.startAt + r.exp.travelMs + r.exp.searchMs + 1);
   const again = ex.list.find((e) => e.poiId === near[0].id);
   const next = ex.list.find((e) => e.poiId === near[1].id);
-  assert(!again && next && !ex.hasStock(near[0]), '搜完全部帶走：不會再搜索同一個地點，改前往佇列下一站');
+  assert(!again && next && !ex.hasStock(near[0], r.exp.startAt + r.exp.travelMs + r.exp.searchMs + 2), '搜完全部帶走：不會再搜索同一個地點，改前往佇列下一站');
   assert(!ga.state.reports[0].events.some((t) => t.includes('直接再搜索一次')), '報告不會寫「還有物資，直接再搜索一次」');
 }
 
@@ -3974,7 +3996,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const gr = Game.newGame({ playerName: 'A92', classId: 'warrior', lat: 25, lon: 121 });
   gr.state.map.pois = fillPois([], 25, 121);
-  gr.shelter.establish(gr.state.map.pois[0]);
+  gr.shelter.establish(gr.state.map.pois.find((p) => gr.shelter.canEstablish(p).ok));
   gr.shelter.primary().facilities.clinic.level = 1;
   gr.state.resources.food = 99999;
   gr.state.starving = false;
@@ -3992,7 +4014,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const fac = await import('../src/config/facilities.js');
   const gd = Game.newGame({ playerName: 'A93', classId: 'warrior', lat: 25, lon: 121 });
   gd.state.map.pois = fillPois([], 25, 121);
-  gd.shelter.establish(gd.state.map.pois[0]);
+  gd.shelter.establish(gd.state.map.pois.find((p) => gd.shelter.canEstablish(p).ok));
   const dorm = gd.shelter.primary().facilities.dormitory;
   dorm.level = 7;
   const cap7 = gd.survivors.dormCap(); const mul7 = gd.survivors.regenMul(); const food7 = gd.resources.rates().upkeep.food; const board7 = gd.survivors.boardSize();
@@ -4011,7 +4033,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 {
   const ge = Game.newGame({ playerName: 'A94', classId: 'warrior', lat: 25, lon: 121 });
   ge.state.map.pois = fillPois([], 25, 121);
-  ge.shelter.establish(ge.state.map.pois[0]);
+  ge.shelter.establish(ge.state.map.pois.find((p) => ge.shelter.canEstablish(p).ok));
   ge.survivors.leader().level = 5;
   const src = (await import('node:fs')).readFileSync(new URL('../src/systems/ExplorationSystem.js', import.meta.url), 'utf8');
   assert(src.includes('this.game.survivors.candidateLevel() + lvBonus'), '探索遇到的倖存者等級改用隊伍平均等級');
@@ -4078,12 +4100,23 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(SaveManager.migrate(old).battles.length === 0, '舊存檔的戰鬥紀錄（無法對應）不保留');
 }
 
+// ---- 97b. 同一波屍潮的多次交戰合併成一場戰鬥紀錄 ----
+{
+  const gw = Game.newGame({ playerName: 'W97', classId: 'warrior', lat: 25, lon: 121 });
+  const L = gw.survivors.leader();
+  const night = { battleIds: [] };
+  for (let i = 0; i < 4; i += 1) gw.combat.simulate([L], [gw.combat.createEnemy('walker', 1)], { title: '第 2 波', ref: night, merge: 'wave2' });
+  gw.combat.simulate([L], [gw.combat.createEnemy('walker', 1)], { title: '第 3 波', ref: night, merge: 'wave3' });
+  const b2 = gw.combat.battle(night.battleIds[0]);
+  assert(night.battleIds.length === 2 && b2.fights === 4 && b2.foes.length === 4, `同一波屍潮的多次交戰合併成一場（${night.battleIds.length} 場）`);
+}
+
 // ---- 98. 地窖：零件與布料每種藏起一定數量，屍潮突破時不會損失 ----
 {
   const { cellarMatCap } = await import('../src/config/facilities.js');
   const gc = Game.newGame({ playerName: 'K98', classId: 'warrior', lat: 25, lon: 121 });
   gc.state.map.pois = fillPois([], 25, 121);
-  gc.shelter.establish(gc.state.map.pois[0]);
+  gc.shelter.establish(gc.state.map.pois.find((p) => gc.shelter.canEstablish(p).ok));
   const base = gc.shelter.primary();
   base.facilities.cellar.level = 5;
   const cap = cellarMatCap(5);
@@ -4103,6 +4136,205 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(lostNail === 0 && sup.nail === cap && lostScrew > 0 && sup.screw >= cap, '地窖容量內的零件不會損失，超過的部分才會');
   const c = gc.shelter.cellarStatus();
   assert(c.lv === 5 && c.matKinds === 2 && c.mats === cap * 2, '地窖顯示目前藏起的零件數量');
+}
+
+// ---- 99. 重度感染據點不會和玩家據點重疊（據點建立或附近玩家載入後換位置） ----
+{
+  const { INFECTED } = await import('../src/systems/InfectedSystem.js');
+  const gi = Game.newGame({ playerName: 'I99', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gi.testInfBlock = true;
+  gi.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gi.shelter.establish(gi.state.map.pois.find((p) => gi.shelter.canEstablish(p).ok));
+  const s0 = gi.infected.list()[0];
+  assert(s0, '附近有重度感染據點');
+  if (s0) {
+    // v10：位置固定，不會因附近玩家據點載入而移動；更新前就重疊的玩家據點：這一格改為沒有感染據點
+    const s1 = gi.infected.list().find((x) => x.id === s0.id);
+    assert(s1 && s1.lat === s0.lat && s1.lon === s0.lon, '重度感染據點位置固定');
+    gi.world = { others: [{ id: 'P99', bases: [{ lat: s0.lat, lon: s0.lon, alert: 150 }] }] };
+    assert(!gi.infected.list().some((x) => x.id === s0.id), '更新前就和玩家據點重疊的格子沒有感染據點');
+    gi.world = { others: [] };
+    // 新據點不能蓋在感染據點範圍內
+    const nearPoi = { id: 'near99', type: 'residential', name: 'x', lat: s0.lat, lon: s0.lon };
+    const ce = gi.shelter.canEstablish(nearPoi);
+    assert(!ce.ok && ce.reason.includes('重度感染'), '新據點不能蓋在重度感染據點範圍內');
+    const near = gi.infected.list().every((x) => gi.state.bases.every((b) => haversine(b.lat, b.lon, x.lat, x.lon) > gi.territory.alertRadius(b) + INFECTED.clearM));
+    assert(near, '重度感染據點避開自己的據點與警戒範圍');
+  }
+}
+
+// ---- 100. v10 隨機地圖：固定格子產生、所有玩家相同、比例與區域限定 ----
+{
+  const { generatePois } = await import('../src/map/WorldGen.js');
+  const { zoneIndexAt } = await import('../src/config/zones.js');
+  const a = generatePois(25.0339, 121.5645, 1200);
+  const b = generatePois(25.0339, 121.5645, 1200);
+  assert(a.length > 1250 && a.length < 1550, `避難所周圍 1.2 公里約 1,400 個地點（${a.length}）`);
+  assert(JSON.stringify(a) === JSON.stringify(b), '同一位置每次（每位玩家）產生的地點完全相同');
+  const big = [[25.03, 121.56], [24.8, 121.0], [23.0, 120.2], [22.6, 120.3], [24.15, 120.67]].flatMap(([la, lo]) => generatePois(la, lo, 2500));
+  const share = (t) => big.filter((p) => p.type === t).length / big.length;
+  const food = share('residential') + share('shop') + share('supermarket');
+  assert(Math.abs(food - 0.24) < 0.04 && Math.abs(share('forest') - 0.18) < 0.03, `比例接近目標（食物 ${(food * 100).toFixed(0)}%、樹林 ${(share('forest') * 100).toFixed(0)}%）`);
+  assert(!big.some((p) => p.type === 'bakery'), '不再產生麵包店');
+  assert(big.filter((p) => p.type === 'pharmacy').every((p) => zoneIndexAt(p.lat, p.lon) <= 2), '藥局只出現在警戒區以下');
+  assert(big.filter((p) => p.type === 'hospital').every((p) => zoneIndexAt(p.lat, p.lon) >= 2), '醫院只出現在警戒區以上');
+  assert(big.filter((p) => p.type === 'military').every((p) => zoneIndexAt(p.lat, p.lon) === 5), '軍事基地只出現在深淵區');
+  // 遊戲中的地圖：避難所與前哨站周圍，保留搜刮紀錄；舊存檔的麵包店據點改為商店
+  const gm = Game.newGame({ playerName: 'M100', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gm.genMap(25.0339, 121.5645);
+  const home = gm.state.map.pois.find((p) => gm.shelter.canEstablish(p).ok);
+  gm.shelter.establish(home);
+  const p0 = gm.state.map.pois.find((p) => p.id !== home.id);
+  p0.lootedDay = 123;
+  gm.genMap();
+  assert(gm.state.map.pois.find((p) => p.id === p0.id)?.lootedDay === 123 && gm.state.map.source === 'generated', '重新產生地圖時保留每個地點的搜刮紀錄');
+}
+
+// ---- 101. v10 地點探索佔用規則（多人共用）：先到先探索、晚到跳下一站、接續檢核點、搜空 3 小時恢復 ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const { POI_SHARE } = await import('../src/systems/PoiShareSystem.js');
+  const { generatePois } = await import('../src/map/WorldGen.js');
+  const store = new MemoryObjects();
+  const LAT = 25.0339;
+  const LON = 121.5645;
+  const pois = generatePois(LAT, LON, 1200);
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: LAT, lon: LON });
+    gx.state.map.pois = JSON.parse(JSON.stringify(pois));
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    setHour(gx, 10);
+    const L = gx.survivors.leader();
+    L.level = 60;
+    gx.survivors.becomeSevere = () => {};
+    const sim = gx.combat.simulate.bind(gx.combat);
+    gx.combat.simulate = (...a) => ({ ...sim(...a), victory: true });
+    return gx;
+  };
+  const A = mk('A101');
+  const B = mk('B101');
+  const C = mk('C101');
+  // 三人的避難所在同一個地點附近（各自建立在不同的地點）
+  const homes = pois.filter((p) => haversine(p.lat, p.lon, LAT, LON) < 150).slice(0, 3);
+  [A, B, C].forEach((gx, i) => gx.shelter.establish(gx.state.map.pois.find((p) => p.id === homes[i].id)));
+  const big = pois.filter((p) => !homes.includes(p) && haversine(p.lat, p.lon, LAT, LON) < 600 && A.exploration.checkpointCount(p) >= 2);
+  const T = big[0];
+  const T2 = big[1];
+  const T3 = big[2];
+  const reset = (gx) => { const L = gx.survivors.leader(); Object.assign(L, { status: 'idle', hp: null, severe: false }); gx.state.expeditions = []; };
+  // 1. B 先出發、先抵達；A 晚出發、晚抵達：A 抵達時 B 還在搜索 → A 讓給 B，前往佇列下一站
+  const now = Date.now();
+  // B 比 A 早幾分鐘出發（一定比 A 早抵達）
+  const rb = B.exploration.start(T.id, ['leader'], 1, false, now - 120000);
+  assert(rb.ok, `B 出發（${rb.reason || ''}）`);
+  await tick();
+  await A.shared.poll();
+  const vA = A.poiShare.view(T, now);
+  assert(vA.occ.some((x) => x.n === 'B101'), '其他玩家看得到誰正在前往／探索這個地點');
+  // A 若現在手動派遣會在 B 搜索中抵達 → 不能出發（避免白跑）
+  const blocked = A.exploration.start(T.id, ['leader'], 1, false, Date.now());
+  assert(!blocked.ok && blocked.reason.includes('B101'), `抵達時有人在探索：手動派遣會被擋下（${blocked.reason}）`);
+  // 用小隊佇列（不檢查）讓 A 晚一點抵達：A 先去 T2，佇列下一站是 T
+  const ra = A.exploration.start(T2.id, ['leader'], 1, false, now);
+  assert(ra.ok, `A 出發（${ra.reason || ''}）`);
+  ra.exp.cargo = 1e6;
+  A.exploration.enqueue(ra.exp.id, T.id);
+  A.exploration.enqueue(ra.exp.id, T3.id);
+  await tick();
+  // A 先上線結算（B 還沒結算）：A 抵達 T 時 B 已經在搜索（依抵達時間判斷，不看誰先結算）
+  const eB = rb.exp;
+  const bLeave = eB.startAt + eB.travelMs + eB.searchMs;
+  let guard = 0;
+  let aT = null;
+  while (guard < 40) {
+    guard += 1;
+    const cur = A.state.expeditions.find((e) => e.poiId === T.id);
+    if (cur && cur.cp) { aT = cur; break; }
+    const nx = A.state.expeditions[0];
+    if (!nx) break;
+    A.exploration.update(Math.min(nx.endAt, nx.startAt + nx.travelMs + nx.searchMs) + 1, { silent: true });
+  }
+  const arriveA = aT ? aT.startAt + aT.travelMs : 0;
+  if (aT && arriveA < bLeave) {
+    assert(aT.cp.bumped && aT.cp.bumped.includes('B101'), `晚到的隊伍讓給先到的人（${aT.cp.bumped || '沒有讓'}）`);
+    A.exploration.update(aT.endAt + 1, { silent: true });
+    assert(A.state.expeditions.some((e) => e.poiId === T3.id) || A.state.reports.some((r) => r.events.some((t) => t.includes('B101'))), '被搶先後自動前往佇列下一站（或回家），報告寫出原因');
+  } else assert(true, '（A 抵達時 B 已離開，跳過讓位檢查）');
+  // 2. B 搜索到一半就召回：剩下的檢核點與物資留給下一位
+  reset(A);
+  const cpT = B.exploration.checkpointCount(T);
+  const t1 = eB.startAt + eB.travelMs + eB.searchMs / cpT + 1;
+  B.exploration.runCheckpoints(eB, t1);
+  assert(eB.cp && eB.cp.done === 1, `B 搜完第 1 個檢核點（${eB.cp?.done}/${cpT}）`);
+  B.exploration.recall(eB.id, t1 + 1);
+  B.exploration.update(eB.endAt + 1, { silent: true });
+  await tick();
+  await C.shared.poll();
+  const vC = C.poiShare.view(T);
+  assert(vC.left && vC.left.done === 1 && vC.left.total === A.exploration.checkpointCount(T), `探索到一半離開：其他玩家看到剩下的檢核點（${vC.left?.done}/${vC.left?.total}）`);
+  assert(!vC.occ.some((x) => x.n === 'B101' && x.l > Date.now() + 60000), '離開後移除自己的佔用紀錄');
+  // C 接著探索：從第 2 個檢核點繼續，搜索時間較短
+  const fullMin = C.exploration.searchMinutes({ ...T, id: 'fresh-copy' });
+  assert(C.exploration.searchMinutes(T) < fullMin, '接續探索只需剩餘的搜索時間');
+  const rc = C.exploration.start(T.id, ['leader'], 1, false, Date.now());
+  assert(rc.ok, `C 繼續探索（${rc.reason || ''}）`);
+  rc.exp.cargo = 1e6;
+  C.exploration.runCheckpoints(rc.exp, rc.exp.startAt + rc.exp.travelMs + 1);
+  assert(rc.exp.cp && rc.exp.cp.offset === 1 && rc.exp.cp.total === vC.left.total - 1 && rc.exp.cp.stock.partial, '從剩下的檢核點繼續，只找得到剩下的物資');
+  C.exploration.update(rc.exp.endAt + 1, { silent: true });
+  await tick();
+  await A.shared.poll();
+  const after = rc.exp.startAt + rc.exp.travelMs + rc.exp.searchMs + 1000;
+  const vE = A.poiShare.view(T, after);
+  assert(vE.empty && vE.by && vE.by.includes('C101'), `全部搜完：所有玩家看到已被搜空（${vE.by}）`);
+  assert(!A.exploration.hasStock(T, after) && A.exploration.emptyReason(T, after).includes('恢復'), '已搜空的地點沒有物資，並顯示恢復時間');
+  // 3. 3 小時後恢復：物資重新產生（下一個世代）
+  const later = vE.until + 1000;
+  const vR = A.poiShare.view(T, later);
+  assert(!vR.empty && vR.gen === (store.get ? vR.gen : vR.gen) && A.exploration.hasStock(T, later) && vE.until - (rc.exp.startAt + rc.exp.travelMs + rc.exp.searchMs) <= POI_SHARE.recoverMs + 1000, '搜空 3 小時後恢復');
+  // 4. 兩人前往同一個地點：先抵達的人探索；晚抵達的人手動派遣會被擋下，或抵達時讓位
+  const T4 = big[3];
+  reset(A); reset(B);
+  const t4 = Date.now();
+  const r4a = A.exploration.start(T4.id, ['leader'], 1, false, t4);
+  await tick();
+  await B.shared.poll();
+  const r4b = B.exploration.start(T4.id, ['leader'], 1, false, t4);
+  assert(r4a.ok, 'A 先派遣');
+  if (!r4b.ok) assert(r4b.reason.includes('A101'), `B 比 A 晚抵達：派遣時就被擋下（${r4b.reason}）`);
+  else {
+    // B 比較近、先抵達：A 抵達時讓給 B
+    await tick();
+    await A.shared.poll();
+    A.exploration.runCheckpoints(r4a.exp, r4a.exp.startAt + r4a.exp.travelMs + 1);
+    assert(r4a.exp.cp?.bumped?.includes('B101'), `B 比 A 早抵達：A 抵達時讓給 B（${r4a.exp.cp?.bumped}）`);
+  }
+}
+
+// ---- 102. v10 舊存檔遷移：真實建築地圖換成隨機地圖，據點（麵包店）與探索目的地保留 ----
+{
+  const go = Game.newGame({ playerName: 'O102', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  const osm = [
+    { id: 'osm_n1', type: 'bakery', name: '老麵包店', lat: 25.0339, lon: 121.5645, osm: true },
+    { id: 'osm_n2', type: 'shop', name: '便利商店', lat: 25.0349, lon: 121.5655, osm: true },
+    { id: 'osm_n3', type: 'residential', name: '住宅', lat: 25.0359, lon: 121.5665, osm: true },
+  ];
+  go.state.map.pois = osm;
+  go.state.map.source = 'overpass';
+  go.state.map.remain = { osm_n3: { day: 1, res: { food: 3 } } };
+  go.shelter.establish(osm[0]);
+  go.state.version = 26;
+  const data = SaveManager.migrate(JSON.parse(JSON.stringify(SaveManager.pack(go.state))));
+  assert(!data.map.remain && data.version === SAVE_VERSION_NOW, '舊存檔遷移：移除舊的建築殘留物資');
+  go.state = data;
+  go.genMap();
+  const pois = go.state.map.pois;
+  const home = pois.find((p) => p.id === 'osm_n1');
+  assert(home && home.type === 'shop' && go.shelter.primary().poiId === 'osm_n1', '據點所在的麵包店保留下來並改為商店');
+  assert(!pois.some((p) => p.id === 'osm_n3') && pois.filter((p) => p.id.startsWith('w_')).length > 1000 && go.state.map.source === 'generated', '其他真實建築換成隨機產生的地點');
+  assert(!pois.some((p) => p.type === 'bakery'), '地圖上不再有麵包店');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

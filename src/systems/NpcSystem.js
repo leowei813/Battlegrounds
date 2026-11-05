@@ -1,5 +1,5 @@
 import { AssistSystem } from './AssistSystem.js';
-import { NPC_CONFIG, NPC_NAMES, npcAggression } from '../config/npcs.js';
+import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL } from '../config/npcs.js';
 import { xpToNext } from '../config/survivors.js';
 import {
   RESOURCE_KEYS, RAID_TRAVEL, POI_SCAN_RADIUS, OUTPOST_SCAN_RADIUS,
@@ -86,19 +86,25 @@ export class NpcSystem {
 
   /** NPC 據點的防禦：圍牆耐久與防禦火力（攻打時要先破牆） */
   defense(n) {
-    return { wall: Math.round(400 + n.level * 160), dps: Math.round(10 + n.level * 5) };
+    return { wall: Math.round((400 + n.level * 160) * NPC_ASSAULT.wall), dps: Math.round((10 + n.level * 5) * NPC_ASSAULT.dps) };
   }
 
-  /** 據點守備：掠奪者人數（扣除傷亡）與等級 */
-  garrison(n) {
-    const count = Math.max(0, this.fullCount(n) - (n.wounded || 0));
+  /**
+   * 據點守備：掠奪者人數（扣除傷亡）與等級。
+   * assault：玩家攻打據點時的守軍（人數與強度提高，需要多人集結）；NPC 外出掠奪的隊伍不受影響。
+   */
+  garrison(n, { assault = false } = {}) {
+    const base = Math.max(0, this.fullCount(n) - (n.wounded || 0));
+    const count = assault ? Math.round(base * NPC_ASSAULT.count) : base;
     const enemies = Array.from({ length: count }, () => this.game.combat.createEnemy('raider', n.level));
     enemies.push(this.game.combat.createEnemy('raiderChief', n.level));
+    if (assault) enemies.forEach((e) => { e.maxHp = Math.round(e.maxHp * NPC_ASSAULT.hp); e.atk = Math.round(e.atk * NPC_ASSAULT.atk); });
     return enemies;
   }
 
+  /** 攻打這個據點的建議戰力 */
   power(n) {
-    return this.garrison(n).reduce((s, e) => s + e.maxHp * 0.1 + e.atk, 0);
+    return this.garrison(n, { assault: true }).reduce((s, e) => s + e.maxHp * 0.1 + e.atk, 0);
   }
 
   aggression() {
@@ -256,10 +262,9 @@ export class NpcSystem {
     // 只出現在玩家的可視範圍內（避難所 POI_SCAN_RADIUS、前哨站 OUTPOST_SCAN_RADIUS；所有玩家都算，彼此看到的相同）
     const views = this.viewZones();
     const inView = (p) => views.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r);
-    // 哪些格子有 NPC：只看 OpenStreetMap 的真實建築（所有玩家相同），不看各自隨機補上的建築；
-    // 完全沒有真實建築資料時（離線、程序生成地圖）才用全部建築
+    // 哪些格子有 NPC：只看固定格子產生的地點（v10，所有玩家相同）；舊地圖沒有時才用全部建築
     const pois = this.game.state.map.pois;
-    const real = pois.filter((p) => String(p.id).startsWith('osm_'));
+    const real = pois.filter((p) => String(p.id).startsWith('w_'));
     const cells = new Set();
     (real.length ? real : pois).forEach((p) => cells.add(this.cellOf(p.lat, p.lon)));
     const want = [];
@@ -639,7 +644,7 @@ export class NpcSystem {
     n.nextExploreAt = now + rand(NPC_CONFIG.exploreEveryMs);
     const targets = this.game.state.map.pois.filter((p) => !this.game.shelter.baseAtPoi(p.id)
       && !this.list.some((m) => m.poiId === p.id)
-      && (p.lootedDay !== dayKey(now) || this.game.state.map.remain?.[p.id])
+      && POI_TYPES[p.type] && !this.game.poiShare.view(p, now).empty
       && haversine(n.lat, n.lon, p.lat, p.lon) <= NPC_CONFIG.exploreRadiusM);
     const poi = pick(targets);
     if (!poi) return;
@@ -717,14 +722,12 @@ export class NpcSystem {
         const night = this.game.time.phase(at).zombies ? 1.6 : 1;
         if (chance(NPC_CONFIG.exploreInjuryChance * this.game.zombies.encounterMul(poi.lat, poi.lon) * night)) this.wound(n, chance(0.3) ? 2 : 1, now);
       }
-      const remain = this.game.state.map.remain || {};
-      if (!poi || (poi.lootedDay === dayKey(at) && !remain[poi.id])) return;
-      const stock = stockOf(poi, at, remain);
+      const view = poi && this.game.poiShare.view(poi, at);
+      if (!poi || view.empty) return;
+      const stock = stockOf(poi, at, view);
       this.addResources(n, Object.fromEntries(Object.entries(stock.resources).map(([k, v]) => [k, Math.round(v * 0.6)])));
-      // NPC 探索過的建築資源一併消失（包含殘留的物資）
-      poi.lootedDay = dayKey(at);
-      poi.lootedBy = { kind: 'npc', name: n.name, day: dayKey(at) };
-      delete remain[poi.id];
+      // NPC 探索過的建築（自己的地圖）：3 小時內沒有物資
+      this.game.poiShare.markNpc(poi, at + (trip.searchMs || 0), n.name);
       this.game.bus.emit('map:changed');
     }
   }
@@ -873,7 +876,7 @@ export class NpcSystem {
       report.events.push('🏚️ 抵達時據點已經人去樓空。');
       return report;
     }
-    const enemies = this.garrison(n);
+    const enemies = this.garrison(n, { assault: true });
     report.events.push(`⚔️ 攻打「${n.name}」（Lv${n.level}）：守軍 ${enemies.length} 人${n.wounded ? `（另有 ${n.wounded} 人傷亡中）` : ''}`);
     // 1. 先打破 NPC 據點的圍牆：期間據點的防禦火力持續射擊，被擊倒的隊員重傷
     const df = this.defense(n);
@@ -907,14 +910,15 @@ export class NpcSystem {
     const carry = exp.cargo || members.length * 40;
     const total = Object.entries(n.resources).reduce((s, [k, v]) => s + (v || 0) * unitWeight(k), 0);
     const ratio = total > carry ? carry / total : 1;
-    const loot = Object.fromEntries(Object.entries(n.resources).map(([k, v]) => [k, Math.floor((v || 0) * ratio)]));
+    // 攻陷獎勵（v10 提高）：物資、金錢與裝備數量都乘上獎勵倍率
+    const loot = Object.fromEntries(Object.entries(n.resources).map(([k, v]) => [k, Math.floor((v || 0) * ratio * NPC_REWARD_MUL)]));
     // 據點的金錢只搶得到一部分
-    report.resources = g.grant({ ...loot, coins: Math.round(n.coins * NPC_COIN_LOOT) });
+    report.resources = g.grant({ ...loot, coins: Math.round(n.coins * NPC_COIN_LOOT * NPC_REWARD_MUL) });
     if (ratio < 1) report.events.push(`🎒 帶不走全部物資（運載量 ${carry}），留下約 ${Math.round(total - carry)} 重量的物資`);
-    if (chance(0.6)) {
+    for (let i = 0; i < NPC_REWARD_MUL; i += 1) {
+      if (!chance(0.6)) continue;
       const item = g.equipment.generate({ level: n.level, boost: 0.3 + zoneAt(n.lat, n.lon).rarityBoost });
-      report.items.push(item);
-      g.equipment.addItem(item, '攻打 NPC');
+      if (g.equipment.addItem(item, '攻打 NPC', members)) report.items.push(item);
     }
     report.events.push(`🏆 攻陷「${n.name}」，據點被摧毀！`);
     g.log(`🏆 攻陷 NPC 據點「${n.name}」`, 'success');

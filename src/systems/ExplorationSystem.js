@@ -113,6 +113,9 @@ const SPECIAL_EVENTS = [
   { id: 'diary', text: '在屍體旁撿到一本日記，記錄著研究資料。', reward: () => ({ parts: randInt(1, 2) }) },
 ];
 
+/** 時刻（HH:MM） */
+const hhmm = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+
 /**
  * 探索系統：派遣隊伍前往地圖建築，經過一段時間後結算事件。
  * 支援自動探索（研究解鎖）與離線結算。
@@ -196,11 +199,11 @@ export class ExplorationSystem {
     const size = BASE_SIZES[baseSizeOf(poi)];
     const danger = this.game.zombies.areaDanger(poi);
     const full = Math.max(1, Math.round(size.searchMin * (0.6 + 0.4 * Math.min(1, (danger - 1) / 5))));
-    // 上次沒搜索完：只需剩餘的搜索時間；已經搜完、只是帶不走回來拿：只需很短的時間
-    const r = this.game.state.map.remain?.[poi.id];
-    if (r && remainOf(poi, this.game.state.map.remain)) {
-      if (!r.hidden) return REVISIT.pickupMin;
-      return Math.max(REVISIT.pickupMin, +(full * Math.max(REVISIT.minFrac, r.leftFrac ?? 1)).toFixed(2));
+    // 搜過一部分（v10 共用）：只需剩餘檢核點的搜索時間；已經搜完、只是帶不走留下的：只需很短的時間
+    const left = this.game.poiShare?.view(poi).left;
+    if (left) {
+      if (left.done >= left.total) return REVISIT.pickupMin;
+      return Math.max(REVISIT.pickupMin, +(full * Math.max(REVISIT.minFrac, 1 - left.done / Math.max(1, left.total))).toFixed(2));
     }
     return full;
   }
@@ -346,9 +349,9 @@ export class ExplorationSystem {
 
   /** 建築已被搜空的原因（報告顯示用） */
   emptyReason(poi, at = Date.now()) {
-    const by = poi?.lootedBy;
-    if (!by || by.day !== dayKey(at)) return '這個時段已經有人搜過';
-    return by.kind === 'npc' ? `被 NPC「${by.name}」搜過` : '這個時段你已經搜過';
+    const v = this.game.poiShare?.view(poi, at);
+    const until = v?.until ? `，${hhmm(v.until)} 恢復` : '';
+    return v?.by ? `被${v.by}搜過${until}` : `已經被搜過${until}`;
   }
 
   /**
@@ -376,7 +379,7 @@ export class ExplorationSystem {
 
   /** 地點目前是否還有物資（今日物資或上次留下的） */
   hasStock(poi, at = Date.now()) {
-    return !!poi && POI_TYPES[poi.type] && !stockOf(poi, at, this.game.state.map.remain).empty;
+    return !!poi && POI_TYPES[poi.type] && !stockOf(poi, at, this.game.poiShare?.view(poi, at)).empty;
   }
 
   /**
@@ -422,6 +425,12 @@ export class ExplorationSystem {
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
     const plan = this.plan(v.poi, v.members, durationMin, startAt, car.vehicles, { avoidHostile, from });
+    // v10 佔用規則：玩家手動派遣時，確定會撲空（已搜空、或抵達時有人在搜索）就不出發，避免白跑
+    if (kind === 'explore' && !from && !carried && Math.abs(startAt - Date.now()) < 5000 && POI_TYPES[v.poi.type] && !v.poi.npc) {
+      const block = this.game.poiShare?.blockerAt(v.poi, startAt + plan.travelMs);
+      if (block?.reason === 'empty') return { ok: false, reason: `「${v.poi.name}」已被搜空，${hhmm(block.until)} 恢復` };
+      if (block) return { ok: false, reason: `抵達時${block.npc ? block.who : `玩家「${block.who}」`}還在探索「${v.poi.name}」（${hhmm(block.l)} 離開），晚一點再派遣` };
+    }
     // 路線會經過的敵對警戒範圍（去程與返程各算一次）
     const ignore = this.targetZone(v.poi);
     const back = plan.backPath || [...plan.path].reverse();
@@ -449,6 +458,8 @@ export class ExplorationSystem {
       encountered: v.poi.hunt ? [v.poi.target.groupId] : [], travelEvents: [], travelKills: 0, travelXp: 0,
     };
     this.list.push(exp);
+    // v10 佔用規則：登記預計抵達與離開的時間（所有玩家共用）
+    if (kind === 'explore' && !v.poi.npc && POI_TYPES[v.poi.type]) this.game.poiShare?.claim(exp, v.poi);
     const ride = car.vehicles.length ? `（${car.vehicles.map((x) => this.game.vehicles.def(x).icon).join('')}${plan.trip.fuel ? `・耗油 ${plan.trip.fuel}` : ''}）` : '';
     return { ok: true, exp, msg: `隊伍出發前往「${v.poi.name}」${ride}${packed}` };
   }
@@ -707,6 +718,8 @@ export class ExplorationSystem {
   }
 
   free(exp) {
+    // 還留著的佔用紀錄（撤退、被擊敗、還沒搜索就回家）一併移除
+    if (exp.claimed) this.game.poiShare?.release(exp, this.poi(exp.poiId), null);
     exp.memberIds.forEach((id) => {
       const m = this.game.survivors.get(id);
       if (m && m.status === 'exploring') m.status = 'idle';
@@ -778,7 +791,7 @@ export class ExplorationSystem {
     const out = [];
     for (const exp of [...this.list]) {
       if (exp.kind !== 'explore' || exp.chain === false || exp.recalled || exp.defeated) continue;
-      const searchEnd = exp.startAt + (exp.travelMs || 0) + (exp.searchMs || 0);
+      let searchEnd = exp.startAt + (exp.travelMs || 0) + (exp.searchMs || 0);
       if (now < searchEnd || exp.chainChecked) continue;
       const poi = this.poi(exp.poiId);
       const queue = [...(exp.queue || [])];
@@ -789,6 +802,8 @@ export class ExplorationSystem {
       this.runCheckpoints(exp, this.checkpointAt(exp, exp.cp?.total || this.checkpointCount(poi)));
       const cp = exp.cp;
       exp.chainChecked = true;
+      // 抵達時被搶先：沒有搜索，直接從這裡前往下一站
+      searchEnd = exp.startAt + (exp.travelMs || 0) + (exp.searchMs || 0);
       if (!cp || cp.stopped || cp.failed || cp.done < cp.total) continue;
       const members = exp.memberIds.map((id) => this.game.survivors.get(id));
       if (members.some((m) => !m || m.severe)) continue;
@@ -1015,18 +1030,6 @@ export class ExplorationSystem {
     };
   }
 
-  /** 記錄建築內殘留的物資（地圖會顯示剩餘數量）；沒有殘留則清除 */
-  setRemain(poi, res, at = Date.now(), { hidden = false, leftFrac = 1 } = {}) {
-    const map = this.game.state.map;
-    map.remain = map.remain || {};
-    const left = Object.fromEntries(Object.entries(res || {}).filter(([, v]) => v > 0));
-    if (Object.keys(left).length) map.remain[poi.id] = { day: dayKey(at), res: left, ...(hidden ? { hidden: true, leftFrac } : {}) };
-    else delete map.remain[poi.id];
-    // 過期的殘留紀錄一併清掉
-    const today = dayKey(at);
-    Object.keys(map.remain).forEach((id) => { if (map.remain[id].day !== today) delete map.remain[id]; });
-  }
-
   // ---------- 探索檢核點：小型 1 次、中型 2 次、大型 3 次、巨型 4 次 ----------
 
   /** 這個地點的檢核點數量（依建築大小） */
@@ -1086,8 +1089,25 @@ export class ExplorationSystem {
     return withSeed(this.game.state.rng, 'explore', () => {
       const ctx = this.exploreContext(exp);
       if (!ctx) return;
+      // 抵達前不開始搜索（抵達時才判斷是否被搶先）
+      if (!exp.cp && now < ctx.arriveAt) return;
       if (!exp.cp) {
-        const stock = stockOf(ctx.poi, ctx.arriveAt, this.game.state.map.remain);
+        // v10 佔用規則：比自己早抵達、還在搜索的隊伍優先；已搜空也不搜索。自動前往下一個地點或回家
+        const block = this.game.poiShare?.blockerAt(ctx.poi, ctx.arriveAt, exp.id);
+        if (block) {
+          const text = block.reason === 'empty'
+            ? `🕸️ 抵達時「${ctx.poi.name}」已被搜空（${block.by ? `被${block.by}搜過，` : ''}${hhmm(block.until)} 恢復）`
+            : `🔍 抵達時${block.npc ? block.who : `玩家「${block.who}」`}正在探索「${ctx.poi.name}」（比你早抵達），這裡先讓給對方`;
+          exp.cp = {
+            emptyBy: null, total: 0, done: 0, searchMs: 0, bumped: text, stock: { resources: {}, empty: true }, remaining: {}, gained: {}, items: [], blueprints: [], vehicles: [], events: [text], kills: 0, xp: 0, failed: false, stopped: false, overflow: {},
+          };
+          exp.searchMs = 0;
+          exp.endAt = ctx.arriveAt + (exp.backMs ?? (exp.travelMs || 0));
+          this.game.poiShare.release(exp, ctx.poi, null);
+          return;
+        }
+        const view = this.game.poiShare?.view(ctx.poi, ctx.arriveAt);
+        const stock = stockOf(ctx.poi, ctx.arriveAt, view);
         // 研究「零件辨識」：有機率在建築裡多找到一種零件
         const pk = this.game.research.bonus('partKindPct');
         if (pk > 0 && !stock.partial && !stock.empty && Object.keys(stock.resources).some((k) => SUPPLIES[k]?.cat === 'part') && chance(pk)) {
@@ -1097,7 +1117,12 @@ export class ExplorationSystem {
         }
         exp.cp = {
           emptyBy: stock.empty ? this.emptyReason(ctx.poi, ctx.arriveAt) : null,
-          total: this.checkpointCount(ctx.poi), done: 0, searchMs: exp.searchMs || 0,
+          // 搜過一部分：從剩下的檢核點繼續（offset＝前一位已經搜完的數量）
+          total: view?.left ? Math.max(1, (view.left.total || 1) - (view.left.done || 0)) : this.checkpointCount(ctx.poi),
+          offset: view?.left ? Math.min(view.left.done || 0, (view.left.total || 1) - 1) : 0,
+          allTotal: view?.left ? view.left.total || 1 : this.checkpointCount(ctx.poi),
+          gen: view?.gen || 0,
+          done: 0, searchMs: exp.searchMs || 0,
           stock: { resources: { ...stock.resources }, itemMul: stock.itemMul, gear: stock.gear, vehicle: stock.vehicle, empty: stock.empty, partial: !!stock.partial },
           remaining: { ...stock.resources }, gained: {}, items: [], blueprints: [], vehicles: [], events: [], kills: 0, xp: 0, failed: false, stopped: false, overflow: {},
         };
@@ -1285,6 +1310,15 @@ export class ExplorationSystem {
       report.events.push('目標地點已消失。');
       return report;
     }
+    if (cp?.bumped) {
+      // 被搶先或已搜空：沒有搜索。回家時把前幾站背著的物資帶回
+      report.success = false;
+      if (!carry) {
+        const note = this.bringCarried(exp, 1, members);
+        if (note) report.events.push(note);
+      }
+      return report;
+    }
     if (!cp || cp.done === 0) {
       report.success = false;
       report.events.push(recalled ? '🏠 隊伍回到避難所，還沒開始搜索，這趟沒有收穫。' : '🏠 隊伍回到避難所，這趟沒有收穫。');
@@ -1325,7 +1359,6 @@ export class ExplorationSystem {
     const prev = exp.carried;
     if (prev) {
       Object.entries(prev.gained || {}).forEach(([k, v]) => { gained[k] = (gained[k] || 0) + v; });
-      cp.items.unshift(...(prev.items || []));
       cp.blueprints.unshift(...(prev.blueprints || []));
       cp.vehicles.unshift(...(prev.vehicles || []));
       const list = Object.entries(gained).map(([k, v]) => `${lootLabel(k)}×${v}`).join('、');
@@ -1340,6 +1373,13 @@ export class ExplorationSystem {
       const kept = Object.values(leftovers).reduce((sum, v) => sum + v, 0) - lost;
       Object.entries(leftovers).forEach(([k, v]) => { report.resources[k] = (report.resources[k] || 0) + v; });
       report.events.push(`📦 倉庫已滿：${kept} 個物資由隊員放進背包${lost ? `，${lost} 個帶不走被留下` : ''}`);
+    }
+    // 前幾站背著的裝備：前幾站的報告已經列過，這裡只在事件中說明入庫結果（不重複列在收穫裡）
+    const prevItems = prev?.items || [];
+    if (prevItems.length) {
+      const kept = prevItems.filter((it) => this.game.equipment.addItem(it, '探索', members));
+      const lostItems = prevItems.filter((it) => !kept.includes(it));
+      report.events.push(`🎒 前幾站背回的裝備入庫：${kept.map((it) => `「${it.name}」`).join('、') || '（沒有）'}${lostItems.length ? `；空間不足帶不回來：${lostItems.map((it) => `「${it.name}」`).join('、')}` : ''}`);
     }
     report.items = cp.items.filter((it) => {
       const ok = this.game.equipment.addItem(it, '探索', members);
@@ -1364,14 +1404,17 @@ export class ExplorationSystem {
     exp.carried = null;
     const take = Object.fromEntries(Object.entries(c.gained || {}).map(([k, v]) => [k, Math.floor(v * keep)]).filter(([, v]) => v > 0));
     const got = this.game.grant(take);
-    const items = keep >= 1 ? (c.items || []) : (c.items || []).filter(() => Math.random() < keep);
-    items.forEach((it) => this.game.equipment.addItem(it, '探索', members));
+    const all = c.items || [];
+    const items = keep >= 1 ? all : all.filter(() => Math.random() < keep);
+    const kept = items.filter((it) => this.game.equipment.addItem(it, '探索', members));
+    const dropped = all.filter((it) => !kept.includes(it));
+    const itemNote = all.length ? `；裝備：${kept.map((it) => `「${it.name}」`).join('、') || '（沒有）'}${dropped.length ? `，遺失或放不下：${dropped.map((it) => `「${it.name}」`).join('、')}` : ''}` : '';
     (c.vehicles || []).forEach((v) => this.game.vehicles.add(v, '探索'));
     this.game.state.inventory.blueprints.push(...(c.blueprints || []));
     const list = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${lootLabel(k)}×${v}`).join('、');
     return keep >= 1
-      ? `🎒 先前地點取得的物資帶回避難所：${list || '（沒有物資）'}`
-      : `🎒 被擊敗時掉了一部分背著的物資，帶回避難所：${list || '（沒有物資）'}`;
+      ? `🎒 先前地點取得的物資帶回避難所：${list || '（沒有物資）'}${itemNote}`
+      : `🎒 被擊敗時掉了一部分背著的物資，帶回避難所：${list || '（沒有物資）'}${itemNote}`;
   }
 
   /** 探索完一個地點：經驗、建築剩餘物資、統計 */
@@ -1380,16 +1423,17 @@ export class ExplorationSystem {
     // 經驗主要來自戰鬥；探索本身只給一點點經驗
     members.forEach((m) => this.game.survivors.gainXp(m, cp.done >= cp.total ? 1 : 0));
     // 建築的剩餘物資：完整探索完只剩帶不走的（會顯示數量）；沒探索完的剩餘物資留在建築裡，但不知道有多少
-    const arriveAt = exp.startAt + (exp.travelMs || 0);
-    poi.lootedDay = dayKey(arriveAt);
-    if (!cp.stock?.empty) poi.lootedBy = { kind: 'self', day: dayKey(arriveAt) };
+    // v10 共用：離開地點時記下結果（搜空、或剩下的物資與檢核點），所有玩家看到的相同
+    const leaveAt = exp.startAt + (exp.travelMs || 0) + (exp.searchMs || 0);
     const overflow = Object.fromEntries(Object.entries(cp.overflow).map(([k, v]) => [k, Math.floor(v / Math.max(1, cp.mul?.[k] || 1))]).filter(([, v]) => v > 0));
-    if (complete) this.setRemain(poi, overflow, arriveAt);
+    const offset = cp.offset || 0;
+    const allTotal = cp.allTotal || cp.total;
+    if (complete) this.game.poiShare?.release(exp, poi, { at: leaveAt, complete: true, rest: overflow, done: allTotal, total: allTotal });
     else {
       const rest = { ...overflow };
       Object.entries(cp.remaining).forEach(([k, v]) => { const n = Math.floor(v); if (n > 0) rest[k] = (rest[k] || 0) + n; });
-      // 記下還沒搜索的比例：下次再來只需剩餘的搜索時間
-      this.setRemain(poi, rest, arriveAt, { hidden: true, leftFrac: Math.max(0, 1 - cp.done / Math.max(1, cp.total)) });
+      // 記下已經搜完幾個檢核點：下一位從剩下的檢核點繼續，只需剩餘的搜索時間
+      this.game.poiShare?.release(exp, poi, { at: leaveAt, complete: false, rest, done: Math.min(allTotal, offset + cp.done), total: allTotal });
     }
     delete poi.depletion;
     poi.lastVisit = exp.endAt;

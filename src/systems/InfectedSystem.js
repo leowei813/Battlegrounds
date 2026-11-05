@@ -30,8 +30,6 @@ export const INFECTED = {
   bossMul: { hp: 4, atk: 2.2 },
   /** 與玩家據點警戒範圍至少保持的距離（公尺） */
   clearM: 120,
-  /** 每格嘗試的候選位置數 */
-  spots: 6,
   /** 圖示大小（比巨型據點略大） */
   pin: 48,
 };
@@ -66,18 +64,22 @@ export class InfectedSystem {
     ];
   }
 
-  /**
-   * 某一格的據點（固定強度）。位置依序嘗試格子內的幾個候選點（所有玩家順序相同），
-   * 跳過與玩家據點重疊的位置；全部重疊時這一格沒有據點。
-   */
-  siteAt(i, j, key, zones = this.playerZones()) {
+  /** 某一格據點的固定位置（v10：只由格子決定，所有玩家看到的位置相同，不會因附近有誰的據點而移動） */
+  spotOf(i, j, key) {
     const box = cellBox(i, j, INFECTED.cellKm);
-    const spots = Array.from({ length: INFECTED.spots }, (_, k) => seeded(`inf:${key}${k ? `:${k}` : ''}`, () => ({
+    return seeded(`inf:${key}`, () => ({
       lat: box.lat0 + box.dLat * randFloat(0.15, 0.85),
       lon: box.lon0 + box.dLon * randFloat(0.15, 0.85),
-    })));
-    const spot = spots.find((p) => !zones.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r));
-    if (!spot) return null;
+    }));
+  }
+
+  /**
+   * 某一格的據點（固定強度、固定位置）。新的玩家據點不能蓋在感染據點範圍內；
+   * 更新前就已經重疊的玩家據點不會被移走，這一格改為沒有感染據點。
+   */
+  siteAt(i, j, key, zones = this.playerZones()) {
+    const spot = this.spotOf(i, j, key);
+    if (zones.some((z) => haversine(z.lat, z.lon, spot.lat, spot.lon) <= z.r)) return null;
     return seeded(`inf:${key}`, () => {
       randFloat(0, 1);
       randFloat(0, 1);
@@ -89,6 +91,21 @@ export class InfectedSystem {
         name: pick(NAMES), level: randInt(18, 24) + d * 3, bossId: pick(Object.keys(BOSSES).sort()),
       };
     });
+  }
+
+  /**
+   * 在 poi 建立據點會不會跟重度感染據點重疊（含新據點的警戒範圍）。
+   * @param {number} alertM 新據點的警戒範圍（公尺）
+   * @returns {{name:string}|null} 重疊的感染據點
+   */
+  blocking(poi, alertM = 80) {
+    if (!poi || !Number.isFinite(poi.lat)) return null;
+    const r = alertM + INFECTED.clearM;
+    for (const { i, j, key } of cellsAround(poi.lat, poi.lon, INFECTED.cellKm, 2.5)) {
+      const s = this.siteAt(i, j, key, []);
+      if (s && haversine(poi.lat, poi.lon, s.lat, s.lon) <= r) return s;
+    }
+    return null;
   }
 
   /** 避難所附近的重度感染據點（被消滅等待重生的不顯示） */

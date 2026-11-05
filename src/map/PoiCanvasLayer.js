@@ -1,6 +1,5 @@
 import L from 'leaflet';
 import { POI_TYPES } from '../config/poiTypes.js';
-import { dayKey } from '../systems/LootStock.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 
 /** 建築作為據點時的規模（依 ID 固定，快取避免每次重繪都計算） */
@@ -51,9 +50,9 @@ export const PoiCanvasLayer = L.Layer.extend({
   },
 
   /** @param {Record<string, number>} [detected] GPS 今日偵測過的建築（id → 日期） */
-  setData(pois, detected = {}, { marked = new Set(), remain = {} } = {}) {
+  setData(pois, detected = {}, { marked = new Set(), statusOf = null } = {}) {
     this.marked = marked;
-    this.remain = remain;
+    this.statusOf = statusOf;
     this.pois = pois;
     this.detected = detected;
     if (this.map) this.redraw();
@@ -92,7 +91,8 @@ export const PoiCanvasLayer = L.Layer.extend({
     ctx.textBaseline = 'middle';
     ctx.font = `${Math.round(r * 1.15)}px sans-serif`;
     // 住宅先畫，重要建築畫在上層
-    const today = dayKey();
+    const now = Date.now();
+    const badges = [];
     const order = [...this.pois].sort((a, b) => POI_TYPES[a.type].danger - POI_TYPES[b.type].danger);
     order.forEach((poi) => {
       const pt = map.latLngToContainerPoint([poi.lat, poi.lon]);
@@ -100,9 +100,10 @@ export const PoiCanvasLayer = L.Layer.extend({
       const def = POI_TYPES[poi.type];
       const bs = BASE_SIZES[sizeOf(poi)];
       const rr = r * bs.mul;
-      // 這個時段已被搜刮一空的建築變淡；還有殘留物資的維持原本亮度
-      const left = this.remain?.[poi.id]?.day === today;
-      ctx.globalAlpha = poi.lootedDay === today && !left ? 0.3 : 1;
+      // v10 地點狀態：已搜空變淡；有人探索中藍框、搜過一部分黃框
+      const st = this.statusOf ? this.statusOf(poi) : null;
+      const busy = st && !st.empty ? st.occ.find((x) => x.a <= now && x.l > now) : null;
+      ctx.globalAlpha = st?.empty ? 0.3 : 1;
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, rr, 0, Math.PI * 2);
       // 建築類型的顏色（區域危險度改由地圖底色呈現）
@@ -121,9 +122,42 @@ export const PoiCanvasLayer = L.Layer.extend({
         ctx.fillText(def.icon, pt.x, pt.y + 1);
         if (r >= 12) this.sizeTag(ctx, pt.x + rr * 0.8, pt.y + rr * 0.8, bs);
       }
+      if (busy || st?.left) {
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, rr + 2.5, 0, Math.PI * 2);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = busy ? '#4fc3f7' : '#ffb300';
+        ctx.stroke();
+      }
+      // 放大時才顯示文字（誰在探索・還要多久／剩幾個檢核點／幾點恢復）
+      if (r >= 12 && st) {
+        const hm = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+        let text = '';
+        let bg = '';
+        if (st.empty) { text = `🕸️ ${hm(st.until)}`; bg = '#424242'; }
+        else if (busy) { text = `🔍 ${String(busy.n).replace(/^NPC「(.*)」$/, 'NPC $1').slice(0, 8)} ${Math.max(1, Math.ceil((busy.l - now) / 60000))}分`; bg = '#01579b'; }
+        else if (st.left && st.left.total > st.left.done) { text = `⏳ 剩 ${st.left.total - st.left.done}/${st.left.total}`; bg = '#8a6d1d'; }
+        if (text) badges.push({ x: pt.x, y: pt.y - rr - 9, text, bg });
+      }
       ctx.globalAlpha = 1;
       this.drawn.push({ poi, x: pt.x, y: pt.y, r: rr });
     });
+    // 狀態文字畫在最上層
+    const font = ctx.font;
+    ctx.font = 'bold 11px sans-serif';
+    badges.forEach((b) => {
+      const w = ctx.measureText(b.text).width + 10;
+      ctx.fillStyle = b.bg;
+      ctx.globalAlpha = 0.92;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(b.x - w / 2, b.y - 8, w, 16, 8); else ctx.rect(b.x - w / 2, b.y - 8, w, 16);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#fff';
+      ctx.fillText(b.text, b.x, b.y + 0.5);
+    });
+    ctx.font = font;
   },
 
   /** 右下角的規模字樣（小／中／大／巨） */

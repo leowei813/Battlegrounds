@@ -196,7 +196,7 @@ export class InterceptSystem {
       if (poi) {
         // 搜索中只搜到一部分
         const done = p.phase === 'searching' && trip.searchMs ? Math.min(1, (at - trip.startAt - trip.travelMs) / trip.searchMs) : 1;
-        const stock = stockOf(poi, trip.startAt + trip.travelMs, this.game.state.map.remain);
+        const stock = stockOf(poi, trip.startAt + trip.travelMs, this.game.poiShare.view(poi, trip.startAt + trip.travelMs));
         const out = Object.fromEntries(Object.entries(stock.resources).map(([k, v]) => [k, Math.round(v * 0.6 * done)]).filter(([, v]) => v > 0));
         if (Object.keys(out).length) return out;
       }

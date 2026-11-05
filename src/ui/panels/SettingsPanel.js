@@ -128,7 +128,7 @@ export class SettingsPanel {
       <h3>危險區域</h3>
       <div class="btn-row">${btn('🗑️ 刪除進度重新開始', 'cloudReset', {}, { cls: 'btn-danger' })}</div>
       <p class="copyright left">${COPYRIGHT}</p>
-      <p class="muted">${GAME_TITLE} v${APP_VERSION}・地圖資料 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors，建築資料來自 Overpass API。</p>
+      <p class="muted">${GAME_TITLE} v${APP_VERSION}・地圖底圖 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors；地圖上的地點為遊戲隨機產生。</p>
     </div>`;
   }
 

@@ -19,11 +19,13 @@ export function blackMarketBody(ui, view = 'buy') {
   const now = Date.now();
   const next = bm.nextRotate(now);
   const tabs = `<div class="chips"><button class="chip ${view !== 'sell' ? 'active' : ''}" data-action="bmView" data-v="buy">🛒 購買</button><button class="chip ${view === 'sell' ? 'active' : ''}" data-action="bmView" data-v="sell">♻️ 出售</button></div>`;
+  const boughtIds = bm.boughtIds(now);
   const bought = bm.boughtThisRound(now);
+  const per = BLACK_MARKET.perRound;
   const t = new Date(next.at);
   const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-  const quota = bought ? '<span class="bm-quota used">本輪已購買 1 / 1 件・下次換貨後可再買</span>' : '<span class="bm-quota">本輪可購買 1 / 1 件</span>';
-  const head = `<div class="bm-bar">🕶️ 所有倖存者共用的黑市：${BLACK_MARKET.slots} 項商品<b>每 10 分鐘全部換新</b>・下次換貨 <b>${hm}</b>（約 ${formatDuration(Math.max(0, next.at - now))}）・先搶先贏，每輪每人限買 1 件<br>${quota}</div>
+  const quota = bought ? `<span class="bm-quota used">本輪已購買 ${per} / ${per} 件・下次換貨後可再買</span>` : `<span class="bm-quota">本輪已購買 ${boughtIds.length} / ${per} 件・還可以買 ${per - boughtIds.length} 件</span>`;
+  const head = `<div class="bm-bar">🕶️ 所有倖存者共用的黑市：${BLACK_MARKET.slots} 項商品<b>每 ${Math.round(BLACK_MARKET.rotateMs / 60000)} 分鐘全部換新</b>・下次換貨 <b>${hm}</b>（約 ${formatDuration(Math.max(0, next.at - now))}）・先搶先贏，每輪每人限買 ${per} 件<br>${quota}</div>
     <p>💰 你的金錢：<b>${g.state.player.coins}</b>${g.shared.online ? '' : ' <small class="muted">（目前未連線：只有自己看得到購買紀錄）</small>'}</p>${tabs}`;
   if (view === 'sell') {
     const sup = g.state.supplies || {};
@@ -46,7 +48,7 @@ export function blackMarketBody(ui, view = 'buy') {
   }
   const rows = bm.shelf(now).map((x) => {
     const afford = g.state.player.coins >= x.price;
-    const mine = bought === x.id;
+    const mine = boughtIds.includes(x.id);
     const soldTag = mine ? '<small class="pos block">✅ 你買了這件</small>' : x.soldTo ? `<small class="muted block">✅ 已被 ${escapeHtml(x.soldTo)} 買走</small>` : '';
     const buyBtn = x.soldTo || mine ? '' : bought ? btn('本輪已購買', 'bmBuy', { id: x.id }, { cls: 'btn-xs', disabled: true })
       : btn(`💰${x.price} 購買`, 'bmBuy', { id: x.id }, { cls: 'btn-xs btn-primary', disabled: !afford || ui.bmBusy === x.id });

@@ -738,7 +738,7 @@ export class BaseSiege {
       const e = g.combat.createEnemy(z.enemyId, this.zombieLevel(), false, ZOMBIE_VS_SURVIVOR);
       return { ...e, id: `z${z.id}`, maxHp: Math.max(1, Math.round(z.hp)), atk: z.atk, xp: 0, coins: 0, partsChance: 0 };
     });
-    const result = g.combat.simulate(defenders, foes, { allies, ref: this.nightBattles(), title: `🧱 「${base.name}」圍牆被破，迎戰屍潮（第 ${this.wave} 波）` });
+    const result = g.combat.simulate(defenders, foes, { allies, ref: this.nightBattles(), merge: `wave${this.wave}`, title: `🧱 「${base.name}」圍牆被破，迎戰屍潮（第 ${this.wave} 波）` });
     // 套用人員傷勢（殭屍的擊殺獎勵由屍潮結算，不重複給）
     defenders.forEach((sv) => {
       const u = result.team.find((x) => x.id === sv.id);

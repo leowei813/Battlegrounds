@@ -193,6 +193,9 @@ export class ShelterSystem {
   canEstablish(poi) {
     if (!poi) return { ok: false, reason: '找不到地點' };
     if (this.baseAtPoi(poi.id)) return { ok: false, reason: '這裡已經是你的據點' };
+    // 重度感染據點位置固定：據點（含警戒範圍）不能和它重疊
+    const inf = this.game.infected?.blocking(poi, BASE_SIZES[baseSizeOf(poi)]?.alert || 80);
+    if (inf) return { ok: false, reason: `這裡太靠近重度感染據點「${inf.name}」，無法建立據點` };
     if (this.primary()) {
       const limit = this.outpostLimit();
       if (!limit) return { ok: false, reason: '需研究「前哨站」科技' };
@@ -229,6 +232,11 @@ export class ShelterSystem {
     }
     this.game.civilization.invalidate();
     this.game.log(`🏠 ${kind === 'shelter' ? '建立避難所' : '建立前哨站'}於「${poi.name}」`, 'success');
+    // v10：新據點周圍的地點直接產生（不需要重新掃描）
+    if (this.game.state.map.source === 'generated') {
+      this.game.genMap();
+      this.game.bus.emit('map:changed');
+    }
     this.game.bus.emit('shelter:changed');
     return { ok: true, base, msg: kind === 'shelter' ? `避難所設於 ${poi.name}` : `已在 ${poi.name} 建立前哨站` };
   }

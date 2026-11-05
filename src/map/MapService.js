@@ -19,7 +19,6 @@ export function savedZoneMode() {
     return 'light';
   }
 }
-import { dayKey } from '../systems/LootStock.js';
 import { npcAlert } from '../systems/TerritorySystem.js';
 import { GPS_RADIUS } from '../systems/GpsSystem.js';
 
@@ -109,16 +108,15 @@ export class MapService {
     const sh = state.bases.find((b) => b.id === state.primaryBaseId && b.kind !== 'outpost') || null;
 
     // 建築與殭屍群數量多，只有內容變動時才重建標記
-    const today = dayKey();
-    let looted = 0;
-    for (const p of pois) if (p.lootedDay === today) looted += 1;
     const detected = state.map.detected || {};
     const marked = new Set((state.map.markers || []).map((m) => m.id));
-    const remain = state.map.remain || {};
-    const poiKey = `${state.map.fetchedAt}|${pois.length}|${[...basePoiIds].join(',')}|${today}|${looted}|${Object.keys(detected).length}|${[...marked].join(',')}|${Object.keys(remain).join(',')}`;
+    // v10：地點狀態（有人探索中、搜過一部分、已搜空）由共用紀錄決定
+    const ps = this.game?.poiShare;
+    const npcTrips = (this.game?.npcs?.list || []).filter((n) => n.trip?.kind === 'explore').map((n) => n.trip.poiId).join(',');
+    const poiKey = `${state.map.fetchedAt}|${pois.length}|${[...basePoiIds].join(',')}|${Object.keys(detected).length}|${[...marked].join(',')}|${ps?.signature() || ''}|${npcTrips}`;
     if (poiKey !== this.poiKey) {
       this.poiKey = poiKey;
-      this.poiLayer.setData(pois.filter((p) => !basePoiIds.has(p.id)), detected, { marked, remain });
+      this.poiLayer.setData(pois.filter((p) => !basePoiIds.has(p.id)), detected, { marked, statusOf: ps ? (p) => ps.view(p) : null });
     }
 
     const zombieKey = zombieGroups.map((g) => `${g.id}:${g.count}`).join(',');
@@ -207,7 +205,8 @@ export class MapService {
   /** 重度感染據點（比巨型據點略大，標示淨化度） */
   renderInfected(list = [], pin = 48) {
     if (!this.map) return;
-    const key = list.map((s) => `${s.id}:${Math.floor(s.purity)}`).join('|');
+    // 位置也列入比對：附近玩家據點載入或新建時，據點會換到不重疊的位置，要跟著重畫
+    const key = list.map((s) => `${s.id}:${Math.floor(s.purity)}:${s.lat.toFixed(6)},${s.lon.toFixed(6)}`).join('|');
     if (key === this.infKey) return;
     this.infKey = key;
     this.layers.infected.clearLayers();

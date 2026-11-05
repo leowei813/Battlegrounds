@@ -1,4 +1,4 @@
-import { fetchNearby } from '../map/OverpassService.js';
+import { generatePois } from '../map/WorldGen.js';
 import { dayKey } from './LootStock.js';
 import { haversine } from '../utils/math.js';
 
@@ -107,10 +107,10 @@ export class GpsSystem {
     return this.nearby;
   }
 
-  /** 查詢真實地圖上附近的建築，地圖上還沒有的加入地圖 */
+  /** 裝置附近的地點（v10：由固定格子產生），地圖上還沒有的加入地圖 */
   async discover(lat, lon) {
     try {
-      const found = await fetchNearby(lat, lon, GPS_RADIUS + 10);
+      const found = generatePois(lat, lon, GPS_RADIUS + 10);
       const map = this.game.state.map;
       const ids = new Set(map.pois.map((p) => p.id));
       const added = found.filter((p) => !ids.has(p.id));
