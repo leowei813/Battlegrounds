@@ -2784,6 +2784,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   ex.hasStock = (p, at) => (p.id === pois[0].id ? true : orig(p, at));
   const origLeft = ex.leftAfterSearch.bind(ex);
   ex.leftAfterSearch = () => true; // 連續探索：搜完後建築裡還有剩
+  ga.poiShare.blockerAt = () => null; // 這裡用替身模擬「還有物資」，不套用共用的搜空紀錄
   let reps = ex.update(st.exp.endAt + 1, { silent: true });
   let cur = ga.state.expeditions[0];
   assert(cur && cur.poiId === pois[0].id && cur.queue.length === 1, `還有物資時再搜同一個地點、佇列保留（${reps[0]?.events.slice(-1)}）`);

@@ -438,6 +438,11 @@ export class SaveManager {
       // v9.26：黑市改為每 30 分鐘換新：購買紀錄改存成清單（舊的一輪紀錄已過期，直接清空）
       data.bmBought = null;
     }
+    if (v < 27) {
+      // v10：地圖地點改為固定格子產生（載入後重新產生，據點與探索目的地保留）；建築殘留物資改為所有玩家共用
+      delete data.map.remain;
+      if (Array.isArray(data.log)) data.log.unshift({ t: Date.now(), msg: '🗺️ v10：地圖上的地點改為隨機產生（所有玩家相同），你的據點與正在前往的地點都保留', type: 'info' });
+    }
     if (v < 23 && data.research?.levels?.r_board) {
       // v9.17：情報網改為 3 級（每級 +1）：舊等級每 5 級 +1 換算成新等級，效果不變
       const old = data.research.levels.r_board;

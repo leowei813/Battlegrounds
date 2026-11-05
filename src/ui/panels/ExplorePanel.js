@@ -89,7 +89,13 @@ export class ExplorePanel {
     // 進度：搜索中顯示已完成的檢核點比例；完成後不顯示
     let prog = '';
     if (phase === 'outbound' && !ex.recalled) prog = `<div class="muted">🔍 抵達後開始搜索（${total > 1 ? `${total} 個檢核點` : '搜索完成時結算'}）</div>`;
-    else if (phase === 'searching' && done < total && !cp?.stopped) prog = `<div class="pos">🔍 搜索進度 ${Math.round((done / total) * 100)}%${total > 1 ? `（檢核點 ${done}/${total}）` : ''}</div>`;
+    else if (cp?.bumped) prog = `<div class="muted">${escapeHtml(cp.bumped)}</div>`;
+    else if (phase === 'searching' && done < total && !cp?.stopped) {
+      // 接續別人搜過一部分的地點：檢核點從前一位搜完的數量往後算
+      const off = cp?.offset || 0;
+      const all = cp?.allTotal || total;
+      prog = `<div class="pos">🔍 搜索進度 ${Math.round(((off + done) / all) * 100)}%${all > 1 ? `（檢核點 ${off + done}/${all}）` : ''}</div>`;
+    }
     const found = Object.entries(cp?.gained || {}).map(([k, v]) => [k, Math.floor(v + 1e-9)]).filter(([, v]) => v > 0)
       .map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} ${v}`);
     (cp?.items || []).forEach((it) => found.push(`🎁「${escapeHtml(it.name)}」`));
