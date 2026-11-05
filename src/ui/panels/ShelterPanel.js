@@ -2,7 +2,7 @@ import { shareBtn, openShareDialog } from '../ShareDialog.js';
 import { FACILITIES, FACILITY_MAX_LEVEL, OUTPOST_FACILITIES } from '../../config/facilities.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL, defenseBuildTime } from '../../config/defenses.js';
 import { CLASSES } from '../../config/survivors.js';
-import { PRIMARY_DANGER_COEF, MAX_OUTPOSTS, BASE_SIZES } from '../../config/civilization.js';
+import { PRIMARY_DANGER_COEF, MAX_OUTPOSTS, BASE_SIZES, SIEGE_SCALING } from '../../config/civilization.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { siegeDetailHtml, raidRewardHtml } from '../SiegeResult.js';
 import { escapeHtml } from '../../utils/dom.js';
@@ -46,7 +46,7 @@ export class ShelterPanel {
         <div class="civ-grid"><div><small>建築</small><b>${b.buildings}</b></div><div><small>玩家等級</small><b>${b.player}</b></div><div><small>裝備</small><b>${b.equipment}</b></div><div><small>科技</small><b>${b.research}</b></div></div>
         <div class="row-between danger-row">
           <span>☠ 據點危險度 <b>${danger}</b>・<span class="zone-tag" style="--zc:${siege.zone().color}">${siege.zone().name}</span></span>
-          <small class="muted">${siege.active() ? `殭屍 Lv${siege.zombieLevel()}・每波約 ${Math.round(siege.waveSize())} 隻` : `白天・入夜後殭屍約 Lv${siege.zombieLevel() + 1}`}</small>
+          <small class="muted">${siege.active() ? `殭屍 Lv${siege.zombieLevel()}・每波約 ${Math.round(siege.waveSize())} 隻` : `白天・入夜後殭屍約 Lv${Math.min(SIEGE_SCALING.maxZombieLevel ?? Infinity, siege.zombieLevel() + 1)}`}</small>
         </div>
         <details class="civ-more" ${this.civOpen ? 'open' : ''}><summary>計算方式</summary>
           <p class="muted">屍潮強度隨文明度提升（殭屍 +${civ.levelBonus()} 級、頻率 ×${civ.spawnMul().toFixed(2)}），與天數無關。${BASE_SIZES[base.size]?.name || ''}據點屍潮 ×${siege.sizeMul().toFixed(2)}（據點越大、區域越危險，屍潮越多）。危險度 = ${isPrimary ? `基礎 ${baseDanger} + 文明度 ${b.total} × ${PRIMARY_DANGER_COEF}` : `基礎 ${baseDanger}（前哨站不受文明度加成）`}。</p>
