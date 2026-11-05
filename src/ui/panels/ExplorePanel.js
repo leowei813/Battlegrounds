@@ -55,7 +55,7 @@ export class ExplorePanel {
     return `<div class="row-between exp-stats">
         <span>${p.totalM ? `📏 已移動 <b>${km(p.movedM)}</b> / ${km(p.totalM)}` : ''}</span>
         <span>${ex.kind === 'rally' && !ex.rallyResult && !ex.recalled
-    ? (now < ex.startAt ? `📡 集結中・<b>${formatDuration(ex.startAt - now)}</b> 後出發` : p.phase === 'outbound' ? `⏱ 剩 <b>${formatDuration(p.phaseRemainingMs)}</b> 抵達` : '⚔️ 交戰中，等待結果')
+    ? (now < ex.startAt ? `📡 集結中・<b>${formatDuration(ex.startAt - now)}</b> 後出發` : p.phase === 'outbound' ? `⏱ 剩 <b>${formatDuration(p.phaseRemainingMs)}</b> 抵達` : ex.rallyFightAt && now < ex.rallyFightAt ? `📡 已抵達，等待其他隊伍・<b>${formatDuration(ex.rallyFightAt - now)}</b> 後開打` : '⚔️ 交戰中，等待結果')
     : `⏱ 剩餘 <b>${formatDuration(p.remainingMs)}</b>`}</span>
       </div>
       ${p.phase !== 'searching' && this.game.state.map.zombieGroups.length ? '<div class="tag tag-red">🌙 夜間移動中：經過殭屍群附近可能遇襲</div>' : ''}`;

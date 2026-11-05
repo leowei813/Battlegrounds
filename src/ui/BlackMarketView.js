@@ -67,16 +67,36 @@ export function blackMarketBody(ui, view = 'buy') {
 
 const exNum = (v) => (Number.isInteger(v) ? v : v.toFixed(1));
 
-/** 交換試算文字（數量輸入時即時更新） */
+/** 換到 n 個需要給出幾個（無條件進位） */
+export function exchangeNeed(g, f, n = f.get || 0) {
+  if (!f.want || !f.give) return 0;
+  return n > 0 ? Math.ceil(n * g.blackMarket.exchangeCostPer(f.give, f.want) - 1e-9) : 0;
+}
+
+/** 倉庫材料最多可以換到幾個 */
+export function exchangeMax(g, f) {
+  if (!f.want || !f.give) return 0;
+  return Math.floor((g.state.supplies?.[f.give] || 0) / g.blackMarket.exchangeCostPer(f.give, f.want) + 1e-9);
+}
+
+/** 交換試算文字（數量輸入時即時更新）：輸入想換到幾個，自動算出要給出多少 */
 export function exchangePreview(g, f) {
   if (!f.want || !f.give) return '<span class="muted">先選「想換到什麼」，再選「用什麼換」</span>';
-  const q = g.blackMarket.exchangeQuote(f.give, f.want, f.qty || 0);
   const per = g.blackMarket.exchangeCostPer(f.give, f.want);
   const gs = SUPPLIES[f.give];
   const ws = SUPPLIES[f.want];
   const cross = gs.tier < ws.tier;
-  return `<div class="bmx-flow"><span>給出 <b>${gs.icon} ${gs.name} ×${q.used || 0}</b></span><span class="bmx-arrow">➜</span><span>得到 <b class="bmx-get">${ws.icon} ${ws.name} ×${q.get || 0}</b></span></div>
-    <small class="muted block">每換 1 個${ws.name}要 ${exNum(per)} 個${gs.name}（價值 ${exNum(EXCHANGE.value[f.want])} ÷ ${exNum(EXCHANGE.value[f.give])} × ${EXCHANGE.rate}${cross ? ` × 跨階 ${EXCHANGE.crossMul}` : ''}）・不到 1 個的部分不換${q.ok ? '' : `・<span class="neg">${escapeHtml(q.reason || '')}</span>`}</small>`;
+  const have = g.state.supplies?.[f.give] || 0;
+  const need = exchangeNeed(g, f);
+  const short = need > have;
+  return `<div class="bmx-need">需要給出 <b class="${short ? 'neg' : 'bmx-give'}">${gs.icon} ${gs.name} ×${need}</b>
+      ${short ? `<span class="neg">（倉庫只有 ${have}）</span>` : `<small class="muted">（倉庫 ${have}${need ? `，交換後剩 ${have - need}` : ''}）</small>`}</div>
+    <small class="muted block">每換 1 個${ws.name}要 ${exNum(per)} 個${gs.name}（價值 ${exNum(EXCHANGE.value[f.want])} ÷ ${exNum(EXCHANGE.value[f.give])} × ${EXCHANGE.rate}${cross ? ` × 跨階 ${EXCHANGE.crossMul}` : ''}）</small>`;
+}
+
+/** 交換按鈕能不能按 */
+export function exchangeReady(g, f) {
+  return !!(f.want && f.give && (f.get || 0) > 0 && exchangeNeed(g, f) <= (g.state.supplies?.[f.give] || 0));
 }
 
 /** 🔄 交換：用倉庫裡的零件或布料換成想要的材料 */
@@ -99,7 +119,6 @@ function exchangeHtml(ui) {
   // 只列出倉庫裡有的材料（沒有的不列，清單才不會太長）
   const giveList = sources.filter((k) => sup[k] > 0).map((k) => cell(k, 'bmExGive', `give ${f.give === k ? 'on' : ''}`)).join('')
     || '<p class="muted">倉庫裡沒有可以拿來換的材料。</p>';
-  const maxQ = f.give ? (sup[f.give] || 0) : 0;
   return `<p class="muted bmx-rule">用倉庫裡的零件或布料，換成同類別的其他材料。黑市抽成很重：<b class="bmx-rate">同價值 ${EXCHANGE.rate} 換 1</b>，用低一階的材料換再 ×${EXCHANGE.crossMul}。只能用同階或低一階的材料交換，${'★'.repeat(EXCHANGE.maxTier + 1)} 最高階不開放。</p>
     <h4>① 想換到什麼</h4>
     <div class="chips bmx-cats">${chip('bmExCat', 'part', '🔩 零件', f.cat === 'part')}${chip('bmExCat', 'fabric', '🧵 布料', f.cat === 'fabric')}
@@ -108,9 +127,10 @@ function exchangeHtml(ui) {
     ${f.want ? `<h4>② 用什麼換 <small class="muted">（只列出 ${'★'.repeat(SUPPLIES[f.want].tier)}${SUPPLIES[f.want].tier > 1 ? ` 與 ${'★'.repeat(SUPPLIES[f.want].tier - 1)}` : ''} 的${SUPPLY_CATS[f.cat].name}，倉庫裡有的才會列出）</small></h4>
     <div class="bmx-grid">${giveList}</div>` : ''}
     ${f.want && f.give ? `<div class="bmx-sum">
+      <div class="bmx-q">想換到 <b class="bmx-get">${SUPPLIES[f.want].icon} ${SUPPLIES[f.want].name}</b>
+        <span class="bmx-qn">${btn('−1', 'bmExQty', { d: -1 }, { cls: 'btn-xs' })}<input type="number" min="0" step="1" data-role="bmExQty" value="${f.get || 0}">${btn('＋1', 'bmExQty', { d: 1 }, { cls: 'btn-xs' })}${btn('＋10', 'bmExQty', { d: 10 }, { cls: 'btn-xs' })}${btn(`最多（${exchangeMax(g, f)}）`, 'bmExQty', { max: 1 }, { cls: 'btn-xs' })}</span></div>
       <div class="bmx-preview">${exchangePreview(g, f)}</div>
-      <div class="bmx-q">給出數量 ${btn('−10', 'bmExQty', { d: -10 }, { cls: 'btn-xs' })}<input type="number" min="0" max="${maxQ}" step="1" data-role="bmExQty" value="${f.qty || 0}">${btn('＋10', 'bmExQty', { d: 10 }, { cls: 'btn-xs' })}${btn('最多', 'bmExQty', { max: 1 }, { cls: 'btn-xs' })}</div>
-      <div class="bmx-go">${btn('🔄 交換', 'bmExDo', {}, { cls: 'btn-primary' })}</div>
+      <div class="bmx-go">${btn('🔄 交換', 'bmExDo', {}, { cls: 'btn-primary', disabled: !exchangeReady(g, f) })}</div>
     </div>` : ''}`;
 }
 
@@ -130,24 +150,25 @@ export function blackMarketAction(ui, action, data) {
     return true;
   }
   if (action === 'bmSell') { ui.result(bm.sell(data.key, Number(data.qty))); return true; }
-  const f = ui.bmEx || (ui.bmEx = { cat: 'part', tier: 1, want: null, give: null, qty: 0 });
-  if (action === 'bmExCat') { f.cat = data.v; f.want = null; f.give = null; f.qty = 0; return true; }
-  if (action === 'bmExTier') { f.tier = Number(data.v); f.want = null; f.give = null; f.qty = 0; return true; }
-  if (action === 'bmExWant') { f.want = data.key; f.give = null; f.qty = 0; return true; }
+  const f = ui.bmEx || (ui.bmEx = { cat: 'part', tier: 1, want: null, give: null, get: 0 });
+  if (action === 'bmExCat') { f.cat = data.v; f.want = null; f.give = null; f.get = 0; return true; }
+  if (action === 'bmExTier') { f.tier = Number(data.v); f.want = null; f.give = null; f.get = 0; return true; }
+  if (action === 'bmExWant') { f.want = data.key; f.give = null; f.get = 0; return true; }
   if (action === 'bmExGive') {
     f.give = data.key;
-    // 預設帶入剛好換到 1 個的數量
-    f.qty = Math.min(g.state.supplies?.[data.key] || 0, Math.ceil(bm.exchangeCostPer(data.key, f.want) - 1e-9));
+    // 預設換 1 個（材料不夠時為 0）
+    f.get = Math.min(1, exchangeMax(g, f));
     return true;
   }
   if (action === 'bmExQty') {
-    const have = g.state.supplies?.[f.give] || 0;
-    f.qty = data.max ? have : Math.max(0, Math.min(have, (f.qty || 0) + Number(data.d || 0)));
+    const max = exchangeMax(g, f);
+    f.get = data.max ? max : Math.max(0, Math.min(max, (f.get || 0) + Number(data.d || 0)));
     return true;
   }
   if (action === 'bmExDo') {
-    const r = ui.result(bm.exchange(f.give, f.want, f.qty || 0));
-    if (r?.ok !== false) f.qty = Math.min(f.qty || 0, g.state.supplies?.[f.give] || 0);
+    if (!exchangeReady(g, f)) return true;
+    const r = ui.result(bm.exchange(f.give, f.want, exchangeNeed(g, f)));
+    if (r?.ok !== false) f.get = Math.min(f.get || 0, exchangeMax(g, f));
     return true;
   }
   if (action === 'bmSellItem') { ui.result(bm.sellItem(data.id)); return true; }

@@ -1260,3 +1260,11 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .pk-qq.on { border-color: #8bc34a; background: #33691e55; color: #dcedc8; }
 .pk-qq.on small { color: #c5e1a5; }
 .pick-foot { gap: 8px; }
+/* 黑市交換 v2：輸入想換到幾個，交換按鈕在左下 */
+.bmx-sum .bmx-q { margin: 0 0 6px; }
+.bmx-qn { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bmx-qn input { width: 72px; }
+.bmx-need { font-size: 13px; margin-bottom: 2px; }
+.bmx-give { color: #ffcc80; }
+.bmx-sum .bmx-go { text-align: left; margin-top: 8px; }
+.bmx-sum .bmx-go .btn { min-width: 120px; }

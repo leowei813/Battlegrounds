@@ -1816,6 +1816,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   await B.shared.poll();
   const d1 = B.rally.get(st.id);
   assert(d1.status === 'departed' && d1.fightAt >= Date.now() - 1000, '滿員時立即出發');
+  assert(d1.teams.every((t) => typeof t.travelMs === 'number') && d1.fightAt === d1.departedAt + Math.max(d1.travelMs || 0, ...d1.teams.map((t) => t.travelMs || 0)), `等最晚抵達的隊伍到了才開打（${d1.teams.map((t) => t.travelMs).join('/')}）`);
   // 發起人 A 離線（不再執行）；B 到時間自己結算
   await B.rally.step(B.rally.trips()[0], d1.fightAt + 1);
   await B.shared.poll();

@@ -356,6 +356,7 @@ export const SiegeMapLayer = L.Layer.extend({
           line1 = '📡 集結中・等待出發';
           line2 = `⏱ ${formatDuration(exp.startAt - now)} 後出發`;
         } else if (p.phase === 'outbound') line2 = `⏱ 剩 ${formatDuration(p.phaseRemainingMs)} 抵達`;
+        else if (exp.rallyFightAt && now < exp.rallyFightAt) { line1 = '📡 已抵達・等待其他隊伍'; line2 = `⏱ ${formatDuration(exp.rallyFightAt - now)} 後開打`; }
         else { line1 = '⚔️ 集結交戰中'; line2 = '⏱ 等待結果'; }
       }
       ctx.font = 'bold 11px sans-serif';

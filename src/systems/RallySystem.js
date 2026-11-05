@@ -160,7 +160,7 @@ export class RallySystem {
     const data = {
       owner: me, ownerName: g.state.player.name || '倖存者', target, status: 'gathering', at: now,
       departAt: now + Number(delayMin) * 60000, travelMs: dep.exp.travelMs, maxTeams: this.maxTeams(),
-      teams: [{ player: me, name: g.state.player.name || '倖存者', units: this.units(memberIds), at: now }],
+      teams: [{ player: me, name: g.state.player.name || '倖存者', units: this.units(memberIds), at: now, travelMs: dep.exp.travelMs || 0 }],
     };
     const r = await g.shared.update('rally', id, (d) => (d ? { fail: '編號重複，請再試一次' } : { data }), { lat: sh.lat, lon: sh.lon }).finally(() => this.busy.delete(id));
     if (!r.ok) {
@@ -183,7 +183,7 @@ export class RallySystem {
     const dep = this.depart(rallyId, d0.target, memberIds, vehicleIds);
     if (!dep.ok) return dep;
     const me = this.myId();
-    const team = { player: me, name: g.state.player.name || '倖存者', units: this.units(memberIds), at: Date.now() };
+    const team = { player: me, name: g.state.player.name || '倖存者', units: this.units(memberIds), at: Date.now(), travelMs: dep.exp.travelMs || 0 };
     // 寫入共用世界期間不要檢查這個集結（還沒加入名單前會被誤判成「被移出」而讓隊伍回家）
     this.busy.add(rallyId);
     const r = await g.shared.update('rally', rallyId, (d) => {
@@ -282,6 +282,8 @@ export class RallySystem {
     }
     // 隊伍湊滿提早出發：出發時間改為實際出發的時間
     if (d.departedAt && exp.gatherUntil && exp.gatherUntil !== d.departedAt && !exp.rallyResult) this.setDepartAt(exp, d.departedAt);
+    // 開打時間（等最晚抵達的隊伍）：先到的隊伍在目標附近等待
+    if (d.fightAt) exp.rallyFightAt = d.fightAt;
     this.busy.add(exp.rallyId);
     try {
       if (d.status === 'gathering' && (now >= d.departAt || d.teams.length >= d.maxTeams)) {
@@ -289,7 +291,8 @@ export class RallySystem {
           if (!x || x.status !== 'gathering') return { fail: 'done' };
           x.status = 'departed';
           x.departedAt = Math.min(now, x.departAt);
-          x.fightAt = x.departedAt + (x.travelMs || 0);
+          // 各隊從自己的避難所出發：等最晚抵達的那一隊到了才一起開打
+          x.fightAt = x.departedAt + Math.max(x.travelMs || 0, ...(x.teams || []).map((t) => t.travelMs || 0));
           return { data: x };
         });
       } else if ((d.status === 'departed' && now >= d.fightAt) || (d.status === 'resolving' && now - (d.lockAt || 0) > LOCK_MS)) {
