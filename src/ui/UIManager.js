@@ -24,6 +24,8 @@ import { ChatView } from './ChatView.js';
 
 /** 可左右捲動的分頁列與標籤列（重畫時保留捲動位置） */
 const H_SCROLL = '.sh-nav-list, .chips, .craft-kinds, .sv-tabs, .bt-wrap';
+/** 頁面內可以單獨上下捲動的區塊（重繪時保留位置） */
+const V_SCROLL = '.sv-roster, .sh-nav, .sh-fac-side, .qd-list, .battle-log, .pick-list';
 
 const TABS = [
   { id: 'map', icon: '🗺️', name: '地圖' },
@@ -325,8 +327,31 @@ export class UIManager {
     // 保留可左右捲動的分頁列、標籤列的位置（面板每秒重新繪製）
     const keep = [...this.panelEl.querySelectorAll(H_SCROLL)].map((el) => el.scrollLeft);
     const saved = this.hScrollTab === this.tab ? (this.hScrollPos?.[this.tab] || []) : [];
+    // 保留頁面內可上下捲動的區塊（例如網頁版左側名單／選單）的位置：依「標籤＋class＋順序」對應
+    const vKey = (el, i) => `${el.tagName}.${el.className}#${i}`;
+    const vKeep = new Map();
+    if (this.vScrollTab === this.tab) {
+      const seen = {};
+      this.panelEl.querySelectorAll(V_SCROLL).forEach((el) => {
+        const base = `${el.tagName}.${el.className}`;
+        const i = seen[base] || 0;
+        seen[base] = i + 1;
+        if (el.scrollTop) vKeep.set(vKey(el, i), el.scrollTop);
+      });
+    }
     this.panelEl.innerHTML = html;
     this.panelEl.scrollTop = top;
+    if (vKeep.size) {
+      const seen = {};
+      this.panelEl.querySelectorAll(V_SCROLL).forEach((el) => {
+        const base = `${el.tagName}.${el.className}`;
+        const i = seen[base] || 0;
+        seen[base] = i + 1;
+        const y = vKeep.get(vKey(el, i));
+        if (y) el.scrollTop = y;
+      });
+    }
+    this.vScrollTab = this.tab;
     if (this.hScrollTab === this.tab) {
       this.panelEl.querySelectorAll(H_SCROLL).forEach((el, i) => {
         const x = saved[i] ?? keep[i];
