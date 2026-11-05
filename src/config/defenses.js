@@ -28,7 +28,7 @@ export const DEFENSES = {
     name: '路障', icon: '🚧', color: 0x8d6e63, requires: null,
     desc: '強化圍牆耐久，並使附近殭屍減速。',
     cost: (lv) => mat('barricade', ['struct'], { wood: 40, metal: 10 }, lv),
-    stats: (lv) => ({ wallBonus: 120 * lv, slow: 0.25, range: 26, damage: 0, fireRate: 0 }),
+    stats: (lv) => ({ wallBonus: 240 * lv, slow: 0.4, range: 30, damage: 0, fireRate: 0 }),
   },
   trap: {
     name: '尖刺陷阱', icon: '🪤', color: 0x795548, requires: null,
@@ -40,25 +40,25 @@ export const DEFENSES = {
     name: '電網', icon: '⚡', color: 0xffca28, requires: 'd_fence', power: true,
     desc: '通電的圍網，持續電擊貼近圍牆的所有殭屍並短暫麻痺。需要據點的發電機運轉（有燃料）才會作用。',
     cost: (lv) => mat('electricFence', ['elec', 'struct'], { metal: 100, fuel: 25 }, lv),
-    stats: (lv) => ({ damage: 16 + lv * 11, fireRate: 1, range: 14, stun: 0.3, aoe: true }),
+    stats: (lv) => ({ damage: 16 + lv * 11, fireRate: 1, range: 14, stun: 0.22, aoe: true }),
   },
   machineGun: {
     name: '機槍塔', icon: '🔫', color: 0x607d8b, requires: 'd_mg',
     desc: '高射速單體射擊。',
     cost: (lv) => mat('machineGun', ['mech'], { metal: 90, fuel: 15 }, lv),
-    stats: (lv) => ({ damage: 15 + lv * 10, fireRate: 4, range: 70 }),
+    stats: (lv) => ({ damage: 15 + lv * 14, fireRate: 4, range: 70 }),
   },
   flameTower: {
     name: '火焰塔', icon: '🔥', color: 0xff7043, requires: 'd_flame',
     desc: '範圍火焰傷害，對群聚殭屍特別有效。',
     cost: (lv) => mat('flameTower', ['mech', 'elec'], { metal: 110, fuel: 40 }, lv),
-    stats: (lv) => ({ damage: 26 + lv * 16, fireRate: 1.2, range: 45, aoe: true, aoeRadius: 18 }),
+    stats: (lv) => ({ damage: 36 + lv * 22, fireRate: 1.2, range: 45, aoe: true, aoeRadius: 24 }),
   },
   emTower: {
     name: '電磁塔', icon: '🌀', color: 0x29b6f6, requires: 'd_em',
     desc: '連鎖電擊並短暫麻痺目標。',
     cost: (lv) => mat('emTower', ['elec'], { metal: 140, fuel: 30, parts: 3 }, lv),
-    stats: (lv) => ({ damage: 45 + lv * 24, fireRate: 0.8, range: 60, chain: 3, stun: 0.6 }),
+    stats: (lv) => ({ damage: 45 + lv * 24, fireRate: 0.8, range: 60, chain: 3, stun: 0.45 }),
   },
   watchPost: {
     name: '瞭望塔', icon: '🛖', color: 0xa1887f, requires: null,
