@@ -153,6 +153,8 @@ export class Game {
     this.equipment.items.forEach((it) => { it.power = this.equipment.itemPower(it); });
     // v10：地圖地點由固定格子產生（舊存檔的真實建築地圖在這裡換成新地圖）
     this.genMap();
+    // 電磁塔、電網每個據點限 1 座：舊存檔多出的拆除並退還材料
+    this.shelter.enforceDefenseLimits();
     // 標記地點已移除：清除舊存檔的標記（不再保留遠處的標記建築）
     if (this.state.map.markers?.length) this.state.map.markers = [];
     const report = this.processOffline();

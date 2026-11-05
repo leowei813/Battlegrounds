@@ -1145,3 +1145,5 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .map-tools .home-btn .home-lbl { position: absolute; right: 48px; top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 11px; font-weight: 800; border-radius: 8px; padding: 1px 7px; background: #546e7a; color: #eceff1; pointer-events: none; }
 .map-tools .home-btn .home-lbl.on { background: #2e7d32; color: #fff; }
 .map-tools .btn.home-btn.on { border-color: #66bb6a; box-shadow: 0 0 0 2px #66bb6a55; }
+.poi-st.busy.npc { background: #b71c1c44; border-color: #ef5350aa; }
+.poi-st.busy.friend { background: #2e7d3244; border-color: #66bb6aaa; }
