@@ -70,6 +70,12 @@ const BASIC_BUILD_BOOST = 1.4;
 const isBasicBuild = (k) => SUPPLIES[k]?.tag === 'struct' && SUPPLIES[k].tier <= 2;
 /** 第 1 階（基礎消耗性）零件與布料的出現機率倍率 */
 const BASIC_TIER_BOOST = 1.6;
+/** 塑膠外殼的出現機率倍率（霰彈、建築都會用到，原本太難取得） */
+const PLASTIC_BOOST = 2;
+/** 資源回收站：電子零件（電線、燈泡、塑膠外殼、電池…）的出現機率倍率 */
+const RECYCLING_ELEC_BOOST = 2;
+/** 這些常見地點本身不太出零件，但每次有機會找到少量塑膠外殼 */
+export const PLASTIC_SPOTS = { supermarket: 0.45, residential: 0.35, school: 0.45 };
 /** 找到零件時額外多找到 1、2 種零件的機率 */
 const PART_EXTRA_KINDS = [0.6, 0.3];
 
@@ -80,8 +86,8 @@ const TIER_AMOUNT = [1, 1.3, 0.9, 0.7, 0.5, 0.35];
 const MED_RISK_GROWTH = 0.1;
 const medRiskWeight = (k, danger) => medWeight(k) * (1 + MED_RISK_GROWTH * Math.max(0, danger)) ** (SUPPLIES[k].tier - 1);
 
-/** 依類別與危險度挑出具體的材料物品 */
-export function pickSupply(cat, rnd, danger) {
+/** 依類別與危險度挑出具體的材料物品（poiType：依建築類型調整，例如回收站多電子零件） */
+export function pickSupply(cat, rnd, danger, poiType = null) {
   let keys;
   let weight;
   if (cat === 'medLow') {
@@ -104,7 +110,9 @@ export function pickSupply(cat, rnd, danger) {
     // 越危險的地點越容易出現高階零件與布料
     // 基礎建設材料（第 1～2 階結構零件，例如釘子、螺絲、鐵絲、鐵板）較容易出現
     weight = (k) => 0.45 ** Math.max(0, SUPPLIES[k].tier - Math.ceil(danger / 1.3)) * (isBasicBuild(k) ? BASIC_BUILD_BOOST : 1)
-      * (SUPPLIES[k].tier === 1 ? BASIC_TIER_BOOST : 1);
+      * (SUPPLIES[k].tier === 1 ? BASIC_TIER_BOOST : 1)
+      * (k === 'plastic' ? PLASTIC_BOOST : 1)
+      * (poiType === 'recycling' && SUPPLIES[k].tag === 'elec' ? RECYCLING_ELEC_BOOST : 1);
   }
   const total = keys.reduce((sum, k) => sum + weight(k), 0);
   let r = rnd() * total;
@@ -160,7 +168,7 @@ export function stockOf(poi, at = Date.now(), view = null) {
   const danger = pt.danger + Math.max(0, zone.danger || 0);
   for (let i = 0; i < kinds; i += 1) {
     const cat = i === 0 && pt.lootFirst ? pt.lootFirst : pickType();
-    const key = RESOURCE_KEYS.includes(cat) ? cat : pickSupply(cat, rnd, danger);
+    const key = RESOURCE_KEYS.includes(cat) ? cat : pickSupply(cat, rnd, danger, poi.type);
     const tierMul = (cat === 'part' || cat === 'fabric' ? TIER_AMOUNT[SUPPLIES[key]?.tier || 1] : 1) * (pt.lootAmount?.[cat] ?? (cat.startsWith('med') ? pt.lootAmount?.med ?? 1 : 1));
     const amount = Math.max(1, Math.round((15 + pt.danger * 12) * (0.4 + rnd() * 1.6) * zone.lootMul * (pt.amountMul || 1) * CAT_AMOUNT[cat] * LOOT_AMOUNT_MUL * riskAmountMul(danger) * tierMul));
     resources[key] = (resources[key] || 0) + amount;
@@ -168,11 +176,15 @@ export function stockOf(poi, at = Date.now(), view = null) {
     if (cat === 'part') {
       const extra = (rnd() < PART_EXTRA_KINDS[0] ? 1 : 0) + (rnd() < PART_EXTRA_KINDS[1] ? 1 : 0);
       for (let j = 0; j < extra; j += 1) {
-        const k2 = pickSupply('part', rnd, danger);
+        const k2 = pickSupply('part', rnd, danger, poi.type);
         const a2 = Math.max(1, Math.round(amount * (0.4 + rnd() * 0.5) * (TIER_AMOUNT[SUPPLIES[k2]?.tier || 1] / tierMul || 1)));
         resources[k2] = (resources[k2] || 0) + a2;
       }
     }
+  }
+  // 超市、住宅、學校：有機會找到少量塑膠外殼
+  if (PLASTIC_SPOTS[poi.type] && rnd() < PLASTIC_SPOTS[poi.type]) {
+    resources.plastic = (resources.plastic || 0) + Math.max(1, Math.round((2 + rnd() * 4) * zone.lootMul * riskAmountMul(danger)));
   }
   return {
     resources, itemMul: 0.5 + rnd(), empty: false, gear: pt.itemChance > 0, vehicle: !!pt.loot.vehicle,

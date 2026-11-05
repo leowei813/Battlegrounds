@@ -4538,6 +4538,21 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(NPC_REWARD_MUL === 4, '攻陷獎勵為 4 倍');
 }
 
+// ---- 109. 塑膠外殼較容易取得：出現機率提高、超市／住宅／學校有機會找到、回收站電子零件較多 ----
+{
+  const { pickSupply: ps, PLASTIC_SPOTS: spots } = await import('../src/systems/LootStock.js');
+  const { SUPPLIES: SP } = await import('../src/config/supplies.js');
+  let s1 = 11;
+  const rnd = () => { s1 = (s1 * 16807) % 2147483647; return s1 / 2147483647; };
+  const rate = (type, pred) => { let n = 0; for (let i = 0; i < 6000; i += 1) if (pred(ps('part', rnd, 1, type))) n += 1; return n / 6000; };
+  const elecRec = rate('recycling', (k) => SP[k].tag === 'elec');
+  const elecFac = rate('factory', (k) => SP[k].tag === 'elec');
+  assert(elecRec > elecFac * 1.4, `資源回收站的電子零件比較多（${Math.round(elecRec * 100)}% vs ${Math.round(elecFac * 100)}%）`);
+  const pl = rate('factory', (k) => k === 'plastic');
+  assert(pl > 0.06, `塑膠外殼是常見的零件（${(pl * 100).toFixed(1)}%）`);
+  assert(spots.supermarket > 0 && spots.residential > 0 && spots.school > 0, '超市、住宅、學校有機會找到塑膠外殼');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

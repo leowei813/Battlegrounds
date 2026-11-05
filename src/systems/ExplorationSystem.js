@@ -1112,7 +1112,7 @@ export class ExplorationSystem {
         const pk = this.game.research.bonus('partKindPct');
         if (pk > 0 && !stock.partial && !stock.empty && Object.keys(stock.resources).some((k) => SUPPLIES[k]?.cat === 'part') && chance(pk)) {
           const zone = zoneAt(ctx.poi.lat, ctx.poi.lon);
-          const k = pickSupply('part', Math.random, ctx.pt.danger + Math.max(0, zone.danger || 0));
+          const k = pickSupply('part', Math.random, ctx.pt.danger + Math.max(0, zone.danger || 0), ctx.poi.type);
           stock.resources[k] = (stock.resources[k] || 0) + randInt(2, 6);
         }
         exp.cp = {
