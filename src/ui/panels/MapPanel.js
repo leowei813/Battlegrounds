@@ -804,8 +804,7 @@ export class MapPanel {
     const g = this.game;
     openTeamPicker(this.ui, {
       title: `🧭 探索：${poi.name}`,
-      intro: `<p class="muted">${POI_TYPES[poi.type].name}・危險度 ${stars(g.zombies.areaDanger(poi))}・敵人等級約 Lv${g.zombies.buildingLevel(poi, g.time.phase())}</p>
-        <p class="muted">🔍 基本搜索時間 ${formatDuration(g.exploration.searchMinutes(poi) * 60000)}${g.poiShare.view(poi).left ? '（搜過一部分，只需剩餘的時間）' : ''}（依地點大小與危險度；偵察兵、裝備、研究與隊員人數可縮短）。移動時間依距離、隊員速度與載具另外計算。</p>`,
+      intro: `<p class="muted pk-intro" title="搜索時間依地點大小與危險度；偵察兵、裝備、研究與隊員人數可縮短。移動時間依距離、隊員速度與載具另外計算。">${POI_TYPES[poi.type].name}・危險度 ${stars(g.zombies.areaDanger(poi))}・敵人約 Lv${g.zombies.buildingLevel(poi, g.time.phase())}・🔍 基本搜索 ${formatDuration(g.exploration.searchMinutes(poi) * 60000)}${g.poiShare.view(poi).left ? '（只剩部分）' : ''}</p>`,
       withDuration: true,
       fixedDuration: true,
       vehicles: true,
