@@ -1,5 +1,5 @@
 import {
-  withOwnSeed, withSeed, chance, pick, weightedPick, randFloat, randInt, uid,
+  withOwnSeed, chance, pick, weightedPick, randFloat, randInt, uid,
 } from '../utils/math.js';
 import { SUPPLIES, SUPPLY_KEYS, AMMO_PRICE, AMMO_SELL_MUL } from '../config/supplies.js';
 import {
@@ -23,8 +23,8 @@ export const TRADER = {
 };
 
 /**
- * 黑市：全體玩家共用的 20 格商品，每 10 分鐘輪替其中 1 格（同一時間大家看到的商品相同）。
- * 有人買走後其他人立即看不到（伺服器先到先得）。價格比過去的流浪商人更高。
+ * 黑市：全體玩家共用的 20 格商品，每 10 分鐘全部一起換新（同一時間大家看到的商品相同）。
+ * 有人買走後其他人就買不到（伺服器先到先得）；每位玩家每一輪只能買 1 件。價格比過去的流浪商人更高。
  */
 export const BLACK_MARKET = {
   slots: 20,
@@ -41,11 +41,6 @@ export const BLACK_MARKET = {
   gearLevel: [3, 35],
 };
 
-/**
- * 專屬保留區：每位玩家自己的商品，別人看不到也買不走（存在自己的存檔）。
- * 基本 1 格，研究「黑市商人的厚愛」每級 +1 格；每小時只補貨 1 格（優先補已買走的，否則換最舊的）。
- */
-export const BM_VIP = { baseSlots: 1, refreshMs: 60 * 60 * 1000 };
 
 /** 字串 → 32 位元種子 */
 const seedOf = (str) => parseInt(sha256(str).slice(0, 8), 16) >>> 0;
@@ -62,16 +57,21 @@ export class BlackMarketSystem {
     return Math.floor(now / BLACK_MARKET.rotateMs);
   }
 
-  /** 某一格目前的世代（最近一次換貨的輪替序號） */
+  /** 某一格目前的世代：每 10 分鐘全部一起換新，所以就是目前的輪替序號 */
   genOf(slot, now = Date.now()) {
-    const t = this.tick(now);
-    return t - (((t - slot) % BLACK_MARKET.slots) + BLACK_MARKET.slots) % BLACK_MARKET.slots;
+    void slot;
+    return this.tick(now);
   }
 
-  /** 下一次換貨的時間與格子 */
+  /** 下一次全部換貨的時間 */
   nextRotate(now = Date.now()) {
-    const t = this.tick(now) + 1;
-    return { at: t * BLACK_MARKET.rotateMs, slot: t % BLACK_MARKET.slots };
+    return { at: (this.tick(now) + 1) * BLACK_MARKET.rotateMs };
+  }
+
+  /** 這一輪自己買過的商品編號（每輪只能買 1 件）；沒買過回傳 null */
+  boughtThisRound(now = Date.now()) {
+    const b = this.game.state.bmBought;
+    return b && b.tick === this.tick(now) ? b.id : null;
   }
 
   /** 由（格子, 世代）決定性產生商品：所有玩家看到的完全相同 */
@@ -131,12 +131,13 @@ export class BlackMarketSystem {
     if (!(slot >= 0 && slot < BLACK_MARKET.slots) || this.genOf(slot, now) !== gen) return { ok: false, reason: '這項商品已經下架了' };
     const good = this.good(slot, gen);
     if (this.soldMap()[good.id]) return { ok: false, reason: '已經被其他玩家買走了' };
+    if (this.boughtThisRound(now)) return { ok: false, reason: '這一輪已經買過 1 件了，下次換貨後可以再買' };
     if (g.state.player.coins < good.price) return { ok: false, reason: `金錢不足（需要 💰${good.price}）` };
     if (good.kind === 'gear') {
       if (!g.equipment.fits(good.item, 'store')) return { ok: false, reason: '倉庫空間不足' };
     } else if (g.equipment.supplyRoom(good.key) < good.qty) return { ok: false, reason: '倉庫空間不足' };
     g.state.player.coins -= good.price;
-    const minGen = this.tick(now) - BLACK_MARKET.slots;
+    const minGen = this.tick(now) - 1;
     const r = await g.shared.update('bm', 'sold', (d) => {
       const data = d && typeof d === 'object' && d.sold ? d : { sold: {} };
       if (data.sold[good.id]) return { fail: '已經被其他玩家買走了' };
@@ -149,83 +150,11 @@ export class BlackMarketSystem {
       g.bus.emit('trader:changed');
       return r;
     }
+    g.state.bmBought = { tick: this.tick(now), id: good.id };
     if (good.kind === 'gear') g.equipment.addItem({ ...JSON.parse(JSON.stringify(good.item)), id: uid('it') }, '黑市');
     else g.equipment.addSupplies({ [good.key]: good.qty });
     const name = good.kind === 'gear' ? `「${good.item.name}」` : `${SUPPLIES[good.key].name} ×${good.qty}`;
     g.log(`🕶️ 在黑市買了${name}（💰${good.price}）`, 'loot');
-    g.bus.emit('trader:changed');
-    g.changed?.();
-    return { ok: true, msg: `購買${name}` };
-  }
-
-  // ---------- 專屬保留區 ----------
-
-  /** 專屬保留區格數：基本 1 格＋研究「黑市商人的厚愛」 */
-  vipCount() {
-    return BM_VIP.baseSlots + Math.floor(this.game.research.bonus('bmVipSlots'));
-  }
-
-  vipState() {
-    const st = this.game.state;
-    if (!st.bmVip || !Array.isArray(st.bmVip.slots)) st.bmVip = { slots: [], hour: 0 };
-    return st.bmVip;
-  }
-
-  /** 產生一格專屬商品（使用存檔的隨機種子：重新整理或換裝置看到的都一樣） */
-  newVipSlot(now = Date.now()) {
-    const good = withSeed(this.game.state.rng, 'bmvip', () => this.makeGood(uid('vip'), -1, 0));
-    return { good, sold: false, at: now };
-  }
-
-  /** 下一次要補貨的格子：已買走的優先，否則換最舊的一格 */
-  vipNextIndex() {
-    const slots = this.vipState().slots;
-    const sold = slots.findIndex((x) => x.sold);
-    if (sold >= 0) return sold;
-    let idx = 0;
-    slots.forEach((x, i) => { if ((x.at || 0) < (slots[idx].at || 0)) idx = i; });
-    return idx;
-  }
-
-  /** 更新專屬保留區：補上新解鎖的格子；每過一小時補貨 1 格（離線期間最多補滿全部格子） */
-  updateVip(now = Date.now()) {
-    const v = this.vipState();
-    const n = this.vipCount();
-    const hour = Math.floor(now / BM_VIP.refreshMs);
-    while (v.slots.length < n) v.slots.push(this.newVipSlot(now));
-    if (!v.hour) v.hour = hour;
-    const steps = Math.min(Math.max(0, hour - v.hour), n);
-    for (let i = 0; i < steps; i += 1) {
-      const idx = this.vipNextIndex();
-      v.slots[idx] = this.newVipSlot(now - (steps - 1 - i));
-    }
-    if (hour > v.hour) v.hour = hour;
-    return v.slots;
-  }
-
-  /** 下一次補貨的時間與格子 */
-  nextVip() {
-    const v = this.vipState();
-    return { at: (v.hour + 1) * BM_VIP.refreshMs, slot: this.vipNextIndex() };
-  }
-
-  /** 購買專屬商品（只存在自己的存檔，不需要搶） */
-  buyVip(index, now = Date.now()) {
-    const g = this.game;
-    const slots = this.updateVip(now);
-    const x = slots[Number(index)];
-    if (!x || x.sold) return { ok: false, reason: '這一格已經買過了，等待補貨' };
-    const good = x.good;
-    if (g.state.player.coins < good.price) return { ok: false, reason: `金錢不足（需要 💰${good.price}）` };
-    if (good.kind === 'gear') {
-      if (!g.equipment.fits(good.item, 'store')) return { ok: false, reason: '倉庫空間不足' };
-    } else if (g.equipment.supplyRoom(good.key) < good.qty) return { ok: false, reason: '倉庫空間不足' };
-    g.state.player.coins -= good.price;
-    x.sold = true;
-    if (good.kind === 'gear') g.equipment.addItem({ ...JSON.parse(JSON.stringify(good.item)), id: uid('it') }, '黑市');
-    else g.equipment.addSupplies({ [good.key]: good.qty });
-    const name = good.kind === 'gear' ? `「${good.item.name}」` : `${SUPPLIES[good.key].name} ×${good.qty}`;
-    g.log(`🎩 在黑市專屬保留區買了${name}（💰${good.price}）`, 'loot');
     g.bus.emit('trader:changed');
     g.changed?.();
     return { ok: true, msg: `購買${name}` };
