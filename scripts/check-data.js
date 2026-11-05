@@ -3382,7 +3382,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   s.spawn(Object.keys(BOSSES)[0], true);
   const bz = s.zombies[s.zombies.length - 1];
   const be = gs.combat.createEnemy(bz.enemyId, s.zombieLevel() + 3);
-  assert(Math.abs(bz.maxHp / Math.round(be.maxHp * gs.civilization.siegeHpMul() * SS.bossMul) - 1) < 0.01, '屍潮 Boss 生命另乘 0.5');
+  assert(Math.abs(bz.maxHp / Math.round(be.maxHp * gs.civilization.siegeHpMul() * SS.bossMul * (SS.zombieMul?.hp || 1)) - 1) < 0.01, '屍潮 Boss 生命另乘 0.5');
   s.zombies = [];
   // 天亮結算：城牆 90% → 優秀 ×1.5
   sv.job = 'guard';
@@ -4422,7 +4422,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gr.rally.get(st.id || st.rally?.id || gr.shared.all('rally')[0]?.id)?.status === 'cancelled' || gr.shared.all('rally').every((o) => o.data.status === 'cancelled'), '自己發起的集結會取消');
 }
 
-// ---- 105. 屍潮強度：文明度超過新文明（550）的部分只算一半；屍潮殭屍最高 Lv60 ----
+// ---- 105. 屍潮強度：文明度超過新文明（550）的部分只算一半；屍潮殭屍最高 Lv75 ----
 {
   const gz = Game.newGame({ playerName: 'Z105', classId: 'warrior', lat: 25, lon: 121 });
   gz.state.map.pois = fillPois([], 25, 121);
@@ -4437,7 +4437,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(civ.effective() === 280, '文明度 550 以下不受影響');
   civ.value = () => 5000;
   setHour(gz, 23);
-  assert(gz.siege.of().zombieLevel() === 60, `屍潮殭屍最高 Lv60（${gz.siege.of().zombieLevel()}）`);
+  assert(gz.siege.of().zombieLevel() === 75, `屍潮殭屍最高 Lv75（${gz.siege.of().zombieLevel()}）`);
 }
 
 // ---- 106. 電磁塔、電網每個據點限 1 座；舊存檔多出的拆除並全額退還材料 ----
