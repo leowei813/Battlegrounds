@@ -3659,11 +3659,15 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const helm99 = gc.equipment.generate({ level: 5, type: 'helmet' });
   e2.carried = e2.carried || { gained: {}, items: [], blueprints: [], vehicles: [] };
   e2.carried.items.push(helm99);
+  e2.carried.gained.wood = (e2.carried.gained.wood || 0) + 7777; // 前幾站背著的物資（容易辨識的數量）
+  const wood99 = gc.state.resources.wood;
   ex.update(e2.endAt + 1);
   const rep99 = gc.state.reports[0];
   assert(gc.equipment.items.filter((i) => i.id === helm99.id).length === 1 && !rep99.items.some((i) => i.id === helm99.id) && rep99.events.some((t) => t.includes(helm99.name)), '前幾站背回的裝備入庫一次，最後一站報告不重複列出（事件中說明）');
   assert(!ex.list.includes(e2) && Object.keys(carriedNow).every((k) => !['food', 'wood', 'fuel'].includes(k) || gc.state.resources[k] >= woodBefore * 0 ), '最後一站回到避難所');
-  assert(gc.state.reports[0].events.some((t) => t.includes('背包物資入庫')), '回到避難所時背著的物資入庫');
+  assert(gc.state.reports[0].events.some((t) => t.includes('前幾站背回的物資一起入庫')), '回到避難所時背著的物資入庫');
+  assert((rep99.resources?.wood || 0) < 7777 && gc.state.resources.wood > wood99, `最後一站報告只列這一站的收穫，前幾站背回的物資照樣入庫（報告木材 ${rep99.resources?.wood || 0}）`);
+
   // 負重達 90%：回家卸貨（探索途中可能受傷，先治好）
   const heal = () => { L.severe = false; L.hp = null; L.status = 'idle'; };
   heal();
