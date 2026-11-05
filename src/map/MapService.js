@@ -207,7 +207,8 @@ export class MapService {
   /** 重度感染據點（比巨型據點略大，標示淨化度） */
   renderInfected(list = [], pin = 48) {
     if (!this.map) return;
-    const key = list.map((s) => `${s.id}:${Math.floor(s.purity)}`).join('|');
+    // 位置也列入比對：附近玩家據點載入或新建時，據點會換到不重疊的位置，要跟著重畫
+    const key = list.map((s) => `${s.id}:${Math.floor(s.purity)}:${s.lat.toFixed(6)},${s.lon.toFixed(6)}`).join('|');
     if (key === this.infKey) return;
     this.infKey = key;
     this.layers.infected.clearLayers();

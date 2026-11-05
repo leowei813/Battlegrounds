@@ -46,6 +46,8 @@ export class MapPanel {
   /** 多人資料更新：重畫其他玩家據點 */
   onWorld(players) {
     this.service.renderOthers(players, (id) => this.game.territory.relation(id));
+    // 重度感染據點會避開玩家據點：其他玩家的據點更新後重新計算位置
+    this.service.renderInfected(this.game.infected.list(), INFECTED.pin);
     this.lastOverlay = '';
     if (this.ui.tab === 'map') this.renderOverlay();
   }

@@ -4111,6 +4111,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(c.lv === 5 && c.matKinds === 2 && c.mats === cap * 2, '地窖顯示目前藏起的零件數量');
 }
 
+// ---- 99. 重度感染據點不會和玩家據點重疊（據點建立或附近玩家載入後換位置） ----
+{
+  const { INFECTED } = await import('../src/systems/InfectedSystem.js');
+  const gi = Game.newGame({ playerName: 'I99', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gi.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gi.shelter.establish(gi.state.map.pois[0]);
+  const s0 = gi.infected.list()[0];
+  assert(s0, '附近有重度感染據點');
+  if (s0) {
+    // 其他玩家的據點蓋在感染據點上：感染據點換到不重疊的位置（或這一格沒有據點）
+    gi.world = { others: [{ id: 'P99', bases: [{ lat: s0.lat, lon: s0.lon, alert: 150 }] }] };
+    const s1 = gi.infected.list().find((x) => x.id === s0.id);
+    assert(!s1 || haversine(s1.lat, s1.lon, s0.lat, s0.lon) > 150 + INFECTED.clearM, '重度感染據點避開其他玩家據點與警戒範圍');
+    const near = gi.infected.list().every((x) => gi.state.bases.every((b) => haversine(b.lat, b.lon, x.lat, x.lon) > gi.territory.alertRadius(b) + INFECTED.clearM));
+    assert(near, '重度感染據點避開自己的據點與警戒範圍');
+  }
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
