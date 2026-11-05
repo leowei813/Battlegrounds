@@ -376,7 +376,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   sv.updateVitals(Date.now(), 30 * 60000, 30 * 60000);
   assert(npc.severe && sv.hpOf(npc) === 0, '飢餓持續扣血直到重傷');
   gv.state.supplies.largeKit = 5;
-  assert(!sv.heal(npc.id).ok, '飢餓中無法治療');
+  assert(sv.heal(npc.id).ok && sv.hpOf(npc) > 0, '飢餓時一樣可以治療');
+  sv.updateVitals(Date.now(), 60 * 60000, 60 * 60000);
+  assert(npc.severe && sv.hpOf(npc) === 0, '治療後飢餓仍持續扣血，扣到 0 一樣重傷');
   // 重傷 + 飢餓滿遊戲內 3 天 → 永久死亡（領袖不會死亡）
   sv.becomeSevere(leader, '測試');
   leader.zeroSince = Date.now() - 4 * DAY_REAL_MS;
@@ -4477,6 +4479,45 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const ems = b.defenses.filter((d) => d.type === 'emTower');
   assert(notes.length === 2 && ems.length === 1 && ems[0].level === 5, '舊存檔多出的電磁塔只保留等級最高的一座');
   assert(gd.state.log.some((l) => l.msg.includes('全額退還')), '拆除時記錄並退還材料');
+}
+
+// ---- 107. 全員治療：在家、生命沒滿的人用倉庫藥品從低階開始治療（不溢出、重傷優先）；飢餓時也能治療 ----
+{
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const gh = Game.newGame({ playerName: 'H107', classId: 'warrior', lat: 25, lon: 121 });
+  gh.state.map.pois = fillPois([], 25, 121);
+  gh.shelter.establish(gh.state.map.pois.find((p) => gh.shelter.canEstablish(p).ok));
+  const a = createSurvivor('甲', 'warrior', 10, 'rare');
+  const b = createSurvivor('乙', 'medic', 10, 'rare');
+  const c = createSurvivor('丙', 'scout', 10, 'rare');
+  gh.state.survivors.push(a, b, c);
+  gh.survivors.setHp(a, gh.survivors.maxHp(a) * 0.5);
+  gh.survivors.setHp(b, gh.survivors.maxHp(b) * 0.05);
+  b.severe = true;
+  c.status = 'exploring';
+  gh.survivors.setHp(c, gh.survivors.maxHp(c) * 0.3);
+  Object.keys(gh.state.supplies).forEach((k) => { delete gh.state.supplies[k]; });
+  gh.state.supplies.gauze = 12;
+  gh.state.supplies.bandage = 6;
+  gh.state.supplies.largeKit = 2;
+  gh.state.research.levels = {};
+  gh.research.invalidate();
+  const r = gh.exploration && gh.survivors.healAll();
+  const ha = gh.survivors.hpOf(a) / gh.survivors.maxHp(a);
+  const hb = gh.survivors.hpOf(b) / gh.survivors.maxHp(b);
+  assert(r.ok && r.healed >= 2 && gh.survivors.hpOf(c) / gh.survivors.maxHp(c) < 0.31, `全員治療只治療在家的人（${r.msg || r.reason}）`);
+  assert(hb > 0.3 && !b.severe, `重傷的人優先治療並解除重傷（${Math.round(hb * 100)}%）`);
+  assert(ha <= 1 && gh.survivors.hpOf(a) <= gh.survivors.maxHp(a), '不會溢出');
+  assert((gh.state.supplies.gauze || 0) < 12 && (gh.state.supplies.largeKit || 0) === 2, `先用低階藥品，大型醫藥箱補了會溢出所以沒用（剩 ${gh.state.supplies.largeKit || 0}）`);
+  // 飢餓時也能治療
+  gh.state.resources.food = 0;
+  gh.resources.lastStarvingMs = Date.now();
+  const d = createSurvivor('丁', 'warrior', 10, 'rare');
+  gh.state.survivors.push(d);
+  gh.survivors.setHp(d, gh.survivors.maxHp(d) * 0.2);
+  gh.state.supplies.painkiller = 2;
+  const hs = gh.survivors.heal(d.id);
+  assert(hs.ok, `飢餓時一樣可以治療（${hs.msg || hs.reason}）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

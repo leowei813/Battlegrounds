@@ -217,10 +217,10 @@ export class SurvivorPanel {
     const chip = (id, label) => `<button class="chip ${filter === id ? 'active' : ''}" data-action="svFilter" data-f="${id}">${label}</button>`;
     const recruitN = (st.recruitOffer || []).length + st.recruitPool.length + (st.recruitBoard?.list || []).length;
     const roster = `<aside class="sv-roster">
-      <div class="sv-roster-head"><h3>👥 倖存者 ${list.length}/${g.survivors.housing()}</h3><button class="sv-recruit-chip ${this.view === 'recruit' ? 'on' : ''}" data-action="svRecruit" title="可招募的候選人數">📻 招募 <span class="n">${recruitN}</span></button></div>
+      <div class="sv-roster-head"><h3>👥 倖存者 ${list.length}/${g.survivors.housing()}</h3>${(() => { const n = g.survivors.healableAtHome().length; return `<button class="sv-heal-chip ${n ? '' : 'off'}" data-action="healAll" ${n ? '' : 'disabled'} title="${n ? `用倉庫的藥品，從低階開始治療 ${n} 位在家、生命沒滿的倖存者（不溢出）` : '在家的倖存者生命都是滿的'}">💊 全員治療${n ? ` <span class="n">${n}</span>` : ''}</button>`; })()}<button class="sv-recruit-chip ${this.view === 'recruit' ? 'on' : ''}" data-action="svRecruit" title="可招募的候選人數">📻 招募 <span class="n">${recruitN}</span></button></div>
       ${g.survivors.housing() >= MAX_SURVIVORS && list.length >= MAX_SURVIVORS ? `<div class="sv-max-note">已達最高人數 ${MAX_SURVIVORS} 人（領袖 Lv15、宿舍 Lv7 以上）。宿舍繼續升級可提升休息回復、減少食物消耗、增加招募候選人。</div>` : ''}
       <div class="chips">${chip('all', '全部')}${chip('home', `在家 ${counts.home}`)}${chip('out', `外出 ${counts.out}`)}${chip('hurt', `重傷 ${counts.hurt}`)}</div>
-      ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷，飢餓時無法治療。</div>' : ''}
+      ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷；飢餓時仍可治療，但生命會持續流失。</div>' : ''}
       <div class="sv-mini-grid">${shown.map((sv) => this.rosterCard(sv)).join('') || '<p class="muted">沒有符合的倖存者。</p>'}</div>
     </aside>`;
     const pane = this.view === 'recruit' ? this.recruitHtml() : this.detailBody(this.selId);
@@ -314,6 +314,11 @@ export class SurvivorPanel {
       else this.ui.result(r);
     }
     if (action === 'quickUnequip') this.ui.result(g.equipment.unequipAll(id));
+    if (action === 'healAll') {
+      this.ui.result(g.survivors.healAll());
+      this.ui.refresh(true);
+      return;
+    }
     // 名單卡片上的快速換裝／脫裝：只換裝，不切換右側詳細資料
     if (action === 'miniQuickEquip' || action === 'miniQuickUnequip') {
       const sid = data.id;
@@ -405,7 +410,7 @@ export class SurvivorPanel {
         <div class="grow"><b class="sv-name">${escapeHtml(sv.name)}${sv.isLeader ? ' <small class="tag tag-amber">👑 領袖</small>' : ''}</b>
           <small class="muted block">${sv.isLeader ? '' : rarityTag(sv.rarity)} ${cls.name} Lv${sv.level}・戰力 ${s.power}・成長 ×${g.survivors.growthMul(sv)}${sv.isLeader ? '' : `・平均素質 ${g.survivors.avgQuality(sv)}%`}</small></div>
         ${survivorStatus(g, sv)}
-        ${hurt ? btn('💊 治療', 'healOpen', {}, { cls: 'btn-sm', disabled: starving, title: starving ? '飢餓中無法治療' : '' }) : ''}
+        ${hurt ? btn('💊 治療', 'healOpen', {}, { cls: 'btn-sm', title: starving ? '飢餓中：治療後生命仍會持續流失' : '' }) : ''}
         ${sv.status === 'idle' ? btn('⚡ 快速換裝', 'quickEquip', {}, { cls: 'btn-sm btn-primary', title: '從倉庫與在家隊員的背包，每個部位換上戰力最高的裝備' }) : ''}
         ${sv.status === 'idle' ? btn('🧺 快速脫裝', 'quickUnequip', {}, { cls: 'btn-sm btn-ghost', title: '卸下身上全部裝備放回倉庫（倉庫滿了放自己的背包）', disabled: !SLOT_KEYS.some((k) => sv.equipment[k]) }) : ''}
       </div>
@@ -421,8 +426,8 @@ export class SurvivorPanel {
     }).join('');
     const jobsCard = `<section class="sh-card"><h3>工作指派 <small class="muted">（閒置在避難所時生效）</small></h3><div class="chips">${jobs}</div>${this.jobsHelp(sv)}</section>`;
     const statsCard = `<section class="sh-card"><h3>能力 <small class="muted">${sv.isLeader ? '' : '素質越高，基礎能力與每次升級的成長越多'}</small></h3>${this.abilityRows(sv, s)}<small class="muted">暴傷 +${Math.round((s.critDmg - 1) * 100)}%${s.lifeSteal ? `・吸血 ${(s.lifeSteal * 100).toFixed(1)}%` : ''}${sv.isLeader ? '' : '・素質 100% 以金色顯示，招募時決定、之後不會改變'}</small>
-      ${hurt ? `<div class="heal-box ${sv.severe ? 'warn' : ''}"><div class="row-between">${sv.severe ? '🩸 重傷：無法行動，生命回到 30% 才能脫離' : '🩹 受傷：有診療室或醫生照護時才會慢慢恢復，也可以直接用藥'}${starving ? '<span class="tag tag-red">🍽️ 飢餓中無法治療</span>' : ''}</div>
-      ${starving ? '' : `<div class="label">💊 治療：選擇要使用的藥品</div>${this.medsHtml(sv)}`}</div>` : ''}</section>`;
+      ${hurt ? `<div class="heal-box ${sv.severe ? 'warn' : ''}"><div class="row-between">${sv.severe ? '🩸 重傷：無法行動，生命回到 30% 才能脫離' : '🩹 受傷：有診療室或醫生照護時才會慢慢恢復，也可以直接用藥'}${starving ? '<span class="tag tag-red">🍽️ 飢餓中：生命會持續流失</span>' : ''}</div>
+      <div class="label">💊 治療：選擇要使用的藥品</div>${this.medsHtml(sv)}</div>` : ''}</section>`;
     const gearCard = `<section class="sh-card"><h3>裝備</h3>${this.gearGrid(sv)}${this.supplyHtml(sv)}</section>`;
     const bagCard = `<section class="sh-card">${this.bagHtml(sv)}</section>`;
     const skills = cls.skills.map((sk, i) => {
@@ -483,7 +488,7 @@ export class SurvivorPanel {
       const sv = g.survivors.get(id);
       if (!sv) return '<p class="muted">找不到倖存者</p>';
       return `${hpBar(g, sv)}
-        ${g.survivors.isStarving() ? '<p class="tag tag-red">🍽️ 飢餓中無法治療，請先補充食物</p>' : this.medsHtml(sv)}`;
+        ${g.survivors.isStarving() ? '<p class="tag tag-red">🍽️ 飢餓中：治療後生命仍會持續流失，請盡快補充食物</p>' : ''}${this.medsHtml(sv)}`;
     };
     this.ui.modal.open({
       title: `💊 治療：${escapeHtml(g.survivors.get(id)?.name || '')}`,

@@ -432,14 +432,14 @@ export class SurvivorSystem {
   }
 
   /**
-   * 使用藥品治療：依藥品回復不同比例的生命（大型醫藥箱 100%）；飢餓中無法治療。
+   * 使用藥品治療：依藥品回復不同比例的生命（大型醫藥箱 100%）；飢餓時也可以治療（生命會持續流失）。
    * 先用隊員自己背包裡的，再用倉庫的（倉庫需在避難所）。研究「藥品節約」有機率不消耗。
    * @param {string} [key] 藥品；未指定時用最小但足以補滿（或回復量最高）的藥品
    */
   heal(id, key = null) {
     const sv = this.get(id);
     if (!sv) return { ok: false, reason: '找不到倖存者' };
-    if (this.isStarving()) return { ok: false, reason: '飢餓中無法治療，請先補充食物' };
+    // 飢餓時一樣可以治療（生命會持續流失，扣到 0 一樣會重傷）
     const max = this.maxHp(sv);
     const lost = max - this.hpOf(sv);
     if (lost <= 0) return { ok: false, reason: '生命已滿' };
@@ -459,6 +459,60 @@ export class SurvivorSystem {
     sv.zeroSince = 0;
     this.game.state.stats.healed = (this.game.state.stats.healed || 0) + 1;
     return { ok: true, msg: `${sv.name} 使用${med.name}恢復了生命${saved ? '（藥品節約：沒有消耗）' : ''}${sv.severe ? '' : '，已可行動'}` };
+  }
+
+  /** 在家、生命沒滿、可以接受治療的倖存者（全員治療用） */
+  healableAtHome() {
+    return this.list.filter((sv) => this.atShelter(sv) && sv.status !== 'exploring' && this.hpOf(sv) < this.maxHp(sv) - 0.5);
+  }
+
+  /**
+   * 全員治療：在家、生命沒滿的倖存者（重傷優先，其次生命比例低的），用倉庫的藥品從低階開始治療，
+   * 只用補上去不會超過生命上限的藥品（不溢出）；缺口比最小的藥品還少時就停止。
+   * @returns {{ok:boolean, msg?:string, reason?:string, healed?:number, used?:Record<string,number>}}
+   */
+  healAll() {
+    const st = this.game.state;
+    const list = this.healableAtHome()
+      .sort((a, b) => (b.severe ? 1 : 0) - (a.severe ? 1 : 0) || this.hpOf(a) / this.maxHp(a) - this.hpOf(b) / this.maxHp(b));
+    if (!list.length) return { ok: false, reason: '在家的倖存者生命都是滿的' };
+    // 低階到高階：依回復比例由小到大
+    const keys = suppliesOf('med').filter((k) => SUPPLIES[k]?.heal > 0).sort((a, b) => SUPPLIES[a].heal - SUPPLIES[b].heal);
+    if (!keys.some((k) => (st.supplies?.[k] || 0) > 0)) return { ok: false, reason: '倉庫沒有藥品' };
+    const save = Math.min(0.5, this.game.research.bonus('healCostReduce'));
+    const used = {};
+    const recovered = [];
+    let healed = 0;
+    list.forEach((sv) => {
+      const max = this.maxHp(sv);
+      let touched = false;
+      for (let guard = 0; guard < 200; guard += 1) {
+        const lost = max - this.hpOf(sv);
+        const key = keys.find((k) => (st.supplies?.[k] || 0) > 0 && this.healAmount(sv, k) <= lost + 0.5);
+        if (!key) break;
+        if (!chance(save)) {
+          st.supplies[key] -= 1;
+          if (st.supplies[key] <= 0) delete st.supplies[key];
+          used[key] = (used[key] || 0) + 1;
+        }
+        this.setHp(sv, Math.min(max, this.hpOf(sv) + this.healAmount(sv, key)));
+        touched = true;
+      }
+      if (!touched) return;
+      healed += 1;
+      sv.zeroSince = 0;
+      if (sv.severe && this.hpOf(sv) >= max * VITALS.severeRecoverRatio) {
+        sv.severe = false;
+        recovered.push(sv.name);
+      }
+      this.game.state.stats.healed = (this.game.state.stats.healed || 0) + 1;
+    });
+    if (!healed) return { ok: false, reason: '沒有不會溢出的藥品可用（缺的生命比最小的藥品還少，或藥品不夠）' };
+    const usedText = Object.entries(used).map(([k, n]) => `${SUPPLIES[k].icon}${SUPPLIES[k].name} ×${n}`).join('、') || '（藥品節約：沒有消耗）';
+    return {
+      ok: true, healed, used,
+      msg: `💊 全員治療：${healed} 位倖存者恢復生命，用掉 ${usedText}${recovered.length ? `（${recovered.join('、')} 已可行動）` : ''}`,
+    };
   }
 
   setJob(id, job) {
