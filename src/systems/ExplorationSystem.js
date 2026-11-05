@@ -1325,7 +1325,6 @@ export class ExplorationSystem {
     const prev = exp.carried;
     if (prev) {
       Object.entries(prev.gained || {}).forEach(([k, v]) => { gained[k] = (gained[k] || 0) + v; });
-      cp.items.unshift(...(prev.items || []));
       cp.blueprints.unshift(...(prev.blueprints || []));
       cp.vehicles.unshift(...(prev.vehicles || []));
       const list = Object.entries(gained).map(([k, v]) => `${lootLabel(k)}×${v}`).join('、');
@@ -1340,6 +1339,13 @@ export class ExplorationSystem {
       const kept = Object.values(leftovers).reduce((sum, v) => sum + v, 0) - lost;
       Object.entries(leftovers).forEach(([k, v]) => { report.resources[k] = (report.resources[k] || 0) + v; });
       report.events.push(`📦 倉庫已滿：${kept} 個物資由隊員放進背包${lost ? `，${lost} 個帶不走被留下` : ''}`);
+    }
+    // 前幾站背著的裝備：前幾站的報告已經列過，這裡只在事件中說明入庫結果（不重複列在收穫裡）
+    const prevItems = prev?.items || [];
+    if (prevItems.length) {
+      const kept = prevItems.filter((it) => this.game.equipment.addItem(it, '探索', members));
+      const lostItems = prevItems.filter((it) => !kept.includes(it));
+      report.events.push(`🎒 前幾站背回的裝備入庫：${kept.map((it) => `「${it.name}」`).join('、') || '（沒有）'}${lostItems.length ? `；空間不足帶不回來：${lostItems.map((it) => `「${it.name}」`).join('、')}` : ''}`);
     }
     report.items = cp.items.filter((it) => {
       const ok = this.game.equipment.addItem(it, '探索', members);
@@ -1364,14 +1370,17 @@ export class ExplorationSystem {
     exp.carried = null;
     const take = Object.fromEntries(Object.entries(c.gained || {}).map(([k, v]) => [k, Math.floor(v * keep)]).filter(([, v]) => v > 0));
     const got = this.game.grant(take);
-    const items = keep >= 1 ? (c.items || []) : (c.items || []).filter(() => Math.random() < keep);
-    items.forEach((it) => this.game.equipment.addItem(it, '探索', members));
+    const all = c.items || [];
+    const items = keep >= 1 ? all : all.filter(() => Math.random() < keep);
+    const kept = items.filter((it) => this.game.equipment.addItem(it, '探索', members));
+    const dropped = all.filter((it) => !kept.includes(it));
+    const itemNote = all.length ? `；裝備：${kept.map((it) => `「${it.name}」`).join('、') || '（沒有）'}${dropped.length ? `，遺失或放不下：${dropped.map((it) => `「${it.name}」`).join('、')}` : ''}` : '';
     (c.vehicles || []).forEach((v) => this.game.vehicles.add(v, '探索'));
     this.game.state.inventory.blueprints.push(...(c.blueprints || []));
     const list = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${lootLabel(k)}×${v}`).join('、');
     return keep >= 1
-      ? `🎒 先前地點取得的物資帶回避難所：${list || '（沒有物資）'}`
-      : `🎒 被擊敗時掉了一部分背著的物資，帶回避難所：${list || '（沒有物資）'}`;
+      ? `🎒 先前地點取得的物資帶回避難所：${list || '（沒有物資）'}${itemNote}`
+      : `🎒 被擊敗時掉了一部分背著的物資，帶回避難所：${list || '（沒有物資）'}${itemNote}`;
   }
 
   /** 探索完一個地點：經驗、建築剩餘物資、統計 */

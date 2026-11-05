@@ -3634,7 +3634,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(rep1?.carried && rep1.events.some((t) => t.includes('直接前往')), '探索報告寫出背包還有空間、直接前往下一個地點');
   // 回到避難所：背著的物資一起入庫
   const carriedNow = { ...(e2.carried?.gained || {}) };
+  // 前一站撿到、背在身上的裝備：回家後入庫一次，最後一站的報告不重複列在收穫裡
+  const helm99 = gc.equipment.generate({ level: 5, type: 'helmet' });
+  e2.carried = e2.carried || { gained: {}, items: [], blueprints: [], vehicles: [] };
+  e2.carried.items.push(helm99);
   ex.update(e2.endAt + 1);
+  const rep99 = gc.state.reports[0];
+  assert(gc.equipment.items.filter((i) => i.id === helm99.id).length === 1 && !rep99.items.some((i) => i.id === helm99.id) && rep99.events.some((t) => t.includes(helm99.name)), '前幾站背回的裝備入庫一次，最後一站報告不重複列出（事件中說明）');
   assert(!ex.list.includes(e2) && Object.keys(carriedNow).every((k) => !['food', 'wood', 'fuel'].includes(k) || gc.state.resources[k] >= woodBefore * 0 ), '最後一站回到避難所');
   assert(gc.state.reports[0].events.some((t) => t.includes('背包物資入庫')), '回到避難所時背著的物資入庫');
   // 負重達 90%：回家卸貨（探索途中可能受傷，先治好）
