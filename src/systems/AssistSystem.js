@@ -15,6 +15,9 @@ export const ASSIST_DAY_STAY_MS = 60 * 60 * 1000;
 const UNIT_CAP = { hp: 20000, atk: 3000, def: 2000 };
 const clampNum = (v, min, max, d = min) => (Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d);
 
+/** 協防隊回家後多久內收到的戰果還會補進協防報告 */
+const PATCH_KEEP_MS = 12 * 3600000;
+
 /**
  * 友好玩家的屍潮協防：
  *  - 主要據點正在被屍潮攻擊時，公開資料會附上屍潮狀況，友好玩家可以即時看到。
@@ -323,10 +326,14 @@ export class AssistSystem {
     };
   }
 
-  /** 協防隊已經回家後才收到的戰果：補進那份協防報告（只補最近一份還在等待戰果的） */
+  /**
+   * 協防隊已經回家後才收到的戰果：補進最近一份給這位玩家的協防報告。
+   * 同一趟協防可能同時有屍潮與 NPC／玩家攻打，每一種戰果都會補上（同一段文字不重複）。
+   */
   patchReport(playerId, text, kills = 0) {
-    const rep = (this.game.state.reports || []).find((rp) => rp.assistPlayerId === playerId && rp.assistPending);
-    if (!rep) return false;
+    const now = Date.now();
+    const rep = (this.game.state.reports || []).find((rp) => rp.assistPlayerId === playerId && (rp.assistPending || now - (rp.at || 0) < PATCH_KEEP_MS));
+    if (!rep || rep.events.includes(text)) return false;
     rep.assistPending = false;
     const i = rep.events.findIndex((e) => e.startsWith('🛡️ 對方尚未回報戰果'));
     if (i >= 0) rep.events.splice(i, 1, text);

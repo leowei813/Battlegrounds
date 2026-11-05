@@ -4067,7 +4067,10 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(rep.success && rep.events.some((e) => e.includes('對方尚未回報戰果')) && !rep.events.some((e) => e.includes('沒有收穫')), '召回的協防隊使用協防報告（不再寫「這趟沒有收穫」）');
   ga.state.reports = [rep, ...(ga.state.reports || [])];
   assert(ga.assist.patchReport('P96', '🛡️ 協防「胖胖」戰報：擊殺 12 隻；✅ 成功守住', 12) && rep.events.some((e) => e.includes('成功守住')) && !rep.events.some((e) => e.includes('尚未回報')) && rep.kills === 12, '回家後收到的協防戰果補進報告');
-  assert(!ga.assist.patchReport('P96', 'x', 1), '同一份報告只補一次');
+  assert(!ga.assist.patchReport('P96', '🛡️ 協防「胖胖」戰報：擊殺 12 隻；✅ 成功守住', 12), '同一段戰果不會重複補上');
+  // 同一趟協防同時有屍潮與 NPC 攻打：之後收到的 NPC 戰果也會補進同一份報告
+  const npcText = '🛡️ 協防「胖胖」戰報：抵禦 NPC「禿鷹隊」的攻打，你的協防隊擊倒 3 人；✅ 成功守住';
+  assert(ga.assist.patchReport('P96', npcText, 3) && rep.events.includes(npcText) && rep.events.some((e) => e.includes('擊殺 12 隻')) && rep.events[rep.events.length - 1].includes('回到避難所'), '屍潮與 NPC 的協防戰果都會出現在協防報告裡');
 }
 
 // ---- 97. 戰鬥明細跟著探索報告、避難所紀錄與事件紀錄保存 ----
