@@ -198,6 +198,33 @@ export class RallySystem {
     return { ok: true, msg: r.data.owner === me ? '已取消集結' : '已退出集結' };
   }
 
+  /**
+   * 自動回家：退出集結。還沒出發時直接留在避難所；已經出發、還沒交戰時，自己的隊伍退出這場集結並從目前位置走回避難所
+   * （其他玩家的隊伍照常進行）。已經交戰完的照常回家。
+   * @returns {boolean} 是否召回
+   */
+  withdraw(exp, at = Date.now()) {
+    const g = this.game;
+    const d = this.get(exp.rallyId);
+    if (!d || exp.recalled || exp.rallyResult) return false;
+    const me = this.myId();
+    if (d.status === 'gathering') {
+      this.leave(exp.rallyId).catch(() => {});
+      if (g.state.expeditions.includes(exp)) this.abort(exp);
+      return true;
+    }
+    if (d.status !== 'departed') return false;
+    g.shared.update('rally', exp.rallyId, (x) => {
+      if (!x || x.status !== 'departed') return { fail: 'done' };
+      x.teams = (x.teams || []).filter((t) => t.player !== me);
+      return { data: x };
+    }).catch(() => {});
+    if (!g.exploration.turnBack(exp, at)) return false;
+    exp.recalled = true;
+    exp.travelEvents = [...(exp.travelEvents || []), '🏠 19:00 自動回家：隊伍退出集結，折返避難所'];
+    return true;
+  }
+
   /** 還沒出發就結束：隊員直接留在避難所 */
   abort(exp) {
     const g = this.game;
@@ -242,7 +269,7 @@ export class RallySystem {
         });
       } else if ((d.status === 'departed' && now >= d.fightAt) || (d.status === 'resolving' && now - (d.lockAt || 0) > LOCK_MS)) {
         await this.resolve(exp.rallyId, now);
-      } else if (d.status === 'done' && !exp.rallyResult) {
+      } else if (d.status === 'done' && !exp.rallyResult && !exp.recalled) {
         exp.rallyResult = d.result?.teams?.[this.myId()] || { units: [], coins: 0, items: [], mats: {} };
         exp.rallySummary = d.result?.summary || '';
         exp.rallyVictory = !!d.result?.victory;
@@ -386,7 +413,7 @@ export class RallySystem {
     });
     report.resources = g.grant({ ...(r.mats || {}), coins: r.coins || 0 });
     if (exp.rallyVictory) g.state.stats.battlesWon += 1;
-    else g.state.stats.battlesLost += 1;
+    else if (!exp.recalled) g.state.stats.battlesLost += 1;
     return report;
   }
 
