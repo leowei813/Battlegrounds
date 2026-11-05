@@ -71,11 +71,11 @@ const isBasicBuild = (k) => SUPPLIES[k]?.tag === 'struct' && SUPPLIES[k].tier <=
 /** 第 1 階（基礎消耗性）零件與布料的出現機率倍率 */
 const BASIC_TIER_BOOST = 1.6;
 /** 塑膠外殼的出現機率倍率（霰彈、建築都會用到，原本太難取得） */
-const PLASTIC_BOOST = 2;
+const PLASTIC_BOOST = 1.5;
 /** 資源回收站：電子零件（電線、燈泡、塑膠外殼、電池…）的出現機率倍率 */
 const RECYCLING_ELEC_BOOST = 2;
 /** 這些常見地點本身不太出零件，但每次有機會找到少量塑膠外殼 */
-export const PLASTIC_SPOTS = { supermarket: 0.45, residential: 0.35, school: 0.45 };
+export const PLASTIC_SPOTS = { supermarket: 0.15, residential: 0.1, school: 0.15 };
 /** 找到零件時額外多找到 1、2 種零件的機率 */
 const PART_EXTRA_KINDS = [0.6, 0.3];
 
