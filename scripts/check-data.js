@@ -1778,6 +1778,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const lead = A.survivors.leader();
   const st = await A.rally.start(target, 5, [lead.id]);
   assert(st.ok && lead.status === 'exploring', `發起集結，自己的隊伍加入（${st.reason || ''}）`);
+  {
+    const ex0 = A.rally.trips()[0];
+    const dd = A.rally.get(st.id);
+    assert(ex0 && dd && ex0.startAt === dd.departAt && ex0.startAt > Date.now() + 60000, '發起集結後隊伍等到倒數結束才出發（不會馬上出發）');
+  }
   assert(!(await A.rally.start(target, 5, [])).ok, '同時只能發起一個集結');
   await B.shared.poll();
   B.rally.lastAt = 0;
@@ -1786,8 +1791,22 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const C = mk('C');
   await C.shared.poll();
   assert(!C.rally.invites().length && !(await C.rally.join(st.id, [C.survivors.leader().id])).ok, '不是好友不能參加');
+  // 加入時共用資料還是舊的（名單裡還沒有自己）：隊伍不會被誤判成被移出而回家
+  const staleRally = JSON.parse(JSON.stringify(B.shared.get('rally', st.id)));
   const jb = await B.rally.join(st.id, [B.survivors.leader().id]);
   assert(jb.ok, `好友參加集結（${jb.reason || ''}）`);
+  {
+    const realRally = B.shared.get('rally', st.id);
+    const key = [...B.shared.cache.keys()].find((k) => B.shared.cache.get(k) === realRally || (B.shared.cache.get(k)?.data === realRally));
+    const exB = B.rally.trips()[0];
+    if (key) {
+      const saved = B.shared.cache.get(key);
+      B.shared.cache.set(key, saved?.data ? { ...saved, data: staleRally } : staleRally);
+      await B.rally.step(exB, Date.now());
+      assert(B.state.expeditions.includes(exB), '加入集結後即使資料還沒更新，隊伍也不會回家');
+      B.shared.cache.set(key, saved);
+    } else assert(!!exB, '加入集結後隊伍在集結中');
+  }
   // 滿員立即出發；A 之後離線
   await A.shared.poll();
   await A.rally.step(A.rally.trips()[0], Date.now());

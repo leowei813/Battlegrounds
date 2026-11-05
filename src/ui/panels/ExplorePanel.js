@@ -29,7 +29,7 @@ export class ExplorePanel {
         <div class="row-between"><b>${poi ? poi.icon || POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.kind === 'raid' ? '<span class="tag tag-red">⚔️ 攻打</span>' : ex.kind === 'intercept' ? '<span class="tag tag-red">⚔️ 攔截</span>' : ex.kind === 'hunt' ? '<span class="tag tag-red">🧟 獵殺</span>' : ex.kind === 'infect' ? '<span class="tag tag-red">☣️ 淨化</span>' : ex.kind === 'rally' ? '<span class="tag tag-blue">📡 集結</span>' : ''}${ex.defeated ? '<span class="tag tag-red">🏳️ 撤回中</span>' : ex.recalled ? '<span class="tag">↩️ 召回中</span>' : ''}${(ex.vehicleIds || []).length ? `<span class="tag">${ex.vehicleIds.map((id) => { const v = g.vehicles.get(id); return v ? VEHICLES[v.type].icon : ''; }).join('')}</span>` : ''}${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
         <div class="muted">隊員：${names}・搜索 ${ex.durationMin} 分鐘</div>
         ${this.progressHtml(ex, now)}
-        ${timerBar(ex.startAt, ex.endAt, now)}
+        ${ex.kind === 'rally' && !ex.rallyResult ? '' : timerBar(ex.startAt, ex.endAt, now)}
         ${this.checkpointHtml(ex)}
         ${(ex.travelEvents || []).length ? `<ul class="event-list">${ex.travelEvents.slice(-3).map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul>` : ''}
         <div class="btn-row">${btn('🗺️ 在地圖上追蹤', 'track', { id: ex.id }, { cls: 'btn-sm btn-primary' })}${g.exploration.canRecall(ex, now) ? btn('召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' }) : ''}</div>
@@ -54,7 +54,9 @@ export class ExplorePanel {
     // 只顯示整體進度（不顯示前往／搜索／返程階段）
     return `<div class="row-between exp-stats">
         <span>${p.totalM ? `📏 已移動 <b>${km(p.movedM)}</b> / ${km(p.totalM)}` : ''}</span>
-        <span>⏱ 剩餘 <b>${formatDuration(p.remainingMs)}</b></span>
+        <span>${ex.kind === 'rally' && !ex.rallyResult && !ex.recalled
+    ? (now < ex.startAt ? `📡 集結中・<b>${formatDuration(ex.startAt - now)}</b> 後出發` : p.phase === 'outbound' ? `⏱ 剩 <b>${formatDuration(p.phaseRemainingMs)}</b> 抵達` : '⚔️ 交戰中，等待結果')
+    : `⏱ 剩餘 <b>${formatDuration(p.remainingMs)}</b>`}</span>
       </div>
       ${p.phase !== 'searching' && this.game.state.map.zombieGroups.length ? '<div class="tag tag-red">🌙 夜間移動中：經過殭屍群附近可能遇襲</div>' : ''}`;
   }
