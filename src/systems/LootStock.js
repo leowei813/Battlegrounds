@@ -129,7 +129,7 @@ export const riskAmountMul = (risk) => Math.min(0.9, Math.max(0.45, 0.45 + 0.06 
 
 /**
  * 地點目前的物資（v10：所有玩家共用）。已被搜空回傳空物資；搜過一部分時回傳剩下的部分（並標記 partial）。
- * 物資依「地點 ID + 世代」產生：搜空 3 小時後換下一個世代、重新產生。
+ * 物資依「地點 ID + 世代」產生：搜空一段時間後換下一個世代、重新產生。
  * resources 的鍵為基本資源或具體的材料物品（例如 nail、bandage）。
  * @param {{gen:number, empty:boolean, left:{res:object}|null}} [view] PoiShareSystem.view() 的結果；沒有時視為第 0 世代、沒被搜過
  * @returns {{resources: Record<string, number>, itemMul:number, empty:boolean, partial?:boolean, gear:boolean, vehicle:boolean}}

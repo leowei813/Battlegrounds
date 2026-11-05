@@ -726,7 +726,7 @@ export class NpcSystem {
       if (!poi || view.empty) return;
       const stock = stockOf(poi, at, view);
       this.addResources(n, Object.fromEntries(Object.entries(stock.resources).map(([k, v]) => [k, Math.round(v * 0.6)])));
-      // NPC 探索過的建築（自己的地圖）：3 小時內沒有物資
+      // NPC 探索過的建築（自己的地圖）：恢復時間內沒有物資
       this.game.poiShare.markNpc(poi, at + (trip.searchMs || 0), n.name);
       this.game.bus.emit('map:changed');
     }

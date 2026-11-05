@@ -4,12 +4,12 @@
  *  - 同一時間只有一支隊伍在探索；依「抵達時間」決定先後（不是誰先按出發），離線也照抵達時間計算。
  *  - 晚到的隊伍會自動前往佇列的下一個地點（沒有就回家）。
  *  - 探索到一半離開：下一位從剩下的檢核點繼續，只拿得到剩下的物資。
- *  - 全部搜完或物資被拿光：已搜空，3 小時後恢復（物資重新產生）。
+ *  - 全部搜完或物資被拿光：已搜空，90 分鐘後恢復（物資重新產生）。
  * NPC 的探索只影響自己的地圖（NPC 隊伍由各玩家各自模擬）。
  */
 export const POI_SHARE = {
   /** 搜空後多久恢復 */
-  recoverMs: 3 * 3600000,
+  recoverMs: 90 * 60000,
   /** 同步範圍（公里） */
   km: 3,
   /** 佔用紀錄離開後保留多久（避免時間誤差） */
@@ -44,7 +44,7 @@ export class PoiShareSystem {
     return this.game.shared?.get('poi', poiId) || null;
   }
 
-  /** 紀錄在 at 時的世代與是否搜空（搜空 3 小時後恢復成新的一輪） */
+  /** 紀錄在 at 時的世代與是否搜空（搜空 90 分鐘後恢復成新的一輪） */
   static genOf(d, at) {
     const g = d?.g || 0;
     if (d?.e && at >= d.e + POI_SHARE.recoverMs) return { gen: g + 1, emptyAt: 0 };
@@ -155,7 +155,7 @@ export class PoiShareSystem {
     return this.write(poi, apply);
   }
 
-  /** NPC 搜過（只在自己的地圖）：3 小時內不能探索 */
+  /** NPC 搜過（只在自己的地圖）：恢復時間內不能探索 */
   markNpc(poi, at, name) {
     poi.lootedDay = at;
     poi.lootedBy = { kind: 'npc', name, day: at };
