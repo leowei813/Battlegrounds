@@ -453,10 +453,12 @@ export class UIManager {
 
   showRates() {
     const { gross, upkeep, net } = this.game.resources.rates();
-    const rows = Object.keys(net).map((k) => `<tr><td>${metaOf(k).icon} ${metaOf(k).name}</td><td>+${gross[k].toFixed(1)}</td><td>-${upkeep[k].toFixed(1)}</td><td class="${net[k] < 0 ? 'neg' : 'pos'}">${net[k].toFixed(1)}</td></tr>`).join('');
+    const cel = this.game.shelter.cellarStatus();
+    const rows = Object.keys(net).map((k) => `<tr><td>${metaOf(k).icon} ${metaOf(k).name}</td><td>+${gross[k].toFixed(1)}</td><td>-${upkeep[k].toFixed(1)}</td><td class="${net[k] < 0 ? 'neg' : 'pos'}">${net[k].toFixed(1)}</td>${cel.lv ? `<td>${cel.res[k] != null ? formatNumber(cel.res[k]) : ''}</td>` : ''}</tr>`).join('');
     this.modal.open({
       title: '📊 每小時產出',
-      body: `<table class="table"><thead><tr><th>資源</th><th>產出</th><th>消耗</th><th>淨值</th></tr></thead><tbody>${rows}</tbody></table>
+      body: `<table class="table"><thead><tr><th>資源</th><th>產出</th><th>消耗</th><th>淨值</th>${cel.lv ? '<th>🕳️ 地窖</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
+        ${cel.lv ? `<p class="muted">🕳️ 地窖 Lv${cel.lv}：已藏起的數量不會被搶走或損失（每種最多 ${formatNumber(cel.cap)}）・金錢藏起 ${formatNumber(cel.coins)}/${formatNumber(cel.coinCap)}・零件與布料每種最多 ${cel.matCap}</p>` : '<p class="muted">🕳️ 還沒有地窖：被攻破時所有資源都可能被搶走。</p>'}
         <p class="muted">資源上限：${this.game.resources.storageCap()}（升級倉庫提高）。離線最多累積 24 小時收益。</p>`,
     });
   }

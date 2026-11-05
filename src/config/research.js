@@ -114,7 +114,6 @@ export const RESEARCH = {
   i_shelves: r('industry', 1, '物品倉儲', '物品倉庫的格子增加', { storeSlots: 7 }),
   i_salvage: r('industry', 1, '拆解回收', '拆解裝備獲得的材料提升', { dismantlePct: 0.08 }),
   i_trade: r('trade', 1, '以物易物', '賣給黑市獲得的金錢提升', { sellPct: 0.05 }),
-  t_bm_vip: r('trade', 2, '黑市商人的厚愛', '黑市專屬保留區格子 +1（只有你看得到、只有你能買）', { bmVipSlots: 1 }, { max: 4, req: [['i_trade', 1]] }),
   i_gen: r('industry', 2, '發電效率', '發電機的生產加成提升', { generatorPct: 0.05 }, { req: [['i_work', 2]] }),
   i_genfuel: r('industry', 2, '節能', '發電機耗油減少', { generatorFuelReduce: 0.05 }, { req: [['i_gen', 1]] }),
   i_build: r('industry', 2, '建築學', '建造與升級費用降低', { buildCostReduce: 0.02 }),
@@ -164,8 +163,7 @@ export const requiredLabLevel = (tier) => tier * 2 - 1;
 export const labLevelFor = (id, level) => Math.max(requiredLabLevel(RESEARCH[id].tier), RESEARCH[id].labReq ? RESEARCH[id].labReq[level - 1] || 0 : level);
 
 /** 研究到第 level 級的費用 */
-export function researchCost(id, level) {
-  const def = RESEARCH[id];
+export function researchCost(id, level, def = RESEARCH[id]) {
   const amount = TIER_AMOUNT[def.tier] * def.costMul * costCurve(level, 1.6) * hardMul(level, HARD_PLAIN);
   // 金屬／布料／藥品換算成具體零件與布料：研究階級越高、等級越高，需要越高階的材料（數量成長較慢）
   const matAmount = TIER_AMOUNT[def.tier] * def.costMul * costCurve(level, 1.25) * hardMul(level, HARD_MAT);
@@ -201,7 +199,7 @@ const LABELS = {
   starveResist: (v) => `飢餓扣血 −${pct(v)}`, foodPct: (v) => `食物 +${pct(v)}`, lumberPct: (v) => `伐木場產量 +${pct(v)}`, lumberFlat: (v) => `每級伐木場木材 +${v.toFixed(1)}/時`,
   foodUpkeepReduce: (v) => `食物消耗 −${pct(v)}`, forageAdd: (v) => `探索食物 +${pct(v)}`, fuelPerHour: (v) => `燃料 +${v.toFixed(1)}/時`,
   farmFlat: (v) => `每級農場食物 +${v.toFixed(1)}/時`, workbenchPct: (v) => `工作台產量 +${pct(v)}`, storagePct: (v) => `消耗品上限 +${pct(v)}`,
-  bmVipSlots: (v) => `專屬保留區 +${Math.floor(v)} 格`, dismantlePct: (v) => `拆解材料 +${pct(v)}`, sellPct: (v) => `商人回收價 +${pct(v)}`, generatorPct: (v) => `發電加成 +${pct(v)}`,
+dismantlePct: (v) => `拆解材料 +${pct(v)}`, sellPct: (v) => `商人回收價 +${pct(v)}`, generatorPct: (v) => `發電加成 +${pct(v)}`,
   generatorFuelReduce: (v) => `發電耗油 −${pct(v)}`, buildCostReduce: (v) => `建造費用 −${pct(v)}`, buildTimeReduce: (v) => `建造時間 −${pct(v)}`,
   queueSlots: (v) => `探索佇列 +${Math.round(v)}`, partKindPct: (v) => `多找到一種零件 ${pct(v)}`, exploreSpeed: (v) => `探索速度 +${pct(v)}`, lootPct: (v) => `探索物資 +${pct(v)}`, carryPct: (v) => `徒步運載 +${pct(v)}`,
   nightPenaltyReduce: (v) => `夜間懲罰 −${pct(v)}`, ambushReduce: (v) => `遇襲機率 −${pct(v)}`, itemFindPct: (v) => `裝備掉落 +${pct(v)}`,
@@ -225,6 +223,11 @@ export function effectText(id, level) {
 }
 
 /** 舊版（v4 以前）研究 → 新科技與等級 */
+/** 已移除的研究（只用來計算退還材料，不會出現在研究頁） */
+export const REMOVED_RESEARCH = {
+  t_bm_vip: r('trade', 2, '黑市商人的厚愛', '（已移除）', {}, { max: 4 }),
+};
+
 export const LEGACY_RESEARCH = {
   wpn1: ['w_atk', 3], wpn2: ['w_crit', 3], wpn3: ['w_critdmg', 3], wpn4: ['w_atk', 6],
   def1: ['d_mg', 1], def2: ['d_flame', 1], def3: ['d_em', 1], def4: ['d_tower', 4],

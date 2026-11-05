@@ -1097,11 +1097,32 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .need.prev { background: #1e3a5f; color: #90caf9; }
 .heal-tag { font-size: 11px; border-radius: 6px; padding: 0 6px; background: #2e7d3233; color: #a5d6a7; margin-left: auto; white-space: nowrap; }
 .sv-max-note { background: #263238; border-left: 4px solid #ffb300; border-radius: 8px; padding: 6px 10px; font-size: 12px; margin: 4px 0 8px; }
-/* 黑市專屬保留區 */
-.bm-vip { border: 1px solid #ab47bc88; background: linear-gradient(180deg, #2a1d33, transparent); border-radius: 12px; padding: 10px 12px; margin: 8px 0 12px; }
-.bm-vip h4 { margin: 0; }
-.vip-badge { font-size: 11px; border-radius: 6px; padding: 0 6px; background: #ab47bc33; color: #e1bee7; }
-.vip-card { position: relative; }
-.vip-card .card, .card.vip-card { border-color: #ab47bc66; }
-.vip-next { position: absolute; top: -7px; right: 6px; z-index: 1; font-size: 10px; background: #ffb300; color: #000; border-radius: 6px; padding: 0 5px; font-weight: 700; }
-.vip-lock { border-style: dashed; opacity: .6; text-align: center; }
+/* 黑市：每 10 分鐘全部換新、每輪限買 1 件 */
+.bm-bar { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin: 6px 0 10px; font-size: 13px; line-height: 1.7; }
+.bm-quota { display: inline-block; margin-top: 4px; border-radius: 8px; padding: 1px 10px; font-weight: 700; background: #2e7d3233; color: #a5d6a7; border: 1px solid #66bb6a66; }
+.bm-quota.used { background: #ffb30022; color: #ffd54f; border-color: #ffb30066; }
+.bm-mine, .card.bm-mine { border-color: #66bb6a !important; background: #2b3a22; }
+/* 派遣選單：可選與不可選之間的分隔 */
+.pick-sep { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin: 4px 0 2px; }
+.pick-sep::before, .pick-sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+/* 我的探索隊：每一站的預估時間 */
+.it-sum { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.it-sum span { background: var(--card2); border-radius: 8px; padding: 2px 9px; font-size: 13px; }
+.it-sum b { color: var(--accent); }
+.it-step { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; margin-bottom: 5px; }
+.it-step.now { border-color: #4fc3f7; background: #1b3a4b; }
+.it-step.home { border-style: dashed; }
+.it-step .no { font-weight: 800; color: var(--muted); text-align: center; }
+.it-step.now .no { color: #4fc3f7; }
+.it-step small { display: block; color: var(--muted); }
+.it-step .t { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 12px; white-space: nowrap; }
+.it-step .t b { font-size: 13px; }
+/* 地窖：目前藏起的數量 */
+.cellar-now { margin-top: 6px; background: var(--card2); border-radius: 8px; padding: 4px 9px; font-size: 12px; color: #c5e1a5; }
+/* 報告與避難所紀錄裡的戰鬥明細 */
+.bt-section { margin-top: 8px; }
+.bt-item { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; margin: 5px 0; }
+.bt-item.lose { border-color: #ef535066; }
+.bt-item.open { border-color: #4fc3f7; }
+.bt-item > .row-between { cursor: pointer; gap: 8px; }
+.log-list li .bt-item { margin-top: 6px; }

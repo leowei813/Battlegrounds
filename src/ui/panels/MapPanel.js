@@ -517,14 +517,14 @@ export class MapPanel {
     // 探索佇列：類型、距離、剩餘時間
     const sh = g.shelter.primary();
     g.state.expeditions.filter((ex) => ex.kind !== 'rally').forEach((ex) => {
-      const poi = g.exploration.poi(ex.poiId);
-      const p = g.exploration.progress(ex, now);
-      const type = poi ? (POI_TYPES[poi.type]?.icon || poi.icon || '📍') : '📍';
-      const dist = sh && poi ? haversine(sh.lat, sh.lon, poi.lat, poi.lon) : 0;
-      const km = dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`;
-      const status = ex.defeated ? '🏳️ 撤回' : ex.recalled ? '↩️ 召回中' : p ? EXP_PHASES[p.phase].icon : '';
-      const queued = (ex.queue || []).length ? `・佇列 ${ex.queue.length}` : '';
-      rows.push(`<button class="feed-chip team" data-action="feedTeam" data-id="${ex.id}">${type} ${escapeHtml(poi?.name || '探索')}・${km}・${status} ${formatDuration(p ? p.remainingMs : Math.max(0, ex.endAt - now))}${queued}</button>`);
+      // 隊伍標籤：狀態圖示＋隊員＋總剩餘時間（含佇列與回程）＋佇列數
+      const it = g.exploration.itinerary(ex, now);
+      const icon = ex.defeated ? '🏳️' : ex.recalled ? '↩️' : EXP_PHASES[it.phase]?.icon || '🚶';
+      const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean);
+      const who = names.length <= 2 ? names.join('、') : `${names[0]}等 ${names.length} 人`;
+      const time = it.phase === 'returning' ? `⏱ 返程 ${formatDuration(it.totalMs)}` : `⏱ 總計 ${formatDuration(it.totalMs)}`;
+      const queued = ex.kind === 'explore' && it.phase !== 'returning' ? `・佇列 ${(ex.queue || []).length}` : '';
+      rows.push(`<button class="feed-chip team" data-action="feedTeam" data-id="${ex.id}">${icon} ${escapeHtml(who || '隊伍')}・${time}${queued}</button>`);
     });
     return rows.length ? `<div class="map-feed">${rows.join('')}</div>` : '';
   }
@@ -613,12 +613,22 @@ export class MapPanel {
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
       const status = ex.defeated ? '🏳️ 撤回中' : ex.recalled ? '↩️ 召回中' : '';
       const canRecall = g.exploration.canRecall(ex, now);
+      const it = g.exploration.itinerary(ex, now);
+      const end = new Date(it.endAt);
+      const hm = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
+      const qn = (ex.queue || []).length;
+      const ph = it.phase === 'returning' ? '🏃 返程中' : it.phase === 'outbound' ? '🚶 前往中' : '🔍 搜索中';
+      const cpDone = ex.cp ? `（檢核點 ${Math.min(ex.cp.total || 1, (ex.cp.done || 0) + (it.phase === 'searching' ? 1 : 0))}/${ex.cp.total || 1}）` : '';
+      const curRow = `<div class="it-step now"><span class="no">▶</span><span><b>${escapeHtml(poi?.name || '未知地點')}</b><small>${status || ph}${it.phase === 'returning' ? '' : cpDone}</small></span><span class="t">剩 <b>${formatDuration(it.phase === 'returning' ? it.totalMs : it.currentMs)}</b></span></div>`;
+      const stopRows = it.stops.map((x, i) => `<div class="it-step"><span class="no">${i + 1}</span><span><b>${escapeHtml(x.poi.name)}</b><small>🚶 移動 ${formatDuration(x.travelMs)}・🔍 搜索 ${formatDuration(x.searchMs)}</small></span><span class="t"><b>${formatDuration(x.totalMs)}</b>${btn('移除', 'dequeue', { i }, { cls: 'btn-xs btn-ghost' })}</span></div>`).join('');
+      const holdRows = it.queueOnHold ? (ex.queue || []).map((pid, i) => `<div class="it-step"><span class="no">${i + 1}</span><span><b>${escapeHtml(g.exploration.poi(pid)?.name || '地點')}</b><small>回到避難所後接著前往</small></span><span class="t">${btn('移除', 'dequeue', { i }, { cls: 'btn-xs btn-ghost' })}</span></div>`).join('') : '';
+      const homeRow = it.stops.length ? `<div class="it-step home"><span class="no">🏠</span><span><b>回到避難所</b><small>🏃 從最後一站回家</small></span><span class="t"><b>${formatDuration(it.backMs)}</b></span></div>` : '';
       return `
-      <p>📍 <b>${escapeHtml(poi?.name || '未知地點')}</b>${status ? `・${status}` : ''}</p>
       <p class="muted">👥 ${names || `${ex.memberIds.length} 人`}</p>
-      <p class="muted">⏱ 剩 ${formatDuration(p ? p.remainingMs : Math.max(0, ex.endAt - now))}</p>
+      <div class="it-sum"><span>⏱ 總計 <b>${formatDuration(it.totalMs)}</b></span><span>🏠 預計 <b>${hm}</b> 回到避難所</span>${ex.kind === 'explore' ? `<span>🧭 佇列 <b>${qn}/${g.exploration.queueLimit()}</b></span>` : ''}</div>
+      ${curRow}${stopRows}${holdRows}${homeRow}
+      ${it.stops.length ? '<small class="muted block">預估時間依隊員速度、載具與日夜計算；途中遇到戰鬥或背包裝滿提早回家時會有變動。</small>' : ''}
       ${this.ui.panels.explore.checkpointHtml(ex)}
-      ${(ex.queue || []).length ? `<div class="label">🧭 探索佇列（${ex.queue.length}/${g.exploration.queueLimit()}）</div>${ex.queue.map((pid, i) => `<div class="row-between"><span>${i + 1}. ${escapeHtml(g.exploration.poi(pid)?.name || '地點')}</span>${btn('移除', 'dequeue', { i }, { cls: 'btn-xs btn-ghost' })}</div>`).join('')}` : ''}
       ${this.chainHtml(ex)}
       ${canRecall ? `<p class="muted">${'召回後隊伍會從目前位置走回避難所（需要移動時間），只會帶回已經到過的檢核點找到的物資。'}</p>` : ''}
       <div class="btn-row">${canRecall ? btn('↩️ 召回', 'recall', {}, { cls: 'btn-danger' }) : ''}</div>`;

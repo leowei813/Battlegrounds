@@ -102,9 +102,9 @@ export const FACILITIES = {
   },
   cellar: {
     name: '地窖', icon: '🕳️', startLevel: 0,
-    desc: '藏起一小部分食物、木材、燃料與金錢。數量在地窖容量以內的部分不會被掠奪（NPC、玩家、屍潮都搶不走）。',
+    desc: '藏起一部分食物、木材、燃料、金錢，以及每種零件與布料。數量在地窖容量以內的部分不會被掠奪或損失（NPC、玩家、屍潮都搶不走）。',
     cost: (lv) => mat('cellar', ['struct'], { wood: 90, metal: 30, cloth: 15 }, lv),
-    effectText: (lv) => `食物、木材、燃料各藏 ${cellarCap(lv)}、金錢 ${cellarCoins(lv)}`,
+    effectText: (lv) => `食物、木材、燃料各藏 ${cellarCap(lv)}、金錢 ${cellarCoins(lv)}、零件與布料每種藏 ${cellarMatCap(lv)}`,
   },
   clinic: {
     name: '診療室', icon: '🩺', startLevel: 0,
@@ -144,6 +144,8 @@ export const housingCap = (lv) => 3 + lv * 2;
 /** 地窖容量：每種基礎物資（食物、木材、燃料）可藏的數量；金錢另計 */
 export const cellarCap = (lv) => (lv > 0 ? 60 * lv + 15 * lv * lv : 0);
 export const cellarCoins = (lv) => (lv > 0 ? 50 * lv + 10 * lv * lv : 0);
+/** 地窖容量：每一種零件與布料可藏的數量（屍潮突破時不會損失） */
+export const cellarMatCap = (lv) => (lv > 0 ? 4 * lv + Math.floor((lv * lv) / 3) : 0);
 /** 宿舍可住人數（含領袖）：沒有宿舍最多 3 人，每升一級 +1 */
 export const dormCap = (lv) => Math.min(DORM_FULL_CAP, 3 + Math.max(0, lv));
 /** 宿舍住滿的等級：之後升級改為提升居住品質 */

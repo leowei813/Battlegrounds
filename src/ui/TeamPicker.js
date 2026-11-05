@@ -11,14 +11,22 @@ function vehicleHtml(game, cars, members, distanceM, squad = null) {
   if (!game.state.vehicles.length) return `<p class="muted">🚗 沒有載具（可在「製作」頁製作，或探索時找到）・隊伍運載量 ${vs.tripStats(members, []).cargo}（背包可增加）</p>`;
   const current = squad ? (squad.vehicleIds || []) : [];
   const locked = squad && (squad.nextVehicleIds || []).length > 0;
-  const rows = game.state.vehicles.map((v) => {
+  // 排序：可用的（含這支小隊自己的）在上面，依載貨量、耐久由高到低；無法使用的排到最下面。
+  // 只看載具本身的狀態，選擇／取消小隊時順序不變
+  const isMine = (v) => current.includes(v.id) || !!(squad && (squad.nextVehicleIds || []).includes(v.id));
+  const usable = (v) => vs.isAvailable(v) || isMine(v);
+  const sorted = [...game.state.vehicles].sort((a, b) => (usable(b) - usable(a))
+    || (isMine(b) - isMine(a)) || VEHICLES[b.type].cargo - VEHICLES[a.type].cargo || b.durability - a.durability);
+  const firstOff = sorted.findIndex((v) => !usable(v));
+  const rows = sorted.map((v, i) => {
     const def = VEHICLES[v.type];
-    const mine = current.includes(v.id) || (squad && (squad.nextVehicleIds || []).includes(v.id));
+    const mine = isMine(v);
     const ok = vs.isAvailable(v) && !locked;
     const on = cars.has(v.id) || mine;
     const why = mine ? (current.includes(v.id) ? '・小隊使用中' : '・已指定給這支小隊')
       : v.status === 'reserved' ? '・已指定給其他小隊' : v.status === 'out' ? '・出勤中' : vs.isBroken(v) ? '・損壞' : '';
-    return `<button class="pick-row ${on ? 'on' : ''}" data-action="car" data-id="${v.id}" ${ok ? '' : 'disabled'}>
+    const sep = i === firstOff && firstOff > 0 ? '<div class="pick-sep">無法使用</div>' : '';
+    return `${sep}<button class="pick-row ${on ? 'on' : ''}" data-action="car" data-id="${v.id}" ${ok ? '' : 'disabled'}>
       <span class="check">${on ? '☑' : '☐'}</span><span>${def.icon} <b>${def.name}</b></span>
       <span class="muted">🪑${def.seats}・×${def.speed}・📦${def.cargo}・耐久 ${v.durability}/${def.durability}${why}</span>
     </button>`;
@@ -79,11 +87,17 @@ export function openTeamPicker(ui, opts) {
 
   const render = () => {
     const inSquad = new Set(squads.flatMap((e) => e.memberIds));
-    const rows = game.state.survivors.filter((sv) => !opts.squads || !inSquad.has(sv.id)).map((sv) => {
-      const ok = game.survivors.isAvailable(sv) && !squadId;
-      const s = game.survivors.stats(sv);
+    // 排序：可派遣的在上面、依戰力由高到低；無法派遣的（探索中、重傷…）排到最下面。
+    // 只看倖存者本身的狀態（選擇臨時小隊時全部暫時不能勾選，但順序不變，畫面不跳動）
+    const list = game.state.survivors.filter((sv) => !opts.squads || !inSquad.has(sv.id))
+      .map((sv) => ({ sv, s: game.survivors.stats(sv), free: game.survivors.isAvailable(sv) }))
+      .sort((a, b) => (b.free - a.free) || b.s.power - a.s.power);
+    const firstOff = list.findIndex((x) => !x.free);
+    const rows = list.map(({ sv, s, free }, i) => {
+      const ok = free && !squadId;
+      const sep = i === firstOff && firstOff > 0 ? '<div class="pick-sep">無法派遣</div>' : '';
       const on = selected.has(sv.id);
-      return `<button class="pick-row ${on ? 'on' : ''}" data-action="toggle" data-id="${sv.id}" ${ok ? '' : 'disabled'}>
+      return `${sep}<button class="pick-row ${on ? 'on' : ''}" data-action="toggle" data-id="${sv.id}" ${ok ? '' : 'disabled'}>
         <span class="check">${on ? '☑' : '☐'}</span>
         <span>${CLASSES[sv.classId].icon} <b>${escapeHtml(sv.name)}</b> Lv${sv.level}
           <small class="pick-vitals"><span class="${game.survivors.hpOf(sv) < s.hp * 0.3 ? 'neg' : ''}">❤️ ${Math.floor(game.survivors.hpOf(sv))}/${s.hp}</span>・<span class="${game.survivors.bagLoad(sv) >= game.survivors.bagCap(sv) ? 'neg' : ''}">🎒 ${Math.floor(game.survivors.bagLoad(sv))}/${game.survivors.bagCap(sv)}</span></small></span>
@@ -102,7 +116,10 @@ export function openTeamPicker(ui, opts) {
          <label class="toggle ${autoUnlocked ? '' : 'disabled'}"><input type="checkbox" data-role="auto" ${auto ? 'checked' : ''} ${autoUnlocked ? '' : 'disabled'}> 🔁 自動探索（完成後自動再出發）${autoUnlocked ? '' : '<small>（需研究「斥候訓練」）</small>'}</label>
          ${autoUnlocked ? '<small class="muted block">同一個地點的物資拿光才結束；有探索佇列時接著前往下一個地點。隊員重傷、戰敗，或背包與倉庫都滿了時停止。</small>' : ''}`
       : '';
-    const squadRows = squads.map((e) => {
+    const squadPower = (e) => e.memberIds.reduce((sum, id) => { const m = game.survivors.get(id); return sum + (m ? game.survivors.stats(m).power : 0); }, 0);
+    const squadFull = (e) => (e.queue || []).length >= game.exploration.queueLimit();
+    // 臨時小隊：佇列還有空位的在上面，依總戰力由高到低
+    const squadRows = [...squads].sort((a, b) => (squadFull(a) - squadFull(b)) || squadPower(b) - squadPower(a)).map((e) => {
       const names = e.memberIds.map((id) => game.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
       const full = (e.queue || []).length >= game.exploration.queueLimit();
       const on = squadId === e.id;

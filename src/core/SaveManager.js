@@ -3,7 +3,9 @@ import { SAVE_KEY, SAVE_VERSION } from '../config/constants.js';
 import { STAT_KEYS, newSeeds } from './GameState.js';
 import { POI_KEYS } from '../config/poiTypes.js';
 import { SLOT_KEYS, ITEM_MODELS } from '../config/equipment.js';
-import { RESEARCH, LEGACY_RESEARCH } from '../config/research.js';
+import {
+  RESEARCH, LEGACY_RESEARCH, REMOVED_RESEARCH, researchCost,
+} from '../config/research.js';
 import { BASE_SIZES, baseSizeOf, FACILITY_CAP_REFUND } from '../config/civilization.js';
 import { legacyToSupplies } from '../config/supplies.js';
 import { MAIN_QUESTS } from '../config/quests.js';
@@ -402,9 +404,35 @@ export class SaveManager {
         data.log.unshift({ t: Date.now(), msg: `🏗️ 設施等級改為依據點規模設上限：${notes.join('、')}，已退還 ${Math.round(FACILITY_CAP_REFUND * 100)}% 建造材料`, type: 'info' });
       }
     }
-    if (v < 24) {
-      // v9.24：黑市專屬保留區（第一次開啟黑市時補滿格子）
-      data.bmVip = data.bmVip && Array.isArray(data.bmVip.slots) ? data.bmVip : { slots: [], hour: 0 };
+    if (v < 25) {
+      // v9.25：移除黑市專屬保留區與研究「黑市商人的厚愛」：全額退還研究材料（含研究中、排隊中）
+      delete data.bmVip;
+      // v9.25：戰鬥明細改為跟著探索報告與避難所紀錄保存；舊紀錄無法得知屬於哪一場，不保留
+      data.battles = [];
+      data.bmBought = null;
+      const R = data.research || {};
+      const refund = {};
+      const add = (cost) => Object.entries(cost || {}).forEach(([k, n]) => { refund[k] = (refund[k] || 0) + n; });
+      const lv = R.levels?.t_bm_vip || 0;
+      for (let i = 1; i <= lv; i += 1) add(researchCost('t_bm_vip', i, REMOVED_RESEARCH.t_bm_vip));
+      if (R.active?.id === 't_bm_vip') { add(R.active.cost); R.active = null; }
+      if (Array.isArray(R.queue)) {
+        R.queue.filter((q) => q.id === 't_bm_vip').forEach((q) => add(q.cost));
+        R.queue = R.queue.filter((q) => q.id !== 't_bm_vip');
+      }
+      if (R.levels) delete R.levels.t_bm_vip;
+      if (Object.keys(refund).length) {
+        Object.entries(refund).forEach(([k, n]) => {
+          if (k === 'coins') data.player.coins = (data.player.coins || 0) + n;
+          else if (k === 'parts') data.player.parts = (data.player.parts || 0) + n;
+          else {
+            const pool = data.resources && k in data.resources ? data.resources : (data.supplies = data.supplies || {});
+            pool[k] = (pool[k] || 0) + n;
+          }
+        });
+        data.log = data.log || [];
+        data.log.unshift({ t: Date.now(), msg: '🕶️ 黑市改為每 10 分鐘全部換新、每輪限買 1 件：移除「專屬保留區」與研究「黑市商人的厚愛」，已全額退還研究材料', type: 'info' });
+      }
     }
     if (v < 23 && data.research?.levels?.r_board) {
       // v9.17：情報網改為 3 級（每級 +1）：舊等級每 5 級 +1 換算成新等級，效果不變

@@ -95,6 +95,21 @@ export class BaseSiege {
     return `🛡️ 友好協防：${parts.join('、')}`;
   }
 
+  /** 今晚屍潮的戰鬥明細（存在據點上，天亮或被突破時記到避難所紀錄） */
+  nightBattles() {
+    const b = this.base;
+    const night = this.nightKey();
+    if (b.nightBattles?.night !== night) b.nightBattles = { night, battleIds: [] };
+    return b.nightBattles;
+  }
+
+  /** 取出今晚的戰鬥明細並清空 */
+  takeNightBattles() {
+    const ids = this.base?.nightBattles?.battleIds || [];
+    if (this.base) this.base.nightBattles = null;
+    return ids;
+  }
+
   /** 入夜：開始統計今晚的防守 */
   startNight() {
     this.wave = Math.max(this.wave, this.savedWaves());
@@ -119,7 +134,7 @@ export class BaseSiege {
       const entry = this.game.shelter.recordDefense({
         base: this.base, attacker: '屍潮', success: true, waves: this.wave, kills: this.nightKills,
         wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)), note: this.assistNote('ok'),
-        siege: reward,
+        siege: reward, battleIds: this.takeNightBattles(),
       });
       this.game.bus.emit('siege:result', entry);
     }
@@ -723,7 +738,7 @@ export class BaseSiege {
       const e = g.combat.createEnemy(z.enemyId, this.zombieLevel(), false, ZOMBIE_VS_SURVIVOR);
       return { ...e, id: `z${z.id}`, maxHp: Math.max(1, Math.round(z.hp)), atk: z.atk, xp: 0, coins: 0, partsChance: 0 };
     });
-    const result = g.combat.simulate(defenders, foes, { allies, title: `🧱 「${base.name}」圍牆被破，迎戰屍潮` });
+    const result = g.combat.simulate(defenders, foes, { allies, ref: this.nightBattles(), title: `🧱 「${base.name}」圍牆被破，迎戰屍潮（第 ${this.wave} 波）` });
     // 套用人員傷勢（殭屍的擊殺獎勵由屍潮結算，不重複給）
     defenders.forEach((sv) => {
       const u = result.team.find((x) => x.id === sv.id);
@@ -778,7 +793,7 @@ export class BaseSiege {
     const recovered = this.collectRecovered();
     this.breachedTonight = true;
     const entry = sh.recordDefense({
-      base, attacker: '屍潮', success: false, lost, damaged, kills: this.nightKills, waves: Math.max(0, this.wave - 1),
+      base, attacker: '屍潮', success: false, lost, damaged, kills: this.nightKills, waves: Math.max(0, this.wave - 1), battleIds: this.takeNightBattles(),
       injured: injuries.filter((x) => x.severe).map((x) => x.name),
       wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note: [note, this.assistNote('breached')].filter(Boolean).join('。'),
       siege: {
@@ -803,8 +818,10 @@ export class BaseSiege {
     const out = {};
     Object.keys(sup).forEach((k) => {
       const def = SUPPLIES[k];
-      if (!def || (def.cat !== 'part' && def.cat !== 'fabric') || !(sup[k] > 0) || !chance(P.materialChance)) return;
-      const n = Math.min(sup[k], Math.max(1, Math.floor(sup[k] * randFloat(P.materialMin, P.materialMax))));
+      // 地窖藏起的部分不會損失
+      const open = Math.max(0, (sup[k] || 0) - this.game.shelter.cellarProtect(k));
+      if (!def || (def.cat !== 'part' && def.cat !== 'fabric') || !(open > 0) || !chance(P.materialChance)) return;
+      const n = Math.min(open, Math.max(1, Math.floor(open * randFloat(P.materialMin, P.materialMax))));
       sup[k] -= n;
       out[k] = n;
     });

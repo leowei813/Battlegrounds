@@ -3,6 +3,7 @@ import { RARITIES } from '../config/equipment.js';
 import { gainsHtml, btn } from './components.js';
 import { ZONES } from '../config/zones.js';
 import { shareBtn, openShareDialog } from './ShareDialog.js';
+import { battlesSectionHtml, battleHtml } from './BattleLog.js';
 
 const hhmm = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
@@ -37,7 +38,7 @@ function zoneTag(id) {
   return ` <span class="zone-tag" style="--zc:${color}">${z.danger >= 2 ? '☠️' : z.danger >= 1 ? '⚠️' : '🟢'} ${z.name}</span>`;
 }
 
-function reportsHtml(game, openId, since) {
+function reportsHtml(game, openId, since, openBattle) {
   const list = (game.state.reports || []).map((r) => {
     const open = openId === r.id;
     const fresh = (r.at || 0) > since;
@@ -46,38 +47,23 @@ function reportsHtml(game, openId, since) {
         <b>${fresh ? NEW : ''}${r.success ? '✅' : '⚠️'} ${escapeHtml(r.poiName)}${zoneTag(r.zone)}</b><span class="row-gap">${shareBtn(game, 'report', r.id)}<small class="muted">${hhmm(r.at)} ${open ? '▲' : '▼'}</small></span>
       </div>
       <div class="gains">${r.emptied && !Object.values(r.resources || {}).some((v) => v > 0) && !r.items.length ? `<span class="tag empty-tag">🕸️ 已被搜空・${escapeHtml(r.emptied)}</span>` : gainsHtml(r.resources)} ${r.items.map((it) => `<span class="rarity" style="--rc:${RARITIES[it.rarity].color}">${escapeHtml(it.name)}</span>`).join('')}${r.blueprints.length ? `<span class="tag">📜×${r.blueprints.length}</span>` : ''}</div>
-      ${open ? `<ul class="event-list">${r.events.map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul><small class="muted">隊員：${r.members.map(escapeHtml).join('、')}・擊殺 ${r.kills}</small>` : ''}
+      ${open ? `<ul class="event-list">${r.events.map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul><small class="muted">隊員：${r.members.map(escapeHtml).join('、')}・擊殺 ${r.kills}</small>${battlesSectionHtml(game, r.battleIds, openBattle)}` : (r.battleIds?.length ? `<small class="muted block">⚔️ ${r.battleIds.length} 場戰鬥・點開查看</small>` : '')}
     </div>`;
   }).join('');
   return list || '<p class="muted">尚無探索報告。</p>';
 }
 
-/** 戰鬥紀錄：每場戰鬥可展開，依序顯示誰對誰造成多少傷害、是否暴擊，並列出每人傷害統計 */
-function battlesHtml(game, openId) {
-  const list = (game.state.battles || []).map((b) => {
-    const open = openId === b.id;
-    const row = (u) => `<tr class="${u.down ? 'neg' : ''}"><td>${escapeHtml(u.name)}${u.weapon ? `<small class="muted">（${u.weapon === 'ranged' ? '遠程' : '近戰'}）</small>` : ''}</td><td>${u.dealt}</td><td>${u.hits}</td><td>${u.crits}</td><td>${u.kills}</td><td>${u.taken}</td><td>${u.healed ? `<span class="pos">+${u.healed}</span>` : ''}</td><td>${u.maxHp ? `${u.hpStart}→<b class="${u.hpEnd < u.hpStart ? 'neg' : ''}">${u.hpEnd}</b><small class="muted">/${u.maxHp}</small>` : ''}</td><td>${u.meds || ''}</td><td>${u.down ? '倒下' : ''}</td></tr>`;
-    const table = (units, label) => `<h5>${label}</h5><div class="bt-wrap"><table class="battle-table"><tr><th>名稱</th><th>造成傷害</th><th>命中</th><th>暴擊</th><th>擊倒</th><th>承受傷害</th><th title="醫生急救、吸血、藥品欄用藥">回復</th><th>生命（戰前→戰後）</th><th>用藥</th><th></th></tr>${units.map(row).join('')}</table></div>`;
-    return `<div class="card report ${b.victory ? '' : 'fail'}">
-      <div class="row-between" data-action="toggleBattle" data-id="${b.id}">
-        <b>${b.victory ? '🏆' : '💀'} ${escapeHtml(b.title)}</b><small class="muted">${hhmm(b.at)}・${b.duration} 秒 ${open ? '▲' : '▼'}</small>
-      </div>
-      <small class="muted">我方：${b.team.map((u) => `${escapeHtml(u.name)} ${u.dealt}`).join('、')}</small>
-      ${open ? `${table(b.team, '📊 我方傷害統計')}${table(b.foes, '📊 敵方')}
-        <small class="muted block">承受傷害是整場戰鬥被打的總量；醫生急救、吸血與藥品會在戰鬥中補回生命，所以戰後生命可能比「戰前 − 承受傷害」高。守城時的傷勢另計。</small>
-        <h5>📜 戰鬥過程</h5><ol class="battle-log">${b.log.map((l) => `<li class="bl-${l.type}">${l.t >= 0 ? `<time>${l.t}s</time>` : ''}${escapeHtml(l.msg)}</li>`).join('')}</ol>` : ''}
-    </div>`;
-  }).join('');
-  return list || '<p class="muted">尚無戰鬥紀錄。探索、攻打、防守時的戰鬥會記錄在這裡（保留最近 10 場）。</p>';
-}
-
-function baseHtml(ui, since) {
-  return ui.panels.shelter.defenseLogHtml(since) || '<p class="muted">尚無避難所遭襲紀錄。</p>';
+function baseHtml(ui, since, openBattle) {
+  return ui.panels.shelter.defenseLogHtml(since, openBattle) || '<p class="muted">尚無避難所遭襲紀錄。</p>';
 }
 
 /** 事件紀錄：遊戲中發生的各種事件（最近 80 筆） */
-function eventsHtml(ui, since) {
-  const logs = ui.game.state.log.slice(0, 80).map((l) => `<li class="log-${l.type} ${(l.t || 0) > since && IMPORTANT.has(l.type) ? 'unread' : ''}"><time>${hhmm(l.t)}</time>${(l.t || 0) > since && IMPORTANT.has(l.type) ? NEW : ''}${escapeHtml(l.msg)}</li>`).join('');
+function eventsHtml(ui, since, openBattle) {
+  const logs = ui.game.state.log.slice(0, 80).map((l) => {
+    const b = l.battleId ? ui.game.combat.battle(l.battleId) : null;
+    const open = b && openBattle === b.id;
+    return `<li class="log-${l.type} ${(l.t || 0) > since && IMPORTANT.has(l.type) ? 'unread' : ''}"><time>${hhmm(l.t)}</time>${(l.t || 0) > since && IMPORTANT.has(l.type) ? NEW : ''}${escapeHtml(l.msg)}${b ? ` ${btn(open ? '收起戰鬥' : '⚔️ 戰鬥明細', 'toggleBattle', { id: b.id }, { cls: 'btn-xs btn-ghost' })}${open ? battleHtml(b, true) : ''}` : ''}</li>`;
+  }).join('');
   return `<ul class="log-list">${logs || '<li class="muted">尚無紀錄</li>'}</ul>`;
 }
 
@@ -90,6 +76,7 @@ export function openMessages(ui) {
   const first = unreadCounts(g);
   let tab = first.reports ? 'reports' : first.base ? 'base' : first.events ? 'events' : 'reports';
   let openId = null;
+  let openBattle = null;
   g.state.msgSeen = g.state.msgSeen || {};
   // 開啟分頁時記下上次已讀的時間，用來標示這次看到的未讀項目
   const since = { reports: g.state.msgSeen.reports || 0, base: g.state.msgSeen.base || 0, events: eventsSeen(g.state.msgSeen) };
@@ -100,10 +87,9 @@ export function openMessages(ui) {
     const tabs = `<div class="seg">
       <button class="btn ${tab === 'reports' ? 'active' : ''}" data-action="msgTab" data-t="reports">🧭 探索報告${badge(c.reports)}</button>
       <button class="btn ${tab === 'base' ? 'active' : ''}" data-action="msgTab" data-t="base">🏠 避難所紀錄${badge(c.base)}</button>
-      <button class="btn ${tab === 'events' ? 'active' : ''}" data-action="msgTab" data-t="events">📜 事件紀錄${badge(c.events)}</button>
-      <button class="btn ${tab === 'battles' ? 'active' : ''}" data-action="msgTab" data-t="battles">⚔️ 戰鬥紀錄</button></div>
-      ${tab !== 'battles' && c[tab] ? `<div class="btn-row">${btn('✓ 這頁全部標為已讀', 'markRead', {}, { cls: 'btn-xs btn-ghost' })}</div>` : ''}`;
-    return `${tabs}${tab === 'reports' ? reportsHtml(g, openId, since.reports) : tab === 'battles' ? battlesHtml(g, openId) : tab === 'events' ? eventsHtml(ui, since.events) : baseHtml(ui, since.base)}`;
+      <button class="btn ${tab === 'events' ? 'active' : ''}" data-action="msgTab" data-t="events">📜 事件紀錄${badge(c.events)}</button></div>
+      ${c[tab] ? `<div class="btn-row">${btn('✓ 這頁全部標為已讀', 'markRead', {}, { cls: 'btn-xs btn-ghost' })}</div>` : ''}`;
+    return `${tabs}${tab === 'reports' ? reportsHtml(g, openId, since.reports, openBattle) : tab === 'events' ? eventsHtml(ui, since.events, openBattle) : baseHtml(ui, since.base, openBattle)}`;
   };
   ui.modal.open({
     title: '💬 消息',
@@ -111,20 +97,22 @@ export function openMessages(ui) {
     body: body(),
     onAction: (action, data, m) => {
       if (action === 'msgTab' && data.t !== tab) {
-        if (tab !== 'battles') markRead(tab);
+        markRead(tab);
         tab = data.t;
+        openBattle = null;
       }
       if (action === 'shareReport' || action === 'shareDefense') {
-        if (tab !== 'battles') markRead(tab);
+        markRead(tab);
         openShareDialog(ui, action === 'shareReport' ? 'report' : 'defense', data.id);
         return;
       }
       if (action === 'markRead') markRead(tab);
-      if (action === 'toggleReport' || action === 'toggleBattle') openId = openId === data.id ? null : data.id;
+      if (action === 'toggleReport') { openId = openId === data.id ? null : data.id; openBattle = null; }
+      if (action === 'toggleBattle') openBattle = openBattle === data.id ? null : data.id;
       m.update(body());
     },
     onClose: () => {
-      if (tab !== 'battles') markRead(tab);
+      markRead(tab);
       ui.refresh(true);
     },
   });

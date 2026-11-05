@@ -274,6 +274,7 @@ export class AssistSystem {
         });
         if (exp) exp.travelEvents = [...(exp.travelEvents || []), `🛡️ 協防「${p.name}」抵禦${ra.attacker}：擊倒 ${mine.kills} 人${hurt.length ? `，${hurt.join('、')} 重傷` : ''}`];
         const text = `🛡️ 協防「${p.name}」戰報：抵禦${ra.attacker}的攻打，你的協防隊擊倒 ${mine.kills} 人${hurt.length ? `，${hurt.join('、')} 重傷` : ''}；${ra.result === 'ok' ? '✅ 成功守住' : '💥 對方據點還是被攻破了'}`;
+        if (!exp) this.patchReport(p.id, text, mine.kills || 0);
         g.log(text, ra.result === 'ok' ? 'success' : 'danger');
         g.toast(text, ra.result === 'ok' ? 'success' : 'danger');
       });
@@ -311,12 +312,28 @@ export class AssistSystem {
     // 協防的經驗：每擊殺 1 隻 4 點，平分給隊員
     const xp = r ? r.kills * 4 : 0;
     if (xp) members.forEach((m) => g.survivors.gainXp(m, xp / members.length));
+    // 召回的協防隊也照樣顯示協防戰果；對方還沒回報時先註明，之後收到戰果會補進這份報告
+    const pending = !r && !(exp.travelEvents || []).some((t2) => t2.startsWith('🛡️ 協防「'));
     return {
       id: uid('rp'), poiName: `🛡️ 協防「${t.name || '友好玩家'}」`, poiType: 'residential', at: exp.endAt,
-      events: [...(exp.travelEvents || []), r ? this.resultText(t.name || '友好玩家', r) : '🛡️ 在友好玩家的據點協助抵禦屍潮（對方尚未回報戰果）', '🏠 協防結束，回到避難所'],
+      events: [...(exp.travelEvents || []), r ? this.resultText(t.name || '友好玩家', r) : pending ? '🛡️ 對方尚未回報戰果（對方上線結算後會自動補上）' : null, '🏠 協防結束，回到避難所'].filter(Boolean),
       resources: {}, items: [], blueprints: [], kills: (exp.travelKills || 0) + (r?.kills || 0), xp: (exp.travelXp || 0) + xp, success: true,
       members: members.map((m) => m.name),
+      assistPlayerId: t.playerId || null, assistPending: pending,
     };
+  }
+
+  /** 協防隊已經回家後才收到的戰果：補進那份協防報告（只補最近一份還在等待戰果的） */
+  patchReport(playerId, text, kills = 0) {
+    const rep = (this.game.state.reports || []).find((rp) => rp.assistPlayerId === playerId && rp.assistPending);
+    if (!rep) return false;
+    rep.assistPending = false;
+    const i = rep.events.findIndex((e) => e.startsWith('🛡️ 對方尚未回報戰果'));
+    if (i >= 0) rep.events.splice(i, 1, text);
+    else rep.events.splice(Math.max(0, rep.events.length - 1), 0, text);
+    rep.kills = (rep.kills || 0) + kills;
+    this.game.bus.emit('reports:changed');
+    return true;
   }
 
   /** 每秒：友好玩家屍潮／被攻打通知、有人來協防的通知 */
@@ -350,6 +367,8 @@ export class AssistSystem {
       this.notified.set(key, true);
       g.state.assistSeen = [key, ...(g.state.assistSeen || [])].slice(0, 20);
       const text = this.resultText(p.name, r);
+      // 協防隊已經回到避難所：把戰果補進那份協防報告
+      if (!g.state.expeditions.some((e) => e.kind === 'assist' && e.assistTarget?.playerId === p.id)) this.patchReport(p.id, text, r.kills || 0);
       g.log(text, r.result === 'ok' ? 'success' : 'danger');
       g.toast(text, r.result === 'ok' ? 'success' : 'danger');
     });

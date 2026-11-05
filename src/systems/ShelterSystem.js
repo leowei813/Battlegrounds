@@ -1,6 +1,6 @@
 import { BUILD_QUEUE_SIZE } from '../config/constants.js';
 import {
-  FACILITIES, FACILITY_MAX_LEVEL, cellarCap, cellarCoins, facilityBuildTime, wallMaxHp, OUTPOST_FACILITIES, REPAIR,
+  FACILITIES, FACILITY_MAX_LEVEL, cellarCap, cellarCoins, cellarMatCap, facilityBuildTime, wallMaxHp, OUTPOST_FACILITIES, REPAIR,
 } from '../config/facilities.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
 import { JOBS } from '../config/survivors.js';
@@ -11,6 +11,7 @@ import {
   PRIMARY_DANGER_COEF, baseEstablishCost, BASE_SIZES, FACILITY_COUNT, baseSizeOf, ABANDON_REFUND, RELOCATE_DEFENSE_REFUND, RELOCATE_KEEP, FACILITY_CAP_REFUND, MAX_OUTPOSTS,
 } from '../config/civilization.js';
 import { createBase } from '../core/GameState.js';
+import { SUPPLIES } from '../config/supplies.js';
 import { canAfford, payCost, scaleCost } from './costUtils.js';
 
 /** 屍潮範圍在地圖上的最小比例（完整大小約半徑 225 公尺） */
@@ -102,7 +103,27 @@ export class ShelterSystem {
   /** 地窖保護的數量（金錢用 coins） */
   cellarProtect(key) {
     const lv = this.maxLevel('cellar');
-    return key === 'coins' ? cellarCoins(lv) : cellarCap(lv);
+    if (key === 'coins') return cellarCoins(lv);
+    const cat = SUPPLIES[key]?.cat;
+    if (cat === 'part' || cat === 'fabric') return cellarMatCap(lv);
+    return cellarCap(lv);
+  }
+
+  /** 地窖目前實際藏起的數量：每種基礎物資、金錢，以及零件／布料合計（給畫面顯示） */
+  cellarStatus() {
+    const lv = this.maxLevel('cellar');
+    const st = this.game.state;
+    const res = Object.fromEntries(RESOURCE_KEYS.map((k) => [k, Math.min(Math.floor(st.resources[k] || 0), cellarCap(lv))]));
+    const coins = Math.min(Math.floor(st.player.coins || 0), cellarCoins(lv));
+    let mats = 0;
+    let matKinds = 0;
+    Object.entries(st.supplies || {}).forEach(([k, n]) => {
+      const cat = SUPPLIES[k]?.cat;
+      if ((cat !== 'part' && cat !== 'fabric') || !(n > 0)) return;
+      mats += Math.min(n, cellarMatCap(lv));
+      matKinds += 1;
+    });
+    return { lv, cap: cellarCap(lv), coinCap: cellarCoins(lv), matCap: cellarMatCap(lv), res, coins, mats, matKinds };
   }
 
   /** 會被掠奪的數量：超過地窖容量的部分 */
@@ -343,6 +364,7 @@ export class ShelterSystem {
       wallLost: Math.round(e.wallLost || 0),
       note: e.note || '',
       ...(e.siege ? { siege: e.siege } : {}),
+      ...(e.battleIds?.length ? { battleIds: [...e.battleIds] } : {}),
       ...(e.reward ? { reward: e.reward } : {}),
     };
     st.defenseLog = [entry, ...(st.defenseLog || [])].slice(0, 30);

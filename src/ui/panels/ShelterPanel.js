@@ -6,10 +6,11 @@ import { PRIMARY_DANGER_COEF, MAX_OUTPOSTS, BASE_SIZES } from '../../config/civi
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { siegeDetailHtml, raidRewardHtml } from '../SiegeResult.js';
 import { escapeHtml } from '../../utils/dom.js';
+import { battlesSectionHtml } from '../BattleLog.js';
 import {
   btn, costHtml, needHtml, timerBar, progressBar, metaOf, affordable,
 } from '../components.js';
-import { formatDuration } from '../../utils/math.js';
+import { formatDuration, formatNumber } from '../../utils/math.js';
 import { BUILD_QUEUE_SIZE } from '../../config/constants.js';
 
 /**
@@ -100,6 +101,7 @@ export class ShelterPanel {
       <div class="fac-card2 ${lv === 0 ? 'unbuilt' : ''}">
         <div class="fac2-head"><span class="fac-icon">${def.icon}</span><b>${def.name}</b><span class="muted">Lv ${lv}</span></div>
         <div class="fac2-effect">${lv > 0 ? def.effectText(lv) : '尚未建造'}${max ? '' : `<small class="muted block">下一級：${def.effectText(lv + 1)}</small>`}</div>
+        ${id === 'cellar' && lv > 0 ? this.cellarNowHtml() : ''}
         ${max ? '<div class="tag">已達最高等級</div>' : `<div class="fac2-cost">
           <small class="muted">${busy ? '施工中（材料已扣除）' : `${lv === 0 ? '建造' : `升級到 Lv ${lv + 1}`}需要（擁有/需要）`}</small>
           ${busy ? '' : `<div class="needs">${needHtml(st, g.shelter.facilityCost(sh, id))}</div>`}
@@ -204,7 +206,14 @@ export class ShelterPanel {
   }
 
   /** 據點遭襲紀錄：防禦成功或失敗、損失資源、毀損建築、受重傷的人 */
-  defenseLogHtml(since = Infinity) {
+  /** 地窖目前實際藏起了多少 */
+  cellarNowHtml() {
+    const c = this.game.shelter.cellarStatus();
+    const res = Object.entries(c.res).map(([k, v]) => `${metaOf(k).icon} ${formatNumber(v)}`).join('・');
+    return `<div class="cellar-now">🕳️ 目前藏起：${res}・💰 ${formatNumber(c.coins)}${c.matKinds ? `<small class="block">🔩 零件與布料 ${c.matKinds} 種，共藏起 ${formatNumber(c.mats)} 個（每種最多 ${c.matCap}）</small>` : ''}</div>`;
+  }
+
+  defenseLogHtml(since = Infinity, openBattle = null) {
     const list = this.game.state.defenseLog || [];
     const rows = list.slice(0, 15).map((e) => {
       const t = new Date(e.at);
@@ -227,6 +236,7 @@ export class ShelterPanel {
         ${e.damaged?.length ? `<div class="neg">毀損建築：${e.damaged.map(escapeHtml).join('、')}</div>` : ''}
         ${e.injured?.length ? `<div class="neg">🩸 重傷：${e.injured.map(escapeHtml).join('、')}</div>` : ''}`}
         ${e.note ? `<small class="muted block">${escapeHtml(e.note)}</small>` : ''}
+        ${battlesSectionHtml(this.game, e.battleIds, openBattle)}
       </div>`;
     }).join('');
     return `<h4>🛡️ 據點遭襲紀錄</h4>${rows || '<p class="muted">據點還沒有被攻擊過。</p>'}`;

@@ -129,6 +129,8 @@ export class ExplorationSystem {
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   /** 探索報告記下目的地所在區域的危險等級（安全區～深淵區） */
   tagZone(report, exp) {
+    // 這次外出的戰鬥明細跟著報告一起保存
+    if (report && exp?.battleIds?.length && !report.battleIds) report.battleIds = [...exp.battleIds];
     if (!report || report.zone) return;
     const p = this.poi(exp?.poiId) || this.game.npcs.get?.(exp?.poiId);
     if (p && Number.isFinite(p.lat)) report.zone = zoneAt(p.lat, p.lon).id;
@@ -228,6 +230,38 @@ export class ExplorationSystem {
     const members = memberIds.map((id) => this.game.survivors.get(id));
     if (members.some((m) => !m || !this.game.survivors.isAvailable(m))) return { ok: false, reason: '有隊員無法出發' };
     return { ok: true, poi, members };
+  }
+
+  /**
+   * 行程預估：目前這一站、佇列每一站（從上一站移動＋搜索）、最後回家，與總剩餘時間。
+   * 用和出發時相同的公式估算；途中戰鬥或背包裝滿提早回家時會有變動。
+   * @returns {{phase:string, currentMs:number, stops:{poi:object, travelMs:number, searchMs:number, totalMs:number}[], backMs:number, totalMs:number, endAt:number}}
+   */
+  itinerary(exp, now = Date.now()) {
+    const p = this.progress(exp, now);
+    const remaining = p ? p.remainingMs : Math.max(0, exp.endAt - now);
+    const phase = exp.defeated || exp.recalled ? 'returning' : p?.phase || 'searching';
+    const queue = (exp.queue || []).map((id) => this.poi(id)).filter(Boolean);
+    // 返程中、召回、或沒有佇列：剩餘時間就是到家的時間
+    if (phase === 'returning' || !queue.length || exp.kind !== 'explore') {
+      return { phase, currentMs: remaining, stops: [], backMs: phase === 'returning' ? remaining : 0, totalMs: remaining, endAt: now + remaining, queueOnHold: phase === 'returning' && queue.length > 0 };
+    }
+    const currentMs = Math.max(0, exp.startAt + (exp.travelMs || 0) + (exp.searchMs || 0) - now);
+    const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+    const vehicles = (exp.vehicleIds || []).map((id) => this.game.vehicles.get(id)).filter(Boolean);
+    let from = this.poi(exp.poiId);
+    let t = now + currentMs;
+    let backMs = 0;
+    const stops = queue.map((poi) => {
+      const pl = this.plan(poi, members, this.searchMinutes(poi), t, vehicles, { from: { lat: from.lat, lon: from.lon } });
+      const totalMs = pl.travelMs + pl.searchMs;
+      t += totalMs;
+      backMs = pl.backMs;
+      from = poi;
+      return { poi, travelMs: pl.travelMs, searchMs: pl.searchMs, totalMs };
+    });
+    const totalMs = currentMs + stops.reduce((sum, x) => sum + x.totalMs, 0) + backMs;
+    return { phase, currentMs, stops, backMs, totalMs, endAt: now + totalMs };
   }
 
   /** 每支臨時小隊的探索佇列上限：基本 2 個，研究「行動規劃」每級 +1（最多 5 個） */
@@ -498,7 +532,7 @@ export class ExplorationSystem {
         continue;
       }
       const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
-      const result = this.game.combat.simulate(members, this.game.territory.defenders(th), { title: `⚔️ 經過「${th.name}」的警戒範圍` });
+      const result = this.game.combat.simulate(members, this.game.territory.defenders(th), { title: `⚔️ 經過「${th.name}」的警戒範圍`, ref: exp });
       this.game.combat.applyOutcome(members, result, now);
       if (result.refills) exp.travelEvents.push(`💊 ${result.refills.join('；')}`);
       exp.travelKills += result.kills.length;
@@ -555,7 +589,7 @@ export class ExplorationSystem {
   ambush(exp, g, members, now) {
     const poi = this.poi(exp.poiId);
     const enemies = Array.from({ length: g.count }, () => this.game.combat.createEnemy(g.enemyId, g.level, g.elite, this.game.zombies.groupMul(g)));
-    const result = this.game.combat.simulate(members, enemies, { title: `🧟 途中遭遇 ${this.game.zombies.groupLabel(g)}` });
+    const result = this.game.combat.simulate(members, enemies, { title: `🧟 途中遭遇 ${this.game.zombies.groupLabel(g)}`, ref: exp });
     this.game.combat.applyOutcome(members, result, now);
     if (result.refills) exp.travelEvents.push(`💊 ${result.refills.join('；')}`);
     const label = `${ALL_ENEMIES[g.enemyId].icon} ${this.game.zombies.groupLabel(g)}`;
@@ -841,15 +875,15 @@ export class ExplorationSystem {
           return;
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
-        const report = exp.kind === 'rally' ? this.game.rally.report(exp)
-          : exp.kind === 'assist' && !exp.defeated && !exp.recalled ? this.game.assist.report(exp)
+        const report = this.game.combat.within(exp, () => (exp.kind === 'rally' ? this.game.rally.report(exp)
+          : exp.kind === 'assist' && !exp.defeated ? this.game.assist.report(exp)
           : exp.recalled ? (exp.kind === 'explore' ? this.finishExplore(exp, { recalled: true }) : this.recalledReport(exp))
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)
             : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
             : exp.kind === 'infect' ? this.game.infected.resolveAttack(exp)
-              : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp);
+              : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp)));
         report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
         this.tagZone(report, exp);
         reports.push(report);
@@ -947,7 +981,7 @@ export class ExplorationSystem {
   huntArrive(exp, at) {
     exp.huntDone = true;
     const t = exp.huntTarget || {};
-    const r = this.game.zombies.attack(t.groupId, exp.memberIds, { arrived: true, at });
+    const r = this.game.combat.within(exp, () => this.game.zombies.attack(t.groupId, exp.memberIds, { arrived: true, at }));
     if (!r.ok) {
       exp.huntResult = { win: false, missed: true, events: [`🏳️ 抵達時${r.reason}，撲空了。`] };
       return;
@@ -1181,7 +1215,7 @@ export class ExplorationSystem {
         cp.events.push(`🧟 ${tag}遭遇 ${n} 隻殭屍`);
       }
       const fs = this.game.shelter.primary().facilities.watchtower.level * 0.04;
-      const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs, recoverTo: cp.gained, title: `🔍 ${ctx.poi.name}：${enemies[0]?.name || '殭屍'}${enemies.length > 1 ? ` ×${enemies.length}` : ''}` });
+      const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs, recoverTo: cp.gained, ref: exp, title: `🔍 ${ctx.poi.name}：${enemies[0]?.name || '殭屍'}${enemies.length > 1 ? ` ×${enemies.length}` : ''}` });
       this.game.combat.applyOutcome(members, result, at);
       if (result.refills) cp.events.push(`💊 ${result.refills.join('；')}`);
       cp.kills += result.kills.length;

@@ -104,7 +104,7 @@ export class InterceptSystem {
     this.game.state.expeditions.forEach((exp) => {
       if (exp.kind !== 'intercept' || exp.icptDone) return;
       const at = exp.startAt + (exp.travelMs || 0);
-      if (now >= at) this.arrive(exp, at);
+      if (now >= at) this.game.combat.within(exp, () => this.arrive(exp, at));
     });
   }
 
@@ -353,7 +353,7 @@ export class InterceptSystem {
     const g = this.game;
     const t = exp.icptTarget || {};
     const members = exp.memberIds.map((id) => g.survivors.get(id)).filter(Boolean);
-    if (!exp.icptDone) this.arrive(exp, exp.startAt + (exp.travelMs || 0));
+    if (!exp.icptDone) this.game.combat.within(exp, () => this.arrive(exp, exp.startAt + (exp.travelMs || 0)));
     const r = exp.icptResult;
     const report = {
       id: uid('rp'), poiName: `⚔️ 攔截：${t.name || '野外隊伍'}`, poiType: 'military', at: exp.endAt,

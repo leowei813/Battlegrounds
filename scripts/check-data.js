@@ -1436,11 +1436,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const shelfU = gu.blackMarket.shelf();
   assert(shelfT.length === BLACK_MARKET.slots, `黑市有 ${BLACK_MARKET.slots} 項商品`);
   assert(JSON.stringify(shelfT.map((x) => [x.id, x.kind, x.key || x.item.model, x.qty || 1, x.price])) === JSON.stringify(shelfU.map((x) => [x.id, x.kind, x.key || x.item.model, x.qty || 1, x.price])), '所有玩家看到的黑市商品完全相同');
-  // 每 10 分鐘只換掉 1 格
+  // 每 10 分鐘全部一起換新
   const t0 = Date.now();
   const later = gt.blackMarket.shelf(t0 + BLACK_MARKET.rotateMs).map((x) => x.id);
   const diff = shelfT.filter((x, i) => x.id !== later[i]).length;
-  assert(diff === 1, `每 10 分鐘換掉 1 格（換了 ${diff} 格）`);
+  assert(diff === BLACK_MARKET.slots, `每 10 分鐘 ${BLACK_MARKET.slots} 件全部換新（換了 ${diff} 件）`);
   // 比例與品級：大量取樣
   let gearN = 0;
   let legend = 0;
@@ -1476,6 +1476,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert((gt.state.supplies[good.key] || 0) + (gu.state.supplies[good.key] || 0) === before + beforeU + good.qty, '商品只交付一次');
   await lose.blackMarket.refresh();
   assert(lose.blackMarket.shelf().find((x) => x.id === good.id).soldTo, '另一位玩家立即看到已售出');
+  // 每輪限買 1 件：買到的人這一輪不能再買；沒買到（被搶走）的人仍可以買別件
+  const other = win.blackMarket.shelf().find((x) => !x.soldTo && x.id !== good.id && x.kind === 'supply');
+  const coinsW = win.state.player.coins;
+  const rAgain = await win.blackMarket.buy(other.id);
+  assert(!rAgain.ok && rAgain.reason.includes('這一輪') && win.state.player.coins === coinsW, '每位玩家每一輪只能買 1 件（不扣錢）');
+  assert(!lose.blackMarket.boughtThisRound(), '被別人搶先買走時，不算用掉自己的購買次數');
+  win.state.bmBought.tick -= 1;
+  assert(!win.blackMarket.boughtThisRound(), '下一輪換貨後可以再買');
   assert(!(await lose.blackMarket.buy(good.id)).ok, '已售出的商品不能再買');
   // 離線玩家：關閉遊戲期間別人買走，回來後同步看到已售出（不會因為沒有快取而重複購買）
   const go = mk('O');
@@ -4011,38 +4019,90 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(maxLv <= 5 + 3, `隊伍 Lv5 時，探索遇到的倖存者最多約 Lv${maxLv}（不會出現 Lv40）`);
 }
 
-// ---- 95. 黑市專屬保留區：每位玩家自己的格子、研究加格、每小時只補貨 1 格 ----
+// ---- 95. 移除黑市專屬保留區：舊存檔全額退還「黑市商人的厚愛」研究材料 ----
 {
-  const { BM_VIP } = await import('../src/systems/BlackMarketSystem.js');
+  const { REMOVED_RESEARCH, researchCost } = await import('../src/config/research.js');
   const gv = Game.newGame({ playerName: 'A95', classId: 'warrior', lat: 25, lon: 121 });
-  gv.state.map.pois = fillPois([], 25, 121);
-  gv.shelter.establish(gv.state.map.pois[0]);
-  const bm = gv.blackMarket;
-  const H = BM_VIP.refreshMs;
-  const t0 = Math.floor(Date.now() / H) * H + 1000;
-  assert(bm.vipCount() === 1 && bm.updateVip(t0).length === 1, '專屬保留區基本 1 格');
-  gv.state.research.levels.t_bm_vip = 4;
-  gv.research.invalidate();
-  assert(bm.vipCount() === 5 && bm.updateVip(t0).length === 5, '研究「黑市商人的厚愛」Lv4：共 5 格');
-  const ids0 = gv.state.bmVip.slots.map((x) => x.good.id);
-  gv.state.player.coins = 1e7;
-  (gv.state.survivors || []).forEach((sv) => { sv.bag = {}; });
-  gv.equipment.storeCap = () => 999;
-  const r = bm.buyVip(2, t0);
-  assert(r.ok && gv.state.bmVip.slots[2].sold && !bm.buyVip(2, t0).ok, `可以購買專屬商品，買過的格子不能重複買（${r.reason || ''}）`);
-  bm.updateVip(t0 + H * 0.5);
-  assert(gv.state.bmVip.slots[2].sold, '未滿一小時不會補貨');
-  bm.updateVip(t0 + H);
-  const ids1 = gv.state.bmVip.slots.map((x) => x.good.id);
-  assert(ids1.filter((id, i) => id !== ids0[i]).length === 1 && ids1[2] !== ids0[2] && !gv.state.bmVip.slots[2].sold, '一小時只補貨 1 格，優先補已買走的那一格');
-  bm.updateVip(t0 + H * 2);
-  const ids2 = gv.state.bmVip.slots.map((x) => x.good.id);
-  assert(ids2.filter((id, i) => id !== ids1[i]).length === 1, '沒有買走的格子時，每小時換掉最舊的一格');
-  bm.updateVip(t0 + H * 30);
-  const ids3 = gv.state.bmVip.slots.map((x) => x.good.id);
-  assert(ids3.every((id, i) => id !== ids2[i]), '離線很久回來：最多補滿全部格子');
-  const mig = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gv.state)), version: 23, bmVip: undefined });
-  assert(mig.bmVip && Array.isArray(mig.bmVip.slots), '舊存檔遷移：建立專屬保留區');
+  const st = JSON.parse(JSON.stringify(gv.state));
+  st.version = 24;
+  st.research.levels.t_bm_vip = 2;
+  st.bmVip = { slots: [], hour: 1 };
+  const c1 = researchCost('t_bm_vip', 1, REMOVED_RESEARCH.t_bm_vip);
+  const c2 = researchCost('t_bm_vip', 2, REMOVED_RESEARCH.t_bm_vip);
+  const key = Object.keys(c1).find((k) => k !== 'coins' && k !== 'parts');
+  const pool = (d) => (d.resources && key in d.resources ? d.resources : d.supplies || {});
+  const before = pool(st)[key] || 0;
+  const mig = SaveManager.migrate(st);
+  assert(!mig.research.levels.t_bm_vip && !mig.bmVip && (pool(mig)[key] || 0) === before + c1[key] + (c2[key] || 0), `舊存檔移除「黑市商人的厚愛」並全額退還材料（${key} +${c1[key] + (c2[key] || 0)}）`);
+}
+
+// ---- 96. 協防：召回的協防隊也顯示協防戰果；回家後才收到的戰果會補進報告 ----
+{
+  const ga = Game.newGame({ playerName: 'A96', classId: 'warrior', lat: 25, lon: 121 });
+  const L = ga.survivors.leader();
+  const exp = { kind: 'assist', recalled: true, assistTarget: { playerId: 'P96', name: '胖胖' }, memberIds: [L.id], travelEvents: ['↩️ 收到召回命令，隊伍折返避難所'], endAt: Date.now() };
+  const rep = ga.assist.report(exp);
+  assert(rep.success && rep.events.some((e) => e.includes('對方尚未回報戰果')) && !rep.events.some((e) => e.includes('沒有收穫')), '召回的協防隊使用協防報告（不再寫「這趟沒有收穫」）');
+  ga.state.reports = [rep, ...(ga.state.reports || [])];
+  assert(ga.assist.patchReport('P96', '🛡️ 協防「胖胖」戰報：擊殺 12 隻；✅ 成功守住', 12) && rep.events.some((e) => e.includes('成功守住')) && !rep.events.some((e) => e.includes('尚未回報')) && rep.kills === 12, '回家後收到的協防戰果補進報告');
+  assert(!ga.assist.patchReport('P96', 'x', 1), '同一份報告只補一次');
+}
+
+// ---- 97. 戰鬥明細跟著探索報告、避難所紀錄與事件紀錄保存 ----
+{
+  const g97 = Game.newGame({ playerName: 'A97', classId: 'warrior', lat: 25, lon: 121 });
+  const L = g97.survivors.leader();
+  const exp = { kind: 'explore', poiId: 'x', memberIds: [L.id] };
+  g97.combat.simulate([L], [g97.combat.createEnemy('walker', 1)], { title: '途中', ref: exp });
+  g97.combat.within(exp, () => g97.combat.simulate([L], [g97.combat.createEnemy('walker', 1)], { title: '檢核點' }));
+  const rep = { id: 'rp97', events: [], resources: {}, items: [], blueprints: [], members: [] };
+  g97.exploration.tagZone(rep, exp);
+  g97.state.reports = [rep];
+  assert(rep.battleIds?.length === 2 && rep.battleIds.every((id) => g97.combat.battle(id)), '探索中的戰鬥都記在該次探索報告裡');
+  // 不屬於探索或防守的戰鬥：附在接著的事件紀錄上
+  g97.combat.simulate([L], [g97.combat.createEnemy('walker', 1)], { title: '駐守攔截' });
+  g97.log('🛡️ 擊退路過的隊伍', 'success');
+  assert(g97.state.log[0].battleId && g97.combat.battle(g97.state.log[0].battleId)?.title === '駐守攔截', '其他戰鬥附在事件紀錄上');
+  // 防守紀錄
+  const holder = { battleIds: [] };
+  g97.combat.within(holder, () => g97.combat.simulate([L], [g97.combat.createEnemy('walker', 1)], { title: '防守' }));
+  g97.shelter.recordDefense({ attacker: 'NPC', success: true, battleIds: holder.battleIds });
+  assert(g97.state.defenseLog[0].battleIds?.length === 1 && g97.combat.battle(g97.state.defenseLog[0].battleIds[0]), '防守的戰鬥記在避難所紀錄裡');
+  // 報告被移除後，對應的戰鬥也一起清掉
+  g97.state.reports = [];
+  g97.combat.pruneBattles();
+  assert(!rep.battleIds.some((id) => g97.combat.battle(id)) && g97.state.battles.length === 2, '沒有報告引用的戰鬥會被清掉');
+  const old = JSON.parse(JSON.stringify(g97.state));
+  old.version = 24;
+  old.battles = [{ id: 'bt_old', title: 'x' }];
+  assert(SaveManager.migrate(old).battles.length === 0, '舊存檔的戰鬥紀錄（無法對應）不保留');
+}
+
+// ---- 98. 地窖：零件與布料每種藏起一定數量，屍潮突破時不會損失 ----
+{
+  const { cellarMatCap } = await import('../src/config/facilities.js');
+  const gc = Game.newGame({ playerName: 'K98', classId: 'warrior', lat: 25, lon: 121 });
+  gc.state.map.pois = fillPois([], 25, 121);
+  gc.shelter.establish(gc.state.map.pois[0]);
+  const base = gc.shelter.primary();
+  base.facilities.cellar.level = 5;
+  const cap = cellarMatCap(5);
+  assert(cap > 0 && cellarMatCap(6) > cap && gc.shelter.cellarProtect('nail') === cap, `地窖保護每種零件 ${cap} 個`);
+  const sup = gc.state.supplies;
+  Object.keys(sup).forEach((k) => { delete sup[k]; });
+  sup.nail = cap;
+  sup.screw = cap + 200;
+  const S = gc.siege.of();
+  let lostNail = 0;
+  let lostScrew = 0;
+  for (let i = 0; i < 40; i += 1) {
+    const out = S.loseMaterials();
+    lostNail += out.nail || 0;
+    lostScrew += out.screw || 0;
+  }
+  assert(lostNail === 0 && sup.nail === cap && lostScrew > 0 && sup.screw >= cap, '地窖容量內的零件不會損失，超過的部分才會');
+  const c = gc.shelter.cellarStatus();
+  assert(c.lv === 5 && c.matKinds === 2 && c.mats === cap * 2, '地窖顯示目前藏起的零件數量');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
