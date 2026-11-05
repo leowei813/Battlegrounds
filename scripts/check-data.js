@@ -1727,8 +1727,10 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const n1 = rw1.items.length + Object.keys(rw1.mats).length;
   const rw3 = A.infected.rewards(s, 3);
   const n3 = rw3.items.length + Object.values(rw3.mats).length;
-  assert(n1 >= 2 && n1 <= 4 && rw3.items.every((it) => ['uncommon', 'rare', 'epic', 'legendary'].includes(it.rarity)), `消滅獎勵數量與品級（1 人 ${n1} 種）`);
+  assert(n1 >= 3 && n1 <= 8 && rw3.items.every((it) => ['rare', 'epic', 'legendary'].includes(it.rarity)) && rw3.coins >= 1800, `消滅獎勵：1 人最多 8 種、裝備最低精良、金錢 ×3（1 人 ${n1} 種，3 人 💰${rw3.coins}）`);
   void n3;
+  const fr = A.infected.fightRewards(s, 30);
+  assert(fr.coins === 450 && Object.values(fr.mats).reduce((a, v) => a + v, 0) >= 6 && fr.items.every((it) => ['rare', 'epic', 'legendary'].includes(it.rarity)), `每場依淨化度給獎勵：+30% 得到 💰${fr.coins} 與 ${Object.keys(fr.mats).length} 種材料`);
   // 不會與玩家據點重疊：在據點位置上的重度感染據點會移到格子內其他位置
   const s0 = A.infected.list()[0];
   const C2 = mk('C2');

@@ -11,7 +11,7 @@ import { seeded, cellOf, cellBox, cellsAround } from '../multiplayer/worldGrid.j
  * 重度感染據點：每 2 平方公里一座，所有玩家共用（位置、強度、淨化度相同）。
  *  - 守軍是 Boss、精英與大量殭屍；一支隊伍很難單獨清除，淨化度會累積（未清除時緩慢回復感染）。
  *  - 每場戰鬥打到全員倒下或淨化 100%。
- *  - 淨化 100% 時消滅據點：依最後一場的參戰人數發放獎勵（1 人 3～4 種，每多 1 人上下限 +2，最低優良品級）。
+ *  - 每場依推進的淨化度給少量獎勵；淨化 100% 時消滅據點：依最後一場的參戰人數發放大獎勵（1 人 6～8 種，每多 1 人上下限 +4，最低精良品級）。
  *  - 被消滅後在下一個中午 12:00（世界時間）重新出現。
  */
 export const INFECTED = {
@@ -32,6 +32,10 @@ export const INFECTED = {
   clearM: 120,
   /** 圖示大小（比巨型據點略大） */
   pin: 48,
+  /** 每場依推進的淨化度給的獎勵：每 10% 一份 */
+  perFight: { coinsPer10: 150, matMin: 4, matMax: 8, gearChance: 0.2 },
+  /** 消滅時的獎勵：種類 ×2、材料數量 ×3、金錢 ×3，裝備最低精良，有機率多一張設計圖 */
+  kill: { kindsMul: 2, matMul: 3, coinsMul: 3, minRarity: 'rare', blueprintChance: 0.3 },
 };
 
 const NAMES = ['腐化醫院', '屍巢', '感染源', '黑霧區', '變異溫床', '血肉工廠', '哀嚎迷宮', '孢子塔'];
@@ -253,30 +257,56 @@ export class InfectedSystem {
     return { ok: true, ...r.result };
   }
 
-  /** 消滅獎勵：1 人 3～4 種，每多 1 人上下限 +2；最低優良品級 */
+  /** 消滅獎勵：1 人 6～8 種，每多 1 人上下限 +4；裝備最低精良；材料與金錢 ×3；有機率得到設計圖 */
   rewards(s, people) {
     const g = this.game;
+    const K = INFECTED.kill;
     const n = Math.max(1, people);
-    const kinds = randInt(3 + 2 * (n - 1), 4 + 2 * (n - 1));
+    const kinds = randInt((3 + 2 * (n - 1)) * K.kindsMul, (4 + 2 * (n - 1)) * K.kindsMul);
     const items = [];
     const mats = {};
     const pool = SUPPLY_KEYS.filter((k) => SUPPLIES[k].tier >= 3);
     for (let i = 0; i < kinds; i += 1) {
-      if (chance(0.5)) items.push(g.equipment.generate({ level: s.level, boost: 0.7, minRarity: 'uncommon' }));
+      if (chance(0.5)) items.push(g.equipment.generate({ level: s.level, boost: 0.7, minRarity: K.minRarity }));
       else {
         const k = pick(pool);
-        mats[k] = (mats[k] || 0) + (SUPPLIES[k].cat === 'med' ? randInt(2, 4) : randInt(3, 8));
+        mats[k] = (mats[k] || 0) + (SUPPLIES[k].cat === 'med' ? randInt(2, 4) : randInt(3, 8)) * K.matMul;
       }
     }
-    return { items, mats, coins: randInt(200, 400) * n };
+    const blueprints = chance(K.blueprintChance) ? [g.equipment.makeBlueprint(s.level)] : [];
+    return { items, mats, blueprints, coins: randInt(200, 400) * n * K.coinsMul };
+  }
+
+  /** 每場依推進的淨化度給的少量獎勵：每 10% 一份（不足 10% 的部分依比例機率） */
+  fightRewards(s, gain) {
+    const g = this.game;
+    const P = INFECTED.perFight;
+    const parts = Math.floor(gain / 10) + (chance((gain % 10) / 10) ? 1 : 0);
+    const items = [];
+    const mats = {};
+    const pool = SUPPLY_KEYS.filter((k) => SUPPLIES[k].tier >= 3 && SUPPLIES[k].cat !== 'ammo');
+    for (let i = 0; i < parts; i += 1) {
+      const k = pick(pool);
+      mats[k] = (mats[k] || 0) + (SUPPLIES[k].cat === 'med' ? Math.ceil(randInt(P.matMin, P.matMax) / 2) : randInt(P.matMin, P.matMax));
+      if (chance(P.gearChance)) items.push(g.equipment.generate({ level: s.level, boost: 0.5, minRarity: 'rare' }));
+    }
+    return { items, mats, blueprints: [], coins: Math.round(P.coinsPer10 * (gain / 10)) };
   }
 
   /** 把獎勵交給自己 */
   grantRewards(rw, source = '重度感染據點') {
     const g = this.game;
     rw.items.forEach((it) => g.equipment.addItem(it, source));
+    if (rw.blueprints?.length) g.state.inventory.blueprints.push(...rw.blueprints);
     const got = g.grant({ ...rw.mats, coins: rw.coins });
     return got;
+  }
+
+  /** 獎勵補進探索報告 */
+  addToReport(report, rw, got) {
+    Object.entries(got || {}).forEach(([k, v]) => { if (v > 0) report.resources[k] = (report.resources[k] || 0) + v; });
+    report.items = [...(report.items || []), ...rw.items];
+    report.blueprints = [...(report.blueprints || []), ...(rw.blueprints || [])];
   }
 
   /** 探索系統結算「淨化重度感染據點」 */
@@ -307,17 +337,20 @@ export class InfectedSystem {
         g.bus.emit('expedition:done', { reports: [] });
         return;
       }
+      // 這一場推進的淨化度：每 10% 一份少量獎勵（獎勵在寫入淨化度之後才決定，補進這一場的探索報告）
+      const fr = this.fightRewards(s, gain);
+      if (fr.coins > 0 || fr.items.length || Object.keys(fr.mats).length) {
+        this.addToReport(report, fr, this.grantRewards(fr));
+        report.events.push(`☣️ 淨化獎勵（+${gain.toFixed(1)}%）：💰${fr.coins}、${Object.keys(fr.mats).length} 種高階材料${fr.items.length ? `、${fr.items.length} 件裝備` : ''}`);
+      }
       if (r.killed) {
         const rw = this.rewards(s, people);
-        const got = this.grantRewards(rw);
-        // 獎勵是在寫入淨化度之後才決定：補進這一場的探索報告（報告產生時還不知道）
-        report.resources = { ...(report.resources || {}), ...Object.fromEntries(Object.entries(got).filter(([, v]) => v > 0)) };
-        report.items = [...(report.items || []), ...rw.items];
-        report.events.push(`🏆 消滅「${s.name}」！獲得 ${rw.items.length} 件裝備、${Object.keys(rw.mats).length} 種高階材料與 💰${rw.coins}`);
+        this.addToReport(report, rw, this.grantRewards(rw));
+        report.events.push(`🏆 消滅「${s.name}」！獲得 ${rw.items.length} 件裝備、${Object.keys(rw.mats).length} 種高階材料、💰${rw.coins}${rw.blueprints.length ? '、1 張設計圖' : ''}`);
         g.log(`🏆 消滅重度感染據點「${s.name}」！獲得 ${rw.items.length} 件裝備、${Object.keys(rw.mats).length} 種高階材料與 💰${rw.coins}`, 'success');
         g.toast(`🏆 消滅重度感染據點「${s.name}」！`, 'success');
-        g.requestSave?.();
       }
+      g.requestSave?.();
       g.bus.emit('npcs:changed');
       g.bus.emit('expedition:done', { reports: [] });
     });
