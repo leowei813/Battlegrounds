@@ -11,6 +11,11 @@ const MAX_TIME = 90;
  * 自動戰鬥系統（純邏輯、可測試）。
  * 以固定時間步模擬雙方依攻速輪流攻擊，回傳結果與戰鬥紀錄。
  */
+/** 戰鬥明細最多保留幾場；最新幾場保留逐筆過程；每份報告最多掛幾場 */
+const BATTLE_KEEP = 60;
+const BATTLE_FULL_LOG = 25;
+const BATTLES_PER_REF = 20;
+
 export class CombatSystem {
   constructor(game) {
     this.game = game;
@@ -145,6 +150,7 @@ export class CombatSystem {
   simulate(survivors, enemies, opts = {}) {
     // 記下這場用掉的彈藥：勝利後回收部分彈殼與箭矢
     this.fightUse = {};
+    this.pendingBattle = null;
     // allies：友好玩家的協防隊員（不是自己的倖存者，戰後由對方自行套用傷勢）
     const team = [...survivors.map((sv) => this.unitFromSurvivor(sv)), ...(opts.allies || []).map((a) => ({
       ...a, side: 'team', skills: {}, cd: randFloat(0, 0.3), healCd: 0, firstHit: true, lifeSteal: 0,
@@ -261,7 +267,7 @@ export class CombatSystem {
     else if (Object.keys(recovered).length) this.game.equipment?.addSupplies(recovered);
     push(t, victory ? '🏆 戰鬥勝利！' : '💀 戰鬥失敗，隊伍撤退…', victory ? 'win' : 'lose');
     // 記錄這場戰鬥的詳細資料（逐筆傷害、暴擊與每人傷害統計），在「消息 → 戰鬥紀錄」查看
-    if (opts.record !== false && survivors.length) this.record(opts.title, victory, t, log, team, foes);
+    if (opts.record !== false && survivors.length) this.record(opts.title, victory, t, log, team, foes, opts.ref || this.scope);
 
     return {
       victory,
@@ -314,8 +320,41 @@ export class CombatSystem {
     return hurt;
   }
 
-  /** 保存最近的戰鬥詳細（最多 10 場，每場最多 120 筆紀錄） */
-  record(title, victory, duration, log, team, foes) {
+  /**
+   * 在 fn 執行期間發生的戰鬥都歸到 target（探索隊、防守紀錄等）的 battleIds，
+   * 讓戰鬥明細顯示在該次探索報告或避難所紀錄裡。
+   */
+  within(target, fn) {
+    const prev = this.scope;
+    this.scope = target;
+    try { return fn(); } finally { this.scope = prev; }
+  }
+
+  /**
+   * 只保留還有報告、避難所紀錄或事件紀錄引用的戰鬥（最多 BATTLE_KEEP 場）；
+   * 較舊的只留統計、不留逐筆過程，避免存檔過大。
+   */
+  pruneBattles(keep = []) {
+    const st = this.game.state;
+    const used = new Set(keep);
+    const add = (ids) => (ids || []).forEach((id) => used.add(id));
+    (st.reports || []).forEach((r) => add(r.battleIds));
+    (st.defenseLog || []).forEach((e) => add(e.battleIds));
+    (st.expeditions || []).forEach((e) => add(e.battleIds));
+    (st.log || []).forEach((l) => l.battleId && used.add(l.battleId));
+    (st.bases || []).forEach((b) => add(b.nightBattles?.battleIds));
+    if (this.pendingBattle) used.add(this.pendingBattle);
+    st.battles = (st.battles || []).filter((b) => used.has(b.id)).slice(0, BATTLE_KEEP);
+    st.battles.forEach((b, i) => { if (i >= BATTLE_FULL_LOG && b.log?.length) b.log = []; });
+  }
+
+  /** 依 id 取出戰鬥紀錄 */
+  battle(id) {
+    return (this.game.state.battles || []).find((b) => b.id === id) || null;
+  }
+
+  /** 保存戰鬥詳細（每場最多 120 筆紀錄）；ref 是這場戰鬥所屬的探索隊或防守紀錄 */
+  record(title, victory, duration, log, team, foes, ref = null) {
     const st = this.game.state;
     const unit = (u) => ({
       name: u.name, side: u.side, dealt: Math.round(u.dealt || 0), taken: Math.round(u.taken || 0), crits: u.crits || 0, hits: u.hits || 0,
@@ -327,8 +366,12 @@ export class CombatSystem {
       team: team.map(unit), foes: foes.map(unit),
       log: (log.length > 120 ? [...log.slice(0, 100), { t: -1, msg: `…（中間省略 ${log.length - 120} 筆）`, type: 'info' }, ...log.slice(-20)] : log),
     };
-    st.battles = [entry, ...(st.battles || [])].slice(0, 10);
+    st.battles = [entry, ...(st.battles || [])];
     this.lastBattleId = entry.id;
+    // 歸屬：有所屬的探索或防守就記在那裡；沒有的話附在下一筆事件紀錄上
+    if (ref) ref.battleIds = [...(ref.battleIds || []), entry.id].slice(-BATTLES_PER_REF);
+    else this.pendingBattle = entry.id;
+    this.pruneBattles(ref?.battleIds || []);
   }
 
   /** 扣掉戰鬥中用掉的藥品欄藥品 */

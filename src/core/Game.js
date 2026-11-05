@@ -362,7 +362,13 @@ export class Game {
   }
 
   log(msg, type = 'info') {
-    this.state.log.unshift({ t: Date.now(), msg, type });
+    const entry = { t: Date.now(), msg, type };
+    // 不屬於任何探索或防守的戰鬥（例如駐守人員攔截路過的隊伍）：附在緊接著的事件紀錄上
+    if (this.combat?.pendingBattle) {
+      entry.battleId = this.combat.pendingBattle;
+      this.combat.pendingBattle = null;
+    }
+    this.state.log.unshift(entry);
     if (this.state.log.length > MAX_LOG) this.state.log.length = MAX_LOG;
     bus.emit(EVT.LOG);
     this.requestSave();

@@ -4048,6 +4048,63 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!ga.assist.patchReport('P96', 'x', 1), '同一份報告只補一次');
 }
 
+// ---- 97. 戰鬥明細跟著探索報告、避難所紀錄與事件紀錄保存 ----
+{
+  const g97 = Game.newGame({ playerName: 'A97', classId: 'warrior', lat: 25, lon: 121 });
+  const L = g97.survivors.leader();
+  const exp = { kind: 'explore', poiId: 'x', memberIds: [L.id] };
+  g97.combat.simulate([L], [g97.combat.createEnemy('walker', 1)], { title: '途中', ref: exp });
+  g97.combat.within(exp, () => g97.combat.simulate([L], [g97.combat.createEnemy('walker', 1)], { title: '檢核點' }));
+  const rep = { id: 'rp97', events: [], resources: {}, items: [], blueprints: [], members: [] };
+  g97.exploration.tagZone(rep, exp);
+  g97.state.reports = [rep];
+  assert(rep.battleIds?.length === 2 && rep.battleIds.every((id) => g97.combat.battle(id)), '探索中的戰鬥都記在該次探索報告裡');
+  // 不屬於探索或防守的戰鬥：附在接著的事件紀錄上
+  g97.combat.simulate([L], [g97.combat.createEnemy('walker', 1)], { title: '駐守攔截' });
+  g97.log('🛡️ 擊退路過的隊伍', 'success');
+  assert(g97.state.log[0].battleId && g97.combat.battle(g97.state.log[0].battleId)?.title === '駐守攔截', '其他戰鬥附在事件紀錄上');
+  // 防守紀錄
+  const holder = { battleIds: [] };
+  g97.combat.within(holder, () => g97.combat.simulate([L], [g97.combat.createEnemy('walker', 1)], { title: '防守' }));
+  g97.shelter.recordDefense({ attacker: 'NPC', success: true, battleIds: holder.battleIds });
+  assert(g97.state.defenseLog[0].battleIds?.length === 1 && g97.combat.battle(g97.state.defenseLog[0].battleIds[0]), '防守的戰鬥記在避難所紀錄裡');
+  // 報告被移除後，對應的戰鬥也一起清掉
+  g97.state.reports = [];
+  g97.combat.pruneBattles();
+  assert(!rep.battleIds.some((id) => g97.combat.battle(id)) && g97.state.battles.length === 2, '沒有報告引用的戰鬥會被清掉');
+  const old = JSON.parse(JSON.stringify(g97.state));
+  old.version = 24;
+  old.battles = [{ id: 'bt_old', title: 'x' }];
+  assert(SaveManager.migrate(old).battles.length === 0, '舊存檔的戰鬥紀錄（無法對應）不保留');
+}
+
+// ---- 98. 地窖：零件與布料每種藏起一定數量，屍潮突破時不會損失 ----
+{
+  const { cellarMatCap } = await import('../src/config/facilities.js');
+  const gc = Game.newGame({ playerName: 'K98', classId: 'warrior', lat: 25, lon: 121 });
+  gc.state.map.pois = fillPois([], 25, 121);
+  gc.shelter.establish(gc.state.map.pois[0]);
+  const base = gc.shelter.primary();
+  base.facilities.cellar.level = 5;
+  const cap = cellarMatCap(5);
+  assert(cap > 0 && cellarMatCap(6) > cap && gc.shelter.cellarProtect('nail') === cap, `地窖保護每種零件 ${cap} 個`);
+  const sup = gc.state.supplies;
+  Object.keys(sup).forEach((k) => { delete sup[k]; });
+  sup.nail = cap;
+  sup.screw = cap + 200;
+  const S = gc.siege.of();
+  let lostNail = 0;
+  let lostScrew = 0;
+  for (let i = 0; i < 40; i += 1) {
+    const out = S.loseMaterials();
+    lostNail += out.nail || 0;
+    lostScrew += out.screw || 0;
+  }
+  assert(lostNail === 0 && sup.nail === cap && lostScrew > 0 && sup.screw >= cap, '地窖容量內的零件不會損失，超過的部分才會');
+  const c = gc.shelter.cellarStatus();
+  assert(c.lv === 5 && c.matKinds === 2 && c.mats === cap * 2, '地窖顯示目前藏起的零件數量');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

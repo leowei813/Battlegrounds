@@ -407,6 +407,8 @@ export class SaveManager {
     if (v < 25) {
       // v9.25：移除黑市專屬保留區與研究「黑市商人的厚愛」：全額退還研究材料（含研究中、排隊中）
       delete data.bmVip;
+      // v9.25：戰鬥明細改為跟著探索報告與避難所紀錄保存；舊紀錄無法得知屬於哪一場，不保留
+      data.battles = [];
       data.bmBought = null;
       const R = data.research || {};
       const refund = {};

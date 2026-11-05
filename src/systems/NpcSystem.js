@@ -437,7 +437,9 @@ export class NpcSystem {
       // 掠奪隊抵達時立即交戰，之後返回據點
       if (n.trip?.kind === 'raid' && !n.trip.resolved && now >= this.arriveAt(n.trip)) {
         n.trip.resolved = true;
-        this.resolveIncoming(n, n.trip, now);
+        // 這次防守的戰鬥明細記在避難所紀錄裡
+        const holder = { battleIds: [] };
+        this.game.combat.within(holder, () => this.resolveIncoming(n, n.trip, now, holder));
       }
       if (!this.list.includes(n)) return;
       if (n.trip && now >= n.trip.endAt) this.finishTrip(n, now);
@@ -728,7 +730,7 @@ export class NpcSystem {
   }
 
   /** NPC 掠奪隊抵達玩家據點 */
-  resolveIncoming(n, trip, now) {
+  resolveIncoming(n, trip, now, holder = null) {
     const g = this.game;
     const base = g.shelter.base(trip.baseId);
     const arrive = this.arriveAt(trip);
@@ -780,7 +782,7 @@ export class NpcSystem {
       const how = !as.breached
         ? (enemies.length ? `圍牆撐住了 ${as.sec} 秒，掠奪隊放棄撤退` : '防禦設施在圍牆被打破前擊退了掠奪隊')
         : `圍牆被打破，防守人員（${defenders.map((d) => d.name).join('、')}）擊退了掠奪隊`;
-      const entry = g.shelter.recordDefense({
+      const entry = g.shelter.recordDefense({ battleIds: holder?.battleIds,
         base, attacker: label, success: true, kills, injured, wallLost: as.wallLost, note: [how, assistNote].filter(Boolean).join('。'), reward,
       });
       g.toast(`🛡️「${base.name}」擊退了「${n.name}」的掠奪隊！`, 'success');
@@ -802,7 +804,7 @@ export class NpcSystem {
     this.addResources(n, stolen, coins);
     g.state.stats.battlesLost += 1;
     const damaged = siege.damageBuildings(base);
-    g.shelter.recordDefense({
+    g.shelter.recordDefense({ battleIds: holder?.battleIds,
       base, attacker: label, success: false, lost: stolen, coins, kills, damaged, injured: ShelterSystem.newlySevere(severeBefore, defenders),
       wallLost: as.wallLost, note: [`圍牆被打破；${defenders.length || allies.length ? `防守人員（${[...defenders.map((d) => d.name), ...allies.map((a) => a.name)].join('、')}）戰敗` : '據點裡沒有人可以防守'}`, assistNote].filter(Boolean).join('。'),
     });

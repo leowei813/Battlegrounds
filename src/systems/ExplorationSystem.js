@@ -129,6 +129,8 @@ export class ExplorationSystem {
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   /** 探索報告記下目的地所在區域的危險等級（安全區～深淵區） */
   tagZone(report, exp) {
+    // 這次外出的戰鬥明細跟著報告一起保存
+    if (report && exp?.battleIds?.length && !report.battleIds) report.battleIds = [...exp.battleIds];
     if (!report || report.zone) return;
     const p = this.poi(exp?.poiId) || this.game.npcs.get?.(exp?.poiId);
     if (p && Number.isFinite(p.lat)) report.zone = zoneAt(p.lat, p.lon).id;
@@ -530,7 +532,7 @@ export class ExplorationSystem {
         continue;
       }
       const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
-      const result = this.game.combat.simulate(members, this.game.territory.defenders(th), { title: `⚔️ 經過「${th.name}」的警戒範圍` });
+      const result = this.game.combat.simulate(members, this.game.territory.defenders(th), { title: `⚔️ 經過「${th.name}」的警戒範圍`, ref: exp });
       this.game.combat.applyOutcome(members, result, now);
       if (result.refills) exp.travelEvents.push(`💊 ${result.refills.join('；')}`);
       exp.travelKills += result.kills.length;
@@ -587,7 +589,7 @@ export class ExplorationSystem {
   ambush(exp, g, members, now) {
     const poi = this.poi(exp.poiId);
     const enemies = Array.from({ length: g.count }, () => this.game.combat.createEnemy(g.enemyId, g.level, g.elite, this.game.zombies.groupMul(g)));
-    const result = this.game.combat.simulate(members, enemies, { title: `🧟 途中遭遇 ${this.game.zombies.groupLabel(g)}` });
+    const result = this.game.combat.simulate(members, enemies, { title: `🧟 途中遭遇 ${this.game.zombies.groupLabel(g)}`, ref: exp });
     this.game.combat.applyOutcome(members, result, now);
     if (result.refills) exp.travelEvents.push(`💊 ${result.refills.join('；')}`);
     const label = `${ALL_ENEMIES[g.enemyId].icon} ${this.game.zombies.groupLabel(g)}`;
@@ -873,7 +875,7 @@ export class ExplorationSystem {
           return;
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
-        const report = exp.kind === 'rally' ? this.game.rally.report(exp)
+        const report = this.game.combat.within(exp, () => (exp.kind === 'rally' ? this.game.rally.report(exp)
           : exp.kind === 'assist' && !exp.defeated ? this.game.assist.report(exp)
           : exp.recalled ? (exp.kind === 'explore' ? this.finishExplore(exp, { recalled: true }) : this.recalledReport(exp))
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
@@ -881,7 +883,7 @@ export class ExplorationSystem {
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)
             : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
             : exp.kind === 'infect' ? this.game.infected.resolveAttack(exp)
-              : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp);
+              : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp)));
         report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
         this.tagZone(report, exp);
         reports.push(report);
@@ -979,7 +981,7 @@ export class ExplorationSystem {
   huntArrive(exp, at) {
     exp.huntDone = true;
     const t = exp.huntTarget || {};
-    const r = this.game.zombies.attack(t.groupId, exp.memberIds, { arrived: true, at });
+    const r = this.game.combat.within(exp, () => this.game.zombies.attack(t.groupId, exp.memberIds, { arrived: true, at }));
     if (!r.ok) {
       exp.huntResult = { win: false, missed: true, events: [`🏳️ 抵達時${r.reason}，撲空了。`] };
       return;
@@ -1213,7 +1215,7 @@ export class ExplorationSystem {
         cp.events.push(`🧟 ${tag}遭遇 ${n} 隻殭屍`);
       }
       const fs = this.game.shelter.primary().facilities.watchtower.level * 0.04;
-      const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs, recoverTo: cp.gained, title: `🔍 ${ctx.poi.name}：${enemies[0]?.name || '殭屍'}${enemies.length > 1 ? ` ×${enemies.length}` : ''}` });
+      const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: fs, recoverTo: cp.gained, ref: exp, title: `🔍 ${ctx.poi.name}：${enemies[0]?.name || '殭屍'}${enemies.length > 1 ? ` ×${enemies.length}` : ''}` });
       this.game.combat.applyOutcome(members, result, at);
       if (result.refills) cp.events.push(`💊 ${result.refills.join('；')}`);
       cp.kills += result.kills.length;
