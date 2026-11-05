@@ -215,9 +215,11 @@ export class SurvivorPanel {
     list.forEach((sv) => { counts[this.stateOf(sv)] += 1; });
     const shown = list.filter((sv) => filter === 'all' || this.stateOf(sv) === filter);
     const chip = (id, label) => `<button class="chip ${filter === id ? 'active' : ''}" data-action="svFilter" data-f="${id}">${label}</button>`;
-    const recruitN = (st.recruitOffer || []).length + st.recruitPool.length + (st.recruitBoard?.list || []).length;
+    const recruitAll = [...(st.recruitOffer || []), ...(st.recruitPool || []), ...(st.recruitBoard?.list || [])];
+    const recruitN = recruitAll.length;
+    const recruitLegend = recruitAll.some((c) => c.rarity === 'legendary');
     const roster = `<aside class="sv-roster">
-      <div class="sv-roster-head"><h3>👥 倖存者 ${list.length}/${g.survivors.housing()}</h3>${(() => { const n = g.survivors.healableAtHome().length; return `<button class="sv-heal-chip ${n ? '' : 'off'}" data-action="healAll" ${n ? '' : 'disabled'} title="${n ? `用倉庫的藥品，從低階開始治療 ${n} 位在家、生命沒滿的倖存者（不溢出）` : '沒有需要治療的人，或倉庫沒有不會溢出的藥品'}">💊 全員治療${n ? ` <span class="n">${n}</span>` : ''}</button>`; })()}<button class="sv-recruit-chip ${this.view === 'recruit' ? 'on' : ''}" data-action="svRecruit" title="可招募的候選人數">📻 招募 <span class="n">${recruitN}</span></button></div>
+      <div class="sv-roster-head"><h3>👥 倖存者 ${list.length}/${g.survivors.housing()}</h3>${(() => { const n = g.survivors.healableAtHome().length; return `<button class="sv-heal-chip ${n ? '' : 'off'}" data-action="healAll" ${n ? '' : 'disabled'} title="${n ? `用倉庫的藥品，從低階開始治療 ${n} 位在家、生命沒滿的倖存者（不溢出）` : '沒有需要治療的人，或倉庫沒有不會溢出的藥品'}">💊 全員治療${n ? ` <span class="n">${n}</span>` : ''}</button>`; })()}<button class="sv-recruit-chip ${this.view === 'recruit' ? 'on' : ''} ${recruitLegend ? 'legend' : ''}" data-action="svRecruit" title="${recruitLegend ? '有傳說倖存者等待招募！' : '可招募的候選人數'}">📻 招募 <span class="n">${recruitN}</span></button></div>
       ${g.survivors.housing() >= MAX_SURVIVORS && list.length >= MAX_SURVIVORS ? `<div class="sv-max-note">已達最高人數 ${MAX_SURVIVORS} 人（領袖 Lv15、宿舍 Lv7 以上）。宿舍繼續升級可提升休息回復、減少食物消耗、增加招募候選人。</div>` : ''}
       <div class="chips">${chip('all', '全部')}${chip('home', `在家 ${counts.home}`)}${chip('out', `外出 ${counts.out}`)}${chip('hurt', `重傷 ${counts.hurt}`)}</div>
       ${g.survivors.isStarving() ? '<div class="card warn">🍽️ <b>食物耗盡，全員飢餓中！</b>每分鐘流失 4% 生命直到重傷；飢餓時仍可治療，但生命會持續流失。</div>' : ''}
