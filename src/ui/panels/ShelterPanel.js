@@ -367,10 +367,10 @@ export class ShelterPanel {
     if (!d.type) {
       return `<p class="muted">選擇要在此槽位建造的防禦建築：</p>
       ${Object.entries(DEFENSES).map(([type, def]) => {
-        const lock = g.shelter.defenseLockReason(type);
+        const lock = g.shelter.defenseLockReason(type) || g.shelter.defenseLimitReason(base, slot, type);
         const s = def.stats(1);
         return `<div class="fac-card ${lock ? 'locked' : ''}">
-          <div class="fac-head"><span class="fac-icon">${def.icon}</span><div><b>${def.name}</b><small class="muted block">${def.desc}</small></div></div>
+          <div class="fac-head"><span class="fac-icon">${def.icon}</span><div><b>${def.name}</b>${def.limit ? ` <small class="tag">每個據點限 ${def.limit} 座</small>` : ''}<small class="muted block">${def.desc}</small></div></div>
           <div class="muted">${s.damage ? `傷害 ${s.damage}・` : ''}${s.fireRate ? `攻速 ${s.fireRate}/秒・` : ''}${s.wallBonus ? `圍牆 +${s.wallBonus}` : ''}</div>
           ${def.power ? `<div class="${g.siege.of(this.ui.viewBase()?.id).powered() ? 'pos' : 'neg'}">⚡ 需要發電機運轉${g.siege.of(this.ui.viewBase()?.id).powered() ? '（目前有電）' : '（目前沒電：建造發電機並保持燃料）'}</div>` : ''}
           <div class="row-between"><div class="costs">${costHtml(st, g.shelter.defenseCost(type, 1))}</div>

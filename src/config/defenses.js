@@ -37,7 +37,7 @@ export const DEFENSES = {
     stats: (lv) => ({ damage: 10 + lv * 8, fireRate: 2, range: 22, slow: 0.35, aoe: true }),
   },
   electricFence: {
-    name: '電網', icon: '⚡', color: 0xffca28, requires: 'd_fence', power: true,
+    name: '電網', icon: '⚡', color: 0xffca28, requires: 'd_fence', power: true, limit: 1,
     desc: '通電的圍網，持續電擊貼近圍牆的所有殭屍並短暫麻痺。需要據點的發電機運轉（有燃料）才會作用。',
     cost: (lv) => mat('electricFence', ['elec', 'struct'], { metal: 100, fuel: 25 }, lv),
     stats: (lv) => ({ damage: 16 + lv * 11, fireRate: 1, range: 14, stun: 0.22, aoe: true }),
@@ -55,7 +55,7 @@ export const DEFENSES = {
     stats: (lv) => ({ damage: 36 + lv * 22, fireRate: 1.2, range: 45, aoe: true, aoeRadius: 24 }),
   },
   emTower: {
-    name: '電磁塔', icon: '🌀', color: 0x29b6f6, requires: 'd_em',
+    name: '電磁塔', icon: '🌀', color: 0x29b6f6, requires: 'd_em', limit: 1,
     desc: '連鎖電擊並短暫麻痺目標。',
     cost: (lv) => mat('emTower', ['elec'], { metal: 140, fuel: 30, parts: 3 }, lv),
     stats: (lv) => ({ damage: 45 + lv * 24, fireRate: 0.8, range: 60, chain: 3, stun: 0.45 }),

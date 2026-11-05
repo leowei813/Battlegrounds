@@ -4444,6 +4444,41 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gz.siege.of().zombieLevel() === 60, `屍潮殭屍最高 Lv60（${gz.siege.of().zombieLevel()}）`);
 }
 
+// ---- 106. 電磁塔、電網每個據點限 1 座；舊存檔多出的拆除並全額退還材料 ----
+{
+  const gd = Game.newGame({ playerName: 'D106', classId: 'warrior', lat: 25, lon: 121 });
+  gd.state.map.pois = fillPois([], 25, 121);
+  gd.shelter.establish(gd.state.map.pois.find((p) => gd.shelter.canEstablish(p).ok));
+  const b = gd.shelter.primary();
+  gd.research.isDone = () => true;
+  gd.research.hasUnlock = () => true;
+  fillSupplies(gd);
+  Object.keys(gd.state.resources).forEach((k) => { gd.state.resources[k] = 1e6; });
+  gd.state.player.coins = 1e7;
+  gd.state.player.parts = 1e6;
+  b.facilities.generator && (b.facilities.generator.level = 1);
+  const r1 = gd.shelter.buildDefense(b, 0, 'emTower');
+  b.buildQueue = [];
+  const r2 = gd.shelter.buildDefense(b, 1, 'emTower');
+  assert(r1.ok && !r2.ok && r2.reason.includes('最多 1 座'), `電磁塔每個據點只能一座（${r2.reason}）`);
+  const r3 = gd.shelter.buildDefense(b, 1, 'electricFence');
+  b.buildQueue = [];
+  const r4 = gd.shelter.buildDefense(b, 2, 'electricFence');
+  assert(r3.ok && !r4.ok, '電網每個據點只能一座');
+  assert(gd.shelter.buildDefense(b, 2, 'machineGun').ok, '其他防禦建築沒有數量限制');
+  b.buildQueue = [];
+  // 舊存檔：3 座電磁塔 → 保留等級最高的一座，其餘拆除並退還
+  while (b.defenses.length < 5) b.defenses.push({ slot: b.defenses.length, type: null, level: 0, garrisonId: null });
+  b.defenses[0].level = 2;
+  Object.assign(b.defenses[3], { type: 'emTower', level: 5 });
+  Object.assign(b.defenses[4], { type: 'emTower', level: 1 });
+  const nail0 = gd.state.supplies.nail || 0;
+  const notes = gd.shelter.enforceDefenseLimits();
+  const ems = b.defenses.filter((d) => d.type === 'emTower');
+  assert(notes.length === 2 && ems.length === 1 && ems[0].level === 5, '舊存檔多出的電磁塔只保留等級最高的一座');
+  assert(gd.state.log.some((l) => l.msg.includes('全額退還')), '拆除時記錄並退還材料');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

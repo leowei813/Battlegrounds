@@ -583,6 +583,47 @@ export class ShelterSystem {
     return req && !this.game.research.isDone(req) ? `需研究「${RESEARCH[req].name}」` : '';
   }
 
+  /** 數量限制（電磁塔、電網每個據點只能一座）：超過時回傳原因 */
+  defenseLimitReason(b, slot, type) {
+    const base = this.resolve(b);
+    const limit = DEFENSES[type]?.limit;
+    if (!base || !limit) return '';
+    const n = base.defenses.filter((x, i) => i !== slot && x.type === type).length;
+    return n >= limit ? `每個據點最多 ${limit} 座${DEFENSES[type].name}` : '';
+  }
+
+  /**
+   * 舊存檔：超過數量限制的電磁塔、電網只保留等級最高的一座，其餘拆除並全額退還建造材料。
+   * @returns {string[]} 拆除的說明
+   */
+  enforceDefenseLimits() {
+    const notes = [];
+    this.game.state.bases.forEach((base) => {
+      Object.entries(DEFENSES).filter(([, def]) => def.limit).forEach(([type, def]) => {
+        const slots = base.defenses.map((d, i) => ({ d, i })).filter(({ d }) => d.type === type)
+          .sort((a, b) => b.d.level - a.d.level);
+        slots.slice(def.limit).forEach(({ d, i }) => {
+          const refund = {};
+          const add = (cost) => Object.entries(cost || {}).forEach(([k, v]) => { refund[k] = (refund[k] || 0) + v; });
+          for (let lv = 1; lv <= d.level; lv += 1) add(this.defenseCost(type, lv));
+          // 施工中的升級：一併取消並退還
+          base.buildQueue = (base.buildQueue || []).filter((q) => {
+            if (q.kind === 'defense' && q.slot === i) { add(q.cost); return false; }
+            return true;
+          });
+          this.game.grant(refund, true);
+          notes.push(`「${base.name}」的${def.name} Lv${d.level}`);
+          Object.assign(d, { type: null, level: 0, garrisonId: null });
+        });
+      });
+    });
+    if (notes.length) {
+      this.game.civilization.invalidate();
+      this.game.log(`🛡️ 電磁塔與電網每個據點限 1 座：已拆除多出的 ${notes.join('、')}，並全額退還建造材料`, 'info');
+    }
+    return notes;
+  }
+
   defenseCost(type, level) {
     return this.discounted(DEFENSES[type].cost(level));
   }
@@ -594,6 +635,8 @@ export class ShelterSystem {
     if (!d) return { ok: false, reason: '無效槽位' };
     if (d.type && d.type !== type) return { ok: false, reason: '請先拆除原有建築' };
     if (!this.isDefenseUnlocked(type)) return { ok: false, reason: this.defenseLockReason(type) };
+    const limitReason = this.defenseLimitReason(base, slot, type);
+    if (limitReason) return { ok: false, reason: limitReason };
     if (d.level >= DEFENSE_MAX_LEVEL) return { ok: false, reason: '已達最高等級' };
     if (this.isSlotBusy(base, slot)) return { ok: false, reason: '施工中' };
     if (this.queueFull(base)) return { ok: false, reason: '施工佇列已滿' };
