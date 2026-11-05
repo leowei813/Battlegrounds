@@ -118,6 +118,8 @@ export const POI_TYPES = {
     enemies: { walker: 6, infected: 3, berserker: 1 },
   },
   bakery: {
+    // v10 移除：不再產生（保留定義讓舊存檔讀得到，載入後改為商店）
+    removed: true,
     name: '麵包店', icon: '🥖', color: '#ffb74d', danger: 1, amountMul: 1.5,
     loot: { food: 10 },
     itemChance: 0, blueprintChance: 0,

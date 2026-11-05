@@ -262,10 +262,9 @@ export class NpcSystem {
     // 只出現在玩家的可視範圍內（避難所 POI_SCAN_RADIUS、前哨站 OUTPOST_SCAN_RADIUS；所有玩家都算，彼此看到的相同）
     const views = this.viewZones();
     const inView = (p) => views.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r);
-    // 哪些格子有 NPC：只看 OpenStreetMap 的真實建築（所有玩家相同），不看各自隨機補上的建築；
-    // 完全沒有真實建築資料時（離線、程序生成地圖）才用全部建築
+    // 哪些格子有 NPC：只看固定格子產生的地點（v10，所有玩家相同）；舊地圖沒有時才用全部建築
     const pois = this.game.state.map.pois;
-    const real = pois.filter((p) => String(p.id).startsWith('osm_'));
+    const real = pois.filter((p) => String(p.id).startsWith('w_'));
     const cells = new Set();
     (real.length ? real : pois).forEach((p) => cells.add(this.cellOf(p.lat, p.lon)));
     const want = [];

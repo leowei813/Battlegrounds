@@ -295,7 +295,7 @@ export class MapPanel {
     this.ui.mapRoot.dataset.phase = this.game.time.phaseId(); // 地圖依日夜變暗
     const st = this.game.state;
     const has = this.game.shelter.hasShelter();
-    const src = { overpass: 'OpenStreetMap', generated: '程序生成（OSM 無法連線）', none: '—' }[st.map.source] || st.map.source;
+    const src = { overpass: 'OpenStreetMap', generated: '隨機地圖', none: '—' }[st.map.source] || st.map.source;
     const html = `
       ${has ? '' : '<div class="map-hint">👆 點選地圖上任一建築，將它設為你的<b>避難所</b></div>'}
       <div class="map-tools">
@@ -303,7 +303,6 @@ export class MapPanel {
         ${btn(`🔔<small class="alert-lbl ${this.game.shelter.alert ? 'on' : ''}">${this.game.shelter.alert ? '警戒中' : '正常'}</small>`, 'mapAlert', {}, { cls: `btn-icon alert-btn ${this.game.shelter.alert ? 'on' : ''}`, disabled: !has, title: this.game.shelter.alert ? '警戒中：按一下解除警戒' : '按一下切換警戒（全部倖存者暫時防禦駐守）' })}
         ${btn(`💬${unreadCount(this.game) ? `<small class="unread">${unreadCount(this.game)}</small>` : ''}`, 'messages', {}, { cls: 'btn-icon', title: '消息：探索報告與避難所紀錄' })}
         ${btn(`🗨️${this.game.chat.unread() ? `<small class="unread">${Math.min(99, this.game.chat.unread())}</small>` : ''}`, 'chat', {}, { cls: `btn-icon ${this.ui.chatView?.isOpen ? 'on' : ''}`, title: '全服聊天：所有玩家都看得到' })}
-        ${btn(this.scanning ? '⏳' : '🔄', 'rescan', {}, { cls: 'btn-icon', disabled: this.scanning, title: '重新掃描附近建築' })}
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
         ${btn('☣️', 'zoneMode', {}, { cls: `btn-icon ${this.service.zoneMode?.() === 'off' ? '' : 'on'}`, title: '危險度圖層：淡／關閉' })}
       </div>
@@ -578,23 +577,6 @@ export class MapPanel {
     if (action === 'flyTo') {
       const b = this.game.shelter.base(data.id);
       if (b) this.service.focus(b.lat, b.lon, 17);
-    }
-    if (action === 'rescan') {
-      if (this.scanning) return;
-      this.scanning = true;
-      this.scanProgress = '';
-      this.renderOverlay();
-      const c = sh || this.game.state.map.center;
-      this.ui.toastEl.show(`📡 掃描避難所${this.game.shelter.outposts().length ? `與 ${this.game.shelter.outposts().length} 座前哨站` : ''}附近的建築中，市區可能需要 30 秒～1 分鐘…`, 'info', 6000);
-      const r = await this.game.scanMap(c.lat, c.lon, (done, total) => {
-        this.scanProgress = `${done}/${total}`;
-        this.lastOverlay = '';
-        this.renderOverlay();
-      });
-      this.scanning = false;
-      this.scanProgress = '';
-      this.ui.toastEl.show(`發現 ${r.count} 個地點（${r.source === 'overpass' ? 'OSM' : '程序生成'}）`, 'success');
-      this.renderMap(true);
     }
   }
 

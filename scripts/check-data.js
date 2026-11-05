@@ -67,7 +67,7 @@ Object.entries(POI_TYPES).forEach(([id, p]) => {
 globalThis.performance ??= { now: () => Date.now() };
 const g = Game.newGame({ playerName: 'CI', classId: 'scout', lat: 25.0339, lon: 121.5645 });
 g.state.map.pois = fillPois([], 25.0339, 121.5645);
-assert(g.shelter.setShelter(g.state.map.pois[0]).ok, 'set shelter');
+assert(g.shelter.setShelter(g.state.map.pois.find((p) => g.shelter.canEstablish(p).ok)).ok, 'set shelter');
 
 // ---- 白天：地圖上沒有殭屍（只在探索的建築內遭遇）----
 setHour(g, 10);
@@ -138,7 +138,7 @@ g2.state.createdAt -= 20 * DAY_REAL_MS; // 經過 20 天
 g2.civilization.invalidate();
 assert(g2.siege.of().zombieLevel() - lvDay1 <= 1, '天數本身不會提升屍潮強度（夜間 ±1）');
 
-const outpostPoi = g.state.map.pois.find((p) => !g.shelter.baseAtPoi(p.id));
+const outpostPoi = g.state.map.pois.find((p) => !g.shelter.baseAtPoi(p.id) && !g.infected.blocking(p, 200));
 assert(!g.shelter.canEstablish(outpostPoi).ok, '避難所只能一座，未研究前哨站科技不能建第二個據點');
 g.state.research.levels.e_outpost = 1;
 g.research.invalidate();
@@ -854,7 +854,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gs.research.invalidate();
   fillSupplies(gs);
   gs.state.player.coins = 1e5;
-  gs.shelter.establish(gs.state.map.pois.find((p) => !gs.shelter.baseAtPoi(p.id)));
+  gs.shelter.establish(gs.state.map.pois.find((p) => !gs.shelter.baseAtPoi(p.id) && gs.shelter.canEstablish(p).ok));
   const areas = gs.scanAreas(25.03, 121.56);
   assert(areas.length === 2 && areas[1].radius < areas[0].radius, '重新掃描包含前哨站附近，範圍較小');
 }
@@ -1766,6 +1766,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { NPC_ASSAULT: NA } = await import('../src/config/npcs.js');
   const naBak = { ...NA };
   Object.assign(NA, { hp: 1, atk: 1, count: 1, wall: 1, dps: 1 });
+  // 兩位玩家各自的 NPC 資料都設成弱小（結算可能由任一位玩家執行）
+  const nb = B.npcs.get(n.id);
+  if (nb) { nb.baseLevel = 1; nb.levelLoss = 0; nb.level = 1; nb.wounded = 0; }
   const target = { kind: 'npc', id: n.id, ident: n.ident, name: n.name, lat: n.lat, lon: n.lon };
   assert(!A.rally.canStart(target).ok, '沒有廣播塔不能發起集結');
   A.shelter.primary().facilities.broadcast.level = 1;
@@ -2384,8 +2387,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const gt = Game.newGame({ playerName: 'T1', classId: 'warrior', lat: 25, lon: 121 });
   gt.state.map.pois = fillPois(dense, 25, 121);
   gt.shelter.establish(gt.state.map.pois.find((p) => p.id === 'r3'));
-  gt.thinMap();
-  assert(gt.state.map.pois.some((p) => p.id === 'r3') && gt.state.map.pois.filter((p) => p.type === 'forest').length >= 95 && gt.state.map.pois.filter((p) => p.type === 'pharmacy').length >= 35, '舊地圖整理密度時保留據點，並補足樹林與藥局');
+  // v10：舊地圖（真實建築）換成固定格子產生的地圖，據點所在的舊地點保留
+  gt.genMap();
+  assert(gt.state.map.pois.some((p) => p.id === 'r3') && gt.state.map.pois.filter((p) => p.id.startsWith('w_')).length > 1000, '換成隨機地圖時保留據點所在的地點');
 }
 
 // ---- 42. v8.28：攻擊據點要先破牆、再打贏人員；威脅提示 ----
@@ -4098,6 +4102,17 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(SaveManager.migrate(old).battles.length === 0, '舊存檔的戰鬥紀錄（無法對應）不保留');
 }
 
+// ---- 97b. 同一波屍潮的多次交戰合併成一場戰鬥紀錄 ----
+{
+  const gw = Game.newGame({ playerName: 'W97', classId: 'warrior', lat: 25, lon: 121 });
+  const L = gw.survivors.leader();
+  const night = { battleIds: [] };
+  for (let i = 0; i < 4; i += 1) gw.combat.simulate([L], [gw.combat.createEnemy('walker', 1)], { title: '第 2 波', ref: night, merge: 'wave2' });
+  gw.combat.simulate([L], [gw.combat.createEnemy('walker', 1)], { title: '第 3 波', ref: night, merge: 'wave3' });
+  const b2 = gw.combat.battle(night.battleIds[0]);
+  assert(night.battleIds.length === 2 && b2.fights === 4 && b2.foes.length === 4, `同一波屍潮的多次交戰合併成一場（${night.battleIds.length} 場）`);
+}
+
 // ---- 98. 地窖：零件與布料每種藏起一定數量，屍潮突破時不會損失 ----
 {
   const { cellarMatCap } = await import('../src/config/facilities.js');
@@ -4147,6 +4162,33 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     const near = gi.infected.list().every((x) => gi.state.bases.every((b) => haversine(b.lat, b.lon, x.lat, x.lon) > gi.territory.alertRadius(b) + INFECTED.clearM));
     assert(near, '重度感染據點避開自己的據點與警戒範圍');
   }
+}
+
+// ---- 100. v10 隨機地圖：固定格子產生、所有玩家相同、比例與區域限定 ----
+{
+  const { generatePois } = await import('../src/map/WorldGen.js');
+  const { zoneIndexAt } = await import('../src/config/zones.js');
+  const a = generatePois(25.0339, 121.5645, 1150);
+  const b = generatePois(25.0339, 121.5645, 1150);
+  assert(a.length > 1250 && a.length < 1550, `避難所周圍 1.15 公里約 1,400 個地點（${a.length}）`);
+  assert(JSON.stringify(a) === JSON.stringify(b), '同一位置每次（每位玩家）產生的地點完全相同');
+  const big = [[25.03, 121.56], [24.8, 121.0], [23.0, 120.2], [22.6, 120.3], [24.15, 120.67]].flatMap(([la, lo]) => generatePois(la, lo, 2500));
+  const share = (t) => big.filter((p) => p.type === t).length / big.length;
+  const food = share('residential') + share('shop') + share('supermarket');
+  assert(Math.abs(food - 0.24) < 0.04 && Math.abs(share('forest') - 0.18) < 0.03, `比例接近目標（食物 ${(food * 100).toFixed(0)}%、樹林 ${(share('forest') * 100).toFixed(0)}%）`);
+  assert(!big.some((p) => p.type === 'bakery'), '不再產生麵包店');
+  assert(big.filter((p) => p.type === 'pharmacy').every((p) => zoneIndexAt(p.lat, p.lon) <= 2), '藥局只出現在警戒區以下');
+  assert(big.filter((p) => p.type === 'hospital').every((p) => zoneIndexAt(p.lat, p.lon) >= 2), '醫院只出現在警戒區以上');
+  assert(big.filter((p) => p.type === 'military').every((p) => zoneIndexAt(p.lat, p.lon) === 5), '軍事基地只出現在深淵區');
+  // 遊戲中的地圖：避難所與前哨站周圍，保留搜刮紀錄；舊存檔的麵包店據點改為商店
+  const gm = Game.newGame({ playerName: 'M100', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gm.genMap(25.0339, 121.5645);
+  const home = gm.state.map.pois.find((p) => gm.shelter.canEstablish(p).ok);
+  gm.shelter.establish(home);
+  const p0 = gm.state.map.pois.find((p) => p.id !== home.id);
+  p0.lootedDay = 123;
+  gm.genMap();
+  assert(gm.state.map.pois.find((p) => p.id === p0.id)?.lootedDay === 123 && gm.state.map.source === 'generated', '重新產生地圖時保留每個地點的搜刮紀錄');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

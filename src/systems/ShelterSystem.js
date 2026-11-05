@@ -232,6 +232,11 @@ export class ShelterSystem {
     }
     this.game.civilization.invalidate();
     this.game.log(`🏠 ${kind === 'shelter' ? '建立避難所' : '建立前哨站'}於「${poi.name}」`, 'success');
+    // v10：新據點周圍的地點直接產生（不需要重新掃描）
+    if (this.game.state.map.source === 'generated') {
+      this.game.genMap();
+      this.game.bus.emit('map:changed');
+    }
     this.game.bus.emit('shelter:changed');
     return { ok: true, base, msg: kind === 'shelter' ? `避難所設於 ${poi.name}` : `已在 ${poi.name} 建立前哨站` };
   }

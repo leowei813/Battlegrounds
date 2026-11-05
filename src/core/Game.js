@@ -21,10 +21,10 @@ import { TerritorySystem } from '../systems/TerritorySystem.js';
 import { GpsSystem } from '../systems/GpsSystem.js';
 import { grant } from '../systems/costUtils.js';
 import { isSupply } from '../config/supplies.js';
-import { fetchPois, thinPois } from '../map/OverpassService.js';
+import { generatePois } from '../map/WorldGen.js';
+import { POI_TYPES } from '../config/poiTypes.js';
 import { haversine } from '../utils/math.js';
 import { POI_THIN_VERSION } from '../config/constants.js';
-import { fillPois } from '../map/PoiGenerator.js';
 import { MarkerSystem } from '../systems/MarkerSystem.js';
 import { InterceptSystem } from '../systems/InterceptSystem.js';
 import { BlackMarketSystem } from '../systems/BlackMarketSystem.js';
@@ -82,19 +82,6 @@ export class Game {
       ...this.state.bases.map((b) => b.poiId), ...this.state.expeditions.map((e) => e.poiId),
       ...(this.state.map.markers || []).map((m) => m.id), ...(this.state.npcs?.list || []).map((n) => n.poiId),
     ]);
-  }
-
-  /** 舊地圖：依目前的密度規則整理一次（太密集的區域減少地點，並補足樹林、藥局） */
-  thinMap() {
-    const map = this.state.map;
-    if (!map.pois?.length || map.thinV === POI_THIN_VERSION) return;
-    const c = this.shelter.primary() || map.center;
-    if (!c) return;
-    const before = map.pois.length;
-    map.pois = fillPois(thinPois(map.pois, c.lat, this.protectedPoiIds()), c.lat, c.lon);
-    map.thinV = POI_THIN_VERSION;
-    map.fetchedAt = Date.now(); // 觸發地圖重新上傳
-    console.info(`[Game] 地圖密度整理：${before} → ${map.pois.length}`);
   }
 
   /**
@@ -160,7 +147,8 @@ export class Game {
   start() {
     // 裝備戰力公式可能更新（例如計入詞條）：每次啟動重新計算
     this.equipment.items.forEach((it) => { it.power = this.equipment.itemPower(it); });
-    this.thinMap();
+    // v10：地圖地點由固定格子產生（舊存檔的真實建築地圖在這裡換成新地圖）
+    this.genMap();
     // 標記地點已移除：清除舊存檔的標記（不再保留遠處的標記建築）
     if (this.state.map.markers?.length) this.state.map.markers = [];
     const report = this.processOffline();
@@ -308,48 +296,49 @@ export class Game {
     ];
   }
 
-  async scanMap(lat, lon, onProgress, { quick = false, maxWaitMs = 0 } = {}) {
-    let pois = [];
-    let source = 'overpass';
-    const areas = this.scanAreas(lat, lon);
-    try {
-      // 依序掃描各區域（公共伺服器限制同時請求數），進度合併計算
-      const run = async () => {
-        const seen = new Set();
-        const out = [];
-        for (let i = 0; i < areas.length; i += 1) {
-          const a = areas[i];
-          const list = await fetchPois(a.lat, a.lon, a.radius, onProgress && ((d, t) => onProgress(i * t + d, areas.length * t)), { buildings: !quick });
-          list.forEach((p) => { if (!seen.has(p.id)) { seen.add(p.id); out.push(p); } });
-        }
-        return out;
-      };
-      pois = maxWaitMs
-        ? await Promise.race([run(), new Promise((_, rej) => setTimeout(() => rej(new Error('quick scan timeout')), maxWaitMs))])
-        : await run();
-    } catch (err) {
-      console.warn('[Game] Overpass failed, using generated POIs', err);
-      source = 'generated';
-    }
-    pois = fillPois(thinPois(pois, lat, this.protectedPoiIds()), lat, lon);
+  /**
+   * v10：依固定格子產生地圖地點（避難所＋前哨站周圍，所有玩家相同；不需要網路）。
+   * 保留每個地點的搜刮紀錄，以及據點、探索目的地、佇列與 NPC 所在的地點（即使不在範圍內）。
+   * @returns {boolean} 地點清單是否有變動
+   */
+  genMap(lat = null, lon = null) {
     const map = this.state.map;
-    map.thinV = POI_THIN_VERSION;
-    const old = new Map(map.pois.map((p) => [p.id, p]));
-    // 同一棟建築保留今日搜刮紀錄
-    pois.forEach((p) => { if (old.get(p.id)?.lootedDay) p.lootedDay = old.get(p.id).lootedDay; });
-    // 保留據點與探索中目的地的 POI，避免重新掃描後消失
-    const keep = new Set([...this.state.bases.map((b) => b.poiId), ...this.state.expeditions.map((e) => e.poiId), ...this.markers.list.map((m) => m.id)]);
+    const c = this.shelter.primary() || (lat != null ? { lat, lon } : map.center);
+    if (!c) return false;
+    const old = new Map((map.pois || []).map((p) => [p.id, p]));
+    const seen = new Set();
+    const pois = [];
+    this.scanAreas(c.lat, c.lon).forEach((a) => generatePois(a.lat, a.lon, a.radius).forEach((p) => {
+      if (seen.has(p.id)) return;
+      seen.add(p.id);
+      const o = old.get(p.id);
+      if (o) ['lootedDay', 'lootedBy', 'lastVisit', 'depletion'].forEach((k) => { if (o[k] != null) p[k] = o[k]; });
+      pois.push(p);
+    }));
+    // 據點、探索目的地與佇列、NPC 據點所在的舊地點：不在範圍內也保留，避免消失
+    const keep = new Set([...this.protectedPoiIds(), ...this.state.expeditions.flatMap((e) => e.queue || [])]);
     keep.forEach((id) => {
       const p = old.get(id);
-      if (p && !pois.some((q) => q.id === id)) pois.push(p);
+      if (p && !seen.has(id)) { pois.push(p); seen.add(id); }
     });
+    // 麵包店已移除：舊存檔保留下來的麵包店改為商店
+    pois.forEach((p) => { if (POI_TYPES[p.type]?.removed) p.type = 'shop'; });
+    const changed = pois.length !== (map.pois || []).length || pois.some((p) => !old.has(p.id));
     this.markers.ensure(pois);
-    Object.assign(map, {
-      center: { lat, lon }, pois, source, fetchedAt: Date.now(), zombieGroups: [], lastZombieRefresh: 0, zombieNight: null,
-    });
+    map.pois = pois;
+    map.source = 'generated';
+    if (!map.center || lat != null) map.center = { lat: c.lat, lon: c.lon };
+    map.thinV = POI_THIN_VERSION;
+    if (changed) map.fetchedAt = Date.now(); // 建築清單變更，雲端另存的建築清單會重新上傳
+    return changed;
+  }
+
+  /** 舊的地圖掃描入口：改為直接產生地圖（保留介面給舊呼叫端） */
+  async scanMap(lat, lon) {
+    this.genMap(lat, lon);
     this.zombies.update(Date.now());
     bus.emit(EVT.MAP_CHANGED);
-    return { count: pois.length, source };
+    return { count: this.state.map.pois.length, source: 'generated' };
   }
 
   /** 給予資源/貨幣（自動套用倉庫上限） */
