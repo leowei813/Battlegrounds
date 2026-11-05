@@ -8,6 +8,8 @@
 const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
 /** 物件在伺服器保留多久沒更新就清除 */
 export const OBJ_KEEP_MS = 14 * 24 * 3600 * 1000;
+/** 伺服器每種物件最多回傳的數量；回傳數達到上限時代表結果被截斷 */
+export const OBJ_LIST_LIMIT = 500;
 
 /** 本機記憶體版本的共用物件（與伺服器相同的語意，供單機與測試使用；多個遊戲可共用同一個實例模擬多人） */
 export class MemoryObjects {
@@ -118,14 +120,7 @@ export class SharedWorld {
   async list(kind, km = 5, at = this.center()) {
     const { b } = this.store();
     const list = await b.objList(kind, at.lat, at.lon, km);
-    const now = Date.now();
-    [...this.cache.keys()].forEach((k) => { if (k.startsWith(`${kind}:`)) this.cache.delete(k); });
-    (Array.isArray(list) ? list : []).forEach((o) => {
-      if (!o || typeof o !== 'object' || o.kind !== kind || !o.id) return;
-      if (o.updatedAt && now - o.updatedAt > OBJ_KEEP_MS) return;
-      this.cache.set(this.key(kind, o.id), o);
-    });
-    this.listedAt[kind] = now;
+    this.replace([kind], list);
     return this.all(kind);
   }
 
@@ -160,10 +155,27 @@ export class SharedWorld {
   replace(kinds, list) {
     const now = Date.now();
     const set = new Set(kinds);
-    [...this.cache.entries()].forEach(([k, o]) => { if (set.has(o.kind)) this.cache.delete(k); });
-    (Array.isArray(list) ? list : []).forEach((o) => {
+    const arr = Array.isArray(list) ? list : [];
+    // 某種物件回傳數達到伺服器上限：結果被截斷（沒回傳的不代表已刪除），改為合併，不清掉已知的物件。
+    // 否則每次同步都會隨機少掉一部分（例如「已搜空」的地點紀錄時有時無，地圖忽亮忽灰、自動探索一直重複出發）
+    const count = {};
+    arr.forEach((o) => { if (o?.kind) count[o.kind] = (count[o.kind] || 0) + 1; });
+    const truncated = new Set(kinds.filter((k) => (count[k] || 0) >= OBJ_LIST_LIMIT));
+    const known = new Map(this.cache);
+    [...this.cache.entries()].forEach(([k, o]) => {
+      if (!set.has(o.kind)) return;
+      if (truncated.has(o.kind) && !(o.updatedAt && now - o.updatedAt > OBJ_KEEP_MS)) return;
+      this.cache.delete(k);
+    });
+    arr.forEach((o) => {
       if (!o || typeof o !== 'object' || !set.has(o.kind) || !o.id) return;
       if (o.updatedAt && now - o.updatedAt > OBJ_KEEP_MS) return;
+      const cur = known.get(this.key(o.kind, o.id));
+      // 已知的版本比較新（剛寫入、伺服器回傳的是舊資料）時保留新的
+      if (cur && (cur.ver || 0) > (o.ver || 0)) {
+        this.cache.set(this.key(o.kind, o.id), cur);
+        return;
+      }
       this.cache.set(this.key(o.kind, o.id), o);
     });
     kinds.forEach((k) => { this.listedAt[k] = now; });

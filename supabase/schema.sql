@@ -224,6 +224,7 @@ returns json language sql security definer set search_path = public as $$
     where kind = p_kind
       and (lat is null or (abs(lat - p_lat) <= least(p_km, 20) / 111.32
         and abs(lon - p_lon) <= least(p_km, 20) / (111.32 * greatest(cos(radians(p_lat)), 0.1))))
+    order by updated_at desc
     limit 500
   ) o;
 $$;
@@ -240,6 +241,7 @@ returns json language sql security definer set search_path = public as $$
       where o.kind = q.kind
         and (o.lat is null or (abs(o.lat - p_lat) <= least(q.km, 20) / 111.32
           and abs(o.lon - p_lon) <= least(q.km, 20) / (111.32 * greatest(cos(radians(p_lat)), 0.1))))
+      order by o.updated_at desc
       limit 500
     ) x
   ) o;
