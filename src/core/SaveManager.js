@@ -435,7 +435,7 @@ export class SaveManager {
       }
     }
     if (v < 26) {
-      // v9.26：黑市改為每 30 分鐘換新、每輪限買 2 件：購買紀錄改存成清單（舊的一輪紀錄已過期，直接清空）
+      // v9.26：黑市改為每 30 分鐘換新：購買紀錄改存成清單（舊的一輪紀錄已過期，直接清空）
       data.bmBought = null;
     }
     if (v < 23 && data.research?.levels?.r_board) {

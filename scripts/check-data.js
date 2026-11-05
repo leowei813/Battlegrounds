@@ -1476,13 +1476,12 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert((gt.state.supplies[good.key] || 0) + (gu.state.supplies[good.key] || 0) === before + beforeU + good.qty, '商品只交付一次');
   await lose.blackMarket.refresh();
   assert(lose.blackMarket.shelf().find((x) => x.id === good.id).soldTo, '另一位玩家立即看到已售出');
-  // 每輪限買 2 件：第 2 件可以買，第 3 件不行；沒買到（被搶走）的人仍可以買別件
-  assert(BLACK_MARKET.rotateMs === 30 * 60000 && BLACK_MARKET.perRound === 2, '黑市每 30 分鐘換新、每輪限買 2 件');
-  const others = win.blackMarket.shelf().filter((x) => !x.soldTo && x.id !== good.id && x.kind === 'supply');
-  assert(!win.blackMarket.boughtThisRound() && (await win.blackMarket.buy(others[0].id)).ok && win.blackMarket.boughtIds().length === 2, '同一輪可以買第 2 件');
+  // 每輪限買 1 件：買到的人這一輪不能再買；沒買到（被搶走）的人仍可以買別件
+  assert(BLACK_MARKET.rotateMs === 30 * 60000 && BLACK_MARKET.perRound === 1, '黑市每 30 分鐘換新、每輪限買 1 件');
+  const other = win.blackMarket.shelf().find((x) => !x.soldTo && x.id !== good.id && x.kind === 'supply');
   const coinsW = win.state.player.coins;
-  const rAgain = await win.blackMarket.buy(others[1].id);
-  assert(!rAgain.ok && rAgain.reason.includes('這一輪') && win.state.player.coins === coinsW, '每位玩家每一輪最多買 2 件（第 3 件不扣錢）');
+  const rAgain = await win.blackMarket.buy(other.id);
+  assert(!rAgain.ok && rAgain.reason.includes('這一輪') && win.state.player.coins === coinsW, '每位玩家每一輪只能買 1 件（不扣錢）');
   assert(!lose.blackMarket.boughtThisRound(), '被別人搶先買走時，不算用掉自己的購買次數');
   win.state.bmBought.tick -= 1;
   assert(!win.blackMarket.boughtThisRound(), '下一輪換貨後可以再買');

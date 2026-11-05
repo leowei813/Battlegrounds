@@ -30,7 +30,7 @@ export const BLACK_MARKET = {
   slots: 20,
   rotateMs: 30 * 60 * 1000,
   /** 每位玩家每一輪可以買幾件 */
-  perRound: 2,
+  perRound: 1,
   /** 裝備所占比例（其餘為消耗品：材料、藥品、彈藥） */
   gearShare: 0.15,
   /** 售價倍率（相對於過去流浪商人的價格） */
