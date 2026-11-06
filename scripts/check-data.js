@@ -1844,8 +1844,12 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   await A.rally.step(A.rally.trips()[0], d1.fightAt + 5);
   const ea = A.rally.trips()[0];
   const ca0 = A.state.player.coins;
-  A.exploration.update(ea.endAt + 1, { silent: true });
+  const repsA = A.exploration.update(ea.endAt + 1, { silent: true });
   assert(!A.rally.trips().length && lead.status === 'idle', '離線的發起人上線後隊伍回家並結算');
+  {
+    const ra = repsA.find((r) => r.poiName.includes('集結'));
+    assert(ra && ra.events.some((e) => e.includes('攻擊圍牆')) && ra.events.some((e) => e.includes('👥')) && ra.events.some((e) => e.includes(lead.name) && e.includes('傷害')), `沒有計算戰鬥的參加者（離線後上線）也拿到完整集結戰報（${ra?.events.slice(0, 5).join(' / ')}）`);
+  }
   assert(d2.result.victory, `強大的集結隊伍攻陷弱小的 NPC（${d2.result.summary}）`);
   {
     assert(A.state.player.coins > ca0 && B.state.player.coins > cb0, `勝利時依貢獻分配金錢，每支隊伍都有保底（${A.state.player.coins - ca0} / ${B.state.player.coins - cb0}）`);
