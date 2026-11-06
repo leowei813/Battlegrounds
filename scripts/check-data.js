@@ -4802,6 +4802,31 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(Math.abs(s.clock - 120.1) < 0.01, '模擬時鐘跟著補算推進');
 }
 
+// ---- 121. 被攻陷後重生的 NPC 據點至少 Lv35（被擊退的等級損失也不會低於 Lv35） ----
+{
+  const { NPC_CONFIG: NC } = await import('../src/config/npcs.js');
+  const gn = Game.newGame({ playerName: 'N121', classId: 'warrior', lat: 25, lon: 121 });
+  const fresh = { baseLevel: 3, bornAt: Date.now(), dc: 0, levelLoss: 0, sid: 'x' };
+  assert(gn.npcs.sharedLevel(fresh) === 3, '一般 NPC 據點照原本等級');
+  const reborn = { baseLevel: 3, bornAt: Date.now(), dc: 1, levelLoss: 10, sid: 'x' };
+  assert(NC.respawnMinLevel === 35 && gn.npcs.sharedLevel(reborn) === 35, `重生的 NPC 據點至少 Lv35（${gn.npcs.sharedLevel(reborn)}）`);
+  assert(gn.npcs.sharedLevel({ ...reborn, levelLoss: 0, baseLevel: 38 }) === 38, '重生後原本就更高的照實際等級');
+  // 實際的格子：模擬被攻陷後，下一次產生的是 dc=1 的重生據點
+  let cell = null;
+  let found = -1;
+  for (let i = 0; i < 20 && found < 0; i += 1) for (let slot = 0; slot < 2 && found < 0; slot += 1) if (gn.npcs.slotNpc(`${i}:1`, slot)) { cell = `${i}:1`; found = slot; }
+  assert(found >= 0, '找到可測試的 NPC 格子');
+  {
+    const sid = `${cell}:${found}`;
+    const base = gn.npcs.slotNpc(cell, found);
+    gn.shared = gn.shared || {};
+    const realGet = gn.shared.get?.bind(gn.shared);
+    gn.shared.get = (kind, id) => (kind === 'npc' && id === sid ? { gen: base.gen, dc: 1, ident: base.ident, destroyed: { at: Date.now() - 2000, respawnAt: Date.now() - 1000 } } : realGet?.(kind, id));
+    const re = gn.npcs.slotNpc(cell, found);
+    assert(re && re.dc === 1 && re.baseLevel >= 35, `格子重生的 NPC 據點基礎等級至少 35（${re?.baseLevel}）`);
+  }
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

@@ -138,7 +138,7 @@ export class NpcSystem {
     const bornAt = dc > 0 && d?.destroyed ? d.destroyed.respawnAt : genStart;
     const ident = `${sid}:${gen}:${dc}`;
     const box = cellBox(i, j, NPC_CONFIG.cellKm);
-    return seeded(`npc:${ident}`, () => {
+    const npc = seeded(`npc:${ident}`, () => {
       const lat = box.lat0 + box.dLat * randFloat(0.1, 0.9);
       const lon = box.lon0 + box.dLon * randFloat(0.1, 0.9);
       const zone = zoneAt(lat, lon);
@@ -152,6 +152,14 @@ export class NpcSystem {
         coins: randInt(40, 120),
       };
     });
+    // 被攻陷後重生的據點：至少 respawnMinLevel 級
+    if (dc > 0) npc.baseLevel = Math.max(npc.baseLevel, this.minLevel(npc));
+    return npc;
+  }
+
+  /** 最低等級：被攻陷後重生的據點至少 respawnMinLevel 級，其餘 1 級 */
+  minLevel(n) {
+    return (n?.dc || 0) > 0 ? Math.min(NPC_CONFIG.maxLevel, NPC_CONFIG.respawnMinLevel ?? 1) : 1;
   }
 
   /** 依識別碼找回共用 NPC（不在自己附近時也能重建，例如集結時） */
@@ -179,7 +187,7 @@ export class NpcSystem {
 
   /** 共用 NPC 目前的等級：基礎等級＋存在時間成長－被擊退的損失 */
   sharedLevel(n, now = Date.now()) {
-    return Math.max(1, Math.min(NPC_CONFIG.maxLevel, n.baseLevel + Math.floor(Math.max(0, now - n.bornAt) / SHARED_NPC.levelMs) - (n.levelLoss || 0)));
+    return Math.max(this.minLevel(n), Math.min(NPC_CONFIG.maxLevel, n.baseLevel + Math.floor(Math.max(0, now - n.bornAt) / SHARED_NPC.levelMs) - (n.levelLoss || 0)));
   }
 
   /** 由共用資料更新 NPC 的狀態（有人改變過才套用） */
@@ -488,7 +496,7 @@ export class NpcSystem {
       n.levelLoss = (n.levelLoss || 0) + by;
       n.level = this.sharedLevel(n);
       this.push(n, (d) => { d.levelLoss = (d.levelLoss || 0) + by; });
-    } else n.level = Math.max(1, n.level - by);
+    } else n.level = Math.max(this.minLevel(n), n.level - by);
   }
 
   /** NPC 物資增減（掠奪所得、被屍群破壞） */
