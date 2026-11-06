@@ -552,20 +552,32 @@ export class MapPanel {
     return rows.length ? `<div class="map-feed">${rows.join('')}</div>` : '';
   }
 
-  /** 各據點即時屍潮摘要；點擊可飛到該據點 */
+  /** 各據點即時屍潮摘要（夜間整晚顯示波數與剩餘波數）；點擊可飛到該據點 */
   siegeBanner() {
     const g = this.game;
     const helpers = g.assist.incoming();
     const rows = g.state.bases.map((b) => {
       const s = g.siege.of(b.id);
       const ratio = g.shelter.wallHp(b) / g.shelter.wallMax(b);
-      return { b, n: s.zombies.length, ratio };
-    }).filter((r) => r.n > 0 || r.ratio < 0.999);
+      return { b, n: s.zombies.length, ratio, st: s.nightState() };
+    }).filter((r) => r.st || r.n > 0 || r.ratio < 0.999);
     if (!rows.length) return '';
-    return `<div class="siege-banner">${rows.map(({ b, n, ratio }) => `
-      <button class="siege-chip ${ratio < 0.3 ? 'danger' : ''}" data-action="flyTo" data-id="${b.id}">
-        ${g.shelter.isPrimary(b) ? '⭐' : '🏠'} ${escapeHtml(b.name)}・🧟${n}・🧱${Math.round(ratio * 100)}%${g.shelter.isPrimary(b) && helpers.length ? `・🛡️協防 ${helpers.length}` : ''}
-      </button>`).join('')}</div>`;
+    const dawn = '☀️ 天亮 06:00';
+    return `<div class="siege-banner">${rows.map(({ b, n, ratio, st }) => {
+      const wall = `🧱${Math.round(ratio * 100)}%`;
+      const help = g.shelter.isPrimary(b) && helpers.length ? `・🛡️協防 ${helpers.length}` : '';
+      let cls = ratio < 0.3 ? 'danger' : '';
+      let text = `🧟${n}・${wall}`;
+      if (st?.state === 'wait') { cls = 'wait'; text = `🌙 屍潮將至・第 1 波 <b>${formatDuration(st.nextIn * 1000)}</b>後來襲・今晚共 <b>${st.maxWaves}</b> 波`; }
+      if (st?.state === 'attack') text = `🧟 第 <b>${st.wave}/${st.maxWaves}</b> 波・剩 <b>${st.leftWaves}</b> 波・🧟${n}・${wall}`;
+      if (st?.state === 'lull') { cls = ratio < 0.3 ? 'danger' : 'lull'; text = `第 <b>${st.wave}/${st.maxWaves}</b> 波已擊退・剩 <b>${st.leftWaves}</b> 波・下一波 <b>${formatDuration(st.nextIn * 1000)}</b>後・${wall}`; }
+      if (st?.state === 'done') { cls = 'done'; text = `✅ 今夜屍潮已結束・${wall}・${dawn}`; }
+      if (st?.state === 'broke') { cls = 'broke'; text = `💥 今夜屍潮已結束${st.wave ? `（第 ${st.wave} 波被突破）` : '（防線被突破）'}・${dawn}`; }
+      return `
+      <button class="siege-chip ${cls}" data-action="flyTo" data-id="${b.id}">
+        ${g.shelter.isPrimary(b) ? '⭐' : '🏠'} ${escapeHtml(b.name)}・${text}${help}
+      </button>`;
+    }).join('')}</div>`;
   }
 
   async onAction(action, data = {}) {

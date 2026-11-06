@@ -4713,6 +4713,31 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(sh.cache.get(sh.key('poi', 'pv')).ver === 5, '伺服器回傳較舊的版本時保留較新的');
 }
 
+// ---- 118. 地圖頁屍潮提示：入夜後整晚顯示波數與剩餘波數，結束或被突破後顯示「今夜屍潮已結束」直到天亮 ----
+{
+  const gs = Game.newGame({ playerName: 'S118', classId: 'warrior', lat: 25, lon: 121 });
+  gs.state.map.pois = fillPois([], 25, 121);
+  gs.shelter.establish(gs.state.map.pois.find((p) => gs.shelter.canEstablish(p).ok));
+  gs.shelter.primary().facilities.wall.level = 10;
+  setHour(gs, 9);
+  const s = gs.siege.of();
+  s.update(0.1);
+  assert(s.nightState() === null, '白天沒有屍潮狀態');
+  setHour(gs, 21);
+  s.update(0.1);
+  const w = s.nightState();
+  assert(w?.state === 'wait' && w.maxWaves === s.maxWaves() && w.nextIn > 0, `入夜後第一波來襲前顯示倒數（${w?.state}）`);
+  const seen = new Set();
+  for (let i = 0; i < 20000 && s.nightState()?.state !== 'done'; i += 1) { s.update(0.1); gs.shelter.primary().wallHp = null; seen.add(s.nightState()?.state); }
+  const atk = seen.has('attack');
+  assert(atk && s.nightState()?.state === 'done', `經歷進攻後顯示今夜結束（${[...seen].join(',')}）`);
+  // 被突破：記錄波數並顯示到天亮
+  const b = gs.shelter.primary();
+  delete b.nightStats; s.wave = 2; s.breach();
+  const br = s.nightState();
+  assert(br?.state === 'broke' && br.wave === 2, `防線被突破後顯示被突破的波數（${br?.state} ${br?.wave}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
