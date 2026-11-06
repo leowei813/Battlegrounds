@@ -438,7 +438,8 @@ export class BaseSiege {
   /** dt：秒 */
   update(dt) {
     if (!this.base) return;
-    let remain = Math.min(dt, 1);
+    // 背景分頁回來時可能一次補算較長的時間（由 Game 限制上限）
+    let remain = Math.max(0, dt);
     while (remain > 0) {
       const step = Math.min(remain, 0.1);
       this.step(step);
@@ -447,7 +448,9 @@ export class BaseSiege {
   }
 
   step(dt) {
-    const now = performance.now() / 1000;
+    // 模擬時鐘（秒）：跟著模擬推進，補算背景時間時暈眩等效果也正確
+    this.clock = (this.clock || 0) + dt;
+    const now = this.clock;
     const sh = this.game.shelter;
     const base = this.base;
     const phase = this.game.time.phase();
@@ -634,7 +637,7 @@ export class BaseSiege {
         this.pushFx({ type: 'trap', x: pos.x, y: pos.y, r: st.range });
         break;
       case 'electricFence': {
-        const nowS = performance.now() / 1000;
+        const nowS = this.clock;
         inRange.forEach((z) => {
           this.damage(z, base);
           z.stunUntil = Math.max(z.stunUntil || 0, nowS + st.stun);
@@ -663,7 +666,7 @@ export class BaseSiege {
           chain.push(next);
           cur = next;
         }
-        const nowS = performance.now() / 1000;
+        const nowS = this.clock;
         let from = pos;
         chain.forEach((z, i) => {
           this.damage(z, base * (1 - i * 0.2));

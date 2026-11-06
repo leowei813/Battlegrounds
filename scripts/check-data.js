@@ -4786,6 +4786,22 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(C.territory.defenders(oz, 20).length === 9 && C.territory.defenders(oz).length === 6, '舊版資料以掠奪者代替：突襲不限人數、經過警戒範圍仍為 6 人');
 }
 
+// ---- 120. 分頁切到背景時屍潮不會暫停：一次補算較長的時間，波次照常推進 ----
+{
+  const gs = Game.newGame({ playerName: 'S120', classId: 'warrior', lat: 25, lon: 121 });
+  gs.state.map.pois = fillPois([], 25, 121);
+  gs.shelter.establish(gs.state.map.pois.find((p) => gs.shelter.canEstablish(p).ok));
+  gs.shelter.primary().facilities.wall.level = 15;
+  gs.civilization.maxWaves = () => 4;
+  setHour(gs, 21);
+  const s = gs.siege.of();
+  s.update(0.1);
+  assert(s.wave === 0, '入夜時第一波還沒來');
+  s.update(120);
+  assert(s.wave >= 2, `一次補算 120 秒後波次照常推進（第 ${s.wave} 波）`);
+  assert(Math.abs(s.clock - 120.1) < 0.01, '模擬時鐘跟著補算推進');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
