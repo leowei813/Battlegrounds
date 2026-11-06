@@ -42,6 +42,9 @@ import {
 
 /** 每公里單程移動時間（分鐘，未套用速度加成） */
 const MIN_PER_KM_ONE_WAY = 1.2;
+/** 搜完整棟建築的經驗倍率（相對建築等級的普通殭屍經驗） */
+const SEARCH_XP_MUL = 0.5;
+
 /** 移動途中，殭屍群在此距離內（公尺）就可能發動襲擊 */
 export const AMBUSH_RADIUS_M = 90;
 /** 每個接近的殭屍群發動襲擊的基礎機率（偵察兵的尋路技能可降低） */
@@ -127,6 +130,15 @@ export class ExplorationSystem {
 
   get list() {
     return this.game.state.expeditions;
+  }
+
+  /** 搜完整棟建築的經驗：建築殭屍等級的普通殭屍經驗 × 0.5 × 大小倍率（小 1／中 1.25／大 1.5／巨 1.75） */
+  searchXp(poi) {
+    if (!poi) return 0;
+    const lv = this.game.zombies.buildingLevel(poi, this.game.time.phase());
+    const base = this.game.combat.createEnemy('walker', lv).xp;
+    const size = { small: 1, medium: 1.25, large: 1.5, huge: 1.75 }[baseSizeOf(poi)] || 1;
+    return Math.max(1, Math.round(base * SEARCH_XP_MUL * size));
   }
 
   /** 報告附上每位隊員這趟實際拿到的經驗（出發時與回來時的累計經驗差；重傷扣經驗時為負） */
@@ -229,7 +241,13 @@ export class ExplorationSystem {
   progress(exp, now = Date.now()) {
     const poi = this.poi(exp.poiId);
     if (!poi) return null;
-    return tripProgress({ ...exp, to: { lat: poi.lat, lon: poi.lon } }, now);
+    // 連續探索：搜完後要不要直接前往下一站，在下一次更新時才決定；決定前先停在建築裡，
+    // 避免地圖上先往回家的方向走一小段、再跳回來前往下一站
+    const searchEnd = exp.startAt + (exp.travelMs || 0) + (exp.searchMs || 0);
+    const chainable = exp.kind === 'explore' && exp.chain !== false && !exp.chainChecked && !exp.recalled && !exp.defeated
+      && ((exp.queue || []).length || exp.auto) && !(exp.nextVehicleIds || []).length;
+    const at = chainable && now > searchEnd ? Math.max(searchEnd - 1, exp.startAt) : now;
+    return tripProgress({ ...exp, to: { lat: poi.lat, lon: poi.lon } }, at);
   }
 
   validate(poiId, memberIds) {
@@ -1379,6 +1397,7 @@ export class ExplorationSystem {
       report.blueprints = [...cp.blueprints];
       report.carried = true;
       this.markVisited(exp, poi, cp, complete);
+      if (cp.searchXp) report.events.push(`⭐ 搜完「${poi.name}」：每人經驗 +${cp.searchXp}`);
       return report;
     }
     // 這一站自己的收穫（報告只列這一站，前幾站的收穫已在各自的報告列出）
@@ -1422,6 +1441,7 @@ export class ExplorationSystem {
     if (cp.locks) report.locks = cp.locks;
     this.game.state.inventory.blueprints.push(...cp.blueprints);
     this.markVisited(exp, poi, cp, complete);
+    if (cp.searchXp) report.events.push(`⭐ 搜完「${poi.name}」：每人經驗 +${cp.searchXp}`);
     return report;
   }
 
@@ -1452,7 +1472,12 @@ export class ExplorationSystem {
   markVisited(exp, poi, cp, complete) {
     const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
     // 經驗主要來自戰鬥；探索本身只給一點點經驗
-    members.forEach((m) => this.game.survivors.gainXp(m, cp.done >= cp.total ? 1 : 0));
+    // 搜完整棟建築：依建築殭屍等級與大小給經驗（普通殭屍經驗 × 0.5 × 大小倍率；少於一場戰鬥）
+    if (cp.done >= cp.total) {
+      const sxp = this.searchXp(poi);
+      members.forEach((m) => this.game.survivors.gainXp(m, sxp));
+      cp.searchXp = Math.round(sxp * (1 + this.game.research.bonus('xpPct')));
+    }
     // 建築的剩餘物資：完整探索完只剩帶不走的（會顯示數量）；沒探索完的剩餘物資留在建築裡，但不知道有多少
     // v10 共用：離開地點時記下結果（搜空、或剩下的物資與檢核點），所有玩家看到的相同
     const leaveAt = exp.startAt + (exp.travelMs || 0) + (exp.searchMs || 0);
