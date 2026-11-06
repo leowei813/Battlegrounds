@@ -2,7 +2,7 @@
 
 export const GAME_TITLE = '絕地求生';
 export const SAVE_KEY = 'jdqs_save_v1';
-export const SAVE_VERSION = 27;
+export const SAVE_VERSION = 28;
 
 export const TICK_MS = 1000;
 export const AUTOSAVE_MS = 30 * 1000;
@@ -55,6 +55,8 @@ export const RESOURCE_KEYS = Object.keys(RESOURCES);
 export const CURRENCIES = {
   coins: { name: '金錢', icon: '💰' },
   parts: { name: '稀有材料', icon: '⚙️' },
+  /** v10.12：重生器洗鍊時鎖住素質用（不佔物品格） */
+  locks: { name: '就是要鎖你', icon: '🔒' },
 };
 
 /** 新遊戲初始資源 */

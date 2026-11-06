@@ -1,4 +1,5 @@
 import { materialize, tierFromLevel } from './supplies.js';
+import { REBIRTH } from './rebirth.js';
 import {
   MAX_LEVEL, timeCurve, costCurve, hardMul, HARD_PLAIN, HARD_MAT,
 } from './leveling.js';
@@ -117,6 +118,12 @@ export const FACILITIES = {
     desc: '拆解廢料產出木材/金屬/布料，並可製作裝備。',
     cost: (lv) => mat('workbench', ['mech', 'struct'], { wood: 80, metal: 70 }, lv),
     effectText: (lv) => `木 +${lv * WORKBENCH.wood}、釘子與螺絲各 +${lv * WORKBENCH.nail}/時，可製作 Lv${lv * 5} 裝備`,
+  },
+  rebirth: {
+    name: '脫胎換骨還你漂漂重生器', icon: '🧬', startLevel: 0, req: { researchCenter: REBIRTH.labReq },
+    desc: `花金幣重新洗鍊倖存者的六項素質（不保證變好），洗完可選擇「快樂重生」或「還你原形」。可用「就是要鎖你」鎖住素質不改變：Lv1 可鎖 1 種、Lv6 起可鎖 2 種；每升一級費用 −${Math.round(REBIRTH.facDiscount * 100)}%。需要研究中心 Lv${REBIRTH.labReq}。`,
+    cost: (lv) => mat('rebirth', ['elec', 'mech'], { wood: 100, metal: 70, cloth: 30, medicine: 25 }, lv),
+    effectText: (lv) => (lv > 0 ? `可鎖 ${REBIRTH.lockSlots(lv)} 種素質・洗鍊費用 −${Math.round(lv * REBIRTH.facDiscount * 100)}%` : '尚未建造'),
   },
   researchCenter: {
     name: '研究中心', icon: '🔬', startLevel: 0,

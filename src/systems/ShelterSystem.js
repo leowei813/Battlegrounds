@@ -552,6 +552,9 @@ export class ShelterSystem {
     if (fac.level >= FACILITY_MAX_LEVEL) return { ok: false, reason: '已達最高等級' };
     const cap = this.facilityCap(base);
     if (fac.level >= cap) return { ok: false, reason: `${BASE_SIZES[base.size]?.name || ''}據點設施最高 Lv${cap}（需要更大的據點）` };
+    const req = FACILITIES[id]?.req;
+    const miss = req && Object.entries(req).find(([k, lv]) => (base.facilities[k]?.level || 0) < lv);
+    if (miss && fac.level === 0) return { ok: false, reason: `需要${FACILITIES[miss[0]]?.name || miss[0]} Lv${miss[1]}` };
     if (this.isFacilityBusy(base, id)) return { ok: false, reason: '施工中' };
     if (this.queueFull(base)) return { ok: false, reason: `施工佇列已滿（${BUILD_QUEUE_SIZE}）` };
     if (!canAfford(this.game.state, this.facilityCost(base, id))) return { ok: false, reason: '資源不足' };

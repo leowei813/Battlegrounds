@@ -901,6 +901,11 @@ export class NpcSystem {
       const item = g.equipment.generate({ level: n.level, boost: 0.3 + zoneAt(n.lat, n.lon).rarityBoost });
       if (g.equipment.addItem(item, '攻打 NPC', members)) report.items.push(item);
     }
+    const lockN = g.rebirth?.rollNpc() || 0;
+    if (lockN) {
+      g.rebirth.addLocks(lockN);
+      report.events.push(`🔒 在據點的保險箱裡找到「就是要鎖你」×${lockN}`);
+    }
     report.events.push(`🏆 攻陷「${n.name}」，據點被摧毀！`);
     g.log(`🏆 攻陷 NPC 據點「${n.name}」`, 'success');
     this.destroy(n, exp.endAt);

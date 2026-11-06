@@ -96,7 +96,7 @@ export function createInitialState({ playerName, classId, lat, lon }) {
     createdAt: now,
     lastSaveAt: now,
     lastTickAt: now,
-    player: { name: playerName, coins: STARTING_COINS, parts: 0 },
+    player: { name: playerName, coins: STARTING_COINS, parts: 0, locks: 0 },
     map: {
       center: { lat, lon },
       pois: [],

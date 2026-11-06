@@ -391,6 +391,8 @@ export class RallySystem {
         const dealt = {};
         (result.team || []).forEach((x) => { const p = x.ally?.player; if (p) dealt[p] = (dealt[p] || 0) + (x.dealt || 0); });
         share(Math.round(n.coins * NPC_COIN_LOOT * NPC_REWARD_MUL), items, Object.fromEntries(Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => [k, Math.floor(v * NPC_REWARD_MUL)])), dealt);
+        // 「就是要鎖你」：每支參戰隊伍各自抽一次
+        Object.values(res.teams).forEach((t) => { const k = g.rebirth?.rollNpc() || 0; if (k) t.mats.locks = (t.mats.locks || 0) + k; });
         g.npcs.destroy(n, now);
         res.summary = `🏆 集結攻陷 NPC 據點「${n.name}」（${people} 人參戰）`;
       } else {
@@ -411,6 +413,8 @@ export class RallySystem {
       if (p.killed) {
         const rw = g.infected.rewards(s, people);
         share(rw.coins, rw.items, rw.mats);
+        // 「就是要鎖你」：每支參戰隊伍各得一份（依總參戰人數）
+        Object.values(res.teams).forEach((t) => { t.mats.locks = (t.mats.locks || 0) + (g.rebirth?.infectDrop(people) || 0); });
         res.summary = `🏆 集結消滅重度感染據點「${s.name}」（${people} 人參戰）`;
       } else res.summary = `☣️ 集結淨化「${s.name}」：淨化度 ${b.before.toFixed(1)}% → ${(p.purity ?? b.before + b.gain).toFixed(1)}%`;
     }

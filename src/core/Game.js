@@ -34,6 +34,7 @@ import { SharedWorld } from '../multiplayer/SharedWorld.js';
 import { MarketSystem } from '../systems/MarketSystem.js';
 import { InfectedSystem } from '../systems/InfectedSystem.js';
 import { RallySystem } from '../systems/RallySystem.js';
+import { RebirthSystem } from '../systems/RebirthSystem.js';
 import { AssistSystem } from '../systems/AssistSystem.js';
 import { ChatSystem } from '../multiplayer/Chat.js';
 
@@ -79,6 +80,7 @@ export class Game {
     this.infected = new InfectedSystem(this);
     this.rally = new RallySystem(this);
     this.assist = new AssistSystem(this);
+    this.rebirth = new RebirthSystem(this);
 
     this.lastPhase = null;
     this.timers = [];

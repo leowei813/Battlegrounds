@@ -1,3 +1,4 @@
+import { openRebirthDialog } from '../RebirthDialog.js';
 import { formatDuration } from '../../utils/math.js';
 import {
   CLASSES, JOBS, QUALITY_KEYS, QUALITY_NAMES, xpToNext, survivorRarityTable, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE, FOOD_LEVEL_STEP, MAX_SURVIVORS,
@@ -268,6 +269,10 @@ export class SurvivorPanel {
       this.ui.panelEl.scrollTop = 0;
       return;
     }
+    if (action === 'rebirth' && id) {
+      openRebirthDialog(this.ui, id);
+      return;
+    }
     if (action === 'svFilter') this.filter = data.f;
     if (action === 'oddsToggle') this.showOdds = !this.showOdds;
     if (action === 'svRecruit') {
@@ -453,7 +458,7 @@ export class SurvivorPanel {
       return `<button class="chip ${sv.job === jid ? 'active' : ''}" data-action="job" data-job="${jid}" title="${escapeHtml(j.desc || '')}">${j.icon} ${j.name}${bonus ? ` ×${bonus}` : ''}</button>`;
     }).join('');
     const jobsCard = `<section class="sh-card"><h3>工作指派 <small class="muted">（閒置在避難所時生效）</small></h3><div class="chips">${jobs}</div>${this.jobsHelp(sv)}</section>`;
-    const statsCard = `<section class="sh-card"><h3>能力 <small class="muted">${sv.isLeader ? '' : '素質越高，基礎能力與每次升級的成長越多'}</small></h3>${this.abilityRows(sv, s)}<small class="muted">暴傷 +${Math.round((s.critDmg - 1) * 100)}%${s.lifeSteal ? `・吸血 ${(s.lifeSteal * 100).toFixed(1)}%` : ''}${sv.isLeader ? '' : '・素質 100% 以金色顯示，招募時決定、之後不會改變'}</small>
+    const statsCard = `<section class="sh-card"><h3>能力 <small class="muted">${sv.isLeader ? '' : '素質越高，基礎能力與每次升級的成長越多'}</small></h3>${this.abilityRows(sv, s)}<small class="muted">暴傷 +${Math.round((s.critDmg - 1) * 100)}%${s.lifeSteal ? `・吸血 ${(s.lifeSteal * 100).toFixed(1)}%` : ''}${sv.isLeader ? '' : g.rebirth.level() > 0 ? '・素質 100% 以金色顯示' : '・素質 100% 以金色顯示，招募時決定；建造「脫胎換骨還你漂漂重生器」後可以重新洗鍊'}</small>${!sv.isLeader && g.rebirth.level() > 0 ? `<div class="rb-entry"><small class="muted">平均素質 ${g.survivors.avgQuality(sv)}%</small>${btn('🧬 超渡他', 'rebirth', {}, { cls: 'btn-sm rb-go', disabled: sv.status !== 'idle', title: sv.status !== 'idle' ? '倖存者要在避難所內才能超渡' : '' })}</div>` : ''}
       ${hurt ? `<div class="heal-box ${sv.severe ? 'warn' : ''}"><div class="row-between">${sv.severe ? '🩸 重傷：無法行動，生命回到 30% 才能脫離' : '🩹 受傷：有診療室或醫生照護時才會慢慢恢復，也可以直接用藥'}${starving ? '<span class="tag tag-red">🍽️ 飢餓中：生命會持續流失</span>' : ''}</div>
       <div class="label">💊 治療：選擇要使用的藥品</div>${this.medsHtml(sv)}</div>` : ''}</section>`;
     const gearCard = `<section class="sh-card"><h3>裝備</h3>${this.gearGrid(sv)}${this.supplyHtml(sv)}</section>`;
