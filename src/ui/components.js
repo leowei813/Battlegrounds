@@ -180,13 +180,22 @@ export function towerTag(game, sv) {
   return game.shelter.onTower(sv.id) ? '<span class="tag tw-tag">🛖 瞭望塔</span>' : '<span class="tag tw-tag off">🛖 瞭望塔待命</span>';
 }
 
+/** 外出中的倖存者正在做什麼（依所在隊伍的任務類型） */
+const OUT_LABELS = {
+  rally: '📡 集結中', raid: '⚔️ 攻打中', pvp: '⚔️ 突襲中', infect: '☣️ 淨化中', assist: '🛡️ 協防中', intercept: '🎯 攔截中', hunt: '🧟 獵殺中',
+};
+export function outLabel(game, sv) {
+  const ex = (game.state.expeditions || []).find((e) => e.memberIds?.includes(sv.id));
+  return OUT_LABELS[ex?.kind] || '探索中';
+}
+
 export function survivorStatus(game, sv, now = Date.now()) {
   const tags = [];
   const death = game.survivors.deathCountdown(sv, now);
   if (death != null) tags.push(`<span class="tag tag-red blink">⚰️ ${formatDuration(death)} 後死亡</span>`);
   if (sv.severe) tags.push('<span class="tag tag-red">🩸 重傷</span>');
   if (game.survivors.isStarving()) tags.push('<span class="tag tag-red">🍽️ 飢餓</span>');
-  if (sv.status === 'exploring') tags.push('<span class="tag tag-blue">探索中</span>');
+  if (sv.status === 'exploring') tags.push(`<span class="tag tag-blue">${outLabel(game, sv)}</span>`);
   else if (!sv.severe) tags.push(`<span class="tag">${JOBS[sv.job]?.icon || ''} ${JOBS[sv.job]?.name || '閒置'}</span>`);
   const tw = towerTag(game, sv);
   if (tw) tags.push(tw);

@@ -4904,6 +4904,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(mig.player.locks === 0 && mig.bases[0].facilities.rebirth?.level === 0, '舊存檔補上就是要鎖你（0）與重生器 Lv0');
 }
 
+// ---- 124. 外出中的倖存者依任務顯示狀態（集結中、攻打中…），一般探索顯示探索中 ----
+{
+  const { outLabel } = await import('../src/ui/components.js');
+  const go = Game.newGame({ playerName: 'O124', classId: 'warrior', lat: 25, lon: 121 });
+  const lead = go.survivors.leader();
+  go.state.expeditions = [{ id: 'x', kind: 'rally', memberIds: [lead.id] }];
+  assert(outLabel(go, lead) === '📡 集結中', '集結隊伍顯示集結中');
+  go.state.expeditions = [{ id: 'x', kind: 'explore', memberIds: [lead.id] }];
+  assert(outLabel(go, lead) === '探索中', '一般探索顯示探索中');
+  go.state.expeditions = [];
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
