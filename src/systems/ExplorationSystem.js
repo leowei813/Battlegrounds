@@ -590,6 +590,7 @@ export class ExplorationSystem {
     };
     report.retreated = true;
     this.tagZone(report, exp);
+    this.attachXp(report, exp);
     this.game.state.reports = [report, ...(this.game.state.reports || [])].slice(0, 20);
     this.game.bus.emit('expedition:done', [report]);
     return report;
@@ -644,6 +645,7 @@ export class ExplorationSystem {
       members: members.map((m) => m.name),
     };
     this.tagZone(report, exp);
+    this.attachXp(report, exp);
     this.game.state.reports = [report, ...(this.game.state.reports || [])].slice(0, 20);
     this.game.bus.emit('expedition:done', [report]);
     return { exp, group: g, result, aborted: true };
@@ -877,6 +879,7 @@ export class ExplorationSystem {
           : `🎒 背包還有空間（負重 ${Math.round(load)}/${cap}），直接前往「${nextPoi?.name || ''}」${ne.queue.length ? `（佇列還有 ${ne.queue.length} 個）` : ''}`);
       }
       this.tagZone(report, exp);
+      this.attachXp(report, exp);
       out.push(report);
     }
     return out;

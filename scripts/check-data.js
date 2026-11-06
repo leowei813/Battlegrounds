@@ -3021,6 +3021,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const [rep] = ex.update(st.exp.endAt + 1, { silent: true });
   const next = gq3.state.expeditions[0];
   assert(rep && next && next.poiId === pois[1].id && next.queue.length === 1, `完成後自動前往佇列中的下一個地點（${rep?.events.slice(-1)}）`);
+  assert(!rep || rep.xpBy?.length, '連續探索前往下一站的報告也顯示經驗');
   const { labLevelFor: llf } = await import('../src/config/research.js');
   assert(llf('s_queue', 1) === 4 && llf('s_queue', 3) === 10, '佇列科技依研究中心等級解鎖（最後一級需要 Lv10）');
 }
