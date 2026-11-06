@@ -524,7 +524,9 @@ export class SurvivorPanel {
     const store = g.state.supplies || {};
     const keys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === 'med' && (SUPPLIES[k].heal || 0) > 0);
     const opts = keys.map((k) => `<option value="${k}" ${rules.med === k ? 'selected' : ''}>${SUPPLIES[k].icon} ${SUPPLIES[k].name}（回復 ${Math.round(SUPPLIES[k].heal * 100)}%・倉庫 ${Math.floor(store[k] || 0)}）</option>`).join('');
-    return `<span class="med-pill ${lo ? '' : 'empty'}">💊 藥品欄 <b>${lo?.qty || 0}</b>/${LOADOUT_MAX.med}${lo && lo.key !== rules.med ? `（${escapeHtml(SUPPLIES[lo.key].name)}）` : ''}・<span class="auto-tag">🔄 自動補給</span> <select class="lo-med">${opts}</select></span>`;
+    // 小標籤：藥名與數量；點一下跳出原生選單（透明的下拉選單蓋在標籤上）
+    const cur = SUPPLIES[rules.med];
+    return `<label class="med-chip ${lo ? '' : 'empty'}" title="藥品欄一律自動補給，點一下更換種類">${cur?.icon || '💊'} ${escapeHtml(cur?.name || '藥品')} <b>${lo?.key === rules.med ? lo.qty : 0}</b>/${LOADOUT_MAX.med} <span class="auto-tag">🔄</span> <span class="dd">▾</span><select class="lo-med" aria-label="自動補給的藥品">${opts}</select></label>`;
   }
 
   /** 可使用的藥品：每種藥品回復不同比例的生命（大型醫藥箱 100%），由玩家選擇要用哪一種 */

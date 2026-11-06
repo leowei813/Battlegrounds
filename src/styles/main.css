@@ -1376,3 +1376,10 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .ammo-bar { flex: 1; min-width: 50px; max-width: 90px; height: 5px; background: #ffffff14; border-radius: 3px; overflow: hidden; }
 .ammo-bar i { display: block; height: 100%; background: #66bb6a; }
 .ammo-row.low .ammo-bar i { background: #ffb74d; }
+
+/* 裝備標題旁的藥品小標籤（v10.15：點一下跳出原生選單） */
+.gear-head .med-chip { margin-left: auto; position: relative; display: inline-flex; align-items: center; gap: 5px; background: #ffffff0d; border: 1px solid #4fc3f799; border-radius: 14px; padding: 3px 10px; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.gear-head .med-chip.empty { border-color: #ef535099; }
+.gear-head .med-chip b { color: #fff; }
+.gear-head .med-chip .dd { color: #4fc3f7; font-size: 11px; }
+.gear-head .med-chip select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
