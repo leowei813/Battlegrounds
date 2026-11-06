@@ -5002,6 +5002,20 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gq.survivors.supplyRules(lead).ammo === 'ammo9' && gq.survivors.supplyRules(lead).med, '彈藥自動補給手槍子彈、藥品預設自動補給');
 }
 
+// ---- 129. 報告顯示經驗：每位隊員這趟實際拿到的經驗（含升級；重傷扣經驗為負） ----
+{
+  const gx = Game.newGame({ playerName: 'X129', classId: 'warrior', lat: 25, lon: 121 });
+  const lead = gx.survivors.leader();
+  const exp = { memberIds: [lead.id], xp0: { [lead.id]: gx.survivors.totalXp(lead) } };
+  gx.survivors.gainXp(lead, 500);
+  const rep = { events: [] };
+  gx.exploration.attachXp(rep, exp);
+  assert(rep.xpBy?.[0]?.d > 0 && lead.level > 1, `報告列出隊員拿到的經驗（含升級，+${rep.xpBy?.[0]?.d}）`);
+  const rep2 = { events: [] };
+  gx.exploration.attachXp(rep2, { memberIds: [lead.id], xp0: { [lead.id]: gx.survivors.totalXp(lead) } });
+  assert(!rep2.xpBy, '沒有拿到經驗時不顯示');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

@@ -424,6 +424,13 @@ export class SurvivorSystem {
     return this.game.shelter.onTower(id);
   }
 
+  /** 累計經驗（含已升級的部分）：用來計算一趟外出前後實際拿到（或因重傷扣掉）的經驗 */
+  totalXp(sv) {
+    let t = Math.max(0, sv?.xp || 0);
+    for (let l = 1; l < (sv?.level || 1); l += 1) t += xpToNext(l);
+    return t;
+  }
+
   gainXp(sv, amount) {
     if (sv.level >= MAX_SURVIVOR_LEVEL) return;
     sv.xp += Math.round(amount * (1 + this.game.research.bonus('xpPct')));

@@ -129,6 +129,15 @@ export class ExplorationSystem {
     return this.game.state.expeditions;
   }
 
+  /** 報告附上每位隊員這趟實際拿到的經驗（出發時與回來時的累計經驗差；重傷扣經驗時為負） */
+  attachXp(report, exp) {
+    if (!report || !exp?.xp0) return;
+    const sv = this.game.survivors;
+    const list = exp.memberIds.map((id) => sv.get(id)).filter(Boolean)
+      .map((m) => ({ n: m.name, d: Math.round(sv.totalXp(m) - (exp.xp0[m.id] ?? sv.totalXp(m))) }));
+    if (list.some((x) => x.d !== 0)) report.xpBy = list;
+  }
+
   /** 目標地點：地圖建築，或 NPC 據點（攻打時） */
   /** 探索報告記下目的地所在區域的危險等級（安全區～深淵區） */
   tagZone(report, exp) {
@@ -443,6 +452,8 @@ export class ExplorationSystem {
     this.game.vehicles.depart(car.vehicles, plan.trip.fuel);
     const exp = {
       id: uid('ex'), poiId, kind, memberIds: [...memberIds], durationMin, auto,
+      // 出發時的累計經驗：報告列出每位隊員這趟拿到的經驗
+      xp0: Object.fromEntries(memberIds.map((id) => [id, this.game.survivors.totalXp(this.game.survivors.get(id))])),
       startAt, endAt: startAt + plan.totalMs, phaseAtStart: this.game.time.phaseId(startAt),
       from: plan.from, distanceM: plan.distanceM, travelMs: plan.travelMs, searchMs: plan.searchMs,
       path: plan.path, avoidHostile, threats,
@@ -887,6 +898,7 @@ export class ExplorationSystem {
         // 離線或背景時沒有即時判定的警戒範圍遭遇，結算前補算
         const retreated = this.checkThreats(exp, exp.endAt);
         if (retreated) {
+          this.attachXp(retreated, exp);
           reports.push(retreated);
           return;
         }
@@ -902,6 +914,7 @@ export class ExplorationSystem {
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp)));
         report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
         this.tagZone(report, exp);
+        this.attachXp(report, exp);
         reports.push(report);
         this.free(exp);
         // 自動探索：隊員健康且未超過離線上限則再次出發（燃料不足或載具損壞則停止）
@@ -1256,7 +1269,7 @@ export class ExplorationSystem {
       cp.kills += result.kills.length;
       cp.xp += result.xp;
       if (result.victory) {
-        cp.events.push(`  ↳ 勝利！擊殺 ${result.kills.length}，獲得 ${Math.round(result.coins * COIN_GAIN_MUL)} 金錢`);
+        cp.events.push(`  ↳ 勝利！擊殺 ${result.kills.length}，獲得 ${Math.round(result.coins * COIN_GAIN_MUL)} 金錢${result.xpEach ? `、每人經驗 +${result.xpEach}` : ''}`);
         const rec = Object.entries(result.recovered || {}).map(([k, v]) => `${SUPPLIES[k].icon} ${k === 'arrow' ? '回收箭矢' : `回收${SUPPLIES[k].name}`} +${v}`);
         if (rec.length) cp.events.push(`  ↳ ${rec.join('、')}`);
         if (isElite) {
