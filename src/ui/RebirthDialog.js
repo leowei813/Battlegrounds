@@ -45,7 +45,7 @@ export function openRebirthDialog(ui, svId) {
     return `${head(sv)}${rows}
       <div class="rb-sum">平均素質 ${a0}% → <b class="${pc(a0, a1)}">${a1}%</b>・戰力 ${formatNumber(r.powerBefore)} → <b class="${pc(r.powerBefore, r.powerAfter)}">${formatNumber(r.powerAfter)}</b></div>
       <div class="btn-row rb-btns"><button class="btn btn-ghost" data-action="rbKeep">還你原形</button><button class="btn rb-ok" data-action="rbAccept">✅ 快樂重生</button></div>
-      <small class="muted block">按「還你原形」會回到超渡畫面，可以直接再超渡；關閉視窗也等於還你原形。</small>`;
+      <small class="muted block">選擇後會回到超渡畫面，可以直接再超渡；關閉視窗等於還你原形。</small>`;
   };
   const body = () => {
     const sv = g.survivors.get(svId);
@@ -73,13 +73,8 @@ export function openRebirthDialog(ui, svId) {
         else st.result = r;
         ui.refresh(true);
       }
-      if (action === 'rbAccept') {
-        finish(true);
-        h.close();
-        return;
-      }
-      // 還你原形：不關視窗，回到超渡畫面（保留鎖定選擇），可以直接再超渡一次
-      if (action === 'rbKeep') finish(false);
+      // 快樂重生／還你原形：都不關視窗，回到超渡畫面（保留鎖定選擇），可以直接再超渡一次
+      if (action === 'rbAccept' || action === 'rbKeep') finish(action === 'rbAccept');
       h.update(body());
       const t = h.el.querySelector('h3');
       if (t) t.textContent = st.result ? '🧬 超渡結果' : '🧬 脫胎換骨還你漂漂重生器';
