@@ -4902,8 +4902,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gr.rebirth.decide(sv.id, false);
   assert(Math.abs(gr.rebirth.discount() - 0.48) < 1e-9 && RB.maxDiscount === 0.5, `重生器 Lv6（−18%）＋基因調理滿級（−30%）＝ −48%，上限 −50%（${gr.rebirth.discount()}）`);
   // 搜索掉落率
-  assert(gr.rebirth.rollSearch('normal', () => 0.0099) === 1 && gr.rebirth.rollSearch('normal', () => 0.0101) === 0, '一般區每棟 1%');
-  assert(gr.rebirth.rollSearch('abyss', () => 0.0299) === 1, '深淵區 ×3');
+  assert(gr.rebirth.rollSearch('normal', () => 0.0039) === 1 && gr.rebirth.rollSearch('normal', () => 0.0041) === 0, '一般區每棟 0.4%');
+  assert(gr.rebirth.rollSearch('abyss', () => 0.0119) === 1 && gr.rebirth.rollSearch('abyss', () => 0.0121) === 0, '深淵區 ×3');
   assert(gr.rebirth.infectDrop(1) === 1 && gr.rebirth.infectDrop(3) === 2, '重度感染據點 1 個、3 人以上 2 個');
   // 黑市特殊品
   const coins0 = gr.state.player.coins;
