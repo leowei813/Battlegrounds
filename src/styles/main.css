@@ -1358,3 +1358,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .sp-chip { display: inline-block; background: linear-gradient(90deg, #4a148c, #7b1fa2); border: 1px solid #e1bee7; color: #fff; font-weight: 800; border-radius: 8px; padding: 1px 8px; margin: 0 4px 4px 0; animation: spGlow 1.6s ease-in-out infinite; white-space: nowrap; }
 .event-list li.sp-line { list-style: none; margin-left: -18px; background: linear-gradient(90deg, #4a148c99, transparent); border-left: 3px solid #ce93d8; border-radius: 6px; padding: 3px 8px; color: #f3e5f5; font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .sp-badge, .sp-chip { animation: none; } }
+
+/* ---------- 據點視窗：特殊物品說明 ---------- */
+.sp-hint { margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: linear-gradient(90deg, #4a148c88, transparent); border: 1px solid #ce93d8aa; box-shadow: 0 0 10px #ba68c844; font-size: 13px; }
+.sp-hint b { color: #e1bee7; }
