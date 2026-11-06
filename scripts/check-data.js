@@ -4920,6 +4920,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   go.state.expeditions = [];
 }
 
+// ---- 125. 其他玩家的集結隊伍：對方離線時依共用集結資料的交戰時間計算返程，回到家後不再顯示 ----
+{
+  const { WorldSync: WS5, cleanPlayer: cp5 } = await import('../src/multiplayer/WorldSync.js');
+  const gw = Game.newGame({ playerName: 'W125', classId: 'warrior', lat: 25, lon: 121 });
+  const now = Date.now();
+  const raw = { id: 'p1', name: 'Y', bases: [{ lat: 25, lon: 121, name: 'b', primary: true, size: 'small' }],
+    trips: [{ id: 't', from: { lat: 25, lon: 121 }, to: { lat: 25.01, lon: 121 }, startAt: now - 3600e3, endAt: now + 20 * 3600e3, travelMs: 600e3, searchMs: 0, members: 4, target: 'NPC', rally: 'r1' }] };
+  const p = cp5(raw);
+  assert(p.trips[0].rally === 'r1', '公開資料保留集結編號');
+  gw.rally.get = () => ({ id: 'r1', status: 'done', fightAt: now - 1800e3 });
+  WS5.prototype.fixRallyTrips.call({ game: gw }, [p], now);
+  assert(!p.trips.length, '集結已交戰且返程時間已過：不再顯示（不會一直停在返程中）');
+  const p2 = cp5(raw);
+  gw.rally.get = () => ({ id: 'r1', status: 'done', fightAt: now - 300e3 });
+  WS5.prototype.fixRallyTrips.call({ game: gw }, [p2], now);
+  assert(p2.trips.length === 1 && p2.trips[0].endAt === now - 300e3 + 600e3, '返程中：依交戰時間＋路程計算回家時間');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
