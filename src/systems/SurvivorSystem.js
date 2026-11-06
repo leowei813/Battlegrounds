@@ -12,7 +12,9 @@ import {
 } from '../config/supplies.js';
 
 /** 彈藥欄、藥品欄的數量上限 */
-export const LOADOUT_MAX = { ammo: 200, med: 10 };
+export const LOADOUT_MAX = { ammo: 300, med: 10 };
+/** 彈藥欄可自選的攜帶數量（每位倖存者各自設定，預設最高） */
+export const AMMO_CAP_OPTIONS = [100, 150, 200, 250, 300];
 import { createSurvivor } from '../core/GameState.js';
 import {
   withSeed,
@@ -832,7 +834,7 @@ export class SurvivorSystem {
 
   // ================= 彈藥欄與藥品欄 =================
 
-  /** 彈藥欄（最多 200）與藥品欄（最多 10）：{ ammo: {key, qty} | null, med: {key, qty} | null } */
+  /** 彈藥欄（自選 100~300）與藥品欄（最多 10）：{ ammo: {key, qty} | null, med: {key, qty} | null } */
   loadout(sv) {
     sv.loadout = sv.loadout || { ammo: null, med: null };
     return sv.loadout;
@@ -904,7 +906,7 @@ export class SurvivorSystem {
       const u = this.unloadSlot(id, kind);
       if (!u.ok) return u;
     }
-    const max = LOADOUT_MAX[kind];
+    const max = this.slotMax(sv, kind);
     const cur = lo[kind]?.qty || 0;
     let want = Math.min(Math.max(0, Math.floor(qty === Infinity ? max : qty)), max - cur);
     if (want <= 0) return { ok: false, reason: `欄位已滿（最多 ${max}）` };
@@ -931,6 +933,40 @@ export class SurvivorSystem {
     if (!got) return { ok: false, reason: this.atShelter(sv) ? '倉庫與背包都沒有（或負重已滿）' : '背包裡沒有' };
     lo[kind] = { key, qty: cur + got };
     return { ok: true, n: got, msg: `裝填 ${SUPPLIES[key].name}×${got}` };
+  }
+
+  /** 欄位上限：彈藥欄依倖存者自選的攜帶數量，藥品欄固定 */
+  slotMax(sv, kind) {
+    if (kind !== 'ammo') return LOADOUT_MAX[kind];
+    const n = Number(sv?.ammoCap);
+    return AMMO_CAP_OPTIONS.includes(n) ? n : LOADOUT_MAX.ammo;
+  }
+
+  /** 設定彈藥攜帶數量：調低時多出的子彈放回倉庫（在外面放進背包），調高時在避難所立即補滿 */
+  setAmmoCap(id, n) {
+    const sv = this.get(id);
+    if (!sv) return { ok: false, reason: '找不到倖存者' };
+    n = Number(n);
+    if (!AMMO_CAP_OPTIONS.includes(n)) return { ok: false, reason: '攜帶數量只能選 100~300' };
+    sv.ammoCap = n;
+    const lo = this.loadout(sv);
+    const notes = [];
+    if (lo.ammo && lo.ammo.qty > n) {
+      const { key, qty } = lo.ammo;
+      let extra = qty - n;
+      if (this.atShelter(sv)) {
+        const put = Math.min(extra, this.storeRoom(key));
+        if (put > 0) this.game.state.supplies[key] = (this.game.state.supplies[key] || 0) + put;
+        extra -= put;
+      }
+      if (extra > 0) { sv.bag = sv.bag || {}; sv.bag[key] = (sv.bag[key] || 0) + extra; }
+      lo.ammo = { key, qty: n };
+      notes.push(`多出的 ${SUPPLIES[key].name}×${qty - n} 已放回${this.atShelter(sv) && !extra ? '倉庫' : '背包'}`);
+    } else if (this.atShelter(sv)) {
+      const r = this.autoResupply(sv);
+      if (r) notes.push(`已補給 ${r}`);
+    }
+    return { ok: true, msg: `彈藥攜帶數量設為 ${n}${notes.length ? `，${notes.join('、')}` : ''}` };
   }
 
   /** 卸下彈藥欄／藥品欄：在避難所放回倉庫，在外面放進背包 */
@@ -1008,7 +1044,7 @@ export class SurvivorSystem {
     if (!SurvivorSystem.slotAccepts(kind, key)) return { ok: false, reason: kind === 'ammo' ? '請選擇彈藥' : '請選擇藥品' };
     rules[kind] = key;
     const r = this.autoResupply(sv);
-    return { ok: true, msg: `已設定自動補給 ${SUPPLIES[key].name}（最多 ${LOADOUT_MAX[kind]}）${r ? `，已補給 ${r}` : ''}` };
+    return { ok: true, msg: `已設定自動補給 ${SUPPLIES[key].name}（最多 ${this.slotMax(sv, kind)}）${r ? `，已補給 ${r}` : ''}` };
   }
 
   /** 依設定把彈藥欄、藥品欄補滿（在避難所從倉庫補；在外面從背包補）；回傳補給說明 */
@@ -1021,7 +1057,7 @@ export class SurvivorSystem {
       if (!key) return;
       const lo = this.loadout(sv);
       if (lo[kind] && lo[kind].key !== key && !this.atShelter(sv)) return; // 在外面不換種類
-      if ((lo[kind]?.key === key ? lo[kind].qty : 0) >= LOADOUT_MAX[kind]) return;
+      if ((lo[kind]?.key === key ? lo[kind].qty : 0) >= this.slotMax(sv, kind)) return;
       if (!this.atShelter(sv) && !(sv.bag?.[key] > 0)) return;
       const r = this.loadSlot(sv.id, kind, key);
       if (r.ok && r.n > 0) got.push(`${SUPPLIES[key].name}×${r.n}`);

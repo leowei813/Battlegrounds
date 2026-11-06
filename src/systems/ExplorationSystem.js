@@ -1,5 +1,4 @@
 import { ASSIST_TRAVEL_MUL } from './AssistSystem.js';
-import { LOADOUT_MAX } from './SurvivorSystem.js';
 
 /** 再次探索同一地點：剩餘搜索時間的下限比例、回去拿帶不走物資的時間（分鐘） */
 const REVISIT = { minFrac: 0.2, pickupMin: 0.3 };
@@ -503,7 +502,7 @@ export class ExplorationSystem {
       // 沒設定自動補給：出發時把對應彈藥裝進彈藥欄（約 4 場戰鬥）
       const lo = svs.loadout(m);
       const have = lo.ammo?.key === need.ammo ? lo.ammo.qty : 0;
-      const want = Math.min(LOADOUT_MAX.ammo, need.perFight * AMMO_PACK_FIGHTS) - have;
+      const want = Math.min(svs.slotMax(m, 'ammo'), need.perFight * AMMO_PACK_FIGHTS) - have;
       if (want > 0 && (!lo.ammo || lo.ammo.key === need.ammo) && (this.game.state.supplies?.[need.ammo] || 0) > 0) svs.loadSlot(m.id, 'ammo', need.ammo, want);
       if (svs.ammoAvailable(m, need.ammo) - (svs.atShelter(m) ? Math.floor(this.game.state.supplies?.[need.ammo] || 0) : 0) < need.perFight) notes.push(`${m.name}沒有${SUPPLIES[need.ammo].name}`);
     });
@@ -1215,7 +1214,7 @@ export class ExplorationSystem {
         if (!key || !(cp.gained[key] >= 1)) return;
         const lo = this.game.survivors.loadout(m);
         if (lo[kind] && lo[kind].key !== key) return;
-        const n = Math.min(Math.floor(cp.gained[key]), LOADOUT_MAX[kind] - (lo[kind]?.qty || 0));
+        const n = Math.min(Math.floor(cp.gained[key]), this.game.survivors.slotMax(m, kind) - (lo[kind]?.qty || 0));
         if (n <= 0) return;
         cp.gained[key] -= n;
         lo[kind] = { key, qty: (lo[kind]?.qty || 0) + n };

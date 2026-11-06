@@ -7,7 +7,7 @@ import { RESOURCE_KEYS } from '../../config/constants.js';
 import { SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, unitWeight } from '../../config/supplies.js';
 import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
-import { LOADOUT_MAX } from '../../systems/SurvivorSystem.js';
+import { LOADOUT_MAX, AMMO_CAP_OPTIONS } from '../../systems/SurvivorSystem.js';
 import {
   btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf, affixChips, towerTag,
 } from '../components.js';
@@ -395,6 +395,11 @@ export class SurvivorPanel {
         this.game.changed();
         this.ui.refresh(true);
       }
+      if (e.target.classList?.contains('lo-cap')) {
+        this.ui.result(this.game.survivors.setAmmoCap(this.selId, e.target.value));
+        this.game.changed();
+        this.ui.refresh(true);
+      }
     });
   }
 
@@ -507,12 +512,18 @@ export class SurvivorPanel {
     if (!need) return '';
     const lo = g.survivors.loadout(sv).ammo;
     const qty = lo?.key === need.ammo ? lo.qty : 0;
-    const max = LOADOUT_MAX.ammo;
+    const max = g.survivors.slotMax(sv, 'ammo');
     const store = Math.floor(g.state.supplies?.[need.ammo] || 0);
     const sp = SUPPLIES[need.ammo];
     const ratio = qty / max;
     const warn = qty < max && store <= 0 && !(sv.bag?.[need.ammo] > 0) ? `<span class="neg">・倉庫沒有${escapeHtml(sp.name)}了</span>` : '';
-    return `<div class="ammo-row ${ratio < 0.3 ? 'low' : ''}">${sp.icon} ${escapeHtml(sp.name)} <b>${qty}</b>/${max}<span class="ammo-bar"><i style="width:${Math.round(ratio * 100)}%"></i></span><span class="auto-tag">🔄 自動補給</span>${warn}</div>`;
+    return `<div class="ammo-row ${ratio < 0.3 ? 'low' : ''}">${sp.icon} ${escapeHtml(sp.name)} <b>${qty}</b>/${max}<span class="ammo-bar"><i style="width:${Math.round(ratio * 100)}%"></i></span>${this.ammoCapChip(sv, max)}<span class="auto-tag">🔄 自動補給</span>${warn}</div>`;
+  }
+
+  /** 彈藥攜帶數量：小標籤，點一下跳出原生選單（透明的下拉選單蓋在標籤上） */
+  ammoCapChip(sv, max) {
+    const opts = AMMO_CAP_OPTIONS.map((n) => `<option value="${n}" ${n === max ? 'selected' : ''}>${n} 發</option>`).join('');
+    return `<label class="cap-chip" title="點一下選擇要攜帶的子彈數量">攜帶 ${max} <span class="dd">▾</span><select class="lo-cap" aria-label="子彈攜帶數量">${opts}</select></label>`;
   }
 
   /** 裝備標題旁：藥品欄與自動補給的種類（下拉選擇） */

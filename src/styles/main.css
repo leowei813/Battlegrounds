@@ -1373,6 +1373,9 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .auto-tag { color: #81c784; font-weight: 700; font-size: 11.5px; white-space: nowrap; }
 .ammo-row { margin-top: 6px; font-size: 12.5px; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 8px; background: #ffffff0a; flex-wrap: wrap; }
 .ammo-row b { color: #fff; }
+.ammo-row .cap-chip { position: relative; display: inline-flex; align-items: center; gap: 4px; color: #4fc3f7; border: 1px solid #4fc3f799; border-radius: 8px; padding: 1px 8px; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.ammo-row .cap-chip .dd { font-size: 11px; }
+.ammo-row .cap-chip select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
 .ammo-bar { flex: 1; min-width: 50px; max-width: 90px; height: 5px; background: #ffffff14; border-radius: 3px; overflow: hidden; }
 .ammo-bar i { display: block; height: 100%; background: #66bb6a; }
 .ammo-row.low .ammo-bar i { background: #ffb74d; }
