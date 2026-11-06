@@ -4728,7 +4728,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const w = s.nightState();
   assert(w?.state === 'wait' && w.maxWaves === s.maxWaves() && w.nextIn > 0, `入夜後第一波來襲前顯示倒數（${w?.state}）`);
   const seen = new Set();
-  for (let i = 0; i < 20000 && s.nightState()?.state !== 'done'; i += 1) { s.update(0.1); gs.shelter.primary().wallHp = null; seen.add(s.nightState()?.state); }
+  for (let i = 0; i < 20000 && s.nightState()?.state !== 'done'; i += 1) { s.update(0.1); gs.shelter.primary().wallHp = null; seen.add(s.nightState()?.state); if (s.waveLeft <= 0) s.zombies.length = 0; }
   const atk = seen.has('attack');
   assert(atk && s.nightState()?.state === 'done', `經歷進攻後顯示今夜結束（${[...seen].join(',')}）`);
   // 被突破：記錄波數並顯示到天亮
@@ -4736,6 +4736,54 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   delete b.nightStats; s.wave = 2; s.breach();
   const br = s.nightState();
   assert(br?.state === 'broke' && br.wave === 2, `防線被突破後顯示被突破的波數（${br?.state} ${br?.wave}）`);
+}
+
+// ---- 119. 玩家突襲：駐守人員依公開的真實能力應戰（不限人數），戰報列出雙方等級、戰力與攻擊歷程 ----
+{
+  const { WorldSync: WS9, cleanPlayer: cp9 } = await import('../src/multiplayer/WorldSync.js');
+  const { createSurvivor: cs9 } = await import('../src/core/GameState.js');
+  const mk9 = (name, lon) => {
+    const x = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon });
+    x.state.map.pois = fillPois([], 25, lon);
+    x.shelter.establish(x.state.map.pois.find((p) => x.shelter.canEstablish(p).ok));
+    return x;
+  };
+  const V = mk9('V9', 121.02);
+  V.shelter.primary().wallHp = 0;
+  for (let i = 0; i < 9; i += 1) {
+    const s = cs9(`守${i}`, 'warrior', 25, 'epic'); s.job = 'guard'; V.state.survivors.push(s);
+    ['weapon', 'melee', 'helmet', 'armor', 'legs', 'gloves', 'boots'].forEach((type) => { try { const it = V.equipment.generate({ level: 25, type, rarity: 'epic' }); V.equipment.items.push({ ...it, loc: 'store' }); V.equipment.equipRaw(s.id, it.id); } catch {} });
+  }
+  const pres = WS9.prototype.presence.call({ game: V });
+  const pb = pres.bases[0];
+  const NG = V.territory.garrison(V.shelter.primary()).count;
+  assert(NG >= 9 && pb.guardUnits.length === NG && pb.guardUnits[0].maxHp === Math.round(V.survivors.stats(V.state.survivors.find((x) => x.name === pb.guardUnits[0].name)).hp), `公開全部駐守人員的真實能力（${pb.guardUnits.length}/${NG}）`);
+  assert(JSON.stringify(pres).length < 32768, `公開資料大小在上限內（${JSON.stringify(pres).length}）`);
+  const other = cp9({ id: 'V9', ...pres });
+  assert(other.bases[0].guardUnits.length === NG, '讀取時保留駐守人員數值');
+  const C = mk9('C9', 121.0);
+  C.world = { others: [other] };
+  const zone = C.territory.zones().find((z) => z.id === 'V9#0');
+  const foes = C.territory.defenders(zone, 20);
+  assert(foes.length === NG && foes[0].maxHp === pb.guardUnits[0].maxHp && !foes[0].ally, `突襲時駐守人員全部以真實能力應戰（${foes.length}）`);
+  // 攻擊方：1 名普通隊員打不贏 9 名罕見裝備的駐守人員
+  const a = cs9('攻1', 'warrior', 25, 'rare'); C.state.survivors.push(a);
+  let sent = null;
+  C.territory.send = async (_to, type, data) => { if (type === 'attack') sent = data; return true; };
+  const exp = { poiId: 'pvp:V9#0', memberIds: [a.id], endAt: Date.now(), travelEvents: [], cargo: 40 };
+  const rep = C.territory.resolvePvp(exp);
+  assert(!rep.success, '1 人打不贏 9 名駐守人員');
+  assert(rep.events.some((e) => e.includes('對方駐守：') && e.includes('Lv25') && e.includes('合計戰力')), '戰報列出對方駐守人員的等級與戰力');
+  assert(rep.events.some((e) => e.includes('我方出戰：')) && rep.events.some((e) => e.includes('造成')), '戰報列出我方戰力與每人戰果');
+  assert(rep.battleIds?.length === 1 && C.combat.battle(rep.battleIds[0])?.log?.length > 0, '戰報附上逐筆攻擊歷程');
+  assert(sent?.atkN === 1 && sent.atkPower > 0 && JSON.stringify(sent).length < 2000, '通知對方我方人數與戰力');
+  V.territory.handleEvents([{ from: 'C9', fromName: 'C9', type: 'attack', data: sent }]);
+  assert(V.state.defenseLog[0].note.includes('對方出戰 1 人'), `被突襲方的防守紀錄寫入對方人數與戰力（${V.state.defenseLog[0].note}）`);
+  // 舊版玩家（沒有公開駐守數值）：以掠奪者代替，突襲時不限 6 人
+  const old = cp9({ id: 'O9', ...pres, bases: pres.bases.map((b) => ({ ...b, guardUnits: undefined, guards: 9 })) });
+  C.world = { others: [old] };
+  const oz = C.territory.zones().find((z) => z.id === 'O9#0');
+  assert(C.territory.defenders(oz, 20).length === 9 && C.territory.defenders(oz).length === 6, '舊版資料以掠奪者代替：突襲不限人數、經過警戒範圍仍為 6 人');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

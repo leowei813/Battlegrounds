@@ -26,6 +26,13 @@ export const npcAlert = (n) => 60 + n.level;
 /** 攻擊其他玩家成功時，對方損失的資源比例 */
 export const PVP_LOSS = 0.1;
 
+/** 公開戰鬥數值的戰力（與倖存者戰力同一公式） */
+/** 突襲時公開、應戰的駐守人員上限（與公開資料的駐守人數上限相同） */
+export const GUARD_UNITS_MAX = 20;
+
+const powerOf = (units) => units.reduce((t, u) => t + Math.round((u.atk || 0) * (u.atkSpeed || 1) * (1 + (u.crit || 0) * ((u.critDmg || 1.5) - 1)) * 4
+  + ((u.maxHp || 0) * 0.4) / Math.max(0.4, 1 - (u.dodge || 0)) + (u.def || 0) * 3), 0);
+
 /**
  * 領地與外交：
  *  - 每個據點（玩家與 NPC）都有警戒範圍。
@@ -56,6 +63,17 @@ export class TerritorySystem {
       || (g.shelter.isPrimary(base) && s.job === 'guard' && !g.survivors.isGarrisoned(s.id))));
     const level = list.length ? Math.round(list.reduce((s, v) => s + v.level, 0) / list.length) : 1;
     return { list, count: list.length, level };
+  }
+
+  /**
+   * 公開的駐守人員戰鬥數值（已含裝備、品級、素質與技能；全部駐守人員，最多 GUARD_UNITS_MAX 人）：其他玩家突襲時依此應戰
+   */
+  guardUnits(base, gar = this.garrison(base)) {
+    const sv = this.game.survivors;
+    return gar.list.map((m) => ({ m, s: sv.stats(m) })).sort((a, b) => b.s.power - a.s.power).slice(0, GUARD_UNITS_MAX).map(({ m, s }, i) => ({
+      i, name: m.name, lv: m.level, hp: Math.round(sv.hpOf(m)), maxHp: Math.round(s.hp), atk: Math.round(s.atk), def: Math.round(s.def),
+      crit: +s.crit.toFixed(3), critDmg: +s.critDmg.toFixed(2), dodge: +s.dodge.toFixed(3), atkSpeed: +s.atkSpeed.toFixed(2),
+    }));
   }
 
   /**
@@ -98,7 +116,7 @@ export class TerritorySystem {
       out.push({
         id: `${p.id}#${i}`, kind: 'player', playerId: p.id, name: p.name, baseName: b.name, lat: b.lat, lon: b.lon,
         r: b.alert || BASE_SIZES[b.size]?.alert || 80, relation: this.relation(p.id), guards: b.guards || 0, level: b.guardLevel || 1,
-        wall: b.wall || 0, dps: b.dps || 0,
+        wall: b.wall || 0, dps: b.dps || 0, units: b.guardUnits || [],
       });
     }));
     return out;
@@ -123,9 +141,21 @@ export class TerritorySystem {
     }));
   }
 
-  /** 駐守人員化為戰鬥中的敵人 */
-  defenders(threat) {
-    const n = Math.max(1, Math.min(6, threat.guards));
+  /**
+   * 駐守人員化為戰鬥中的敵人：其他玩家有公開駐守者能力時依真實能力應戰（不限人數），否則（舊版）以掠奪者代替
+   * @param {number} cap 以掠奪者代替時的人數上限（經過警戒範圍的遭遇戰 6 人；突襲據點不限）
+   */
+  defenders(threat, cap = 6) {
+    if (threat.kind === 'player' && threat.units?.length) {
+      return threat.units.map((u) => {
+        const e = AssistSystem.unitOf({ id: threat.playerId || 'p', name: threat.owner || threat.name || '駐守' }, u);
+        delete e.ally;
+        e.name = String(u.name || '駐守人員').slice(0, 12);
+        e.ranged = true;
+        return e;
+      });
+    }
+    const n = Math.max(1, Math.min(cap, threat.guards));
     return Array.from({ length: n }, (_, i) => this.game.combat.createEnemy(i === 0 && threat.kind === 'npc' ? 'raiderChief' : 'raider', threat.level));
   }
 
@@ -180,14 +210,25 @@ export class TerritorySystem {
       report.events.push(fighters.length ? '🧱 圍牆太堅固，久攻不下只好撤退' : '💀 隊員全被防禦設施擊倒');
     } else if (zone.guards > 0 || allyFoes.length) {
       // 2. 圍牆被打破後才能和駐守人員（與對方的友好協防隊）交戰，打贏才可掠奪
-      const result = g.combat.simulate(fighters, [...(zone.guards > 0 ? this.defenders(zone) : []), ...allyFoes], { title: `⚔️ 突襲「${poi.name}」` });
+      const foes = zone.guards > 0 ? this.defenders(zone, GUARD_UNITS_MAX) : [];
+      const result = g.combat.simulate(fighters, [...foes, ...allyFoes], { title: `⚔️ 突襲「${poi.name}」`, ref: exp });
       g.combat.applyOutcome(fighters, result, exp.endAt);
       report.kills += result.kills.length;
       win = result.victory;
       helperResult = AssistSystem.summarize(result.foes.filter((f) => f.ally), helperNames);
       downs = result.foes.filter((f) => !f.ally && f.down).length;
-      report.events.push(`⚔️ 圍牆被打破！對方據點有 ${zone.guards} 名駐守人員迎戰${allyFoes.length ? `，還有 ${allyFoes.length} 名友好玩家的協防隊員` : ''}`);
+      report.events.push(`⚔️ 圍牆被打破！對方據點有 ${foes.length} 名駐守人員迎戰${allyFoes.length ? `，還有 ${allyFoes.length} 名友好玩家的協防隊員` : ''}`);
+      if (zone.units?.length) {
+        report.events.push(`🛡️ 對方駐守：${zone.units.map((u) => `${String(u.name || '駐守人員').slice(0, 12)} Lv${u.lv}（戰力 ${powerOf([u])}）`).join('、')}・合計戰力 ${powerOf(zone.units)}`);
+      } else report.events.push(`🛡️ 對方駐守 ${foes.length} 人（約 Lv${zone.level}；對方尚未更新版本，以掠奪者代替）`);
+      if (allyFoes.length) report.events.push(`🤝 對方協防：${allyFoes.length} 人・合計戰力 ${powerOf(allyFoes)}`);
+      report.events.push(`📊 我方出戰：${fighters.map((m) => `${m.name} Lv${m.level}（戰力 ${g.survivors.stats(m).power}）`).join('、')}・合計戰力 ${fighters.reduce((t, m) => t + g.survivors.stats(m).power, 0)}`);
+      const ours = result.team.filter((u) => !u.ally);
+      report.events.push(`⚔️ 交戰 ${Math.round(result.duration)} 秒：擊倒對方 ${result.foes.filter((f) => f.down).length}/${result.foes.length} 人，我方倒下 ${ours.filter((u) => u.down).length}/${ours.length} 人`);
+      ours.forEach((u) => report.events.push(`　・${u.name}：造成 ${u.dealt} 傷害、擊倒 ${u.kills} 人、剩餘生命 ${u.hp}/${u.maxHp}${u.down ? '（倒下）' : ''}`));
+      report.events.push('📜 逐筆攻擊歷程：見下方「本次戰鬥」');
     } else report.events.push('🏃 圍牆被打破，對方據點沒有駐守人員');
+    report.battleIds = exp.battleIds?.length ? [...exp.battleIds] : undefined;
     if (win) {
       // 搶奪：依運載量取得物資與金錢（對方會損失 10% 資源）
       const carry = exp.cargo || members.length * 40;
@@ -201,6 +242,7 @@ export class TerritorySystem {
     }
     this.send(poi.playerId, 'attack', {
       base: poi.name.split('・')[1] || '', win, lossPct: win ? PVP_LOSS : 0, wallLost: Math.round(as.wallLost), downs,
+      atkN: members.length, atkPower: members.reduce((t, m) => t + g.survivors.stats(m).power, 0), atkLv: members.map((m) => m.level),
       ...(helperResult ? { helpers: helperResult } : {}),
     });
     g.log(`⚔️ 攻擊玩家「${poi.name}」${win ? '成功' : '失敗'}，雙方進入敵對`, win ? 'success' : 'danger');
@@ -353,6 +395,10 @@ export class TerritorySystem {
         base.wallHp = Math.max(0, wallBefore - wallLost);
         // 駐守人員被擊倒：各 30% 機率重傷，其餘剩 20% 生命（與防守 NPC 掠奪相同）
         const injured = this.applyRaidDowns(base, e.data?.downs);
+        const atkN = Math.min(20, Math.max(0, Math.floor(Number(e.data?.atkN) || 0)));
+        const atkPw = Math.min(1e7, Math.max(0, Math.round(Number(e.data?.atkPower) || 0)));
+        const atkLv = (Array.isArray(e.data?.atkLv) ? e.data.atkLv : []).slice(0, 20).map((v) => Math.min(60, Math.max(1, Math.round(Number(v) || 1))));
+        const who = atkN ? `對方出戰 ${atkN} 人${atkLv.length ? `（${atkLv.map((v) => `Lv${v}`).join('、')}）` : ''}・合計戰力 ${atkPw}` : '';
         if (e.data?.win) {
           const pct = Math.min(0.3, Math.max(0, Number(e.data.lossPct) || PVP_LOSS));
           const lost = {};
@@ -364,11 +410,11 @@ export class TerritorySystem {
           const coinsLost = Math.floor(g.shelter.exposed('coins') * pct);
           g.state.player.coins -= coinsLost;
           const damaged = g.siege.of(base.id).damageBuildings(base);
-          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: false, lost, coins: coinsLost, damaged, injured, wallLost: wallBefore - base.wallHp, note: [`圍牆被打破，被搶走 ${Math.round(pct * 100)}% 資源與金錢`, assistNote].filter(Boolean).join('。') });
+          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: false, lost, coins: coinsLost, damaged, injured, wallLost: wallBefore - base.wallHp, note: [`圍牆被打破，被搶走 ${Math.round(pct * 100)}% 資源與金錢`, who, assistNote].filter(Boolean).join('。') });
           g.log(`💀 玩家「${name}」突襲了「${e.data.base || '你的據點'}」，搶走 ${Math.round(pct * 100)}% 資源！雙方進入敵對`, 'danger');
           g.toast(`💀 玩家「${name}」突襲成功，搶走 ${Math.round(pct * 100)}% 資源！`, 'danger');
         } else {
-          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: true, injured, wallLost: wallBefore - base.wallHp, note: [base.wallHp > 0 ? '圍牆撐住了，對方久攻不下撤退' : '圍牆被打破，駐守人員擊退了突襲', assistNote].filter(Boolean).join('。') });
+          g.shelter.recordDefense({ base, attacker: `玩家「${name}」`, success: true, injured, wallLost: wallBefore - base.wallHp, note: [base.wallHp > 0 ? '圍牆撐住了，對方久攻不下撤退' : '圍牆被打破，駐守人員擊退了突襲', who, assistNote].filter(Boolean).join('。') });
           g.log(`🛡️ 擊退了玩家「${name}」的突襲！雙方進入敵對`, 'success');
           g.toast(`🛡️ 擊退了玩家「${name}」的突襲`, 'success');
         }

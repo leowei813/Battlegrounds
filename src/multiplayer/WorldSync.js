@@ -85,6 +85,14 @@ function cleanAssist(a) {
   };
 }
 
+/** 駐守人員的戰鬥數值（最多 20 人；使用時會再限制範圍） */
+function cleanUnits(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 20).filter((u) => u && typeof u === 'object').map((u) => ({
+    i: finite(u.i) ? Math.min(19, Math.max(0, Math.floor(u.i))) : 0, name: String(u.name || '').slice(0, 12),
+    lv: u.lv, hp: u.hp, maxHp: u.maxHp, atk: u.atk, def: u.def, crit: u.crit, critDmg: u.critDmg, dodge: u.dodge, atkSpeed: u.atkSpeed,
+  }));
+}
+
 export function cleanPlayer(p) {
   if (!p || typeof p !== 'object') return null;
   const bases = (Array.isArray(p.bases) ? p.bases : []).filter(validPoint).slice(0, 5)
@@ -94,6 +102,7 @@ export function cleanPlayer(p) {
       alert: finite(b.alert) ? Math.min(500, Math.max(0, b.alert)) : BASE_SIZES[b.size]?.alert || 80,
       guards: finite(b.guards) ? Math.min(20, Math.max(0, Math.round(b.guards))) : 0,
       guardLevel: finite(b.guardLevel) ? Math.min(60, Math.max(1, Math.round(b.guardLevel))) : 1,
+      guardUnits: cleanUnits(b.guardUnits),
       wall: finite(b.wall) ? Math.min(1e6, Math.max(0, b.wall)) : 0,
       dps: finite(b.dps) ? Math.min(1e5, Math.max(0, b.dps)) : 0,
       siege: cleanSiege(b.siege),
@@ -250,6 +259,8 @@ export class WorldSync {
         return {
           lat: b.lat, lon: b.lon, name: b.name, primary: b === primary, size: b.size,
           alert: g.territory.alertRadius(b), guards: gar.count, guardLevel: gar.level,
+          // 駐守人員的真實戰鬥數值（其他玩家突襲時依此應戰）
+          guardUnits: g.territory.guardUnits(b, gar),
           // 攻擊者要先打破圍牆，期間防禦設施會射擊（只公開看得到的強度，不含彈藥存量）
           wall: Math.round(g.shelter.wallHp(b)), dps: g.siege.of(b.id).defenseDps({ apparent: true, raw: true }),
           // 正在被屍潮攻擊：友好玩家可以看到狀況並前來協防
