@@ -547,7 +547,8 @@ export class MapPanel {
       const who = names.length <= 2 ? names.join('、') : `${names[0]}等 ${names.length} 人`;
       const time = it.phase === 'returning' ? `⏱ 返程 ${formatDuration(it.totalMs)}` : `⏱ 總計 ${formatDuration(it.totalMs)}`;
       const queued = ex.kind === 'explore' && it.phase !== 'returning' ? `・佇列 ${(ex.queue || []).length}` : '';
-      rows.push(`<button class="feed-chip team" data-action="feedTeam" data-id="${ex.id}">${icon} ${escapeHtml(who || '隊伍')}・${time}${queued}</button>`);
+      // 左側圖示：快速定位隊伍；文字：打開隊伍詳細
+      rows.push(`<div class="feed-chip team split"><button class="feed-loc" data-action="feedLocate" data-id="${ex.id}" title="地圖移到隊伍位置">${icon}</button><button class="feed-txt" data-action="feedTeam" data-id="${ex.id}">${escapeHtml(who || '隊伍')}・${time}${queued}</button></div>`);
     });
     return rows.length ? `<div class="map-feed">${rows.join('')}</div>` : '';
   }
@@ -608,6 +609,16 @@ export class MapPanel {
     }
     if (action === 'worldSettings') this.ui.switchTab('settings');
     if (action === 'feedTeam') this.openOwnTeam(data.id);
+    if (action === 'feedLocate') {
+      const ex = this.game.state.expeditions.find((e) => e.id === data.id);
+      if (!ex) {
+        this.ui.toastEl.show('這支隊伍已經回到避難所了', 'info');
+        return;
+      }
+      const pos = this.game.exploration.progress(ex)?.pos || ex.pvpTarget || ex.from;
+      if (pos && Number.isFinite(pos.lat)) this.service.focus(pos.lat, pos.lon, 17);
+      return;
+    }
     if (action === 'feedRally') this.openRally(data.id);
     if (action === 'feedAssist') {
       const p = this.game.world?.others.find((x) => x.id === data.id);

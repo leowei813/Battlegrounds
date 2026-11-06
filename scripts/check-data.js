@@ -4846,6 +4846,64 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gn.npcs.sharedLevel({ ...n, dc: 1, baseLevel: 35 }) === 40, '重生的據點最高 Lv40');
 }
 
+// ---- 123. 脫胎換骨還你漂漂重生器：超渡（洗鍊素質）、鎖定、費用、越洗越貴、快樂重生／還你原形、就是要鎖你取得 ----
+{
+  const { REBIRTH: RB, LOCK_ITEM: LI } = await import('../src/config/rebirth.js');
+  const { SaveManager: SM } = await import('../src/core/SaveManager.js');
+  const { createSurvivor: cs } = await import('../src/core/GameState.js');
+  const gr = Game.newGame({ playerName: 'R123', classId: 'warrior', lat: 25, lon: 121 });
+  gr.state.map.pois = fillPois([], 25, 121);
+  gr.shelter.establish(gr.state.map.pois.find((p) => gr.shelter.canEstablish(p).ok));
+  const base = gr.shelter.primary();
+  assert(base.facilities.rebirth?.level === 0, '新避難所有重生器（Lv0）');
+  assert(!gr.shelter.canUpgradeFacility(base, 'rebirth').ok && /研究中心 Lv4/.test(gr.shelter.canUpgradeFacility(base, 'rebirth').reason), '重生器需要研究中心 Lv4');
+  const sv = cs('洗洗', 'warrior', 20, 'rare'); gr.state.survivors.push(sv);
+  assert(!gr.rebirth.canWash(sv).ok, '沒有重生器不能超渡');
+  assert(!gr.rebirth.canWash(gr.survivors.leader()).ok, '首領不能超渡');
+  base.facilities.rebirth.level = 1;
+  gr.state.player.coins = 100000;
+  assert(gr.rebirth.cost(sv) === Math.round(100 * 2.5 * 3 * (1 - 0.03)), `精良 Lv20 費用（${gr.rebirth.cost(sv)}）`);
+  assert(!gr.rebirth.canWash(sv, ['hp']).ok, '沒有就是要鎖你不能鎖');
+  gr.rebirth.addLocks(3);
+  assert(!gr.rebirth.canWash(sv, ['hp', 'atk']).ok, '重生器 Lv1 只能鎖 1 種');
+  const q0 = { ...sv.quality };
+  const c1 = gr.rebirth.cost(sv, 1);
+  const r1 = gr.rebirth.wash(sv.id, ['hp']);
+  assert(r1.ok && r1.after.hp === q0.hp && gr.rebirth.locks() === 2 && gr.state.player.coins === 100000 - c1, '超渡：鎖住的素質不變、扣費與消耗就是要鎖你');
+  assert(JSON.stringify(sv.quality) === JSON.stringify(q0), '選擇前素質還沒改變');
+  gr.rebirth.decide(sv.id, false);
+  assert(JSON.stringify(sv.quality) === JSON.stringify(q0), '還你原形：維持原本素質');
+  assert(gr.rebirth.cost(sv) === Math.round(100 * 2.5 * 3 * 1.2 * 0.97), '同一位倖存者當天第 2 次 +20%');
+  const r2 = gr.rebirth.wash(sv.id, [], () => 0.9);
+  gr.rebirth.decide(sv.id, true);
+  assert(r2.ok && JSON.stringify(sv.quality) === JSON.stringify(r2.after), '快樂重生：套用新素質');
+  assert(gr.rebirth.cost(sv) === Math.round(100 * 2.5 * 3 * 1.4 * 0.97), '第 3 次 +40%');
+  sv.wash = { day: '2000-01-01', n: 9 };
+  assert(gr.rebirth.cost(sv) === Math.round(100 * 2.5 * 3 * 0.97), '隔天重置');
+  base.facilities.rebirth.level = 6;
+  assert(gr.rebirth.lockSlots() === 2 && gr.rebirth.canWash(sv, ['hp', 'atk']).ok, '重生器 Lv6 可鎖 2 種');
+  gr.state.research.levels = { ...(gr.state.research.levels || {}), r_eugen: 5, r_gene: 10 };
+  gr.research._cache = null;
+  const r3 = gr.rebirth.wash(sv.id, [], () => 0);
+  assert(r3.ok && Object.values(r3.after).every((v) => v >= 10), `優生學滿級保底 10%（${JSON.stringify(r3.after)}）`);
+  gr.rebirth.decide(sv.id, false);
+  assert(gr.rebirth.discount() <= RB.maxDiscount && gr.rebirth.discount() > 0.5, '基因調理與重生器折扣，最多 −70%');
+  // 搜索掉落率
+  assert(gr.rebirth.rollSearch('normal', () => 0.0099) === 1 && gr.rebirth.rollSearch('normal', () => 0.0101) === 0, '一般區每棟 1%');
+  assert(gr.rebirth.rollSearch('abyss', () => 0.0299) === 1, '深淵區 ×3');
+  assert(gr.rebirth.infectDrop(1) === 1 && gr.rebirth.infectDrop(3) === 2, '重度感染據點 1 個、3 人以上 2 個');
+  // 黑市特殊品
+  const coins0 = gr.state.player.coins;
+  const b1 = gr.rebirth.buyLocks(2);
+  assert(b1.ok && gr.state.player.coins === coins0 - 2 * LI.bmPrice && gr.rebirth.bmLeft() === 3, '黑市特殊品 1 萬一個、每天 5 個');
+  assert(!gr.rebirth.buyLocks(4).ok, '超過每日限購不能買');
+  // 存檔：就是要鎖你與重生器保留；舊存檔補上
+  const old = JSON.parse(JSON.stringify(gr.state));
+  old.version = 27; delete old.player.locks; delete old.bases[0].facilities.rebirth;
+  const mig = SM.migrate(old);
+  assert(mig.player.locks === 0 && mig.bases[0].facilities.rebirth?.level === 0, '舊存檔補上就是要鎖你（0）與重生器 Lv0');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

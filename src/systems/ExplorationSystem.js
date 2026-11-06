@@ -1202,6 +1202,14 @@ export class ExplorationSystem {
       cp.blueprints.push(this.game.equipment.makeBlueprint(level));
       extra.push('📜 設計圖');
     }
+    // 搜完一棟（最後一個檢核點）：有機會找到「就是要鎖你」（直接放進持有數，不佔背包）
+    if (last && !cp.stock.empty) {
+      const locks = this.game.rebirth?.rollSearch(zone?.id) || 0;
+      if (locks) {
+        this.game.rebirth.addLocks(locks);
+        extra.push(`🔒 就是要鎖你 ×${locks}`);
+      }
+    }
     // 有找到東西才顯示
     if (found.length || extra.length) cp.events.push(`🔍 ${tag}找到 ${[...found, ...extra].join('、')}`);
     if (k === 1 && cp.stock.empty) cp.events.push(`🕸️ 這裡已經被搜刮一空（${cp.emptyBy || '這個時段已經有人搜過'}；每天 06:00、18:00 刷新）`);

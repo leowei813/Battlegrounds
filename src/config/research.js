@@ -150,6 +150,9 @@ export const RESEARCH = {
   r_cost: r('recruitment', 1, '招募宣傳', '招募費用降低', { recruitCostReduce: 0.04 }),
   r_board: r('recruitment', 2, '情報網', '每小時出現的倖存者人數 +1（最多 3 級）；Lv1 需要研究中心 Lv5、Lv2 需要 Lv10、Lv3 需要 Lv15', { boardSlots: 1 }, { req: [['r_tech', 2]], max: 3, labReq: [5, 10, 15] }),
   r_train: r('recruitment', 2, '教練', '倖存者獲得的經驗提升', { xpPct: 0.04 }),
+  r_gene: r('recruitment', 2, '基因調理', '重生器洗鍊（超渡）費用降低', { washCostReduce: 0.04 }),
+  r_radar: r('recruitment', 2, '鎖定雷達', '搜索建築時找到「就是要鎖你」的機率提升', { lockDropAdd: 0.1 }),
+  r_eugen: r('recruitment', 3, '優生學', '重生器洗鍊時每項素質的最低保底提升', { washFloor: 2 }, { req: [['r_gene', 3]], max: 5 }),
   r_level: r('recruitment', 3, '老手', '招募到的倖存者等級提升', { recruitLevelAdd: 0.3 }, { req: [['r_tech', 3]] }),
   // ---- 擴張 ----
   e_outpost: r('expansion', 1, '前哨站', '每級可多建 1 座前哨站（只有防禦功能）', { outposts: 1 }, { max: 3, costMul: 2.5 }),
@@ -210,6 +213,7 @@ dismantlePct: (v) => `拆解材料 +${pct(v)}`, sellPct: (v) => `商人回收價
   craftTech: (v) => `製作技術 Lv${v}`, craftCostReduce: (v) => `製作費用 −${pct(v)}`, gunCraft: (v) => `槍械製造 Lv${v}`,
   craftLevelAdd: (v) => `製作裝備等級 +${v}`, craftBpBoost: (v) => `設計圖升階 ${pct(v)}`, craftQualityAdd: (v) => `製作素質 +${pct(v)}`,
   recruitTech: (v) => `招募技術 Lv${v}`, recruitCostReduce: (v) => `招募費用 −${pct(v)}`, boardSlots: (v) => `每小時倖存者 +${Math.floor(v)}`,
+  washCostReduce: (v) => `洗鍊費用 −${pct(v)}`, lockDropAdd: (v) => `鎖你掉落 +${pct(v)}`, washFloor: (v) => `素質保底 ${Math.round(v)}%`,
   xpPct: (v) => `經驗 +${pct(v)}`, recruitLevelAdd: (v) => `招募等級 +${Math.floor(v)}`, outposts: (v) => `前哨站 ${v} 座`,
   establishCostReduce: (v) => `前哨站費用 −${pct(v)}`, outpostWallPct: (v) => `前哨站圍牆 +${pct(v)}`,
 };

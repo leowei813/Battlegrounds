@@ -1304,3 +1304,49 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .stk-go { order: 0; }
   .stk-line:not(:has(.stk-go)) .stk-lab { flex-basis: 100%; }
 }
+
+/* ---------- 地圖隊伍標籤：圖示快速定位、文字打開詳細 ---------- */
+.feed-chip.split { display: flex; align-items: stretch; padding: 0; }
+.feed-chip.split > button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.feed-chip.split .feed-loc { flex: 0 0 30px; display: flex; align-items: center; justify-content: center; background: #ffd54f22; border-right: 1px solid #ffd54f66; padding: 0; }
+.feed-chip.split .feed-loc:hover, .feed-chip.split .feed-loc:active { background: #ffd54f55; }
+.feed-chip.split .feed-txt { flex: 1; text-align: left; padding: 4px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed-chip.split .feed-txt:hover { background: #ffffff12; }
+
+/* ---------- 重生器：超渡 ---------- */
+.rb-entry { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+.btn.rb-go { background: #7b1fa2; border-color: #ce93d8; color: #fff; }
+.btn.rb-ok { background: #2e7d32; border-color: #81c784; color: #fff; }
+.rb-who { font-size: 12.5px; color: #b0bec5; margin-bottom: 10px; }
+.rb-row { display: flex; align-items: center; gap: 8px; background: #ffffff0a; border-radius: 10px; padding: 7px 10px; margin-bottom: 6px; }
+.rb-row.locked { outline: 1px solid #ce93d8aa; }
+.rb-k { width: 42px; color: #cfd8dc; }
+.rb-bar { flex: 1; height: 6px; background: #ffffff14; border-radius: 4px; overflow: hidden; }
+.rb-bar i { display: block; height: 100%; background: #66bb6a; }
+.rb-bar i.dn { background: #ef5350; }
+.rb-bar i.same { background: #ce93d8; }
+.rb-row b { width: 46px; text-align: right; white-space: nowrap; }
+.rb-row.cmp b { width: 66px; }
+.rb-o { width: 40px; text-align: right; color: #90a4ae; }
+.rb-ar { width: 14px; text-align: center; color: #90a4ae; }
+.rb-lk { border: 1px solid #ffffff33; background: none; color: #b0bec5; border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.rb-lk.on { border-color: #ce93d8; background: #4a148c66; color: #f3e5f5; }
+.rb-lk:disabled { opacity: .35; cursor: default; }
+.rb-cost { background: #2a2015; border: 1px solid #ffb30055; border-radius: 10px; padding: 8px 10px; font-size: 13px; margin: 10px 0 6px; }
+.rb-cost b { color: #ffd54f; }
+.rb-sum { font-size: 13px; margin: 8px 0; padding: 6px 10px; background: #ffffff0a; border-radius: 8px; }
+.rb-row .up, .rb-sum .up { color: #81c784; }
+.rb-row .dn, .rb-sum .dn { color: #ef5350; }
+.rb-row .same { color: #ce93d8; }
+.rb-btns { justify-content: flex-end; margin-top: 8px; }
+
+/* ---------- 黑市特殊品 ---------- */
+.bm-sp-head { background: linear-gradient(90deg, #4a148c55, transparent); border: 1px solid #ba68c855; }
+.bm-sp-head b { color: #e1bee7; }
+.bm-sp-item { display: flex; gap: 12px; align-items: center; border: 1px solid #ba68c8aa; background: #2a1f30; border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+.bm-sp-item.soon { opacity: .5; border-style: dashed; }
+.bm-sp-ic { font-size: 30px; width: 44px; text-align: center; }
+.bm-sp-mid { flex: 1; min-width: 0; }
+.bm-sp-nm { color: #e1bee7; font-size: 15px; }
+.bm-sp-lim { display: inline-block; margin-top: 4px; font-size: 12px; background: #ffffff12; border-radius: 8px; padding: 1px 8px; color: #ffe082; }
+.btn.bm-sp-buy { background: #7b1fa2; border-color: #ce93d8; color: #fff; white-space: nowrap; }

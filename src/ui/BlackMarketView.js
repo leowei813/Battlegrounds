@@ -2,7 +2,8 @@ import { SUPPLIES, SUPPLY_CATS } from '../config/supplies.js';
 import { RARITIES, RARITY_ORDER } from '../config/equipment.js';
 import { BLACK_MARKET, EXCHANGE } from '../systems/BlackMarketSystem.js';
 import { escapeHtml } from '../utils/dom.js';
-import { formatDuration } from '../utils/math.js';
+import { formatDuration, formatNumber } from '../utils/math.js';
+import { LOCK_ITEM } from '../config/rebirth.js';
 import { btn, itemCard } from './components.js';
 
 /** 依階級與名稱排序（不依數量，賣出一部分後順序不會跳動） */
@@ -25,7 +26,7 @@ export function blackMarketBody(ui, view = 'buy') {
     ui.renderBadges?.();
   }
   const tab = (v, label) => `<button class="chip ${(view || 'buy') === v ? 'active' : ''}" data-action="bmView" data-v="${v}">${label}</button>`;
-  const tabs = `<div class="chips">${tab('buy', '🛒 購買')}${tab('sell', '♻️ 出售')}${tab('ex', '🔄 交換')}</div>`;
+  const tabs = `<div class="chips">${tab('buy', '🛒 購買')}${tab('sell', '♻️ 出售')}${tab('ex', '🔄 交換')}${tab('sp', '✨ 特殊品')}</div>`;
   const boughtIds = bm.boughtIds(now);
   const bought = bm.boughtThisRound(now);
   const per = BLACK_MARKET.perRound;
@@ -35,6 +36,7 @@ export function blackMarketBody(ui, view = 'buy') {
   const head = `<div class="bm-bar">🕶️ 所有倖存者共用的黑市：${BLACK_MARKET.slots} 項商品<b>每 ${Math.round(BLACK_MARKET.rotateMs / 60000)} 分鐘全部換新</b>・下次換貨 <b>${hm}</b>（約 ${formatDuration(Math.max(0, next.at - now))}）・先搶先贏，每輪每人限買 ${per} 件<br>${quota}</div>
     <p>💰 你的金錢：<b>${g.state.player.coins}</b>${g.shared.online ? '' : ' <small class="muted">（目前未連線：只有自己看得到購買紀錄）</small>'}</p>${tabs}`;
   if (view === 'ex') return `${head}${exchangeHtml(ui)}`;
+  if (view === 'sp') return `${head}${specialHtml(ui)}`;
   if (view === 'sell') {
     const sup = g.state.supplies || {};
     const keys = Object.keys(sup).filter((k) => SUPPLIES[k] && sup[k] > 0).sort(supplyOrder);
@@ -140,6 +142,47 @@ function exchangeHtml(ui) {
     </div>` : ''}`;
 }
 
+/** ✨ 特殊品：常駐販售、不佔每輪購買額度、每天限購（台灣時間 00:00 重置） */
+function specialHtml(ui) {
+  const g = ui.game;
+  const rb = g.rebirth;
+  const left = rb.bmLeft();
+  const afford = g.state.player.coins >= LOCK_ITEM.bmPrice;
+  return `<div class="card bm-sp-head">✨ <b>特殊品</b>：黑市商人私藏的稀有貨，<b>常駐販售</b>、不會隨每 ${Math.round(BLACK_MARKET.rotateMs / 60000)} 分鐘換貨下架，也<b>不佔每輪 ${BLACK_MARKET.perRound} 件</b>的購買額度。每天限購，台灣時間 00:00 重置。</div>
+    <div class="bm-sp-item">
+      <div class="bm-sp-ic">${LOCK_ITEM.icon}</div>
+      <div class="bm-sp-mid"><b class="bm-sp-nm">${LOCK_ITEM.name}</b>
+        <small class="muted block">在「脫胎換骨還你漂漂重生器」超渡倖存者時，鎖住 1 種素質不改變（每鎖 1 種消耗 1 個）・持有 ${rb.locks()}</small>
+        <span class="bm-sp-lim">今日已買 ${rb.bmBoughtToday()} / ${LOCK_ITEM.bmDaily}</span></div>
+      ${btn(`💰${formatNumber(LOCK_ITEM.bmPrice)} 購買`, 'bmSpBuy', {}, { cls: 'bm-sp-buy', disabled: !left || !afford, title: !left ? '今天已經買滿了' : !afford ? '金錢不足' : '' })}
+    </div>
+    <div class="bm-sp-item soon"><div class="bm-sp-ic">❔</div><div class="bm-sp-mid"><b class="muted">更多特殊品敬請期待</b><small class="muted block">之後新增的稀有道具也會放在這一區</small></div></div>`;
+}
+
+/** 購買特殊品的確認視窗（選擇數量） */
+function openSpecialBuy(ui) {
+  const g = ui.game;
+  const rb = g.rebirth;
+  const body = () => {
+    const left = rb.bmLeft();
+    const max = Math.min(left, Math.floor((g.state.player.coins || 0) / LOCK_ITEM.bmPrice));
+    const opts = Array.from({ length: Math.max(0, max) }, (_, i) => i + 1)
+      .map((n) => btn(`${n} 個（💰${formatNumber(n * LOCK_ITEM.bmPrice)}）`, 'spQty', { n }, { cls: 'btn-sm' })).join('');
+    return `<p>${LOCK_ITEM.icon} <b>${LOCK_ITEM.name}</b>：每個 💰${formatNumber(LOCK_ITEM.bmPrice)}・今天還能買 ${left} 個・你的金錢 💰${formatNumber(g.state.player.coins)}</p>
+      <div class="btn-row">${opts || '<span class="muted">金錢不足或今天已經買滿了</span>'}</div>`;
+  };
+  ui.modal.open({
+    title: '✨ 購買特殊品',
+    body: body(),
+    onAction: (action, data, m) => {
+      if (action !== 'spQty') return;
+      ui.result(rb.buyLocks(Number(data.n)));
+      m.close();
+      ui.refresh(true);
+    },
+  });
+}
+
 /** 黑市分頁的操作；處理了回傳 true */
 export function blackMarketAction(ui, action, data) {
   const g = ui.game;
@@ -156,6 +199,7 @@ export function blackMarketAction(ui, action, data) {
     return true;
   }
   if (action === 'bmSell') { ui.result(bm.sell(data.key, Number(data.qty))); return true; }
+  if (action === 'bmSpBuy') { openSpecialBuy(ui); return true; }
   const f = ui.bmEx || (ui.bmEx = { cat: 'part', tier: 1, want: null, give: null, get: 0 });
   if (action === 'bmExCat') { f.cat = data.v; f.want = null; f.give = null; f.get = 0; return true; }
   if (action === 'bmExTier') { f.tier = Number(data.v); f.want = null; f.give = null; f.get = 0; return true; }

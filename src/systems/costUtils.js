@@ -5,7 +5,7 @@ import { isSupply } from '../config/supplies.js';
  * 成本/獎勵工具。成本物件可同時包含資源 (food…)、貨幣 (coins, parts) 與材料物品（零件、布料、藥品、彈藥）。
  * 材料物品存放在物品倉庫 state.supplies。
  */
-const CURRENCY_KEYS = ['coins', 'parts'];
+const CURRENCY_KEYS = ['coins', 'parts', 'locks'];
 
 function pool(state, key) {
   if (CURRENCY_KEYS.includes(key)) return state.player;

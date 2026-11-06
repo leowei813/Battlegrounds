@@ -397,6 +397,7 @@ export class UIManager {
       <div class="hud-res" data-action="openRates">${res}
         <div class="res cur" title="${CURRENCIES.coins.name}"><span>${CURRENCIES.coins.icon}</span><b>${formatNumber(st.player.coins)}</b></div>
         <div class="res cur" title="${CURRENCIES.parts.name}"><span>${CURRENCIES.parts.icon}</span><b>${formatNumber(st.player.parts)}</b></div>
+        <div class="res cur" title="${CURRENCIES.locks.name}（重生器超渡時鎖住素質用）"><span>${CURRENCIES.locks.icon}</span><b>${formatNumber(st.player.locks || 0)}</b></div>
       </div>`;
   }
 

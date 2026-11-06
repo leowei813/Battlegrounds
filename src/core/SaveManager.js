@@ -438,6 +438,11 @@ export class SaveManager {
       // v9.26：黑市改為每 30 分鐘換新：購買紀錄改存成清單（舊的一輪紀錄已過期，直接清空）
       data.bmBought = null;
     }
+    if (v < 28) {
+      // v10.12：新增「就是要鎖你」（貨幣，不佔物品格）、重生器（設施於下方自動補 Lv0）、黑市特殊品每日購買紀錄
+      if (data.player) data.player.locks = Math.max(0, Math.floor(data.player.locks || 0));
+      data.bmSpecial = data.bmSpecial || null;
+    }
     if (v < 27) {
       // v10：地圖地點改為固定格子產生（載入後重新產生，據點與探索目的地保留）；建築殘留物資改為所有玩家共用
       delete data.map.remain;
