@@ -4942,6 +4942,28 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(p2.trips.length === 1 && p2.trips[0].endAt === now - 300e3 + 600e3, '返程中：依交戰時間＋路程計算回家時間');
 }
 
+// ---- 126. 白天高危區也有風險：遭遇率、殭屍等級、生命與攻擊依區域提高（一般區不變） ----
+{
+  const { DAY_ZONE: DZ } = await import('../src/config/enemies.js');
+  const { zoneAt: za } = await import('../src/config/zones.js');
+  const { TIME_PHASES: TP } = await import('../src/config/timePhases.js');
+  const gd = Game.newGame({ playerName: 'D126', classId: 'warrior', lat: 25, lon: 121.5 });
+  const spots = {};
+  for (let i = 0; i < 4000 && Object.keys(spots).length < 6; i += 1) { const lat = 25 + (i % 63) * 0.0021; const lon = 121.5 + Math.floor(i / 63) * 0.0021; const z = za(lat, lon); if (!spots[z.id]) spots[z.id] = { lat, lon }; }
+  const lv = (id, ph) => gd.zombies.buildingLevel({ id: 'p', type: 'factory', ...spots[id] }, ph);
+  assert(spots.lethal && spots.normal, '找到測試用的區域座標');
+  const lethalDay = lv('lethal', TP.day);
+  DZ.level.lethal = 0;
+  const lethalPlain = lv('lethal', TP.day);
+  DZ.level.lethal = 4;
+  assert(lethalDay === lethalPlain + 4, `致死區白天殭屍 +4 級（${lethalPlain} → ${lethalDay}）`);
+  const m = (id, ph) => gd.exploration.encounterMul({ phase: ph, zone: za(spots[id].lat, spots[id].lon) });
+  DZ.stat.lethal = 1; const base = m('lethal', TP.day).hp; DZ.stat.lethal = 1.2;
+  assert(Math.abs(m('lethal', TP.day).hp / base - 1.2) < 1e-9, '致死區白天殭屍生命 ×1.2');
+  assert(DZ.stat.normal === 1 && DZ.level.normal === 0 && DZ.encounter.normal === 1, '一般區白天不變');
+  assert(DZ.encounter.lethal === 1.6 && DZ.encounter.abyss === 2 && DZ.stat.abyss === 1.3, '白天遭遇率與強化倍率');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

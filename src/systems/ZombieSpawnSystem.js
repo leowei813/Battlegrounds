@@ -3,7 +3,7 @@ import { ZOMBIE_REFRESH_MS, ZOMBIE_MAX_GROUPS, MAX_TEAM_SIZE } from '../config/c
 import { POI_TYPES } from '../config/poiTypes.js';
 import { zoneAt } from '../config/zones.js';
 import {
-  ALL_ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR, NIGHT_MUL, MAP_GROUP_MUL, BUILDING_ZONE, mulOf,
+  ALL_ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR, NIGHT_MUL, MAP_GROUP_MUL, BUILDING_ZONE, DAY_ZONE, mulOf,
 } from '../config/enemies.js';
 import {
   withSeed,
@@ -235,7 +235,9 @@ export class ZombieSpawnSystem {
     const extra = BUILDING_ZONE.extraLevel[Math.min(3, Math.max(-1, z.danger || 0))] || 0;
     const base = this.areaLevel(poi) + extra;
     const bonus = phase?.zombies ? Math.round(Math.max(0, phase.danger - 1) * 2 * (1 + Math.max(0, z.danger))) : 0;
-    return Math.max(1, Math.min(base + bonus, this.zoneLevelCap(poi.lat, poi.lon, phase) + extra));
+    // 白天：高危區的殭屍等級加成（上限一起提高）
+    const day = phase && !phase.zombies ? DAY_ZONE.level[z.id] || 0 : 0;
+    return Math.max(1, Math.min(base + bonus + day, this.zoneLevelCap(poi.lat, poi.lon, phase) + extra + day));
   }
 
   makeGroup(poi, phase, now) {
