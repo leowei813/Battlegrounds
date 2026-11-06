@@ -349,6 +349,7 @@ export class InfectedSystem {
         const lockN = g.rebirth?.infectDrop(people) || 0;
         if (lockN) {
           g.rebirth.addLocks(lockN);
+          report.locks = lockN;
           report.events.push(`🔒 在感染源深處找到「就是要鎖你」×${lockN}`);
         }
         report.events.push(`🏆 消滅「${s.name}」！獲得 ${rw.items.length} 件裝備、${Object.keys(rw.mats).length} 種高階材料、💰${rw.coins}${rw.blueprints.length ? '、1 張設計圖' : ''}`);

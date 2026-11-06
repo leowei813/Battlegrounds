@@ -460,6 +460,10 @@ export class RallySystem {
       if (g.equipment.addItem(item, '集結')) report.items.push(item);
     });
     report.resources = g.grant({ ...(r.mats || {}), coins: r.coins || 0 });
+    if (report.resources.locks > 0) {
+      report.locks = report.resources.locks;
+      report.events.push(`🔒 集結戰利品中分到「就是要鎖你」×${report.locks}`);
+    }
     if (exp.rallyVictory) g.state.stats.battlesWon += 1;
     else if (!exp.recalled) g.state.stats.battlesLost += 1;
     return report;

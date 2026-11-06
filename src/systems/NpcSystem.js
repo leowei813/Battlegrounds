@@ -904,6 +904,7 @@ export class NpcSystem {
     const lockN = g.rebirth?.rollNpc() || 0;
     if (lockN) {
       g.rebirth.addLocks(lockN);
+      report.locks = lockN;
       report.events.push(`🔒 在據點的保險箱裡找到「就是要鎖你」×${lockN}`);
     }
     report.events.push(`🏆 攻陷「${n.name}」，據點被摧毀！`);
