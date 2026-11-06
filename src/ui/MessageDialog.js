@@ -34,6 +34,15 @@ function zoneTag(id) {
   return ` <span class="zone-tag" style="--zc:${color}">${z.danger >= 2 ? '☠️' : z.danger >= 1 ? '⚠️' : '🟢'} ${z.name}</span>`;
 }
 
+/** 獲得清單最前面的經驗標籤：每人相同時顯示「每人 +N」，否則顯示範圍 */
+function xpChip(r) {
+  const gains = (r.xpBy || []).map((x) => x.d).filter((d) => d > 0);
+  if (!gains.length) return '';
+  const lo = Math.min(...gains);
+  const hi = Math.max(...gains);
+  return `<span class="xp-chip">⭐ 經驗 每人 ${lo === hi ? `+${lo}` : `+${lo}～${hi}`}</span>`;
+}
+
 function reportsHtml(game, openId, since, openBattle) {
   const list = (game.state.reports || []).map((r) => {
     const open = openId === r.id;
@@ -45,8 +54,8 @@ function reportsHtml(game, openId, since, openBattle) {
       <div class="row-between" data-action="toggleReport" data-id="${r.id}">
         <b>${fresh ? NEW : ''}${r.success ? '✅' : '⚠️'} ${escapeHtml(r.poiName)}${zoneTag(r.zone)}${sp ? '<span class="sp-badge">✨ 特殊道具</span>' : ''}</b><span class="row-gap">${shareBtn(game, 'report', r.id)}<small class="muted">${hhmm(r.at)} ${open ? '▲' : '▼'}</small></span>
       </div>
-      <div class="gains">${sp ? `<span class="sp-chip">🔒 就是要鎖你 ×${sp}</span>` : ''}${r.emptied && !sp && !Object.values(r.resources || {}).some((v) => v > 0) && !r.items.length ? `<span class="tag empty-tag">🕸️ 已被搜空・${escapeHtml(r.emptied)}</span>` : gainsHtml(res)} ${r.items.map((it) => `<span class="rarity" style="--rc:${RARITIES[it.rarity].color}">${escapeHtml(it.name)}</span>`).join('')}${r.carried && (r.items.length || Object.keys(r.resources || {}).length) ? '<span class="tag">🎒 背在身上，回到避難所才入庫</span>' : ''}${r.blueprints.length ? `<span class="tag">📜×${r.blueprints.length}</span>` : ''}</div>
-      ${open ? `<ul class="event-list">${r.events.map((e) => `<li${String(e).includes('就是要鎖你') ? ' class="sp-line"' : ''}>${escapeHtml(e)}</li>`).join('')}</ul><small class="muted">隊員：${r.members.map(escapeHtml).join('、')}・擊殺 ${r.kills}</small>${battlesSectionHtml(game, r.battleIds, openBattle)}` : (r.battleIds?.length ? `<small class="muted block">⚔️ ${r.battleIds.length} 場戰鬥・點開查看</small>` : '')}
+      <div class="gains">${sp ? `<span class="sp-chip">🔒 就是要鎖你 ×${sp}</span>` : ''}${xpChip(r)}${r.emptied && !sp && !Object.values(r.resources || {}).some((v) => v > 0) && !r.items.length ? `<span class="tag empty-tag">🕸️ 已被搜空・${escapeHtml(r.emptied)}</span>` : gainsHtml(res)} ${r.items.map((it) => `<span class="rarity" style="--rc:${RARITIES[it.rarity].color}">${escapeHtml(it.name)}</span>`).join('')}${r.carried && (r.items.length || Object.keys(r.resources || {}).length) ? '<span class="tag">🎒 背在身上，回到避難所才入庫</span>' : ''}${r.blueprints.length ? `<span class="tag">📜×${r.blueprints.length}</span>` : ''}</div>
+      ${open ? `<ul class="event-list">${r.events.map((e) => `<li${String(e).includes('就是要鎖你') ? ' class="sp-line"' : ''}>${escapeHtml(e)}</li>`).join('')}</ul><small class="muted">隊員：${r.members.map(escapeHtml).join('、')}・擊殺 ${r.kills}${r.xpBy?.length ? `・<b class="xp-by">⭐ 經驗：${r.xpBy.map((x) => `${escapeHtml(x.n)} ${x.d >= 0 ? '+' : '−'}${Math.abs(x.d)}`).join('、')}</b>${r.xpBy.some((x) => x.d < 0) ? '（倒下重傷會扣經驗）' : ''}` : ''}</small>${battlesSectionHtml(game, r.battleIds, openBattle)}` : (r.battleIds?.length ? `<small class="muted block">⚔️ ${r.battleIds.length} 場戰鬥・點開查看</small>` : '')}
     </div>`;
   }).join('');
   return list || '<p class="muted">尚無探索報告。</p>';

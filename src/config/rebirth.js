@@ -3,17 +3,17 @@
  *  - 費用 = base × 品級倍率 × (1 + 倖存者等級 × perLevel)
  *  - 每鎖住 1 種素質費用 +lockMul，並消耗 1 個「就是要鎖你」
  *  - 同一位倖存者當天每多洗一次 +dailyStep（台灣時間 00:00 重置）
- *  - 重生器每級 −facDiscount、研究「基因調理」每級 −4%，合計最多 −maxDiscount
+ *  - 重生器每級 −facDiscount、研究「基因調理」每級 −3%，合計最多 −maxDiscount
  *  - 洗完可選「快樂重生」（採用新素質）或「還你原形」（維持原本），費用不退
  */
 export const REBIRTH = {
-  base: 100,
+  base: 400, // v10.15：100 → 400
   perLevel: 0.1,
   rarityMul: { poor: 0.5, common: 1, uncommon: 1.5, rare: 2.5, epic: 4, legendary: 6 },
   lockMul: 0.5,
   dailyStep: 0.2,
   facDiscount: 0.03,
-  maxDiscount: 0.7,
+  maxDiscount: 0.5, // v10.15：0.7 → 0.5
   /** 可鎖住的素質數：重生器 Lv1 可鎖 1 種、Lv6 起可鎖 2 種 */
   lockSlots: (lv) => (lv >= 6 ? 2 : lv >= 1 ? 1 : 0),
   /** 建造需要研究中心等級 */

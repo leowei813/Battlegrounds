@@ -1362,3 +1362,28 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 /* ---------- 據點視窗：特殊物品說明 ---------- */
 .sp-hint { margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: linear-gradient(90deg, #4a148c88, transparent); border: 1px solid #ce93d8aa; box-shadow: 0 0 10px #ba68c844; font-size: 13px; }
 .sp-hint b { color: #e1bee7; }
+
+/* ---------- 裝備：武器子彈列、標題旁藥品欄（一律自動補給） ---------- */
+.gear-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.gear-head h3 { margin: 0; }
+.med-pill { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; background: #ffffff0d; border: 1px solid #ffffff22; border-radius: 12px; padding: 3px 6px 3px 9px; font-size: 12.5px; }
+.med-pill.empty { border-color: #ef535088; }
+.med-pill b { color: #fff; }
+.med-pill select { background: #102027; border: 1px solid #4fc3f7; color: #e1f5fe; border-radius: 8px; padding: 1px 4px; font: inherit; font-size: 12px; max-width: 220px; }
+.auto-tag { color: #81c784; font-weight: 700; font-size: 11.5px; white-space: nowrap; }
+.ammo-row { margin-top: 6px; font-size: 12.5px; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 8px; background: #ffffff0a; flex-wrap: wrap; }
+.ammo-row b { color: #fff; }
+.ammo-bar { flex: 1; min-width: 50px; max-width: 90px; height: 5px; background: #ffffff14; border-radius: 3px; overflow: hidden; }
+.ammo-bar i { display: block; height: 100%; background: #66bb6a; }
+.ammo-row.low .ammo-bar i { background: #ffb74d; }
+
+/* 裝備標題旁的藥品小標籤（v10.15：點一下跳出原生選單） */
+.gear-head .med-chip { margin-left: auto; position: relative; display: inline-flex; align-items: center; gap: 5px; background: #ffffff0d; border: 1px solid #4fc3f799; border-radius: 14px; padding: 3px 10px; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.gear-head .med-chip.empty { border-color: #ef535099; }
+.gear-head .med-chip b { color: #fff; }
+.gear-head .med-chip .dd { color: #4fc3f7; font-size: 11px; }
+.gear-head .med-chip select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
+
+/* ---------- 報告：經驗值 ---------- */
+.xp-chip { display: inline-block; background: #1a237e; border: 1px solid #7986cb; color: #c5cae9; font-weight: 700; border-radius: 8px; padding: 1px 8px; margin: 0 4px 4px 0; white-space: nowrap; }
+.xp-by { color: #c5cae9; }

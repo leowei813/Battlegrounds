@@ -425,6 +425,7 @@ export class CombatSystem {
     st.bossKills += result.bossKills;
     st.eliteKills += result.eliteKills;
     const xpEach = Math.round(result.xp / Math.max(1, survivors.length)) + (result.victory ? 5 : 0);
+    result.xpEach = Math.round(xpEach * (1 + this.game.research.bonus('xpPct')));
     survivors.forEach((sv) => {
       const u = result.team.find((x) => x.id === sv.id);
       this.consumeMeds(sv, u);

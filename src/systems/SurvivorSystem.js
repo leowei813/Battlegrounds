@@ -385,6 +385,28 @@ export class SurvivorSystem {
     const sv = this.get(id);
     if (!sv) return;
     SLOT_KEYS.forEach((slot) => { sv.equipment[slot] = null; });
+    // v10.14.1：彈藥欄、藥品欄的彈藥與藥品歸還倉庫；倉庫放不下時放進在避難所的其他倖存者背包（還放不下才超出倉庫上限存入）
+    const lo = this.loadout(sv);
+    ['ammo', 'med'].forEach((kind) => {
+      const slot = lo[kind];
+      if (!slot?.qty) return;
+      let left = slot.qty;
+      const sup = this.game.state.supplies = this.game.state.supplies || {};
+      const n = Math.min(left, Math.max(0, Math.floor(this.storeRoom(slot.key))));
+      sup[slot.key] = (sup[slot.key] || 0) + n;
+      left -= n;
+      this.list.filter((o) => o.id !== id && this.atShelter(o)).forEach((o) => {
+        if (left <= 0) return;
+        const room = Math.floor(Math.max(0, this.bagCap(o) - this.bagLoad(o)) / unitWeight(slot.key));
+        const m = Math.min(left, room);
+        if (m <= 0) return;
+        o.bag = o.bag || {};
+        o.bag[slot.key] = (o.bag[slot.key] || 0) + m;
+        left -= m;
+      });
+      if (left > 0) sup[slot.key] = (sup[slot.key] || 0) + left;
+      lo[kind] = null;
+    });
     // 攜帶的物資與物品留在倉庫
     Object.entries(sv.bag || {}).forEach(([k, v]) => {
       const pool = isSupply(k) ? this.game.state.supplies : this.game.state.resources;
@@ -400,6 +422,13 @@ export class SurvivorSystem {
   /** 目前在瞭望塔上（主要避難所依警戒／防禦工作判斷；前哨站設定了就算） */
   isGarrisoned(id) {
     return this.game.shelter.onTower(id);
+  }
+
+  /** 累計經驗（含已升級的部分）：用來計算一趟外出前後實際拿到（或因重傷扣掉）的經驗 */
+  totalXp(sv) {
+    let t = Math.max(0, sv?.xp || 0);
+    for (let l = 1; l < (sv?.level || 1); l += 1) t += xpToNext(l);
+    return t;
   }
 
   gainXp(sv, amount) {
@@ -962,6 +991,9 @@ export class SurvivorSystem {
       const keys = Object.keys(old);
       sv.supply = { ammo: keys.find((k) => SUPPLIES[k]?.cat === 'ammo') || null, med: keys.find((k) => SurvivorSystem.slotAccepts('med', k)) || null };
     }
+    // v10.14.1：彈藥一律自動補給遠程武器使用的子彈；藥品一律自動補給（預設繃帶）
+    sv.supply.ammo = this.ammoNeed(sv)?.ammo || null;
+    if (!sv.supply.med || !SurvivorSystem.slotAccepts('med', sv.supply.med)) sv.supply.med = 'bandage';
     return sv.supply;
   }
 
@@ -971,10 +1003,8 @@ export class SurvivorSystem {
     if (!sv) return { ok: false, reason: '找不到倖存者' };
     if (kind !== 'ammo' && kind !== 'med') return { ok: false, reason: '只能設定彈藥或藥品' };
     const rules = this.supplyRules(sv);
-    if (!key) {
-      rules[kind] = null;
-      return { ok: true, msg: '已取消自動補給' };
-    }
+    if (kind === 'ammo') return { ok: false, reason: '彈藥會自動補給遠程武器使用的子彈' };
+    if (!key) return { ok: false, reason: '請選擇要自動補給的藥品' };
     if (!SurvivorSystem.slotAccepts(kind, key)) return { ok: false, reason: kind === 'ammo' ? '請選擇彈藥' : '請選擇藥品' };
     rules[kind] = key;
     const r = this.autoResupply(sv);
