@@ -4535,7 +4535,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gn.npcs.assaultWound(n, 10, t0);
   const after = gn.npcs.garrison(n, { assault: true }).length;
   assert(full - after === 10, `擊倒 10 名守軍，下次攻打只少 10 名（${full}→${after}）`);
-  assert(n.healAt - t0 === NPC_CONFIG.woundHealMs && NPC_CONFIG.woundHealMs / NPC_ASSAULT.count === 60000, '守軍每分鐘補回 1 名');
+  assert(n.healAt - t0 === NPC_CONFIG.woundHealMs && NPC_CONFIG.woundHealMs / NPC_ASSAULT.count === 10000, '守軍每 10 秒補回 1 名');
   assert(NPC_REWARD_MUL === 4, '攻陷獎勵為 4 倍');
 }
 
