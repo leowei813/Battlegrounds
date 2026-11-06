@@ -3436,6 +3436,20 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   late.job = 'guard';
   s.endNight();
   assert(!gs.state.defenseLog[0].siege.xp.some((x) => x.name === '晚到'), '屍潮都打完才開始駐守的人不給駐守經驗');
+  // v10.16：中途才開始駐守，但殭屍還在場上（有參與迎戰）：給駐守經驗
+  s.base.nightDefenders = null;
+  s.startNight(); s.wave = 1; s.nightKills = 5;
+  s.markDefenders();
+  const mid = createSurvivor('中途', 'scout', 5, 'common');
+  gs.state.survivors.push(mid);
+  mid.job = 'guard';
+  s.zombies.push({ x: 0, y: 0, hp: 1, maxHp: 1 });
+  s.markAt = -10; s.clock = 0;
+  s.markDefenders();
+  s.zombies.length = 0;
+  s.endNight();
+  assert(gs.state.defenseLog[0].siege.xp.some((x) => x.name === '中途'), '中途開始駐守、殭屍還在場上：給駐守經驗');
+  mid.job = 'scavenge';
   // 警戒中全部倖存者都防守：來襲時都在防守的人都有經驗（不是只有遊戲開啟時在駐守的人）
   const others = [createSurvivor('甲', 'scout', 5, 'common'), createSurvivor('乙', 'medic', 5, 'common')];
   others.forEach((x) => { x.job = 'scavenge'; gs.state.survivors.push(x); });
