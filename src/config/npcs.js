@@ -11,6 +11,7 @@ export const NPC_CONFIG = {
   respawnHour: 12, // 被擊敗的 NPC 據點在下一個中午 12:00（當地時間）才重新出現
   levelUpMs: [90 * 60000, 150 * 60000], // 升級間隔
   maxLevel: 40,
+  respawnMinLevel: 35, // 被攻陷後重生的 NPC 據點至少這個等級（被擊退的等級損失也不會低於此）
   exploreEveryMs: [30 * 60000, 55 * 60000], // 外出探索間隔（回來後休息一段時間才再出發）
   exploreRadiusM: 900,
   raidBaseMs: 3 * 3600000, // 每 3 個 NPC 的掠奪基礎間隔（NPC 越多，個別越少出手；依積極度縮短）

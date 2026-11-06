@@ -41,6 +41,10 @@ import { ChatSystem } from '../multiplayer/Chat.js';
  * 遊戲核心（Facade）：持有狀態與所有系統，負責主迴圈、離線結算與存檔。
  * UI 與 Phaser 場景只透過此物件存取遊戲邏輯。
  */
+/** 屍潮在背景分頁時最多補算的時間（秒，約一整晚）與每次補算的上限（秒） */
+const SIEGE_CATCHUP_MAX = 40 * 60;
+const SIEGE_CATCHUP_STEP = 120;
+
 export class Game {
   /** @param {object} state */
   constructor(state) {
@@ -182,16 +186,28 @@ export class Game {
 
   /**
    * 屍潮即時模擬迴圈（每幀）。獨立於畫面：不論目前在地圖或避難所頁面，
-   * 所有據點都持續承受屍潮。分頁切到背景時瀏覽器會暫停 requestAnimationFrame。
+   * 所有據點都持續承受屍潮。分頁切到背景時瀏覽器會暫停 requestAnimationFrame，
+   * 因此另以計時器持續推進，並依實際經過的時間補算（每次最多補 SIEGE_CATCHUP_STEP 秒，剩下的下一次繼續補）。
    */
   startSiegeLoop() {
     let last = performance.now();
-    const loop = (t) => {
-      this.siege.update(Math.min(Math.max(0, (t - last) / 1000), 1));
+    let behind = 0;
+    const pump = (t = performance.now()) => {
+      behind = Math.min(SIEGE_CATCHUP_MAX, behind + Math.max(0, (t - last) / 1000));
       last = t;
+      const dt = Math.min(behind, SIEGE_CATCHUP_STEP);
+      behind -= dt;
+      if (dt > 0) this.siege.update(dt);
+    };
+    const loop = (t) => {
+      pump(t);
       this.siegeRaf = requestAnimationFrame(loop);
     };
     this.siegeRaf = requestAnimationFrame(loop);
+    // 背景分頁：計時器仍會執行（瀏覽器可能放慢到每秒或每分鐘一次），依經過時間補算
+    this.timers.push(setInterval(() => { if (document.hidden) pump(); }, 1000));
+    // 回到前景時立即補算
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) pump(); });
   }
 
   /** 每秒更新 */

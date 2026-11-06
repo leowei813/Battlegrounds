@@ -594,10 +594,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gn.npcs.list.length >= 2 && Object.values(perCell).every((c) => c <= 2), `每格（約 1 平方公里）最多 2 個 NPC 據點（共 ${gn.npcs.list.length} 個、${Object.keys(perCell).length} 格；只出現在可視範圍內，數量依地圖而定）`);
   // 挑測試期間（2 小時內）不會換世代的 NPC：避免剛好被新的勢力取代
   const stable = (n) => n.sid && gn.npcs.slotNpc(n.cell, Number(n.sid.split(':')[2]), t0 + 7200e3)?.ident === n.ident;
-  const npc = gn.npcs.list.find((n) => n.level < 30 && stable(n)) || gn.npcs.list.find(stable) || gn.npcs.list[0];
-  const lv = npc.level;
   const { SHARED_NPC } = await import('../src/systems/NpcSystem.js');
-  assert(gn.npcs.sharedLevel(npc, t0 + SHARED_NPC.levelMs) === gn.npcs.sharedLevel(npc, t0) + 1 && lv >= 1, 'NPC 據點會隨時間升級');
+  // 挑還沒達到自然升級上限（+15）的據點
+  const growing = (n) => (t0 - n.bornAt) / SHARED_NPC.levelMs < SHARED_NPC.maxGrowth - 1;
+  const npc = gn.npcs.list.find((n) => n.level < 30 && stable(n) && growing(n)) || gn.npcs.list.find((n) => stable(n) && growing(n)) || gn.npcs.list[0];
+  const lv = npc.level;
+  const probe = growing(npc) ? npc : { ...npc, bornAt: t0, levelLoss: 0 };
+  assert(gn.npcs.sharedLevel(probe, t0 + SHARED_NPC.levelMs) === gn.npcs.sharedLevel(probe, t0) + 1 && lv >= 1, 'NPC 據點會隨時間升級');
   npc.trip = null;
   npc.nextExploreAt = t0;
   npc.nextRaidAt = t0 + 1e9;
@@ -4784,6 +4787,63 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   C.world = { others: [old] };
   const oz = C.territory.zones().find((z) => z.id === 'O9#0');
   assert(C.territory.defenders(oz, 20).length === 9 && C.territory.defenders(oz).length === 6, '舊版資料以掠奪者代替：突襲不限人數、經過警戒範圍仍為 6 人');
+}
+
+// ---- 120. 分頁切到背景時屍潮不會暫停：一次補算較長的時間，波次照常推進 ----
+{
+  const gs = Game.newGame({ playerName: 'S120', classId: 'warrior', lat: 25, lon: 121 });
+  gs.state.map.pois = fillPois([], 25, 121);
+  gs.shelter.establish(gs.state.map.pois.find((p) => gs.shelter.canEstablish(p).ok));
+  gs.shelter.primary().facilities.wall.level = 15;
+  gs.civilization.maxWaves = () => 4;
+  setHour(gs, 21);
+  const s = gs.siege.of();
+  s.update(0.1);
+  assert(s.wave === 0, '入夜時第一波還沒來');
+  s.update(120);
+  assert(s.wave >= 2, `一次補算 120 秒後波次照常推進（第 ${s.wave} 波）`);
+  assert(Math.abs(s.clock - 120.1) < 0.01, '模擬時鐘跟著補算推進');
+}
+
+// ---- 121. 被攻陷後重生的 NPC 據點至少 Lv35（被擊退的等級損失也不會低於 Lv35） ----
+{
+  const { NPC_CONFIG: NC } = await import('../src/config/npcs.js');
+  const gn = Game.newGame({ playerName: 'N121', classId: 'warrior', lat: 25, lon: 121 });
+  const fresh = { baseLevel: 3, bornAt: Date.now(), dc: 0, levelLoss: 0, sid: 'x' };
+  assert(gn.npcs.sharedLevel(fresh) === 3, '一般 NPC 據點照原本等級');
+  const reborn = { baseLevel: 3, bornAt: Date.now(), dc: 1, levelLoss: 10, sid: 'x' };
+  assert(NC.respawnMinLevel === 35 && gn.npcs.sharedLevel(reborn) === 35, `重生的 NPC 據點至少 Lv35（${gn.npcs.sharedLevel(reborn)}）`);
+  assert(gn.npcs.sharedLevel({ ...reborn, levelLoss: 0, baseLevel: 38 }) === 38, '重生後原本就更高的照實際等級');
+  // 實際的格子：模擬被攻陷後，下一次產生的是 dc=1 的重生據點
+  let cell = null;
+  let found = -1;
+  for (let i = 0; i < 20 && found < 0; i += 1) for (let slot = 0; slot < 2 && found < 0; slot += 1) if (gn.npcs.slotNpc(`${i}:1`, slot)) { cell = `${i}:1`; found = slot; }
+  assert(found >= 0, '找到可測試的 NPC 格子');
+  {
+    const sid = `${cell}:${found}`;
+    const base = gn.npcs.slotNpc(cell, found);
+    gn.shared = gn.shared || {};
+    const realGet = gn.shared.get?.bind(gn.shared);
+    gn.shared.get = (kind, id) => (kind === 'npc' && id === sid ? { gen: base.gen, dc: 1, ident: base.ident, destroyed: { at: Date.now() - 2000, respawnAt: Date.now() - 1000 } } : realGet?.(kind, id));
+    const re = gn.npcs.slotNpc(cell, found);
+    assert(re && re.dc === 1 && re.baseLevel >= 35, `格子重生的 NPC 據點基礎等級至少 35（${re?.baseLevel}）`);
+  }
+}
+
+// ---- 122. NPC 據點停止自然換批（一直存在到被攻陷），自然升級最多 +15 級 ----
+{
+  const { SHARED_NPC: SN } = await import('../src/systems/NpcSystem.js');
+  const gn = Game.newGame({ playerName: 'N122', classId: 'warrior', lat: 25, lon: 121 });
+  let cell = null;
+  let slot = -1;
+  for (let i = 0; i < 20 && slot < 0; i += 1) for (let k = 0; k < 2 && slot < 0; k += 1) if (gn.npcs.slotNpc(`${i}:3`, k, SN.freezeAt + 1000)) { cell = `${i}:3`; slot = k; }
+  const a = gn.npcs.slotNpc(cell, slot, SN.freezeAt + 1000);
+  const b = gn.npcs.slotNpc(cell, slot, SN.freezeAt + 30 * 86400000);
+  assert(a && b && a.ident === b.ident, `停止換批後同一個 NPC 據點一直存在（${a?.ident} / ${b?.ident}）`);
+  const n = { baseLevel: 5, bornAt: Date.now() - 100 * SN.levelMs, dc: 0, levelLoss: 0, sid: 'x' };
+  assert(SN.maxGrowth === 15 && gn.npcs.sharedLevel(n) === 20, `自然升級最多 +15 級（${gn.npcs.sharedLevel(n)}）`);
+  assert(gn.npcs.sharedLevel({ ...n, baseLevel: 3, bornAt: Date.now() - 4 * SN.levelMs }) === 7, '未達上限時照時間升級');
+  assert(gn.npcs.sharedLevel({ ...n, dc: 1, baseLevel: 35 }) === 40, '重生的據點最高 Lv40');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

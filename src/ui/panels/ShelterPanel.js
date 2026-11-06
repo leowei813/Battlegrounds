@@ -12,6 +12,14 @@ import {
 } from '../components.js';
 import { formatDuration, formatNumber } from '../../utils/math.js';
 import { BUILD_QUEUE_SIZE } from '../../config/constants.js';
+import { SUPPLIES } from '../../config/supplies.js';
+
+/** 總覽的彈藥・藥品庫存：短名稱與偏低門檻 */
+const STOCK_SHORT = {
+  ammo9: '9mm', shell12: '霰彈', ammo556: '5.56', ammo762: '7.62', ammo308: '.308', arrow: '箭矢',
+  smallKit: '小醫藥箱', mediumKit: '中醫藥箱', largeKit: '大醫藥箱',
+};
+const STOCK_LOW = { ammo: 50, med: 10 };
 
 /**
  * 避難所分頁（側邊/底部抽屜）：設施升級、施工佇列、防禦建築、事件紀錄。
@@ -52,6 +60,27 @@ export class ShelterPanel {
           <p class="muted">屍潮強度隨文明度提升（殭屍 +${civ.levelBonus()} 級、頻率 ×${civ.spawnMul().toFixed(2)}），與天數無關。${BASE_SIZES[base.size]?.name || ''}據點屍潮 ×${siege.sizeMul().toFixed(2)}（據點越大、區域越危險，屍潮越多）。危險度 = ${isPrimary ? `基礎 ${baseDanger} + 文明度 ${b.total} × ${PRIMARY_DANGER_COEF}` : `基礎 ${baseDanger}（前哨站不受文明度加成）`}。</p>
         </details>
       </section>`;
+  }
+
+  /** 總覽：彈藥與藥品庫存（大字為倉庫，小字 +N 為倖存者背包裡帶著的） */
+  stockStrip() {
+    const g = this.game;
+    const store = g.state.supplies || {};
+    const bag = {};
+    g.state.survivors.forEach((sv) => Object.entries(sv.bag || {}).forEach(([k, v]) => { bag[k] = (bag[k] || 0) + (v || 0); }));
+    const line = (cat, label, tail = '') => {
+      const chips = Object.entries(SUPPLIES).filter(([, d]) => d.cat === cat).map(([k, d]) => {
+        const n = Math.floor(store[k] || 0);
+        const b = Math.floor(bag[k] || 0);
+        const cls = n <= 0 ? 'zero' : n < STOCK_LOW[cat] ? 'low' : '';
+        return `<span class="stk-c ${cls}" title="${escapeHtml(d.name)}${d.heal ? `・回復 ${Math.round(d.heal * 100)}%` : ''}">${d.icon} ${escapeHtml(STOCK_SHORT[k] || d.name)} <b>${formatNumber(n)}</b>${b > 0 ? `<i>+${formatNumber(b)}</i>` : ''}</span>`;
+      }).join('');
+      return `<div class="stk-line"><span class="stk-lab">${label}</span>${tail}${chips}</div>`;
+    };
+    return `<section class="sh-card stk-strip">
+      ${line('ammo', '🎯 彈藥', btn('🗄️ 倉庫', 'shelterTab', { t: 'storage' }, { cls: 'btn-xs btn-ghost stk-go' }))}
+      ${line('med', '💊 藥品')}
+    </section>`;
   }
 
   waveText(siege) {
@@ -168,6 +197,7 @@ export class ShelterPanel {
           <div class="kpi"><small>屍潮</small><b>${this.waveText(siege)}</b></div>
           <div class="kpi"><small>來襲殭屍</small><b class="big">${siege.zombies.length}</b></div>
         </div>
+        ${this.stockStrip()}
         ${this.assistText(sh) ? `<div class="sh-card">${this.assistText(sh)}</div>` : ''}
         <div class="sh-cols">
           <section class="sh-card"><h3>需要處理</h3>${todoHtml}</section>
