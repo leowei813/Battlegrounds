@@ -22,10 +22,17 @@ import { seeded, cellOf as gridCell, cellBox } from '../multiplayer/worldGrid.js
  * 傷亡、等級損失、物資增減、被摧毀等變化寫入共用物件 npc:<格子>:<編號>，大家同步。
  */
 export const SHARED_NPC = {
-  /** 每個 NPC 據點存在的時間，之後由新的勢力取代（避免全部長到最高等級） */
+  /** （舊）每個 NPC 據點存在的時間，之後由新的勢力取代；v10.11 起停止自然換批 */
   lifeMs: 48 * 3600000,
+  /**
+   * v10.11：停止自然換批的時間點（台灣時間 2026-11-07 00:00）。之後世代固定為這個時間點的世代，
+   * NPC 據點一直存在到被攻陷為止（已經出現的據點原地保留）。
+   */
+  freezeAt: Date.UTC(2026, 10, 6, 16, 0, 0),
   /** 每隔多久升一級 */
   levelMs: 2 * 3600000,
+  /** 自然升級的上限：最多比出生時高幾級（停止換批後避免全部長到最高等級） */
+  maxGrowth: 15,
   /** 同步範圍（公里） */
   km: 5,
 };
@@ -130,7 +137,8 @@ export class NpcSystem {
     // 密度：部分名額固定沒有 NPC（依種子決定，所有玩家相同）
     if (seeded(`npc-keep:${sid}`, () => randFloat(0, 1)) >= (NPC_CONFIG.keepRatio ?? 1)) return null;
     const offset = seeded(`npc-off:${sid}`, () => randFloat(0, SHARED_NPC.lifeMs));
-    const gen = Math.floor((now + offset) / SHARED_NPC.lifeMs);
+    // 停止自然換批：超過 freezeAt 後世代固定
+    const gen = Math.floor((Math.min(now, SHARED_NPC.freezeAt ?? Infinity) + offset) / SHARED_NPC.lifeMs);
     const genStart = gen * SHARED_NPC.lifeMs - offset;
     const d = this.sharedOf(sid, gen);
     const dc = d?.dc || 0;
@@ -185,9 +193,9 @@ export class NpcSystem {
     return d && d.gen === gen ? d : null;
   }
 
-  /** 共用 NPC 目前的等級：基礎等級＋存在時間成長－被擊退的損失 */
+  /** 共用 NPC 目前的等級：基礎等級＋存在時間成長（最多 +maxGrowth）－被擊退的損失 */
   sharedLevel(n, now = Date.now()) {
-    return Math.max(this.minLevel(n), Math.min(NPC_CONFIG.maxLevel, n.baseLevel + Math.floor(Math.max(0, now - n.bornAt) / SHARED_NPC.levelMs) - (n.levelLoss || 0)));
+    return Math.max(this.minLevel(n), Math.min(NPC_CONFIG.maxLevel, n.baseLevel + Math.min(SHARED_NPC.maxGrowth ?? Infinity, Math.floor(Math.max(0, now - n.bornAt) / SHARED_NPC.levelMs)) - (n.levelLoss || 0)));
   }
 
   /** 由共用資料更新 NPC 的狀態（有人改變過才套用） */
@@ -393,6 +401,7 @@ export class NpcSystem {
       lat: poi.lat,
       lon: poi.lon,
       level,
+      startLevel: level,
       resources: {
         food: randInt(60, 160), wood: randInt(60, 200), fuel: randInt(10, 60), scrap: randInt(10, 40), nail: randInt(10, 40), bandage: randInt(0, 4),
       },
@@ -446,10 +455,11 @@ export class NpcSystem {
       // （v10.9：NPC 據點不再需要抵禦屍潮，等級不會因此下降）
       // 升級（共用 NPC 依存在時間計算）
       if (n.sid) n.level = this.sharedLevel(n, now);
+      if (!n.sid && n.startLevel == null) n.startLevel = n.level;
       let guard = 0;
       while (now >= n.nextLevelAt && guard < 20) {
         guard += 1;
-        if (n.level < NPC_CONFIG.maxLevel) n.level += 1;
+        if (n.level < Math.min(NPC_CONFIG.maxLevel, (n.startLevel ?? n.level) + (SHARED_NPC.maxGrowth ?? Infinity))) n.level += 1;
         n.nextLevelAt += rand(NPC_CONFIG.levelUpMs);
       }
       if (n.trip) this.checkCrossings(n, now);
