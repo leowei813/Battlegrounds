@@ -12,7 +12,10 @@ export const ASSIST_ATK_MUL = 0.6;
 /** 白天協防（防守 NPC／玩家攻打）的留守時間 */
 export const ASSIST_DAY_STAY_MS = 60 * 60 * 1000;
 /** 公開的協防隊員戰鬥數值上限（防止竄改） */
-const UNIT_CAP = { hp: 20000, atk: 3000, def: 2000 };
+const UNIT_CAP = { hp: 500000, atk: 100000, def: 50000 };
+/** 戰鬥會用到的技能效果（公開給其他玩家計算戰鬥） */
+const SKILL_KEYS = ['cleaveChance', 'rage', 'firstStrikeCrit', 'healEvery', 'healPct'];
+const SKILL_CAP = { cleaveChance: 1, rage: 3, firstStrikeCrit: 1, healEvery: 60, healPct: 1 };
 const clampNum = (v, min, max, d = min) => (Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d);
 
 /** 協防隊回家後多久內收到的戰果還會補進協防報告 */
@@ -170,11 +173,7 @@ export class AssistSystem {
     const units = exp.memberIds.map((id, i) => {
       const sv = this.game.survivors.get(id);
       if (!sv || sv.severe) return null;
-      const s = this.game.survivors.stats(sv);
-      return {
-        i, name: sv.name, lv: sv.level, hp: Math.round(this.game.survivors.hpOf(sv)), maxHp: Math.round(s.hp), atk: Math.round(s.atk), def: Math.round(s.def),
-        crit: +s.crit.toFixed(3), critDmg: +s.critDmg.toFixed(2), dodge: +s.dodge.toFixed(3), atkSpeed: +s.atkSpeed.toFixed(2),
-      };
+      return AssistSystem.unitData(this.game, sv, i);
     }).filter(Boolean);
     return {
       to: exp.assistTarget.playerId, dps: t.dps, count: t.count, at: exp.startAt + exp.travelMs, until: exp.startAt + exp.travelMs + exp.searchMs, units, tripId: exp.id,
@@ -206,6 +205,23 @@ export class AssistSystem {
 
   // ================= 協防 NPC／玩家攻打 =================
 
+  /**
+   * 倖存者的公開戰鬥數值（集結、協防、駐守共用）：含技能、吸血；withMeds 時帶藥品欄（集結結算時扣除用掉的藥品）
+   */
+  static unitData(game, sv, i, { withMeds = false } = {}) {
+    const s = game.survivors.stats(sv);
+    const sk = s.skills || {};
+    const skills = Object.fromEntries(SKILL_KEYS.filter((k) => Number.isFinite(sk[k]) && sk[k]).map((k) => [k, +(+sk[k]).toFixed(3)]));
+    const lo = withMeds ? game.survivors.loadout(sv) : null;
+    return {
+      i, name: sv.name, lv: sv.level, hp: Math.round(game.survivors.hpOf(sv)), maxHp: Math.round(s.hp), atk: Math.round(s.atk), def: Math.round(s.def),
+      crit: +s.crit.toFixed(3), critDmg: +s.critDmg.toFixed(2), dodge: +s.dodge.toFixed(3), atkSpeed: +s.atkSpeed.toFixed(2),
+      ...(Object.keys(skills).length ? { skills } : {}),
+      ...(s.lifeSteal ? { ls: +Math.min(0.5, s.lifeSteal).toFixed(3) } : {}),
+      ...(lo?.med?.qty > 0 ? { meds: { key: lo.med.key, qty: Math.min(99, lo.med.qty), heal: Math.round(game.survivors.healAmount(sv, lo.med.key)) } } : {}),
+    };
+  }
+
   /** 協防隊員轉成戰鬥單位（side 由戰鬥決定）；ally 標記來源 */
   static unitOf(h, u) {
     const maxHp = clampNum(u.maxHp, 1, UNIT_CAP.hp, 100);
@@ -214,6 +230,10 @@ export class AssistSystem {
       maxHp, hp: clampNum(u.hp, 1, maxHp, maxHp), atk: clampNum(u.atk, 1, UNIT_CAP.atk, 10), def: clampNum(u.def, 0, UNIT_CAP.def, 0),
       crit: clampNum(u.crit, 0, 0.8, 0.05), critDmg: clampNum(u.critDmg, 1, 4, 1.5), dodge: clampNum(u.dodge, 0, 0.6, 0.02), atkSpeed: clampNum(u.atkSpeed, 0.2, 4, 1),
       level: clampNum(u.lv, 1, 60, 1), xp: 0, coins: 0, partsChance: 0, icon: '🛡️',
+      // 技能、吸血、藥品欄（v10.13.1：與自己出戰時相同）
+      skills: Object.fromEntries(SKILL_KEYS.filter((k) => Number.isFinite(u.skills?.[k])).map((k) => [k, clampNum(u.skills[k], 0, SKILL_CAP[k] ?? 1, 0)])),
+      lifeSteal: clampNum(u.ls, 0, 0.5, 0),
+      meds: u.meds && Number.isFinite(u.meds.qty) && u.meds.qty > 0 ? { key: String(u.meds.key || '').slice(0, 20), qty: clampNum(u.meds.qty, 0, 99, 0), heal: clampNum(u.meds.heal, 0, UNIT_CAP.hp, 0) } : null,
     };
   }
 
