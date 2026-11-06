@@ -845,14 +845,16 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 個人背包與倉庫
   gs.state.resources.food = 500;
   assert(gs.survivors.withdraw('leader', 'food', 30).ok && lead.bag.food === 30 && gs.state.resources.food === 470, '從倉庫取出放進背包');
-  assert(gs.survivors.withdraw('leader', 'food', 1e6).n === gs.survivors.bagCap(lead) - 30, '背包受負重上限限制');
-  assert(gs.survivors.deposit('leader', 'food', 10).ok && gs.survivors.carried('food') === gs.survivors.bagCap(lead) - 10, '背包存入倉庫，總量含隊員攜帶');
+  const loW = gs.survivors.loadoutWeight(lead);
+  assert(gs.survivors.withdraw('leader', 'food', 1e6).n === Math.floor(gs.survivors.bagCap(lead) - loW) - 30, '背包受負重上限限制（扣掉彈藥欄、藥品欄重量）');
+  assert(gs.survivors.deposit('leader', 'food', 10).ok && gs.survivors.carried('food') === Math.floor(gs.survivors.bagCap(lead) - loW) - 10, '背包存入倉庫，總量含隊員攜帶');
   lead.status = 'exploring';
   assert(!gs.survivors.deposit('leader', 'food', 1).ok, '不在避難所無法存取倉庫');
   lead.status = 'idle';
   lead.bag = {};
   const lost = gs.survivors.stash([lead], { wood: 10000 });
-  assert(lead.bag.wood === gs.survivors.bagCap(lead) && lost === 10000 - gs.survivors.bagCap(lead), '倉庫放不下的探索物資由隊員背包攜帶');
+  const cap0 = Math.floor(gs.survivors.bagCap(lead) - gs.survivors.loadoutWeight(lead));
+  assert(lead.bag.wood === cap0 && lost === 10000 - cap0, `倉庫放不下的探索物資由隊員背包攜帶（${lead.bag.wood}/${cap0}）`);
 
   // 重新掃描包含前哨站附近（較小範圍）
   gs.state.research.levels.e_outpost = 1;
@@ -1153,7 +1155,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   lead.bag = {};
   const far = gk.state.map.pois.find((p) => p.type === 'residential' && !gk.shelter.baseAtPoi(p.id));
   const ex = gk.exploration.start(far.id, [lead.id], 5);
-  assert(ex.ok && lead.loadout.ammo?.qty === sup.AMMO_FOR.pistol.perFight * sup.AMMO_PACK_FIGHTS, '出發時自動把彈藥裝進彈藥欄');
+  assert(ex.ok && lead.loadout.ammo?.key === 'ammo9' && lead.loadout.ammo.qty >= sup.AMMO_FOR.pistol.perFight * sup.AMMO_PACK_FIGHTS, `出發時自動把彈藥裝進彈藥欄（${lead.loadout.ammo?.qty}）`);
   gk.exploration.recall(ex.exp.id);
   gk.exploration.update(Date.now() + 5000, { silent: true });
 
@@ -2660,7 +2662,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const ex = ga.exploration.start(poi.id, [lead.id], 5).exp;
   ga.exploration.update(ex.endAt + 1, { silent: true });
   assert(lead.loadout.med.qty === 10, `回到避難所時自動補滿藥品欄（${lead.loadout.med.qty}）`);
-  assert(ga.survivors.setSupply(lead.id, 'med', null).ok && !lead.supply.med, '可以取消自動補給');
+  assert(!ga.survivors.setSupply(lead.id, 'med', null).ok && lead.supply.med === 'bandage', 'v10.14.1：藥品一律自動補給（不能取消，只能換種類）');
+  assert(!ga.survivors.setSupply(lead.id, 'ammo', 'ammo556').ok, 'v10.14.1：彈藥自動補給遠程武器使用的子彈，不能另外設定');
   // 彈藥欄：最多 100，戰鬥優先用遠程，沒彈藥改用近戰
   const gun = ga.equipment.generate({ level: 5, model: 'm1911', rarity: 'common' });
   const knife = ga.equipment.generate({ level: 5, model: 'knife', rarity: 'common' });
@@ -4980,6 +4983,23 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(u.skills.cleaveChance > 0 && u.lifeSteal === 0.05, '保留技能（橫掃）與吸血');
   const r = gu.combat.simulate([], [gu.combat.createEnemy('walker', 1)], { allies: [u], record: false });
   assert(r.victory, '集結隊員以完整能力出戰');
+}
+
+// ---- 128. 驅逐倖存者：彈藥欄、藥品欄歸還倉庫；彈藥一律自動補給遠程武器的子彈、藥品一律自動補給 ----
+{
+  const { createSurvivor: cs } = await import('../src/core/GameState.js');
+  const gq = Game.newGame({ playerName: 'Q128', classId: 'warrior', lat: 25, lon: 121 });
+  gq.state.map.pois = fillPois([], 25, 121);
+  gq.shelter.establish(gq.state.map.pois.find((p) => gq.shelter.canEstablish(p).ok));
+  const sv = cs('走人', 'warrior', 5, 'common'); gq.state.survivors.push(sv); sv.status = 'idle';
+  sv.loadout = { ammo: { key: 'ammo9', qty: 40 }, med: { key: 'bandage', qty: 7 } };
+  const a0 = gq.state.supplies.ammo9 || 0; const b0 = gq.state.supplies.bandage || 0;
+  assert(gq.survivors.dismiss(sv.id).ok, '可以驅逐');
+  assert(gq.state.supplies.ammo9 === a0 + 40 && gq.state.supplies.bandage === b0 + 7, `驅逐時彈藥欄、藥品欄歸還倉庫（${gq.state.supplies.ammo9 - a0}／${gq.state.supplies.bandage - b0}）`);
+  const lead = gq.survivors.leader();
+  const gun = gq.equipment.generate({ level: 5, model: 'm1911', rarity: 'common' });
+  gq.equipment.items.push({ ...gun, loc: 'store' }); gq.equipment.equipRaw(lead.id, gun.id);
+  assert(gq.survivors.supplyRules(lead).ammo === 'ammo9' && gq.survivors.supplyRules(lead).med, '彈藥自動補給手槍子彈、藥品預設自動補給');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
