@@ -4271,6 +4271,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     assert(aT.cp.bumped && aT.cp.bumped.includes('B101'), `晚到的隊伍讓給先到的人（${aT.cp.bumped || '沒有讓'}）`);
     A.exploration.update(aT.endAt + 1, { silent: true });
     assert(A.state.expeditions.some((e) => e.poiId === T3.id) || A.state.reports.some((r) => r.events.some((t) => t.includes('B101'))), '被搶先後自動前往佇列下一站（或回家），報告寫出原因');
+    const nxt = A.state.expeditions.find((e) => e.poiId === T3.id);
+    if (nxt) assert(!(nxt.stops || []).includes(T.id), '被搶先而跳過的地點不會在地圖標成已搜索（✓）');
   } else assert(true, '（A 抵達時 B 已離開，跳過讓位檢查）');
   // 2. B 搜索到一半就召回：剩下的檢核點與物資留給下一位
   reset(A);

@@ -859,7 +859,8 @@ export class ExplorationSystem {
           if (!last || Math.abs(last.lat - q.lat) > 1e-7 || Math.abs(last.lon - q.lon) > 1e-7) trail.push({ lat: q.lat, lon: q.lon });
         });
         ne.trail = trail.length > 300 ? trail.filter((_, i) => i === 0 || i === trail.length - 1 || i % Math.ceil(trail.length / 300) === 0) : trail;
-        ne.stops = [...new Set([...(exp.stops || []), poi.id])];
+        // 搜索過的地點標 ✓；抵達時被別人搶先或已被搜空而跳過的不算（地圖改顯示該地點目前的實際狀態）
+        ne.stops = exp.cp?.bumped ? [...(exp.stops || [])] : [...new Set([...(exp.stops || []), poi.id])];
         report.events.push(nextId === poi.id
           ? `🎒 背包還有空間（負重 ${Math.round(load)}/${cap}），「${poi.name}」還有物資，直接再搜索一次`
           : `🎒 背包還有空間（負重 ${Math.round(load)}/${cap}），直接前往「${nextPoi?.name || ''}」${ne.queue.length ? `（佇列還有 ${ne.queue.length} 個）` : ''}`);
