@@ -98,14 +98,14 @@ export const MAX_SURVIVOR_LEVEL = 50;
 
 /**
  * 倖存者能力素質（每項 0～100%，招募時隨機、之後不變；首領一律 100%）。
- * 生命／攻擊／防禦／暴擊／閃避：0% ×0.85、50% ×1.00、100% ×1.15；攻速：×0.90～×1.10。
+ * 生命／攻擊／防禦／暴擊／閃避：0% ×0.88、50% ×1.00、100% ×1.12；攻速：×0.90～×1.10。
  * 生命／攻擊／防禦的每級成長也套用同一個素質。
  */
 export const QUALITY_KEYS = ['hp', 'atk', 'def', 'crit', 'dodge', 'atkSpeed'];
 export const QUALITY_NAMES = { hp: '生命', atk: '攻擊', def: '防禦', crit: '暴擊', dodge: '閃避', atkSpeed: '攻速' };
 export const qualityMul = (key, q = 100) => {
   const t = Math.max(0, Math.min(100, Number.isFinite(q) ? q : 100)) / 100;
-  return key === 'atkSpeed' ? 0.9 + 0.2 * t : 0.85 + 0.3 * t;
+  return key === 'atkSpeed' ? 0.9 + 0.2 * t : 0.88 + 0.24 * t;
 };
 /** 隨機素質：越接近 100% 越少見（100% 約 0.6%） */
 export const rollQuality = (rnd = Math.random) => Math.min(100, Math.floor(101 * rnd() ** 1.6));
@@ -120,12 +120,12 @@ export const rollQualities = (rnd = Math.random) => Object.fromEntries(QUALITY_K
  * 品級越高能力越好、可解放的技能越多。
  */
 export const SURVIVOR_RARITY = {
-  poor: { growth: 0.8, base: 0.9, skills: 1 },
+  poor: { growth: 0.78, base: 0.89, skills: 1 },
   common: { growth: 0.9, base: 1, skills: 2 },
-  uncommon: { growth: 1.0, base: 1.06, skills: 3 },
-  rare: { growth: 1.15, base: 1.12, skills: 4 },
-  epic: { growth: 1.3, base: 1.2, skills: 5 },
-  legendary: { growth: 1.5, base: 1.3, skills: 6 },
+  uncommon: { growth: 1.03, base: 1.07, skills: 3 },
+  rare: { growth: 1.2, base: 1.15, skills: 4 },
+  epic: { growth: 1.38, base: 1.24, skills: 5 },
+  legendary: { growth: 1.6, base: 1.35, skills: 6 },
 };
 
 /**

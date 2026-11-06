@@ -869,7 +869,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const gross = gz.resources.rates().gross;
   assert(Object.values(gross).every((v) => v === 0), `遊戲起始沒有任何產出（${JSON.stringify(gross)}）`);
   const leader = gz.survivors.leader();
-  assert(leader.rarity === null && gz.survivors.growthMul(leader) === 1.5, '主角沒有品級，成長比照稀有');
+  assert(leader.rarity === null && gz.survivors.growthMul(leader) === 1.6, '主角沒有品級，成長比照傳奇');
   const oldSave = JSON.parse(JSON.stringify(gz.state));
   oldSave.version = 8;
   oldSave.survivors[0].rarity = 'uncommon';
@@ -3237,7 +3237,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const cand = gq5.survivors.makeCandidate(5);
   assert(QUALITY_KEYS.every((k) => Number.isInteger(cand.quality[k]) && cand.quality[k] >= 0 && cand.quality[k] <= 100), '新的倖存者每項能力都有 0～100% 素質');
   assert(gq5.survivors.qualityOf(gq5.survivors.leader(), 'atk') === 100 && gq5.survivors.avgQuality(gq5.survivors.leader()) === 100, '首領素質一律 100%');
-  assert(qualityMul('atk', 0) === 0.85 && qualityMul('atk', 50) === 1 && Math.abs(qualityMul('atk', 100) - 1.15) < 1e-9 && Math.abs(qualityMul('atkSpeed', 100) - 1.1) < 1e-9, '素質倍率 0% ×0.85、50% ×1、100% ×1.15（攻速 ×0.9～×1.1）');
+  assert(Math.abs(qualityMul('atk', 0) - 0.88) < 1e-9 && qualityMul('atk', 50) === 1 && Math.abs(qualityMul('atk', 100) - 1.12) < 1e-9 && Math.abs(qualityMul('atkSpeed', 100) - 1.1) < 1e-9, '素質倍率 0% ×0.88、50% ×1、100% ×1.12（攻速 ×0.9～×1.1）');
   cand.quality = Object.fromEntries(QUALITY_KEYS.map((k) => [k, 0]));
   const lo = gq5.survivors.stats(cand);
   cand.quality = Object.fromEntries(QUALITY_KEYS.map((k) => [k, 100]));
