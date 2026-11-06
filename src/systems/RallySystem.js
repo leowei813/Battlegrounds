@@ -103,11 +103,7 @@ export class RallySystem {
     return memberIds.map((id, i) => {
       const sv = g.survivors.get(id);
       if (!sv) return null;
-      const s = g.survivors.stats(sv);
-      return {
-        i, name: sv.name, lv: sv.level, hp: Math.round(g.survivors.hpOf(sv)), maxHp: Math.round(s.hp), atk: Math.round(s.atk), def: Math.round(s.def),
-        crit: +s.crit.toFixed(3), critDmg: +s.critDmg.toFixed(2), dodge: +s.dodge.toFixed(3), atkSpeed: +s.atkSpeed.toFixed(2),
-      };
+      return AssistSystem.unitData(g, sv, i, { withMeds: true });
     }).filter(Boolean);
   }
 
@@ -384,7 +380,7 @@ export class RallySystem {
       const down = new Set([...fallen, ...(result ? result.team.filter((x) => x.down).map((x) => x.id) : fighters.map((u) => u.id))]);
       units.forEach((u) => {
         const r = result?.team.find((x) => x.id === u.id);
-        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: down.has(u.id) ? 0 : Math.round(r?.hp ?? u.hp), down: down.has(u.id), dealt: Math.round(r?.dealt || 0), kills: r?.kills || 0, maxHp: u.maxHp, wall: fallen.has(u.id) });
+        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: down.has(u.id) ? 0 : Math.round(r?.hp ?? u.hp), down: down.has(u.id), dealt: Math.round(r?.dealt || 0), kills: r?.kills || 0, maxHp: u.maxHp, wall: fallen.has(u.id), meds: r?.medsUsed || 0 });
       });
       // 戰況摘要（所有參加的玩家都看得到）
       const foes = result ? result.foes.length : g.npcs.garrison(n, { assault: true }).length;
@@ -414,7 +410,7 @@ export class RallySystem {
       result = b.result;
       units.forEach((u) => {
         const r = result.team.find((x) => x.id === u.id);
-        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: Math.round(r?.hp ?? 0), down: !!r?.down, dealt: Math.round(r?.dealt || 0), kills: r?.kills || 0, maxHp: u.maxHp });
+        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: Math.round(r?.hp ?? 0), down: !!r?.down, dealt: Math.round(r?.dealt || 0), kills: r?.kills || 0, maxHp: u.maxHp, meds: r?.medsUsed || 0 });
       });
       res.detail = [
         `☣️ 交戰 ${Math.round(result.duration)} 秒：敵人 ${result.foes.length} 隻，擊倒 ${result.foes.filter((f) => f.down).length} 隻，我方 ${units.length} 人中倒下 ${result.team.filter((x) => x.down).length} 人・淨化 +${b.gain.toFixed(1)}%`,
@@ -455,6 +451,7 @@ export class RallySystem {
     (r.units || []).forEach((u) => {
       const sv = g.survivors.get(exp.memberIds[u.i]);
       if (!sv) return;
+      if (u.meds > 0) g.combat.consumeMeds(sv, { medsUsed: Math.floor(u.meds) });
       if (u.down) g.survivors.becomeSevere(sv, '在集結戰鬥中', exp.endAt);
       else g.survivors.setHp(sv, Math.max(1, u.hp));
     });
@@ -463,6 +460,10 @@ export class RallySystem {
       if (g.equipment.addItem(item, '集結')) report.items.push(item);
     });
     report.resources = g.grant({ ...(r.mats || {}), coins: r.coins || 0 });
+    if (report.resources.locks > 0) {
+      report.locks = report.resources.locks;
+      report.events.push(`🔒 集結戰利品中分到「就是要鎖你」×${report.locks}`);
+    }
     if (exp.rallyVictory) g.state.stats.battlesWon += 1;
     else if (!exp.recalled) g.state.stats.battlesLost += 1;
     return report;

@@ -153,7 +153,7 @@ export class CombatSystem {
     this.pendingBattle = null;
     // allies：友好玩家的協防隊員（不是自己的倖存者，戰後由對方自行套用傷勢）
     const team = [...survivors.map((sv) => this.unitFromSurvivor(sv)), ...(opts.allies || []).map((a) => ({
-      ...a, side: 'team', skills: {}, cd: randFloat(0, 0.3), healCd: 0, firstHit: true, lifeSteal: 0,
+      ...a, side: 'team', skills: a.skills || {}, cd: randFloat(0, 0.3), healCd: a.skills?.healEvery || 0, firstHit: true, lifeSteal: a.lifeSteal || 0, medsUsed: 0,
     }))];
     const foes = enemies.map((e) => ({ ...e, side: 'enemy', hp: e.maxHp, cd: randFloat(0.3, 1), skills: {} }));
     // 戰前生命（戰鬥紀錄顯示戰前→戰後）

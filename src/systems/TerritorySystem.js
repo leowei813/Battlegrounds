@@ -70,10 +70,8 @@ export class TerritorySystem {
    */
   guardUnits(base, gar = this.garrison(base)) {
     const sv = this.game.survivors;
-    return gar.list.map((m) => ({ m, s: sv.stats(m) })).sort((a, b) => b.s.power - a.s.power).slice(0, GUARD_UNITS_MAX).map(({ m, s }, i) => ({
-      i, name: m.name, lv: m.level, hp: Math.round(sv.hpOf(m)), maxHp: Math.round(s.hp), atk: Math.round(s.atk), def: Math.round(s.def),
-      crit: +s.crit.toFixed(3), critDmg: +s.critDmg.toFixed(2), dodge: +s.dodge.toFixed(3), atkSpeed: +s.atkSpeed.toFixed(2),
-    }));
+    return gar.list.map((m) => ({ m, s: sv.stats(m) })).sort((a, b) => b.s.power - a.s.power).slice(0, GUARD_UNITS_MAX)
+      .map(({ m }, i) => AssistSystem.unitData(this.game, m, i));
   }
 
   /**

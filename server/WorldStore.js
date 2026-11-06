@@ -58,7 +58,7 @@ export function sanitizePresence(body) {
       wall: num(b.wall, 0, 1e6) ?? 0, // 圍牆耐久
       dps: num(b.dps, 0, 1e5) ?? 0, // 防禦設施火力
       // 駐守人員的戰鬥數值（其他玩家突襲時依此應戰；前端讀取時會再驗證）
-      ...(Array.isArray(b.guardUnits) && b.guardUnits.length ? { guardUnits: b.guardUnits.slice(0, 20).map((u) => smallObj(u, 300)).filter(Boolean) } : {}),
+      ...(Array.isArray(b.guardUnits) && b.guardUnits.length ? { guardUnits: b.guardUnits.slice(0, 20).map((u) => smallObj(u, 450)).filter(Boolean) } : {}),
       // 屍潮狀況、正在前來攻打的隊伍、協防戰果（給友好玩家看；前端讀取時會再驗證）
       ...(b.siege && typeof b.siege === 'object' ? { siege: smallObj(b.siege) } : {}),
       ...(Array.isArray(b.raids) && b.raids.length ? { raids: b.raids.slice(0, 5).map(smallObj).filter(Boolean) } : {}),
@@ -101,7 +101,7 @@ export function sanitizePresence(body) {
       return qty == null || !d?.key ? null : { id: str(d.id, 40), key: str(d.key, 20), qty, price: num(d.price, 0, 100000) ?? 0 };
     }).filter(Boolean),
     // 協防隊與防禦範圍協防
-    ...(body.assist && typeof body.assist === 'object' ? { assist: smallObj(body.assist, 3072) } : {}),
+    ...(body.assist && typeof body.assist === 'object' ? { assist: smallObj(body.assist, 4096) } : {}),
     ...(body.cover && typeof body.cover === 'object' ? { cover: smallObj(body.cover) } : {}),
   };
 }

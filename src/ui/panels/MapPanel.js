@@ -1,3 +1,5 @@
+import { NPC_CONFIG } from '../../config/npcs.js';
+import { LOCK_ITEM } from '../../config/rebirth.js';
 import { FACILITIES } from '../../config/facilities.js';
 import { RARITY_ORDER } from '../../config/equipment.js';
 import { MapService } from '../../map/MapService.js';
@@ -183,6 +185,7 @@ export class MapPanel {
       ${v.decay != null ? `<p class="muted">未清除時每小時回復 ${v.decay}% 感染</p>` : ''}
       ${v.power != null ? `<p class="muted">⚔️ 守軍總戰力約 ${v.power}（建議多人集結）</p>` : ''}
       <p class="muted">每場戰鬥打到全員倒下或淨化 100%，淨化度會累積（所有倖存者共用）。淨化 100% 時消滅據點。</p>
+      <div class="sp-hint">✨ <b>特殊物品</b>：消滅時必得 🔒「${LOCK_ITEM.name}」×${LOCK_ITEM.infectBase}，參戰 ${LOCK_ITEM.infectBonusAt} 人以上 ×${LOCK_ITEM.infectBase + 1}（集結時每支隊伍各得一份）</div>
       <div class="btn-row">${btn('☣️ 派隊淨化', 'attackInf', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${btn('📡 發起集結', 'rallyInf', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' })}</div>`;
   }
 
@@ -245,7 +248,8 @@ export class MapPanel {
       ${v.nextRaid != null ? `<p class="muted">🏴‍☠️ 下次掠奪約在 ${formatDuration(v.nextRaid)} 後（夜晚不出動）</p>` : ''}
       <p class="muted">積極度 ${Math.round(aggr * 100)}%（你的文明度越高，NPC 越常來掠奪）。夜晚屍潮期間 NPC 不會出動。</p>
       ${trip ? `<p class="${trip.kind === 'raid' ? 'neg' : 'muted'}">${trip.kind === 'raid' ? `⚔️ 掠奪隊正前往「${escapeHtml(trip.target)}」` : `🔍 正在搜刮「${escapeHtml(trip.target)}」`}・剩 ${formatDuration(trip.endAt - now)}</p>` : ''}
-      <p class="muted">攻陷後可搶走據點的物資與金錢（受隊伍運載量限制），據點會被摧毀，一段時間後別處會出現新的勢力。</p>
+      <p class="muted">攻陷後可搶走據點的物資與金錢（受隊伍運載量限制），據點會被摧毀，隔天中午 12:00 重新出現（至少 Lv${NPC_CONFIG.respawnMinLevel}）。</p>
+      <div class="sp-hint">✨ <b>特殊物品</b>：攻陷時 ${Math.round(LOCK_ITEM.npcChance * 100)}% 機率在保險箱找到 🔒「${LOCK_ITEM.name}」×1（集結時每支隊伍各抽一次）</div>
       <div class="btn-row">${btn('⚔️ 派隊攻打', 'attackNpc', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${(() => {
     const c = g.rally.canStart({ kind: 'npc', id: n.id });
     return btn('📡 發起集結', 'rallyNpc', {}, { cls: 'btn-primary', disabled: !c.ok || !n.sid, title: c.reason || (n.sid ? '' : '這個據點不能集結') });

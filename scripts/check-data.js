@@ -4535,7 +4535,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gn.npcs.assaultWound(n, 10, t0);
   const after = gn.npcs.garrison(n, { assault: true }).length;
   assert(full - after === 10, `擊倒 10 名守軍，下次攻打只少 10 名（${full}→${after}）`);
-  assert(n.healAt - t0 === NPC_CONFIG.woundHealMs && NPC_CONFIG.woundHealMs / NPC_ASSAULT.count === 60000, '守軍每分鐘補回 1 名');
+  assert(n.healAt - t0 === NPC_CONFIG.woundHealMs && NPC_CONFIG.woundHealMs / NPC_ASSAULT.count === 10000, '守軍每 10 秒補回 1 名');
   assert(NPC_REWARD_MUL === 4, '攻陷獎勵為 4 倍');
 }
 
@@ -4962,6 +4962,22 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(Math.abs(m('lethal', TP.day).hp / base - 1.2) < 1e-9, '致死區白天殭屍生命 ×1.2');
   assert(DZ.stat.normal === 1 && DZ.level.normal === 0 && DZ.encounter.normal === 1, '一般區白天不變');
   assert(DZ.encounter.lethal === 1.6 && DZ.encounter.abyss === 2 && DZ.stat.abyss === 1.3, '白天遭遇率與強化倍率');
+}
+
+// ---- 127. 集結／協防／駐守的公開戰鬥數值：保留技能、吸血、藥品欄，攻擊與生命不再被壓低（與自己出戰相同） ----
+{
+  const { AssistSystem: AS } = await import('../src/systems/AssistSystem.js');
+  const { createSurvivor: cs } = await import('../src/core/GameState.js');
+  const gu = Game.newGame({ playerName: 'U127', classId: 'warrior', lat: 25, lon: 121 });
+  const sv = cs('強者', 'warrior', 30, 'legendary'); gu.state.survivors.push(sv);
+  const base = gu.survivors.stats.bind(gu.survivors);
+  gu.survivors.stats = (x, ...a) => { const st = base(x, ...a); return x === sv ? { ...st, atk: 9000, hp: 40000, lifeSteal: 0.05 } : st; };
+  const d = AS.unitData(gu, sv, 0);
+  const u = AS.unitOf({ id: 'p', name: 'P' }, d);
+  assert(u.atk === 9000 && u.maxHp === 40000, `高攻擊、高生命不會被壓低（攻擊 ${u.atk}、生命 ${u.maxHp}）`);
+  assert(u.skills.cleaveChance > 0 && u.lifeSteal === 0.05, '保留技能（橫掃）與吸血');
+  const r = gu.combat.simulate([], [gu.combat.createEnemy('walker', 1)], { allies: [u], record: false });
+  assert(r.victory, '集結隊員以完整能力出戰');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

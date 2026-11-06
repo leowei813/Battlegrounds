@@ -1209,6 +1209,7 @@ export class ExplorationSystem {
       const locks = this.game.rebirth?.rollSearch(zone?.id) || 0;
       if (locks) {
         this.game.rebirth.addLocks(locks);
+        cp.locks = (cp.locks || 0) + locks;
         extra.push(`🔒 就是要鎖你 ×${locks}`);
       }
     }
@@ -1401,6 +1402,7 @@ export class ExplorationSystem {
     cp.vehicles.forEach((v) => this.game.vehicles.add(v, '探索'));
     report.vehicles = ownVehicles;
     report.blueprints = ownBlueprints;
+    if (cp.locks) report.locks = cp.locks;
     this.game.state.inventory.blueprints.push(...cp.blueprints);
     this.markVisited(exp, poi, cp, complete);
     return report;

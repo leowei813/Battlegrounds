@@ -81,6 +81,7 @@ function cleanAssist(a) {
     units: (Array.isArray(a.units) ? a.units : []).slice(0, 6).filter((u) => u && typeof u === 'object').map((u) => ({
       i: finite(u.i) ? Math.min(5, Math.max(0, Math.floor(u.i))) : 0, name: String(u.name || '').slice(0, 12),
       lv: u.lv, hp: u.hp, maxHp: u.maxHp, atk: u.atk, def: u.def, crit: u.crit, critDmg: u.critDmg, dodge: u.dodge, atkSpeed: u.atkSpeed,
+      ...(u.skills && typeof u.skills === 'object' ? { skills: u.skills } : {}), ...(Number.isFinite(u.ls) ? { ls: u.ls } : {}),
     })),
   };
 }
@@ -90,6 +91,7 @@ function cleanUnits(list) {
   return (Array.isArray(list) ? list : []).slice(0, 20).filter((u) => u && typeof u === 'object').map((u) => ({
     i: finite(u.i) ? Math.min(19, Math.max(0, Math.floor(u.i))) : 0, name: String(u.name || '').slice(0, 12),
     lv: u.lv, hp: u.hp, maxHp: u.maxHp, atk: u.atk, def: u.def, crit: u.crit, critDmg: u.critDmg, dodge: u.dodge, atkSpeed: u.atkSpeed,
+      ...(u.skills && typeof u.skills === 'object' ? { skills: u.skills } : {}), ...(Number.isFinite(u.ls) ? { ls: u.ls } : {}),
   }));
 }
 
