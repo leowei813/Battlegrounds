@@ -330,6 +330,19 @@ export class BaseSiege {
     };
   }
 
+  /**
+   * 地圖頁的屍潮狀態：wait（第一波未到）、attack（進攻中）、lull（波次空檔）、done（今夜結束）、broke（防線被突破）；白天為 null
+   */
+  nightState() {
+    if (this.quiet()) return { state: 'broke', wave: this.base?.quietWave || 0 };
+    const info = this.waveInfo();
+    if (!info.active) return null;
+    const left = Math.max(0, info.maxWaves - info.wave);
+    if (info.over) return { ...info, state: 'done', leftWaves: 0 };
+    if (info.attacking) return { ...info, state: 'attack', leftWaves: left };
+    return { ...info, state: info.wave > 0 ? 'lull' : 'wait', leftWaves: left };
+  }
+
   /** 現在是否有屍潮：只在夜晚與午夜；防線被突破後，當晚不再來襲 */
   active() {
     return this.game.time.phase().zombies && !this.quiet();
@@ -826,6 +839,7 @@ export class BaseSiege {
     this.lull = BREACH_GRACE;
     // 防線被突破後，殭屍散去，當晚不再來襲
     base.quietUntil = this.game.time.nextDawn();
+    base.quietWave = this.wave;
     this.game.state.stats.breaches += 1;
     const damaged = this.damageBuildings(base, P.defenseBase + P.defenseSpan * (1 - progress));
     const materials = this.loseMaterials();

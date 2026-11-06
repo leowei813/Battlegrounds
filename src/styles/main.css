@@ -395,6 +395,11 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .siege-banner { position: absolute; top: 10px; left: 56px; right: 64px; display: flex; flex-wrap: wrap; gap: 4px; pointer-events: none; }
 .siege-chip { pointer-events: auto; border: 1px solid #ff5252; background: #7f0000dd; color: #fff; border-radius: 14px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
 .siege-chip.danger { animation: pulse 1s infinite; background: #b71c1c; }
+.siege-chip b { color: #ffe082; }
+.siege-chip.wait { border-color: #90a4ae; background: #263238dd; }
+.siege-chip.lull { border-color: #ffb74d; background: #5d3a00dd; }
+.siege-chip.done { border-color: #66bb6a; background: #1b5e20dd; }
+.siege-chip.broke { border-color: #ef9a9a; background: #4e1f1fdd; }
 .map-hint + .siege-banner { top: 64px; }
 #map-root .leaflet-tile-pane { transition: filter 2s; }
 #map-root[data-phase="dusk"] .leaflet-tile-pane { filter: saturate(.45) brightness(.6) sepia(.45); }
