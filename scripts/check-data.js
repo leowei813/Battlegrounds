@@ -2664,15 +2664,15 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(lead.loadout.med.qty === 10, `回到避難所時自動補滿藥品欄（${lead.loadout.med.qty}）`);
   assert(!ga.survivors.setSupply(lead.id, 'med', null).ok && lead.supply.med === 'bandage', 'v10.14.1：藥品一律自動補給（不能取消，只能換種類）');
   assert(!ga.survivors.setSupply(lead.id, 'ammo', 'ammo556').ok, 'v10.14.1：彈藥自動補給遠程武器使用的子彈，不能另外設定');
-  // 彈藥欄：最多 100，戰鬥優先用遠程，沒彈藥改用近戰
+  // 彈藥欄：最多 200，戰鬥優先用遠程，沒彈藥改用近戰
   const gun = ga.equipment.generate({ level: 5, model: 'm1911', rarity: 'common' });
   const knife = ga.equipment.generate({ level: 5, model: 'knife', rarity: 'common' });
   [gun, knife].forEach((it) => { ga.equipment.addItem(it, 't'); ga.equipment.equip(lead.id, it.id); });
   assert(lead.equipment.weapon === gun.id && lead.equipment.melee === knife.id, '遠程武器與近戰武器分開兩欄');
   ga.state.supplies.ammo9 = 300;
-  assert(ga.survivors.loadSlot(lead.id, 'ammo', 'ammo9').ok && lead.loadout.ammo.qty === 100, '彈藥欄最多 100');
+  assert(ga.survivors.loadSlot(lead.id, 'ammo', 'ammo9').ok && lead.loadout.ammo.qty === 200, '彈藥欄最多 200');
   const u1 = ga.combat.unitFromSurvivor(lead);
-  assert(u1.weapon === 'ranged' && lead.loadout.ammo.qty === 100 - (await import('../src/config/supplies.js')).AMMO_FOR.pistol.perFight, '有彈藥時優先使用遠程武器並消耗彈藥欄');
+  assert(u1.weapon === 'ranged' && lead.loadout.ammo.qty === 200 - (await import('../src/config/supplies.js')).AMMO_FOR.pistol.perFight, '有彈藥時優先使用遠程武器並消耗彈藥欄');
   lead.loadout.ammo = null;
   delete ga.state.supplies.ammo9;
   const u2 = ga.combat.unitFromSurvivor(lead);

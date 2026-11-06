@@ -12,7 +12,7 @@ import {
 } from '../config/supplies.js';
 
 /** 彈藥欄、藥品欄的數量上限 */
-export const LOADOUT_MAX = { ammo: 100, med: 10 };
+export const LOADOUT_MAX = { ammo: 200, med: 10 };
 import { createSurvivor } from '../core/GameState.js';
 import {
   withSeed,
@@ -832,7 +832,7 @@ export class SurvivorSystem {
 
   // ================= 彈藥欄與藥品欄 =================
 
-  /** 彈藥欄（最多 100）與藥品欄（最多 10）：{ ammo: {key, qty} | null, med: {key, qty} | null } */
+  /** 彈藥欄（最多 200）與藥品欄（最多 10）：{ ammo: {key, qty} | null, med: {key, qty} | null } */
   loadout(sv) {
     sv.loadout = sv.loadout || { ammo: null, med: null };
     return sv.loadout;
