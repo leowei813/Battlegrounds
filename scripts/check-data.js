@@ -4382,7 +4382,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!pois.some((p) => p.type === 'bakery'), '地圖上不再有麵包店');
 }
 
-// ---- 103. 自動回家：遊戲時間 19:00 所有外派隊伍回家、清空探索佇列；每天只觸發一次；可關閉；離線照 19:00 結算 ----
+// ---- 103. 自動回家：遊戲時間 19:30 所有外派隊伍回家、清空探索佇列；每天只觸發一次；可關閉；離線照 19:30 結算 ----
 {
   const mkH = (name) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon: 121 });
@@ -4403,11 +4403,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(r.ok, `派遣探索（${r.reason || ''}）`);
   gh.exploration.enqueue(r.exp.id, far[1].id);
   gh.exploration.enqueue(r.exp.id, far[2].id);
-  assert(!gh.autoHome.check(Date.now()), '19:00 以前不會觸發');
-  setHour(gh, 19); // 現在剛好 19:00（派遣在 19:00 之前）
+  assert(!gh.autoHome.check(Date.now()), '19:30 以前不會觸發');
+  setHour(gh, 19.5); // 現在剛好 19:30（派遣在 19:30 之前）
   const res = gh.autoHome.check(Date.now() + 2000);
-  assert(res && res.recalled === 1 && res.queued === 2 && r.exp.recalled && !r.exp.queue.length, `19:00 外派隊伍收到召回命令、清空探索佇列（召回 ${res?.recalled}、佇列 ${res?.queued}）`);
-  assert(r.exp.travelEvents.some((t) => t.includes('19:00 自動回家')), '報告寫出 19:00 自動回家');
+  assert(res && res.recalled === 1 && res.queued === 2 && r.exp.recalled && !r.exp.queue.length, `19:30 外派隊伍收到召回命令、清空探索佇列（召回 ${res?.recalled}、佇列 ${res?.queued}）`);
+  assert(r.exp.travelEvents.some((t) => t.includes('19:30 自動回家')), '報告寫出 19:30 自動回家');
   assert(!gh.autoHome.check(Date.now() + 60000), '同一天只觸發一次');
   gh.exploration.update(r.exp.endAt + 1, { silent: true });
   // 回家後可以再派出，當天不會再被召回
@@ -4421,18 +4421,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gk.state.settings.autoHome = false;
   setHour(gk, 18.5); gk.autoHome.check(Date.now());
   const rk = gk.exploration.start(gk.state.map.pois.find((p) => !gk.shelter.baseAtPoi(p.id)).id, ['leader'], 1, false, Date.now());
-  setHour(gk, 19);
-  assert(!gk.autoHome.check(Date.now() + 2000) && !rk.exp.recalled, '關閉時 19:00 不會召回');
-  // 離線：19:00 前出發、19:00 後才上線結算 → 照 19:00 當下召回（不是上線的時間）
+  setHour(gk, 19.5);
+  assert(!gk.autoHome.check(Date.now() + 2000) && !rk.exp.recalled, '關閉時 19:30 不會召回');
+  // 離線：19:30 前出發、19:30 後才上線結算 → 照 19:30 當下召回（不是上線的時間）
   const go = mkH('O103');
   setHour(go, 18.9); go.autoHome.check(Date.now());
   const fo = go.state.map.pois.filter((p) => !go.shelter.baseAtPoi(p.id) && haversine(p.lat, p.lon, go.shelter.primary().lat, go.shelter.primary().lon) > 700)[0];
   const ro = go.exploration.start(fo.id, ['leader'], 1, false, Date.now());
-  setHour(go, 19);
-  const later = Date.now() + 120000; // 19:00 之後兩分鐘才上線
+  setHour(go, 19.5);
+  const later = Date.now() + 120000; // 19:30 之後兩分鐘才上線
   const at19 = go.autoHome.triggerAt(later);
   go.autoHome.check(later, { silent: true });
-  assert(ro.exp.recalled && at19 < later - 100000 && Math.abs(ro.exp.endAt - (at19 + ro.exp.travelMs)) < 5, '離線時照 19:00 當下的位置召回');
+  assert(ro.exp.recalled && at19 < later - 100000 && Math.abs(ro.exp.endAt - (at19 + ro.exp.travelMs)) < 5, '離線時照 19:30 當下的位置召回');
   // 協防也召回
   const ga = mkH('A103');
   setHour(ga, 18.9); ga.autoHome.check(Date.now());
@@ -4440,7 +4440,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const ea = { id: 'ex_a103', kind: 'assist', poiId: tgtA.id, memberIds: [ga.survivors.leader().id], startAt: Date.now() - 1000, travelMs: 600000, searchMs: 0, endAt: Date.now() + 3600e3, distanceM: 800, from: { lat: 25, lon: 121 }, path: [{ lat: 25, lon: 121 }, { lat: 25.007, lon: 121 }], travelEvents: [], vehicleIds: [] };
   ga.state.expeditions.push(ea);
   ga.survivors.leader().status = 'exploring';
-  setHour(ga, 19);
+  setHour(ga, 19.5);
   ga.autoHome.check(Date.now() + 2000);
   assert(ea.recalled, '協防隊伍也會自動回家');
 }
@@ -4463,7 +4463,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const res = gr.autoHome.run(Date.now());
   await new Promise((r) => setTimeout(r, 10));
   await gr.shared.poll();
-  assert(res.recalled === 1 && !gr.rally.trips().length && gr.survivors.leader().status === 'idle', '19:00 集結隊伍也會召回（出發前直接留在避難所）');
+  assert(res.recalled === 1 && !gr.rally.trips().length && gr.survivors.leader().status === 'idle', '19:30 集結隊伍也會召回（出發前直接留在避難所）');
   assert(gr.rally.get(st.id || st.rally?.id || gr.shared.all('rally')[0]?.id)?.status === 'cancelled' || gr.shared.all('rally').every((o) => o.data.status === 'cancelled'), '自己發起的集結會取消');
 }
 

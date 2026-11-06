@@ -2,6 +2,7 @@ import { AssistSystem } from './AssistSystem.js';
 import { uid, pick, randInt } from '../utils/math.js';
 import { haversine } from '../utils/math.js';
 import { NPC_REWARD_MUL, RALLY_SHARE_FLOOR } from '../config/npcs.js';
+import { AUTO_HOME_LABEL } from './AutoHomeSystem.js';
 
 /** 集結：出發倒數可選的分鐘數 */
 export const RALLY_DELAYS = [5, 10, 15, 20];
@@ -237,7 +238,7 @@ export class RallySystem {
     }).catch(() => {});
     if (!g.exploration.turnBack(exp, at)) return false;
     exp.recalled = true;
-    exp.travelEvents = [...(exp.travelEvents || []), '🏠 19:00 自動回家：隊伍退出集結，折返避難所'];
+    exp.travelEvents = [...(exp.travelEvents || []), `🏠 ${AUTO_HOME_LABEL} 自動回家：隊伍退出集結，折返避難所`];
     return true;
   }
 
