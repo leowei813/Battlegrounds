@@ -1835,6 +1835,10 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const cb0 = B.state.player.coins;
   const reps = B.exploration.update(eb.endAt + 1, { silent: true });
   assert(reps.some((r) => r.poiName.includes('集結')) && !B.rally.trips().length, 'B 的隊伍帶著結果回家');
+  {
+    const rr = reps.find((r) => r.poiName.includes('集結'));
+    assert(rr && rr.events.some((e) => e.includes('攻擊圍牆')) && rr.events.some((e) => e.includes('造成') && e.includes('傷害')), `集結戰報列出攻牆、交戰與每位隊員的戰果（${rr?.events.slice(0, 4).join(' / ')}）`);
+  }
   // A 之後上線：同步並收到自己的那一份
   await A.shared.poll();
   await A.rally.step(A.rally.trips()[0], d1.fightAt + 5);

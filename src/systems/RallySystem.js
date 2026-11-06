@@ -300,6 +300,7 @@ export class RallySystem {
       } else if (d.status === 'done' && !exp.rallyResult && !exp.recalled) {
         exp.rallyResult = d.result?.teams?.[this.myId()] || { units: [], coins: 0, items: [], mats: {} };
         exp.rallySummary = d.result?.summary || '';
+        exp.rallyDetail = Array.isArray(d.result?.detail) ? d.result.detail.slice(0, 12) : [];
         exp.rallyVictory = !!d.result?.victory;
         exp.endAt = Math.max(now, (d.fightAt || now) + (exp.travelMs || 0));
       }
@@ -331,6 +332,7 @@ export class RallySystem {
   }
 
   /** 集結戰鬥：所有隊伍的隊員一起上場 */
+  // （各隊戰況摘要見 teamLines）
   async fight(d, now) {
     const g = this.game;
     const teams = d.teams || [];
@@ -382,8 +384,15 @@ export class RallySystem {
       const down = new Set([...fallen, ...(result ? result.team.filter((x) => x.down).map((x) => x.id) : fighters.map((u) => u.id))]);
       units.forEach((u) => {
         const r = result?.team.find((x) => x.id === u.id);
-        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: down.has(u.id) ? 0 : Math.round(r?.hp ?? u.hp), down: down.has(u.id) });
+        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: down.has(u.id) ? 0 : Math.round(r?.hp ?? u.hp), down: down.has(u.id), dealt: Math.round(r?.dealt || 0), kills: r?.kills || 0, maxHp: u.maxHp, wall: fallen.has(u.id) });
       });
+      // 戰況摘要（所有參加的玩家都看得到）
+      const foes = result ? result.foes.length : g.npcs.garrison(n, { assault: true }).length;
+      res.detail = [
+        `🧱 攻擊圍牆 ${as.sec} 秒（耐久 ${Math.round(df.wall)}、防禦火力每秒 ${Math.round(df.dps)}）${fallen.size ? `，${fallen.size} 名隊員被防禦火力擊倒` : ''}${as.breached ? '・圍牆被打破' : '・沒能打破圍牆'}`,
+        ...(result ? [`⚔️ 與守軍交戰 ${Math.round(result.duration)} 秒：守軍 ${foes} 人（Lv${n.level}），擊倒 ${result.foes.filter((f) => f.down).length}/${foes} 人，我方 ${units.length} 人中倒下 ${down.size} 人`] : []),
+        ...teamLines(teams, res),
+      ];
       res.victory = !!result?.victory;
       if (res.victory) {
         // 攻陷獎勵（v10 提高）：依各隊在戰鬥中造成的傷害分配（有保底）
@@ -405,8 +414,12 @@ export class RallySystem {
       result = b.result;
       units.forEach((u) => {
         const r = result.team.find((x) => x.id === u.id);
-        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: Math.round(r?.hp ?? 0), down: !!r?.down });
+        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: Math.round(r?.hp ?? 0), down: !!r?.down, dealt: Math.round(r?.dealt || 0), kills: r?.kills || 0, maxHp: u.maxHp });
       });
+      res.detail = [
+        `☣️ 交戰 ${Math.round(result.duration)} 秒：敵人 ${result.foes.length} 隻，擊倒 ${result.foes.filter((f) => f.down).length} 隻，我方 ${units.length} 人中倒下 ${result.team.filter((x) => x.down).length} 人・淨化 +${b.gain.toFixed(1)}%`,
+        ...teamLines(teams, res),
+      ];
       const p = await g.infected.addPurity(s, b.gain, now);
       res.purity = p.purity;
       res.victory = !!p.killed;
@@ -432,6 +445,12 @@ export class RallySystem {
       events: [...(exp.travelEvents || [])], resources: {}, items: [], blueprints: [],
       kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: !!exp.rallyVictory, members: members.map((m) => m.name),
     };
+    (exp.rallyDetail || []).forEach((line) => report.events.push(String(line).slice(0, 200)));
+    (r.units || []).forEach((u) => {
+      const sv = g.survivors.get(exp.memberIds[u.i]);
+      if (!sv || u.dealt == null) return;
+      report.events.push(`　・${sv.name}：${u.wall ? '攻牆時被防禦火力擊倒' : `造成 ${u.dealt} 傷害、擊倒 ${u.kills || 0}`}・剩餘生命 ${Math.max(0, u.hp)}${u.maxHp ? `/${Math.round(u.maxHp)}` : ''}${u.down ? '（倒下・重傷）' : ''}`);
+    });
     if (exp.rallySummary) report.events.push(exp.rallySummary);
     (r.units || []).forEach((u) => {
       const sv = g.survivors.get(exp.memberIds[u.i]);
@@ -463,4 +482,14 @@ export class RallySystem {
     const sh = this.game.shelter.primary();
     return sh ? Math.round(haversine(sh.lat, sh.lon, t.lat, t.lon)) : 0;
   }
+}
+
+/** 各隊戰況：造成傷害、擊倒、倒下人數 */
+function teamLines(teams, res) {
+  return teams.map((t) => {
+    const us = res.teams[t.player]?.units || [];
+    const dealt = us.reduce((a, u) => a + (u.dealt || 0), 0);
+    const kills = us.reduce((a, u) => a + (u.kills || 0), 0);
+    return `👥 ${String(t.name || '隊伍').slice(0, 16)}：${us.length} 人・造成 ${dealt} 傷害・擊倒 ${kills}・倒下 ${us.filter((u) => u.down).length} 人`;
+  });
 }
