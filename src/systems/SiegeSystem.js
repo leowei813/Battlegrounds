@@ -219,11 +219,12 @@ export class BaseSiege {
     const got = g.grant({ coins, ...items }, true);
     const gained = Object.fromEntries(Object.entries(items).map(([k]) => [k, got[k] || 0]).filter(([, v]) => v > 0));
     g.state.inventory.blueprints.push(...blueprints);
-    // 駐守經驗：今晚有參與防守（任一波來襲時在駐守或在瞭望塔上），且天亮時仍在防守的人
+    // 駐守經驗：這一晚有參與防守的人（任一波來襲時在駐守或在瞭望塔上）
+    // v10.16：依結算的那一晚比對紀錄（天亮後才上線補結算也算），結算時已經出門探索的人也拿得到
     const rec = this.base.nightDefenders;
-    // 沒有今晚的紀錄（例如更新前就已入夜）：以天亮時在防守的人計
-    const joined = new Set(rec?.night === this.nightKey() ? rec.ids : this.defenderIds());
-    const xp = this.defenderIds().filter((id) => joined.has(id)).map((id) => g.survivors.get(id)).filter(Boolean).map((sv) => {
+    const night = this.base.nightStats?.night ?? this.nightKey();
+    const ids = rec?.night === night && rec.ids?.length ? rec.ids : this.defenderIds();
+    const xp = [...new Set(ids)].map((id) => g.survivors.get(id)).filter(Boolean).map((sv) => {
       const amount = Math.round(xpToNext(sv.level) * R.guardXpPct);
       g.survivors.gainXp(sv, amount);
       return { name: sv.name, level: sv.level, xp: amount };

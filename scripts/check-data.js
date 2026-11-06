@@ -3414,6 +3414,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const nAmmo = Object.entries(ok.siege.items).filter(([k]) => SP[k].cat === 'ammo').reduce((a, [, v]) => a + v, 0);
   assert(nParts === Math.round(4 * SR.partsPerWave * 1.5) && nAmmo === Math.round(4 * SR.ammoPerWave * 1.5), `物資箱：零件 ${nParts}、彈藥 ${nAmmo}`);
   assert(ok.siege.xp.length === 1 && ok.siege.xp[0].xp === Math.round(xpn(lv0) * SR.guardXpPct) && (sv.level > lv0 || sv.xp > xp0), '整晚駐守的人獲得升級所需 5% 經驗');
+  // v10.16：天亮後才補結算、駐守的人已經出門探索：仍然拿到駐守經驗
+  s.startNight(); s.wave = 3; s.nightKills = 30;
+  s.markDefenders();
+  sv.status = 'exploring';
+  s.endNight();
+  assert(gs.state.defenseLog[0].siege.xp.some((x) => x.name === sv.name), '結算時駐守的人已出門探索：參與防守的人仍有駐守經驗');
+  sv.status = 'idle';
   // 城牆 30% → 普通 ×1.0
   s.startNight(); s.wave = 2; s.nightKills = 10;
   b.wallHp = gs.shelter.wallMax(b) * 0.3;
