@@ -1835,13 +1835,21 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const cb0 = B.state.player.coins;
   const reps = B.exploration.update(eb.endAt + 1, { silent: true });
   assert(reps.some((r) => r.poiName.includes('集結')) && !B.rally.trips().length, 'B 的隊伍帶著結果回家');
+  {
+    const rr = reps.find((r) => r.poiName.includes('集結'));
+    assert(rr && rr.events.some((e) => e.includes('攻擊圍牆')) && rr.events.some((e) => e.includes('造成') && e.includes('傷害')), `集結戰報列出攻牆、交戰與每位隊員的戰果（${rr?.events.slice(0, 4).join(' / ')}）`);
+  }
   // A 之後上線：同步並收到自己的那一份
   await A.shared.poll();
   await A.rally.step(A.rally.trips()[0], d1.fightAt + 5);
   const ea = A.rally.trips()[0];
   const ca0 = A.state.player.coins;
-  A.exploration.update(ea.endAt + 1, { silent: true });
+  const repsA = A.exploration.update(ea.endAt + 1, { silent: true });
   assert(!A.rally.trips().length && lead.status === 'idle', '離線的發起人上線後隊伍回家並結算');
+  {
+    const ra = repsA.find((r) => r.poiName.includes('集結'));
+    assert(ra && ra.events.some((e) => e.includes('攻擊圍牆')) && ra.events.some((e) => e.includes('👥')) && ra.events.some((e) => e.includes(lead.name) && e.includes('傷害')), `沒有計算戰鬥的參加者（離線後上線）也拿到完整集結戰報（${ra?.events.slice(0, 5).join(' / ')}）`);
+  }
   assert(d2.result.victory, `強大的集結隊伍攻陷弱小的 NPC（${d2.result.summary}）`);
   {
     assert(A.state.player.coins > ca0 && B.state.player.coins > cb0, `勝利時依貢獻分配金錢，每支隊伍都有保底（${A.state.player.coins - ca0} / ${B.state.player.coins - cb0}）`);
@@ -4902,6 +4910,58 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   old.version = 27; delete old.player.locks; delete old.bases[0].facilities.rebirth;
   const mig = SM.migrate(old);
   assert(mig.player.locks === 0 && mig.bases[0].facilities.rebirth?.level === 0, '舊存檔補上就是要鎖你（0）與重生器 Lv0');
+}
+
+// ---- 124. 外出中的倖存者依任務顯示狀態（集結中、攻打中…），一般探索顯示探索中 ----
+{
+  const { outLabel } = await import('../src/ui/components.js');
+  const go = Game.newGame({ playerName: 'O124', classId: 'warrior', lat: 25, lon: 121 });
+  const lead = go.survivors.leader();
+  go.state.expeditions = [{ id: 'x', kind: 'rally', memberIds: [lead.id] }];
+  assert(outLabel(go, lead) === '📡 集結中', '集結隊伍顯示集結中');
+  go.state.expeditions = [{ id: 'x', kind: 'explore', memberIds: [lead.id] }];
+  assert(outLabel(go, lead) === '探索中', '一般探索顯示探索中');
+  go.state.expeditions = [];
+}
+
+// ---- 125. 其他玩家的集結隊伍：對方離線時依共用集結資料的交戰時間計算返程，回到家後不再顯示 ----
+{
+  const { WorldSync: WS5, cleanPlayer: cp5 } = await import('../src/multiplayer/WorldSync.js');
+  const gw = Game.newGame({ playerName: 'W125', classId: 'warrior', lat: 25, lon: 121 });
+  const now = Date.now();
+  const raw = { id: 'p1', name: 'Y', bases: [{ lat: 25, lon: 121, name: 'b', primary: true, size: 'small' }],
+    trips: [{ id: 't', from: { lat: 25, lon: 121 }, to: { lat: 25.01, lon: 121 }, startAt: now - 3600e3, endAt: now + 20 * 3600e3, travelMs: 600e3, searchMs: 0, members: 4, target: 'NPC', rally: 'r1' }] };
+  const p = cp5(raw);
+  assert(p.trips[0].rally === 'r1', '公開資料保留集結編號');
+  gw.rally.get = () => ({ id: 'r1', status: 'done', fightAt: now - 1800e3 });
+  WS5.prototype.fixRallyTrips.call({ game: gw }, [p], now);
+  assert(!p.trips.length, '集結已交戰且返程時間已過：不再顯示（不會一直停在返程中）');
+  const p2 = cp5(raw);
+  gw.rally.get = () => ({ id: 'r1', status: 'done', fightAt: now - 300e3 });
+  WS5.prototype.fixRallyTrips.call({ game: gw }, [p2], now);
+  assert(p2.trips.length === 1 && p2.trips[0].endAt === now - 300e3 + 600e3, '返程中：依交戰時間＋路程計算回家時間');
+}
+
+// ---- 126. 白天高危區也有風險：遭遇率、殭屍等級、生命與攻擊依區域提高（一般區不變） ----
+{
+  const { DAY_ZONE: DZ } = await import('../src/config/enemies.js');
+  const { zoneAt: za } = await import('../src/config/zones.js');
+  const { TIME_PHASES: TP } = await import('../src/config/timePhases.js');
+  const gd = Game.newGame({ playerName: 'D126', classId: 'warrior', lat: 25, lon: 121.5 });
+  const spots = {};
+  for (let i = 0; i < 4000 && Object.keys(spots).length < 6; i += 1) { const lat = 25 + (i % 63) * 0.0021; const lon = 121.5 + Math.floor(i / 63) * 0.0021; const z = za(lat, lon); if (!spots[z.id]) spots[z.id] = { lat, lon }; }
+  const lv = (id, ph) => gd.zombies.buildingLevel({ id: 'p', type: 'factory', ...spots[id] }, ph);
+  assert(spots.lethal && spots.normal, '找到測試用的區域座標');
+  const lethalDay = lv('lethal', TP.day);
+  DZ.level.lethal = 0;
+  const lethalPlain = lv('lethal', TP.day);
+  DZ.level.lethal = 4;
+  assert(lethalDay === lethalPlain + 4, `致死區白天殭屍 +4 級（${lethalPlain} → ${lethalDay}）`);
+  const m = (id, ph) => gd.exploration.encounterMul({ phase: ph, zone: za(spots[id].lat, spots[id].lon) });
+  DZ.stat.lethal = 1; const base = m('lethal', TP.day).hp; DZ.stat.lethal = 1.2;
+  assert(Math.abs(m('lethal', TP.day).hp / base - 1.2) < 1e-9, '致死區白天殭屍生命 ×1.2');
+  assert(DZ.stat.normal === 1 && DZ.level.normal === 0 && DZ.encounter.normal === 1, '一般區白天不變');
+  assert(DZ.encounter.lethal === 1.6 && DZ.encounter.abyss === 2 && DZ.stat.abyss === 1.3, '白天遭遇率與強化倍率');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

@@ -86,6 +86,7 @@ export function sanitizePresence(body) {
       ...(t.kind === 'trade' ? { kind: 'trade', targetId: str(t.targetId, 40), stall: sanitizeStall(t.stall) } : {}),
       ...(t.kind === 'deliver' ? { kind: 'deliver' } : {}),
       ...(t.kind === 'assist' ? { kind: 'assist' } : {}),
+      ...(t.rally ? { rally: str(t.rally, 60) } : {}),
     };
   }).filter(Boolean);
   return {

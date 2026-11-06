@@ -70,6 +70,17 @@ export const BUILDING_ZONE = {
   extraLevel: { 1: 6, 2: 15, 3: 28 },
   statMul: { 1: 1.9, 2: 3.2, 3: 2.15 },
 };
+/**
+ * 白天（沒有夜間加成時）建築內的區域加成（v10.13）：高危區白天也有風險。
+ *  - encounter：遭遇殭屍／精英的機率倍率（夜晚改用夜晚的區域倍率）
+ *  - level：殭屍等級加成（上限一起提高）
+ *  - stat：殭屍生命、攻擊倍率
+ */
+export const DAY_ZONE = {
+  encounter: { safe: 0.6, normal: 1, alert: 1.2, danger: 1.4, lethal: 1.6, abyss: 2 },
+  level: { safe: 0, normal: 0, alert: 0, danger: 2, lethal: 4, abyss: 6 },
+  stat: { safe: 1, normal: 1, alert: 1.05, danger: 1.1, lethal: 1.2, abyss: 1.3 },
+};
 /** 夜晚地圖上的殭屍群：一般、精英、Boss 的額外強度 */
 export const MAP_GROUP_MUL = {
   normal: { hp: 1.3, atk: 1.3 },

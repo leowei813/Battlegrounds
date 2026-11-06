@@ -129,6 +129,7 @@ export function cleanPlayer(p) {
       id: String(t.id || '').slice(0, 40), level: finite(t.level) ? Math.min(60, Math.max(1, Math.round(t.level))) : 1,
       defeated: !!t.defeated,
       ...(t.kind === 'assist' ? { kind: 'assist' } : {}),
+      ...(t.rally ? { rally: String(t.rally).slice(0, 60) } : {}),
     }));
   return {
     id: String(p.id || ''), name: String(p.name || '倖存者').slice(0, 16), civ: finite(p.civ) ? p.civ : 0, bases, trips,
@@ -283,9 +284,29 @@ export class WorldSync {
           travelMs: ex.travelMs, searchMs: ex.searchMs, members: ex.memberIds.length, target: poi.name,
           ...(ex.path?.length > 2 ? { path: ex.path.slice(0, 20) } : {}),
           ...(ex.kind === 'assist' && !ex.defeated ? { kind: 'assist' } : {}),
+          // 集結：其他玩家依集結的實際交戰時間計算返程（對方離線、還沒結算時也能正確顯示）
+          ...(ex.kind === 'rally' && ex.rallyId ? { rally: String(ex.rallyId).slice(0, 60) } : {}),
         };
       }).filter(Boolean),
     };
+  }
+
+  /**
+   * 其他玩家的集結隊伍：集結還沒交戰時，對方存的結束時間是暫定的（24 小時後）；
+   * 依共用的集結資料改用實際交戰時間計算返程，已經回到家的隊伍不再顯示。
+   */
+  fixRallyTrips(players, now = Date.now()) {
+    const g = this.game;
+    players.forEach((p) => {
+      p.trips = (p.trips || []).filter((t) => {
+        if (!t.rally) return true;
+        const d = g.rally?.get?.(t.rally);
+        if (!d?.fightAt || (d.status !== 'done' && d.status !== 'departed')) return true;
+        t.searchMs = Math.max(0, d.fightAt - (t.startAt + (t.travelMs || 0)));
+        t.endAt = d.fightAt + (t.travelMs || 0);
+        return t.endAt > now;
+      });
+    });
   }
 
   async sync() {
@@ -306,6 +327,7 @@ export class WorldSync {
       }
       const list = await this.provider.worldNearby(center.lat, center.lon, WORLD_RADIUS_KM, id);
       this.others = list.map(cleanPlayer).filter((p) => p && p.id !== id);
+      this.fixRallyTrips(this.others);
       // 對方刪除進度重新開始：解除與舊角色的關係
       g.territory.checkEpochs?.(this.others);
       // 其他玩家送來的事件（攻擊、友好請求…）
