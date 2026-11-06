@@ -4875,7 +4875,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!gr.rebirth.canWash(gr.survivors.leader()).ok, '首領不能超渡');
   base.facilities.rebirth.level = 1;
   gr.state.player.coins = 100000;
-  assert(gr.rebirth.cost(sv) === Math.round(100 * 2.5 * 3 * (1 - 0.03)), `精良 Lv20 費用（${gr.rebirth.cost(sv)}）`);
+  assert(gr.rebirth.cost(sv) === Math.round(400 * 2.5 * 3 * (1 - 0.03)), `精良 Lv20 費用（${gr.rebirth.cost(sv)}）`);
   assert(!gr.rebirth.canWash(sv, ['hp']).ok, '沒有就是要鎖你不能鎖');
   gr.rebirth.addLocks(3);
   assert(!gr.rebirth.canWash(sv, ['hp', 'atk']).ok, '重生器 Lv1 只能鎖 1 種');
@@ -4886,13 +4886,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(JSON.stringify(sv.quality) === JSON.stringify(q0), '選擇前素質還沒改變');
   gr.rebirth.decide(sv.id, false);
   assert(JSON.stringify(sv.quality) === JSON.stringify(q0), '還你原形：維持原本素質');
-  assert(gr.rebirth.cost(sv) === Math.round(100 * 2.5 * 3 * 1.2 * 0.97), '同一位倖存者當天第 2 次 +20%');
+  assert(gr.rebirth.cost(sv) === Math.round(400 * 2.5 * 3 * 1.2 * 0.97), '同一位倖存者當天第 2 次 +20%');
   const r2 = gr.rebirth.wash(sv.id, [], () => 0.9);
   gr.rebirth.decide(sv.id, true);
   assert(r2.ok && JSON.stringify(sv.quality) === JSON.stringify(r2.after), '快樂重生：套用新素質');
-  assert(gr.rebirth.cost(sv) === Math.round(100 * 2.5 * 3 * 1.4 * 0.97), '第 3 次 +40%');
+  assert(gr.rebirth.cost(sv) === Math.round(400 * 2.5 * 3 * 1.4 * 0.97), '第 3 次 +40%');
   sv.wash = { day: '2000-01-01', n: 9 };
-  assert(gr.rebirth.cost(sv) === Math.round(100 * 2.5 * 3 * 0.97), '隔天重置');
+  assert(gr.rebirth.cost(sv) === Math.round(400 * 2.5 * 3 * 0.97), '隔天重置');
   base.facilities.rebirth.level = 6;
   assert(gr.rebirth.lockSlots() === 2 && gr.rebirth.canWash(sv, ['hp', 'atk']).ok, '重生器 Lv6 可鎖 2 種');
   gr.state.research.levels = { ...(gr.state.research.levels || {}), r_eugen: 5, r_gene: 10 };
@@ -4900,7 +4900,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const r3 = gr.rebirth.wash(sv.id, [], () => 0);
   assert(r3.ok && Object.values(r3.after).every((v) => v >= 10), `優生學滿級保底 10%（${JSON.stringify(r3.after)}）`);
   gr.rebirth.decide(sv.id, false);
-  assert(gr.rebirth.discount() <= RB.maxDiscount && gr.rebirth.discount() > 0.5, '基因調理與重生器折扣，最多 −70%');
+  assert(Math.abs(gr.rebirth.discount() - 0.48) < 1e-9 && RB.maxDiscount === 0.5, `重生器 Lv6（−18%）＋基因調理滿級（−30%）＝ −48%，上限 −50%（${gr.rebirth.discount()}）`);
   // 搜索掉落率
   assert(gr.rebirth.rollSearch('normal', () => 0.0099) === 1 && gr.rebirth.rollSearch('normal', () => 0.0101) === 0, '一般區每棟 1%');
   assert(gr.rebirth.rollSearch('abyss', () => 0.0299) === 1, '深淵區 ×3');
