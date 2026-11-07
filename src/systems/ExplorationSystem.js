@@ -689,8 +689,9 @@ export class ExplorationSystem {
    * 隊伍立刻折返：從目前位置走回避難所（需要移動時間），途中的搜索、交戰都取消。
    * 召回與被攔截擊敗共用。
    */
-  turnBack(exp, now = Date.now()) {
-    const p = this.progress(exp, now);
+  turnBack(exp, now = Date.now(), at = null) {
+    // at：指定目前位置（集結隊伍在集結點時，位置不在原本的去程路線上）
+    const p = at ? { pos: at } : this.progress(exp, now);
     const home = this.game.shelter.primary() || exp.from;
     if (!p || !home) return false;
     // 回程路線同樣繞開警戒範圍

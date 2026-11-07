@@ -250,3 +250,8 @@ export function btn(label, action, data = {}, { cls = '', disabled = false, titl
   const attrs = Object.entries(data).map(([k, v]) => `data-${k}="${escapeHtml(v)}"`).join(' ');
   return `<button class="btn ${cls}" data-action="${action}" ${attrs} ${disabled ? 'disabled' : ''} ${title ? `title="${escapeHtml(title)}"` : ''}>${label}</button>`;
 }
+
+/** 集結戰旗小圖示（紫底金框＋金旗，與地圖上的集結圖示相同；不用表情符號，各種手機顯示一致） */
+export function rallyFlag(size = 16) {
+  return `<svg class="rally-flag" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><circle cx="12" cy="12" r="10.5" fill="#311b92" stroke="#ffd54f" stroke-width="2.5"/><path d="M8 5v14" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><path d="M9 5h9l-2.6 3.5L18 12H9z" fill="#ffd54f"/></svg>`;
+}

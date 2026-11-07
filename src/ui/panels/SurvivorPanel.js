@@ -9,7 +9,7 @@ import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { LOADOUT_MAX, AMMO_CAP_OPTIONS, MED_NONE } from '../../systems/SurvivorSystem.js';
 import {
-  btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf, affixChips, towerTag,
+  btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf, affixChips, towerTag, rallyFlag,
 } from '../components.js';
 import {
   RARITIES, ITEM_MODELS, ITEM_TYPES, itemWeight, STACK_MAX,
@@ -146,12 +146,17 @@ export class SurvivorPanel {
     const hp = g.survivors.hpOf(sv) / g.survivors.maxHp(sv);
     const k = this.stateOf(sv);
     const exp = k === 'out' ? g.state.expeditions.find((e) => e.memberIds.includes(sv.id)) : null;
+    // v12.1：集結中的倖存者顯示「集結」（打完返程時顯示「返程」）
+    const rs = exp?.kind === 'rally' ? g.rally.statusOf(exp) : null;
     const act = k === 'hurt'
       ? '<span class="sv-mini-job hurt">🩸 重傷・需要治療</span>'
+      : rs
+        ? `<span class="sv-mini-job cd">${escapeHtml(rs.line2.replace(/^⏱ /, '⏱ '))}</span>`
       : exp
         ? `<span class="sv-mini-job cd">⏱ ${formatDuration(Math.max(0, exp.endAt - Date.now()))}</span>`
         : `<span class="sv-mini-job">${JOBS[sv.job]?.icon || ''} ${JOBS[sv.job]?.name || '閒置'}</span>${towerTag(g, sv)}`;
-    const tag = { home: '<span class="sv-tag home">在家</span>', out: '<span class="sv-tag out">外出</span>', hurt: '<span class="sv-tag hurt">重傷</span>' }[k];
+    const tag = rs && k === 'out' ? `<span class="sv-tag ${rs.tag === '集結' ? 'rally' : 'out'}">${rs.tag === '集結' ? `${rallyFlag(12)} 集結` : '🏃 返程'}</span>`
+      : { home: '<span class="sv-tag home">在家</span>', out: '<span class="sv-tag out">外出</span>', hurt: '<span class="sv-tag hurt">重傷</span>' }[k];
     const load = Math.floor(g.survivors.bagLoad(sv));
     const r = sv.isLeader ? '#ffd54f' : (RARITIES[sv.rarity] || RARITIES.common).color;
     const qe = sv.status === 'idle' ? `<span class="sv-qe">
