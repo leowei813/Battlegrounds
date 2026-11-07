@@ -16,6 +16,9 @@ export const POI_SHARE = {
   graceMs: 60000,
 };
 
+/** 台灣時間當天 00:00 的時間戳 */
+export const twDayStart = (t) => Math.floor((t + 8 * 3600000) / 86400000) * 86400000 - 8 * 3600000;
+
 export class PoiShareSystem {
   constructor(game) {
     this.game = game;
@@ -69,7 +72,8 @@ export class PoiShareSystem {
       until = Math.max(until, poi.lootedDay + POI_SHARE.recoverMs);
       by = by || `NPC「${nb.name}」`;
     }
-    const left = !empty && d?.r && d.r.g === gen && Object.keys(d.r.res || {}).length ? d.r : null;
+    // 探索到一半剩下的進度：每天 00:00（台灣時間）重置，隔天就是完整的建築
+    const left = !empty && d?.r && d.r.g === gen && (d.r.t || 0) >= twDayStart(at) && Object.keys(d.r.res || {}).length ? d.r : null;
     // 標記關係（地圖顏色用）：自己、友好玩家、其他玩家
     const me = this.me();
     const occ = (d?.o || []).filter((x) => x && x.l + POI_SHARE.graceMs > at)
@@ -150,7 +154,7 @@ export class PoiShareSystem {
         d.by = `玩家「${name}」`;
         d.r = null;
       } else {
-        d.r = { g: gen, res: rest, done: result.done || 0, total: result.total || 1 };
+        d.r = { g: gen, res: rest, done: result.done || 0, total: result.total || 1, t: result.at || now };
         if (!Object.keys(rest).length) { d.e = result.at; d.by = `玩家「${name}」`; d.r = null; }
       }
     };

@@ -5,6 +5,7 @@ import {
   btn, needHtml, timerBar, affordable, metaOf,
 } from '../components.js';
 import { formatDuration } from '../../utils/math.js';
+import { PARALLEL_LAB } from '../../systems/ResearchSystem.js';
 
 const TIER_NAMES = { 1: '基礎', 2: '進階', 3: '高階', 4: '頂尖', 5: '傳說' };
 const FILTERS = [['all', '全部'], ['ok', '可研究'], ['lack', '材料不足'], ['lock', '未解鎖'], ['max', '已滿級']];
@@ -66,13 +67,15 @@ export class ResearchPanel {
   card(id, r) {
     const g = this.game;
     const st = g.state;
-    const active = st.research.active;
     const lv = g.research.level(id);
     const planned = g.research.plannedLevel(id);
     const next = planned + 1;
     const { state, reason } = this.stateOf(id);
     const req = r.requires.map(([rid, need]) => `${RESEARCH[rid].name} Lv${need}${g.research.level(rid) >= need ? ' ✓' : ''}`).join('、');
-    const running = active?.id === id;
+    const running = g.research.actives().some((x) => x.a.id === id);
+    const runA = g.research.actives().find((x) => x.a.id === id)?.a;
+    // 沒有空著的研究位、或同一科技正在研究：加入佇列
+    const busy = !g.research.freeSlot() || running;
     const queuedHere = g.research.queue.map((q, i) => ({ q, n: i + 2 })).filter((x) => x.q.id === id);
     const full = g.research.used() >= g.research.slots();
     let action = '';
@@ -80,8 +83,8 @@ export class ResearchPanel {
     else if (state === 'planned') action = '<span class="tag tag-amber">已排到 MAX</span>';
     else if (state === 'lock') action = '<span class="tag">🔒 未解鎖</span>';
     else if (state === 'lack') action = btn('材料不足', 'start', { id }, { cls: 'btn-sm btn-lack', disabled: true });
-    else if (active && full) action = btn(`佇列已滿（${g.research.used()}/${g.research.slots()}）`, 'start', { id }, { cls: 'btn-sm', disabled: true });
-    else if (active) action = btn(`＋ ${planned > lv ? `排入 Lv${next}` : '加入佇列'}（第 ${g.research.used() + 1} 項）`, 'start', { id }, { cls: 'btn-sm btn-primary' });
+    else if (busy && full) action = btn(`佇列已滿（${g.research.used()}/${g.research.slots()}）`, 'start', { id }, { cls: 'btn-sm', disabled: true });
+    else if (busy) action = btn(`＋ ${planned > lv ? `排入 Lv${next}` : '加入佇列'}（第 ${g.research.used() + 1} 項）`, 'start', { id }, { cls: 'btn-sm btn-primary' });
     else action = btn(`${lv ? `升到 Lv${lv + 1}` : '研究'}`, 'start', { id }, { cls: 'btn-sm btn-primary' });
     const isNew = !!this.fresh()[id];
     if (isNew) this.seen.add(id);
@@ -91,7 +94,7 @@ export class ResearchPanel {
       ? `<div class="fac2-effect">目前：${lv ? effectText(id, lv) : '尚未研究'}</div>`
       : `<div class="fac2-effect">${lv ? `目前：${effectText(id, lv)}` : '目前：尚未研究'}</div>
         <div class="fac2-effect"><span class="muted">${planned ? `Lv${next}` : '第 1 級'}：</span><span class="pos">${planned ? `${effectText(id, planned)} → ` : ''}${effectText(id, next)}</span></div>`;
-    const progress = running ? `<span class="tag tag-amber">⏳ 研究中 Lv${active.level}・${Math.min(100, Math.round(((Date.now() - active.startAt) / Math.max(1, active.endAt - active.startAt)) * 100))}%</span>` : '';
+    const progress = running ? `<span class="tag tag-amber">⏳ 研究中 Lv${runA.level}・${Math.min(100, Math.round(((Date.now() - runA.startAt) / Math.max(1, runA.endAt - runA.startAt)) * 100))}%</span>` : '';
     const inQueue = queuedHere.length ? `<small class="muted block">📋 已在佇列：${queuedHere.map((x) => `Lv${x.q.level}（第 ${x.n} 項）`).join('、')}</small>` : '';
     return `<div class="fac-card2 rs-card ${state === 'lock' ? 'unbuilt' : ''} ${running ? 'rs-active' : ''} ${isNew ? 'rs-new' : ''}">
       ${isNew ? '<span class="rs-new-tag">NEW 剛完成</span>' : ''}
@@ -102,7 +105,7 @@ export class ResearchPanel {
       ${progress}${inQueue}
       ${state === 'lock' ? `<small class="neg">🔒 ${reason}</small>` : req ? `<small class="muted">前置：${req}</small>` : ''}
       ${done ? `<div class="row-between"><small class="muted"></small>${action}</div>` : `<div class="fac2-cost">
-        ${running && !queuedHere.length ? timerBar(active.startAt, active.endAt) : ''}
+        ${running && !queuedHere.length ? timerBar(runA.startAt, runA.endAt) : ''}
         ${state === 'lock' ? '' : `<div class="needs">${needHtml(st, g.research.cost(id, next))}</div>`}
         <div class="row-between"><small class="muted">${state === 'lock' ? '' : `⏱ ${formatDuration(g.research.researchTime(id, next) * 1000)}・研究中心 Lv${labLevelFor(id, next)}`}</small>${action}</div>
       </div>`}
@@ -113,35 +116,38 @@ export class ResearchPanel {
   queueCard() {
     const g = this.game;
     const rs = g.research;
-    const active = g.state.research.active;
     const lab = rs.labLevel();
     const slots = rs.slots();
+    const two = rs.parallel() > 1;
     const now = Date.now();
     const rows = [];
-    if (active) {
+    rs.actives().forEach(({ key, a: active }, k) => {
       const r = RESEARCH[active.id];
       const done = Math.min(1, (now - active.startAt) / Math.max(1, active.endAt - active.startAt));
+      const tag = two ? `<span class="rq-slot">研究位 ${key === 'active2' ? 2 : 1}</span>` : `<span class="rq-num">${k + 1}</span>`;
       rows.push(`<div class="rq-item run">
-        <div class="row-between"><b><span class="rq-num">1</span>${r.name} Lv${active.level - 1} → Lv${active.level}</b>${btn(`取消（退還 ${Math.round(90 * (1 - done))}%）`, 'cancelResearch', {}, { cls: 'btn-xs btn-ghost btn-danger-ghost' })}</div>
+        <div class="row-between"><b>${tag}${r.name} Lv${active.level - 1} → Lv${active.level}</b>${btn(`取消（退還 ${Math.round(90 * (1 - done))}%）`, 'cancelResearch', { key }, { cls: 'btn-xs btn-ghost btn-danger-ghost' })}</div>
         ${timerBar(active.startAt, active.endAt)}
         <small class="pos">${active.level > 1 ? `${effectText(active.id, active.level - 1)} → ` : ''}${effectText(active.id, active.level)}</small>
       </div>`);
-    }
+    });
+    const runN = rs.actives().length;
     rs.queue.forEach((q, i) => {
       const r = RESEARCH[q.id];
       const startIn = Math.max(0, rs.queueStartAt(i, now) - now);
       rows.push(`<div class="rq-item">
-        <div class="row-between"><b><span class="rq-num">${i + 2}</span>${r.name} Lv${q.level - 1} → Lv${q.level}</b>
+        <div class="row-between"><b><span class="rq-num">${i + runN + 1}</span>${r.name} Lv${q.level - 1} → Lv${q.level}</b>
           <span class="rq-acts">${btn('▲', 'qUp', { i }, { cls: 'btn-xs btn-ghost', disabled: i === 0, title: '往前' })}${btn('▼', 'qDown', { i }, { cls: 'btn-xs btn-ghost', disabled: i === rs.queue.length - 1, title: '往後' })}${btn('取消', 'qCancel', { i }, { cls: 'btn-xs btn-ghost btn-danger-ghost' })}</span></div>
-        <small class="muted">⏱ ${formatDuration(rs.researchTime(q.id, q.level) * 1000)}・約 ${formatDuration(startIn)}後開始</small>
+        <small class="muted">⏱ ${formatDuration(rs.researchTime(q.id, q.level) * 1000)}・${two ? '先空出的研究位接著研究・' : ''}約 ${formatDuration(startIn)}後開始</small>
         <small class="pos block">${q.level > 1 ? `${effectText(q.id, q.level - 1)} → ` : ''}${effectText(q.id, q.level)}</small>
       </div>`);
     });
     for (let k = rows.length; k < slots; k += 1) rows.push('<div class="rq-empty">＋ 空位：在科技卡片按「研究」或「加入佇列」</div>');
     const nextLab = lab < 15 ? (Math.floor(lab / 5) + 1) * 5 : null;
     if (lab > 0 && nextLab && nextLab <= 15) rows.push(`<div class="rq-lock">🔒 第 ${slots + 1} 格：研究中心 Lv${nextLab} 解鎖</div>`);
+    if (lab > 0 && !two) rows.push(`<div class="rq-lock">🔒 研究中心 Lv${PARALLEL_LAB}：可以同時進行第 2 項研究</div>`);
     return `<section class="sh-card rs-now rq-card">
-      <h3>🔬 研究佇列 <small class="muted">${rs.used()}/${slots} 格</small></h3>
+      <h3>🔬 研究佇列 <small class="muted">${rs.used()}/${slots} 格${two ? '・同時研究 2 項' : ''}</small></h3>
       ${lab ? '' : '<small class="muted">需要先建造研究中心。</small>'}
       ${rows.join('')}
     </section>`;
@@ -247,7 +253,7 @@ export class ResearchPanel {
 
   onAction(action, data) {
     if (action === 'start') this.ui.result(this.game.research.start(data.id));
-    if (action === 'cancelResearch' && confirm('取消研究中的項目？依完成度退還材料，完成度越高退得越少。')) this.ui.result(this.game.research.cancel());
+    if (action === 'cancelResearch' && confirm('取消研究中的項目？依完成度退還材料，完成度越高退得越少。')) this.ui.result(this.game.research.cancel(Date.now(), { key: data.key || 'active' }));
     if (action === 'qUp' || action === 'qDown') this.ui.result(this.game.research.move(+data.i, action === 'qUp' ? -1 : 1));
     if (action === 'qCancel') this.confirmCancelQueued(+data.i);
     if (action === 'branch') {

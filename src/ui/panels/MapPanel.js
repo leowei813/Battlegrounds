@@ -338,9 +338,7 @@ export class MapPanel {
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
         ${btn('☣️', 'zoneMode', {}, { cls: `btn-icon ${this.service.zoneMode?.() === 'off' ? '' : 'on'}`, title: '危險度圖層：淡／關閉' })}
       </div>
-      ${has && this.game.shelter.alert ? '<div class="map-alert-banner">🔔 警戒中・全部倖存者防禦駐守</div>' : ''}
-      ${this.siegeBanner()}
-      ${this.feedHtml(hudHtml(this.game))}
+      <div class="map-topleft">${hudHtml(this.game)}${has && this.game.shelter.alert ? '<div class="map-alert-banner">🔔 警戒中・全部倖存者防禦駐守</div>' : ''}${this.siegeBanner()}${this.feedHtml()}</div>
       ${this.scanning ? `<div class="scan-progress">📡 掃描建築中 ${this.scanProgress || ''}</div>` : ''}
       ${this.worldChip()}
       <div class="map-info">建築 ${st.map.pois.length}・殭屍群 ${st.map.zombieGroups.length}・資料：${src}</div>`;

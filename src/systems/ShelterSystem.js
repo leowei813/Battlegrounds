@@ -289,9 +289,13 @@ export class ShelterSystem {
     }
     const add = (to, cost) => Object.entries(cost || {}).forEach(([k, v]) => { if (v > 0) to[k] = (to[k] || 0) + v; });
     const cancelled = {};
-    const active = this.game.state.research.active;
-    const research = active ? cancelRefund(active, now, () => this.game.research.cost(active.id, active.level)).cost : null;
-    add(cancelled, research);
+    // 研究中的項目（第二研究位也算）：依完成度退還
+    let researchInfo = null;
+    this.game.research.actives().forEach(({ a: active }) => {
+      const refund = cancelRefund(active, now, () => this.game.research.cost(active.id, active.level)).cost;
+      add(cancelled, refund);
+      if (!researchInfo) researchInfo = { id: active.id, level: active.level, refund };
+    });
     // 排隊中的研究：全額退還
     (this.game.state.research.queue || []).forEach((q) => add(cancelled, q.cost));
     const builds = base.buildQueue.map((q) => cancelRefund(q, now, () => (q.kind === 'facility' ? this.discounted(FACILITIES[q.id].cost(q.targetLevel)) : this.defenseCost(q.id, q.targetLevel))).cost);
@@ -305,7 +309,7 @@ export class ShelterSystem {
     const facilities = Object.entries(base.facilities).filter(([, f]) => f.level > 0).map(([fid, f]) => ({ id: fid, level: f.level }));
     const defenses = base.defenses.filter((d) => d.type).map((d) => ({ type: d.type, level: d.level }));
     return {
-      relocate: true, research: active ? { id: active.id, level: active.level, refund: research } : null,
+      relocate: true, research: researchInfo,
       builds: base.buildQueue.length, cancelled, defRefund, defenses, facilities, before, keep, lost,
     };
   }

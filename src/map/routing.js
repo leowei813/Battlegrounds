@@ -62,31 +62,45 @@ export function pointAlong(path, d) {
  */
 export function planRoute(from, to, avoid = []) {
   const o = from;
+  const A = toXY(from, o);
+  const B = toXY(to, o);
   const circles = avoid.map((c) => ({ ...toXY(c, o), r: c.r }))
-    .filter((c) => dist(c, toXY(from, o)) > c.r && dist(c, toXY(to, o)) > c.r);
-  const route = (a, b, depth) => {
-    if (depth > 8) return [b];
-    let hit = null;
-    circles.forEach((c) => {
-      const p = closest(a, b, c);
-      if (dist(p, c) < c.r && (!hit || p.t < hit.p.t)) hit = { c, p };
-    });
-    if (!hit) return [b];
-    const { c, p } = hit;
-    let nx = p.x - c.x;
-    let ny = p.y - c.y;
-    let n = Math.hypot(nx, ny);
-    if (n < 1e-6) {
-      // 正好穿過圓心：往路線的垂直方向繞
-      nx = -(b.y - a.y);
-      ny = b.x - a.x;
-      n = Math.hypot(nx, ny) || 1;
+    .filter((c) => c.r > 0 && dist(c, A) > c.r && dist(c, B) > c.r);
+  const blocked = (p, q) => circles.some((c) => dist(closest(p, q, c), c) < c.r * 0.999);
+  if (!blocked(A, B)) return [{ lat: from.lat, lon: from.lon }, { lat: to.lat, lon: to.lon }];
+  // 最短繞行：每個範圍外擴成八邊形，在起點、終點與所有頂點之間找不穿過任何範圍的最短路線
+  const SIDES = 8;
+  const R = 1.0 / Math.cos(Math.PI / SIDES) + 0.08;
+  const nodes = [A, B];
+  circles.forEach((c) => {
+    for (let k = 0; k < SIDES; k += 1) {
+      const ang = (2 * Math.PI * k) / SIDES + Math.PI / SIDES;
+      const v = { x: c.x + Math.cos(ang) * c.r * R, y: c.y + Math.sin(ang) * c.r * R };
+      if (!circles.some((c2) => dist(v, c2) < c2.r)) nodes.push(v);
     }
-    const w = { x: c.x + (nx / n) * c.r * 1.3, y: c.y + (ny / n) * c.r * 1.3 };
-    return [...route(a, w, depth + 1), ...route(w, b, depth + 1)];
-  };
-  const a = toXY(from, o);
-  return [{ lat: from.lat, lon: from.lon }, ...route(a, toXY(to, o), 0).map((q) => toLatLon(q, o))];
+  });
+  const n = nodes.length;
+  const best = new Array(n).fill(Infinity);
+  const prev = new Array(n).fill(-1);
+  const done = new Array(n).fill(false);
+  best[0] = 0;
+  for (let it = 0; it < n; it += 1) {
+    let u = -1;
+    for (let i = 0; i < n; i += 1) if (!done[i] && (u < 0 || best[i] < best[u])) u = i;
+    if (u < 0 || best[u] === Infinity) break;
+    if (u === 1) break;
+    done[u] = true;
+    for (let v = 0; v < n; v += 1) {
+      if (done[v] || v === u) continue;
+      const d = best[u] + dist(nodes[u], nodes[v]);
+      if (d < best[v] && !blocked(nodes[u], nodes[v])) { best[v] = d; prev[v] = u; }
+    }
+  }
+  // 完全被包圍（找不到路線）：維持直線
+  if (prev[1] < 0) return [{ lat: from.lat, lon: from.lon }, { lat: to.lat, lon: to.lon }];
+  const path = [];
+  for (let v = 1; v >= 0; v = prev[v]) path.unshift(nodes[v]);
+  return [{ lat: from.lat, lon: from.lon }, ...path.slice(1).map((q) => toLatLon(q, o))];
 }
 
 /**

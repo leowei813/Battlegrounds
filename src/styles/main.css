@@ -1486,3 +1486,12 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .dg-hud .t > :not(.dg-ic):not(.fl):not(.dg-fold) { overflow: hidden; text-overflow: ellipsis; }
 .dg-cnt.low { color: #ff8a65; font-weight: 700; }
 .dg-cnt.ok { color: #a5d6a7; font-weight: 700; }
+.rq-slot { display: inline-block; font-size: 11px; color: #ffe082; border: 1px solid #ffe08266; border-radius: 6px; padding: 0 6px; margin-right: 6px; }
+/* 左上角：屍潮資訊、副本資訊、隊伍清單由上往下排，內容多時自動往下推（不重疊） */
+.map-topleft { position: absolute; top: 10px; left: 56px; right: 64px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
+.map-topleft > .siege-banner, .map-topleft > .map-feed { position: static; left: auto; right: auto; top: auto; }
+.map-topleft > .siege-banner { width: 100%; }
+.map-hint ~ .map-topleft { top: 64px; }
+.map-alert-banner ~ .map-topleft { top: 46px; }
+.map-topleft > .map-alert-banner { position: static; width: 100%; left: auto; right: auto; top: auto; }
+.map-topleft > .dg-hud { pointer-events: auto; }
