@@ -502,7 +502,7 @@ export class SurvivorPanel {
         <small class="muted">${SLOTS[slot].icon} ${SLOTS[slot].name}</small>
         <b>${item ? escapeHtml(item.name) : '— 空 —'}${aw ? ` <span class="ammo-badge">⚠️ ${aw.level === 'low' ? '彈藥不足' : '無彈藥'}</span>` : ''}</b>
         ${aw ? `<small class="neg">需要${escapeHtml(aw.name)}：${aw.level === 'low' ? '不夠一場戰鬥使用' : '沒有彈藥時戰鬥只能用近戰武器'}</small>` : ''}
-        <small class="muted">${item ? `${r.name}・戰力 ${item.power}` : n ? `有 ${n} 件可裝備` : '沒有可裝備的物品'}</small>
+        <small class="muted">${item ? `${r.name}・<b class="gear-lv">Lv${item.level}</b>・戰力 ${item.power}` : n ? `有 ${n} 件可裝備` : '沒有可裝備的物品'}</small>
         ${item ? `<div class="gear-stats">${statLine(item.stats)}</div>${item.affixes?.length ? `<div class="gear-affixes">${affixChips(item)}</div>` : ''}` : ''}
         ${slot === 'weapon' && item ? this.ammoRow(sv) : ''}
         ${away ? '' : `<span class="gear-acts">${btn(item ? '更換' : '裝備', 'pickItem', { slot }, { cls: 'btn-xs', disabled: !n })}${item ? btn('卸下', 'unequip', { slot }, { cls: 'btn-xs btn-ghost' }) : ''}</span>`}
