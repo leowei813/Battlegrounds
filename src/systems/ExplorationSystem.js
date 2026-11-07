@@ -1395,6 +1395,7 @@ export class ExplorationSystem {
       report.items = [...cp.items];
       report.blueprints = [...cp.blueprints];
       report.carried = true;
+      if (cp.locks) report.locks = cp.locks;
       this.markVisited(exp, poi, cp, complete);
       if (cp.searchXp) report.events.push(`⭐ 搜完「${poi.name}」：每人經驗 +${cp.searchXp}`);
       return report;

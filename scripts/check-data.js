@@ -3025,7 +3025,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(st.ok && ex.squads().length === 1, '派出後成為臨時小隊');
   assert(ex.queueLimit() === 2, '探索佇列基本 2 個');
   assert(ex.enqueue(st.exp.id, pois[1].id).ok && ex.enqueue(st.exp.id, pois[2].id).ok && !ex.enqueue(st.exp.id, pois[3].id).ok, '佇列滿了不能再加入');
+  const rollQ = gq3.rebirth.rollSearch.bind(gq3.rebirth);
+  gq3.rebirth.rollSearch = () => 1; // 每一格搜索都找到特殊物品
   const [rep] = ex.update(st.exp.endAt + 1, { silent: true });
+  gq3.rebirth.rollSearch = rollQ;
+  assert(!rep || !rep.carried || rep.locks > 0, `連續探索前往下一站的報告也標示找到的特殊物品（${rep?.locks}）`);
   const next = gq3.state.expeditions[0];
   assert(rep && next && next.poiId === pois[1].id && next.queue.length === 1, `完成後自動前往佇列中的下一個地點（${rep?.events.slice(-1)}）`);
   assert(!rep || rep.xpBy?.length, '連續探索前往下一站的報告也顯示經驗');
