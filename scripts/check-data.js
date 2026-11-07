@@ -5493,6 +5493,28 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(e8 === 24 && e12 === 24 && e5 === 15, `副本每波敵人數最多以 8 人計算（5 人 ${e5}、8 人 ${e8}、12 人 ${e12}）`);
 }
 
+// ---- 139. 藥品欄「不攜帶」：新加入的倖存者預設不攜帶，可切換，不會被自動補給 ----
+{
+  const { MED_NONE } = await import('../src/systems/SurvivorSystem.js');
+  const gm = Game.newGame({ playerName: 'M139', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gm.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gm.shelter.establish(gm.state.map.pois.find((p) => gm.shelter.canEstablish(p).ok));
+  gm.state.supplies.bandage = 50;
+  const lead = gm.survivors.leader();
+  assert(gm.survivors.supplyRules(lead).med === 'bandage', '原本的倖存者維持帶藥（預設繃帶）');
+  const nv = gm.survivors.makeCandidate(5);
+  gm.survivors.addSurvivor(nv);
+  nv.status = 'idle';
+  gm.survivors.autoResupply(nv);
+  assert(gm.survivors.supplyRules(nv).med === MED_NONE && !gm.survivors.loadout(nv).med, '新加入的倖存者預設不攜帶藥品，也不會被自動補給');
+  gm.survivors.setSupply(nv.id, 'med', 'bandage');
+  assert(gm.survivors.loadout(nv).med?.key === 'bandage', '改選藥品後會自動補進藥品欄');
+  const before = gm.state.supplies.bandage;
+  const r = gm.survivors.setSupply(nv.id, 'med', MED_NONE);
+  assert(r.ok && !gm.survivors.loadout(nv).med && gm.state.supplies.bandage > before && gm.survivors.supplyRules(nv).med === MED_NONE, '改回不攜帶：藥品欄的藥放回倉庫');
+  assert(gm.survivors.refillMeds([nv]).length === 0, '不攜帶時戰後不會從背包補藥');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

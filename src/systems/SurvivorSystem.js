@@ -29,6 +29,9 @@ import { canAfford, payCost, scaleCost } from './costUtils.js';
 /** 戰鬥結束後生命低於這個比例時，自動用藥品欄的藥補血（補到不溢出） */
 export const POST_BATTLE_HEAL_BELOW = 0.7;
 
+/** 藥品欄設定為「不攜帶」 */
+export const MED_NONE = 'none';
+
 export class SurvivorSystem {
   constructor(game) {
     this.game = game;
@@ -710,6 +713,8 @@ export class SurvivorSystem {
   }
 
   addSurvivor(sv) {
+    // v11.2：新加入的倖存者預設不攜帶藥品（需要時在裝備的藥品欄選擇）
+    if (!sv.supply || !('med' in sv.supply)) sv.supply = { ammo: null, med: MED_NONE };
     this.list.push(sv);
     this.game.state.stats.recruits += 1;
     this.game.log(`🤝 ${sv.name}（${RARITIES[sv.rarity]?.name || ''}${CLASSES[sv.classId].name} Lv${sv.level}）加入`, 'success');
@@ -1038,7 +1043,7 @@ export class SurvivorSystem {
     }
     // v10.14.1：彈藥一律自動補給遠程武器使用的子彈；藥品一律自動補給（預設繃帶）
     sv.supply.ammo = this.ammoNeed(sv)?.ammo || null;
-    if (!sv.supply.med || !SurvivorSystem.slotAccepts('med', sv.supply.med)) sv.supply.med = 'bandage';
+    if (sv.supply.med !== MED_NONE && (!sv.supply.med || !SurvivorSystem.slotAccepts('med', sv.supply.med))) sv.supply.med = 'bandage';
     return sv.supply;
   }
 
@@ -1050,6 +1055,12 @@ export class SurvivorSystem {
     const rules = this.supplyRules(sv);
     if (kind === 'ammo') return { ok: false, reason: '彈藥會自動補給遠程武器使用的子彈' };
     if (!key) return { ok: false, reason: '請選擇要自動補給的藥品' };
+    if (key === MED_NONE) {
+      rules.med = MED_NONE;
+      const had = this.loadout(sv).med;
+      const u = had ? this.unloadSlot(sv.id, 'med') : null;
+      return { ok: true, msg: `${sv.name} 不攜帶藥品${had && u?.ok ? `（${SUPPLIES[had.key].name}×${had.qty} ${this.atShelter(sv) ? '放回倉庫' : '收進背包'}）` : ''}` };
+    }
     if (!SurvivorSystem.slotAccepts(kind, key)) return { ok: false, reason: kind === 'ammo' ? '請選擇彈藥' : '請選擇藥品' };
     rules[kind] = key;
     const r = this.autoResupply(sv);
@@ -1063,7 +1074,7 @@ export class SurvivorSystem {
     const got = [];
     ['ammo', 'med'].forEach((kind) => {
       const key = rules[kind];
-      if (!key) return;
+      if (!key || key === MED_NONE) return;
       const lo = this.loadout(sv);
       if (lo[kind] && lo[kind].key !== key && !this.atShelter(sv)) return; // 在外面不換種類
       if ((lo[kind]?.key === key ? lo[kind].qty : 0) >= this.slotMax(sv, kind)) return;
@@ -1085,7 +1096,7 @@ export class SurvivorSystem {
     const want = list.map((sv) => {
       const key = this.supplyRules(sv).med;
       const lo = this.loadout(sv);
-      if (!key || (lo.med && lo.med.key !== key)) return null;
+      if (!key || key === MED_NONE || (lo.med && lo.med.key !== key)) return null;
       const need = LOADOUT_MAX.med - (lo.med?.qty || 0);
       return need > 0 ? { sv, key, need } : null;
     }).filter(Boolean).sort((a, b) => b.need - a.need);
