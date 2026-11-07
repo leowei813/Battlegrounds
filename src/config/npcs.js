@@ -8,7 +8,8 @@ export const NPC_CONFIG = {
   keepRatio: 2 / 3, // 每個名額有此機率出現 NPC（依格子種子固定，所有玩家相同）：密度約每平方公里 1.6 個
   minFromShelterM: 300, // 不會出現在避難所旁邊
   respawnMs: [30 * 60000, 60 * 60000], // （舊）被摧毀後重新出現的時間；現在改為隔天中午刷新
-  respawnHour: 12, // 被擊敗的 NPC 據點在下一個中午 12:00（當地時間）才重新出現
+  respawnHour: 12, // （舊）被擊敗的 NPC 據點在下一個中午 12:00 重新出現；v12 改為 respawnAfterMs
+  respawnAfterMs: 36 * 3600000, // v12：被消滅的 NPC 據點 36 小時（現實時間）後才重新出現
   levelUpMs: [90 * 60000, 150 * 60000], // 升級間隔
   maxLevel: 40,
   respawnMinLevel: 35, // 被攻陷後重生的 NPC 據點至少這個等級（被擊退的等級損失也不會低於此）

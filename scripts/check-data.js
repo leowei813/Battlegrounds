@@ -3568,12 +3568,21 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { NPC_CONFIG: NC } = await import('../src/config/npcs.js');
   const { POI_SCAN_RADIUS: PSR } = await import('../src/config/constants.js');
   const t = new Date(2026, 10, 4, 9, 30).getTime();
-  assert(nextNoon(t) === new Date(2026, 10, 4, 12, 0).getTime() && nextNoon(new Date(2026, 10, 4, 12, 0).getTime()) === new Date(2026, 10, 5, 12, 0).getTime(), '被擊敗的 NPC 據點在下一個中午 12:00 重新出現');
+  void nextNoon; void t;
+  assert(NC.respawnAfterMs === 36 * 3600000, '被消滅的 NPC 據點 36 小時後重新出現');
   const g79 = Game.newGame({ playerName: 'N79', classId: 'warrior', lat: 25, lon: 121 });
   g79.state.map.pois = fillPois([], 25, 121);
   g79.shelter.establish(g79.state.map.pois.find((p) => g79.shelter.canEstablish(p).ok));
   const b79 = g79.shelter.primary();
   g79.npcs.fillCells(Date.now(), { silent: true });
+  {
+    const n0 = g79.npcs.list[0];
+    const t0 = Date.now();
+    const cell = n0.cell || g79.npcs.cellOf(n0.lat, n0.lon);
+    g79.npcs.destroy(n0, t0);
+    assert(g79.npcs.state.cellNext[cell] === t0 + 36 * 3600000, '消滅 NPC 據點後，該格 36 小時後才重生');
+    g79.npcs.fillCells(Date.now(), { silent: true });
+  }
   assert(g79.npcs.list.length > 0 && g79.npcs.list.every((n) => haversine(n.lat, n.lon, b79.lat, b79.lon) <= PSR + 1), `NPC 據點只出現在避難所的可視範圍（${PSR} 公尺）內（${g79.npcs.list.length} 個）`);
   // 擊退掠奪隊：賞金、裝備、經驗
   const all = Array.from({ length: 6 }, () => g79.combat.createEnemy('raider', 20));

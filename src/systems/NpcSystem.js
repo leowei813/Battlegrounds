@@ -936,7 +936,7 @@ export class NpcSystem {
   destroy(n, now = Date.now()) {
     this.state.list = this.list.filter((x) => x.id !== n.id);
     n.gone = true;
-    const respawnAt = nextNoon(now);
+    const respawnAt = now + (NPC_CONFIG.respawnAfterMs ?? 36 * 3600000);
     this.state.cellNext = this.state.cellNext || {};
     this.state.cellNext[n.cell || this.cellOf(n.lat, n.lon)] = respawnAt;
     // 共用 NPC：所有玩家的地圖上一起消失，重生時間到後出現新的勢力
