@@ -107,6 +107,9 @@ export const DG_FLOOR_LOOT = {
   amount: { 1: [30, 60], 2: [15, 30], 3: [8, 15], 4: [4, 8], 5: [2, 4] },
 };
 
+/** NPC 據點不會出現在副本入口這個距離以內（公尺） */
+export const DG_CLEAR_M = 150;
+
 /** 五個副本（位置在信義區一帶，固定在地圖上） */
 export const DUNGEONS = {
   drain: {
@@ -114,7 +117,7 @@ export const DUNGEONS = {
     core: 'coreDrain', final: { name: '迷宮吞噬者', icon: '🐍' },
   },
   greenhouse: {
-    name: '地下溫室', short: '溫室', cls: 'farmer', lat: 25.0348, lon: 121.5644,
+    name: '地下溫室', short: '溫室', cls: 'farmer', lat: 25.0342, lon: 121.5640,
     core: 'coreGreen', final: { name: '孢子母樹', icon: '🌳' },
   },
   depot: {

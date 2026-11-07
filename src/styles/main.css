@@ -1458,3 +1458,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .dg-tbl { display: block; overflow-x: auto; white-space: nowrap; }
   .dg-hud { width: 230px; }
 }
+/* 行內副本圖示（與地圖入口相同） */
+.dg-ic-inline { display: inline-block; width: 1.5em; height: 1.2em; vertical-align: -0.2em; margin-right: 3px; }
+.dg-ic-inline svg { width: 100%; height: 100%; display: block; }
+.dg-head { display: flex; align-items: center; gap: 6px; font-size: 15px; margin-bottom: 2px; }
+.dg-head .dg-ic-inline { width: 2.2em; height: 1.8em; }

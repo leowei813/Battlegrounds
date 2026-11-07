@@ -664,16 +664,13 @@ export class DungeonSystem {
     }
     const { run, i } = mine;
     const rw = run.rewards[i];
-    const st = run.stat[i];
     const fin = run.final[i];
     // 經驗、金錢、材料、核心材料、圖紙
     const xpMul = 1 + g.research.bonus('xpPct');
-    let lost = null;
     if (sv) {
       release();
+      // 副本中重傷不扣經驗
       g.survivors.gainXp(sv, rw.xp);
-      // 一趟副本不管重傷幾次，只在最終結算扣一次重傷經驗
-      if (st.downs > 0) lost = g.survivors.penalizeXp(sv);
       if (fin.sev) {
         sv.severe = true;
         g.survivors.setHp(sv, 0);
@@ -686,7 +683,7 @@ export class DungeonSystem {
     rw.bps.forEach((b) => g.state.inventory.blueprints.push({ id: uid('bp'), model: b.model, rarity: 'dungeon', dg: true }));
     this.pushReport({
       kind: 'dungeon', dg: rec.dg, day: rec.day, status: run.result, svName: rec.svName, at: now, group: run.group, me: i,
-      xpGot: Math.round(rw.xp * xpMul), lost: lost?.xp || 0, coins: rw.coins, mats: rw.mats, cores: rw.cores, bps: rw.bps.map((b) => b.model),
+      xpGot: Math.round(rw.xp * xpMul), coins: rw.coins, mats: rw.mats, cores: rw.cores, bps: rw.bps.map((b) => b.model),
     });
     const clear = run.result === 'clear';
     const msg = `🕳️ 「${d.name}」${clear ? '通關！' : `失敗（停在第 ${run.endFloor} 層）`}${rw.bps.length ? '✨ 拿到副本圖紙！' : ''}`;

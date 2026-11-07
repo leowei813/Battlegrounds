@@ -5077,6 +5077,15 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const day0 = DungeonSystem.dayStart(Date.UTC(2026, 10, 12, 4));
   const T = DungeonSystem.times(day0);
   // 時程：台灣時間
+  {
+    const NPCC = await import('../src/systems/NpcSystem.js');
+    const gq = Game.newGame({ playerName: 'NQ', classId: 'warrior', lat: 25.034, lon: 121.567 });
+    gq.state.map.pois = fillPois([], 25.034, 121.567);
+    gq.shelter.establish(gq.state.map.pois.find((p) => gq.shelter.canEstablish(p).ok));
+    const t0 = Date.now(); gq.npcs.update(t0); gq.npcs.update(t0 + 61000);
+    const near = gq.npcs.list.filter((n) => Object.values(DGC.DUNGEONS).some((d) => haversine(n.lat, n.lon, d.lat, d.lon) < DGC.DG_CLEAR_M - 1));
+    assert(gq.npcs.list.length > 0 && !near.length && NPCC, `NPC 據點不會出現在副本入口 ${DGC.DG_CLEAR_M} 公尺內`);
+  }
   assert(DungeonSystem.dayKey(day0) === '20261112' && new Date(T.start).getUTCHours() === 10 && T.end - T.start === 3 * 3600 * 1000, '副本時程：台灣時間 18:00 開打、20 層共 3 小時');
   assert(DungeonSystem.phase(T.open - 1) === 'before' && DungeonSystem.phase(T.open) === 'signup' && DungeonSystem.phase(T.close) === 'closed' && DungeonSystem.phase(T.lock) === 'locked' && DungeonSystem.phase(T.depart) === 'gather' && DungeonSystem.phase(T.start) === 'run' && DungeonSystem.phase(T.end) === 'after', '副本各階段：07:00 報名、17:40 截止、17:50 鎖定、17:55 集結、18:00 開打');
   // 分團：依報名先後平均分配，每團 3～8 人
@@ -5148,8 +5157,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const coins1 = ps.map((p) => p.g.state.player.coins);
   for (const p of ps) p.g.dungeon.update(T.end + 5000);
   assert(ps.every((p, i) => p.g.state.player.coins === coins1[i]), '不會重複結算');
-  const ri = run.stat.findIndex((s) => s.downs > 1);
-  if (ri >= 0) assert(ps[ri].g.state.reports[0].lost > 0, '重傷多次只扣一次重傷經驗');
+  const ri = run.stat.findIndex((s) => s.downs > 0);
+  if (ri >= 0) assert(!ps[ri].g.state.reports[0].lost && ps[ri].sv.xp >= 0, '副本中重傷不扣經驗');
+  {
+    // 重傷不扣經驗：直接驗證結算前後經驗只增不減
+    const t = ps.find((p, i) => run.stat[i].downs > 0) || ps[0];
+    assert(!t.g.state.log.some((l) => /重傷.*經驗 -/.test(l.msg) && /副本/.test(l.msg)), '副本結算沒有重傷扣經驗的紀錄');
+  }
   // 離線：報名後一直沒上線，隔天才開遊戲 → 依序鎖定、出發、結算
   {
     const s3 = new MemoryObjects();

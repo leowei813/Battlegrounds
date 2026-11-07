@@ -12,6 +12,8 @@ import { SUPPLIES } from '../config/supplies.js';
 const DAY = 24 * 3600 * 1000;
 const fmt = (n) => Math.round(n || 0).toLocaleString();
 const clsIcon = (c) => CLASSES[c]?.icon || '❔';
+/** 行內的副本圖示（與地圖上的入口圖示相同） */
+export const dgIcon = () => `<span class="dg-ic-inline">${DG_PIN_SVG}</span>`;
 
 /** 地圖圖示：地裂獸口（地面裂開的紅色裂口，裡面一對發光的眼睛） */
 export const DG_PIN_SVG = `<svg viewBox="0 0 56 46" width="100%" height="100%" aria-hidden="true"><defs><radialGradient id="dgh" cx="50%" cy="55%" r="60%"><stop offset="0" stop-color="#ff1744"/><stop offset=".35" stop-color="#4a0010"/><stop offset="1" stop-color="#000"/></radialGradient></defs><path d="M4 26 L14 14 L20 19 L28 8 L35 17 L42 12 L52 26 L44 38 L33 33 L26 41 L17 34 L8 38 Z" fill="url(#dgh)" stroke="#ff5252" stroke-width="1.6"/><circle cx="22" cy="25" r="2.6" fill="#ffeb3b"/><circle cx="33" cy="25" r="2.6" fill="#ffeb3b"/><path d="M20 31 q8 4 16 0" stroke="#ff8a80" stroke-width="1.4" fill="none"/></svg>`;
@@ -150,7 +152,7 @@ export function classTab() {
   return `${rows}<p class="muted small">五職業齊全：全隊攻擊／防禦 +${DG_RULES.all5 * 100}%、獎勵 +${DG_RULES.all5 * 100}%。
     副本規則：吸血效果只剩 ${DG_RULES.lifeStealMul * 100}%；首領戰最長 ${DG_RULES.bossMaxSec / 60} 分鐘；感染每 10 點全隊攻擊／防禦 −${DG_RULES.infStatPer10 * 100}%，滿 100 全隊撤退。
     每 ${DG_RULES.restEvery} 層一個休息站；第 5、10、15 層有精英首領，第 20 層是最終首領。
-    戰鬥中重傷的人會跟著隊伍前進（重傷期間不計經驗與獎勵），首領戰只要有參與就有首領獎勵；一趟副本不管重傷幾次只扣一次重傷經驗。</p>`;
+    戰鬥中重傷的人會跟著隊伍前進（重傷期間不計經驗與獎勵），首領戰只要有參與就有首領獎勵；副本中重傷不會扣經驗。</p>`;
 }
 
 /** 獎勵頁 */
@@ -190,11 +192,11 @@ export function openDungeon(ui, dg, tab0 = 'sign') {
     const tabs = [['sign', '報名'], ['cls', '職業說明'], ['reward', '獎勵'], ['today', '今日紀錄']]
       .map(([k, l]) => `<button class="chip ${tab === k ? 'active' : ''}" data-action="dgTab" data-t="${k}">${l}</button>`).join('');
     const content = tab === 'cls' ? classTab() : tab === 'reward' ? rewardTab(g, dg) : tab === 'today' ? todayTab(g, dg, now) : signupTab(g, dg, now);
-    return `<p class="muted">產出 ${CLASSES[d.cls].icon} ${CLASSES[d.cls].name}副本裝備・${DG_FLOORS} 層・每天 18:00 開打</p><div class="chips">${tabs}</div>${content}`;
+    return `<div class="dg-head">${dgIcon()}<b>地下感染區</b></div><p class="muted">產出 ${CLASSES[d.cls].icon} ${CLASSES[d.cls].name}副本裝備・${DG_FLOORS} 層・每天 18:00 開打</p><div class="chips">${tabs}</div>${content}`;
   };
   g.shared.list('dg', 5).then(() => ui.refresh(true)).catch(() => {});
   ui.modal.open({
-    title: `🕳️ ${DUNGEONS[dg].name}`,
+    title: DUNGEONS[dg].name,
     wide: true,
     body: body(),
     live: body,
@@ -268,7 +270,7 @@ export function openStatus(ui, dg0) {
     dg = rec.dg;
     const s = statusOf(g, rec, now);
     const tabs = recs.length > 1 ? `<div class="chips">${recs.map((r) => `<button class="chip ${r.dg === dg ? 'active' : ''}" data-action="dgPick" data-dg="${r.dg}">${clsIcon(g.survivors.get(r.svId)?.classId)} ${DUNGEONS[r.dg].short}</button>`).join('')}</div>` : '';
-    const head = `<h4>🕳️ ${escapeHtml(DUNGEONS[dg].name)}${s.run ? `・第 ${s.run.group + 1} 團` : ''} <span class="tag ${s.cls}">${s.tag}</span></h4>`;
+    const head = `<h4>${dgIcon()}${escapeHtml(DUNGEONS[dg].name)}${s.run ? `・第 ${s.run.group + 1} 團` : ''} <span class="tag ${s.cls}">${s.tag}</span></h4>`;
     if (!s.run) return `${tabs}${head}<p>${s.sub}</p>${timeline(now)}${btn('打開副本畫面', 'dgOpen', { dg }, { cls: 'btn-sm' })}`;
     const run = s.run;
     const upto = DungeonSystem.revealed(run, now);
@@ -285,7 +287,7 @@ export function openStatus(ui, dg0) {
     return `${tabs}${head}${kv}${teamTable(g, run, upto, s.i)}${notes}<h4>逐層紀錄</h4>${floorsHtml(g, dg, run, upto, s.i)}`;
   };
   ui.modal.open({
-    title: '🕳️ 副本資訊',
+    title: '地下感染區・副本資訊',
     wide: true,
     body: body(),
     live: body,
@@ -304,7 +306,7 @@ export function dungeonReportHtml(g, r, open, fresh, NEW, hhmm) {
   const icon = r.status === 'clear' ? '🏆' : r.status === 'fail' ? '💀' : '⚪';
   const badge = r.status === 'clear' ? `<span class="tag t-win">通關 ${DG_FLOORS}/${DG_FLOORS}</span>` : r.status === 'fail' ? '<span class="tag t-fail">失敗</span>' : `<span class="tag t-cancel">${r.status === 'cancel' ? '今日取消' : '未出擊'}</span>`;
   if (r.status === 'cancel' || r.status === 'out') {
-    return `<div class="card report dg-rep ${fresh ? 'unread' : ''}"><div class="row-between"><b>${fresh ? NEW : ''}${icon} 🕳️ ${escapeHtml(d.name)}</b><small class="muted">${hhmm(r.at)}</small></div>
+    return `<div class="card report dg-rep ${fresh ? 'unread' : ''}"><div class="row-between"><b>${fresh ? NEW : ''}${icon} ${dgIcon()}${escapeHtml(d.name)}</b><small class="muted">${hhmm(r.at)}</small></div>
       <div class="gains">${badge}</div><small class="muted">${escapeHtml(r.why || '')}。倖存者已回到避難所，沒有扣除任何東西；明天 07:00 可以重新報名。</small></div>`;
   }
   const run = open ? g.dungeon.reportRun(r) : null;
@@ -313,7 +315,7 @@ export function dungeonReportHtml(g, r, open, fresh, NEW, hhmm) {
   const mats = Object.entries(r.mats || {}).sort((a, b) => (SUPPLIES[b[0]]?.tier || 0) - (SUPPLIES[a[0]]?.tier || 0)).slice(0, open ? 99 : 6)
     .map(([k, n]) => `<span class="c">${metaOf(k).icon} ${metaOf(k).name} +${n}</span>`).join('');
   const more = !open && Object.keys(r.mats || {}).length > 6 ? `<span class="c muted">…共 ${Object.keys(r.mats).length} 種</span>` : '';
-  const chips = `${bps}${core}<span class="xp-chip">⭐ 經驗 +${fmt(r.xpGot)}</span><span class="c">💰 +${fmt(r.coins)}</span>${mats}${more}${r.lost ? `<span class="c neg">🩸 重傷經驗 −${fmt(r.lost)}（全程只扣一次）</span>` : ''}`;
+  const chips = `${bps}${core}<span class="xp-chip">⭐ 經驗 +${fmt(r.xpGot)}</span><span class="c">💰 +${fmt(r.coins)}</span>${mats}${more}`;
   let detail = '';
   if (open && run) {
     const name = (id) => {
@@ -330,10 +332,10 @@ export function dungeonReportHtml(g, r, open, fresh, NEW, hhmm) {
     const tbl = `<table class="dg-tbl"><tr><th>玩家・倖存者</th><th>輸出</th><th>承傷</th><th>治療</th><th>障礙</th><th class="hide-m">重傷</th><th>經驗</th><th class="hide-m">掉落</th></tr>${rows}</table>`;
     const fin = run.final[r.me];
     detail = `${mvp}${tbl}<h4>逐層紀錄</h4>${floorsHtml(g, r.dg, run, run.endFloor, r.me)}
-      <small class="muted block">🏁 最終結算：${r.lost ? '本趟有重傷 → 只扣一次重傷經驗；' : ''}${fin?.sev ? '結束時仍是重傷，回家後依一般重傷規則休養。' : '倖存者已回到避難所。'}${r.status === 'fail' ? `第 ${run.endFloor} 層${run.reason === 'infection' ? '感染值滿 100 全隊撤退' : run.reason === 'timeout' ? '時間內沒能擊敗敵人' : '全隊倒下'}；已通過層數的獎勵全部保留。` : ''}</small>`;
+      <small class="muted block">🏁 最終結算：副本中重傷不扣經驗；${fin?.sev ? '結束時仍是重傷，回家後依一般重傷規則休養。' : '倖存者已回到避難所。'}${r.status === 'fail' ? `第 ${run.endFloor} 層${run.reason === 'infection' ? '感染值滿 100 全隊撤退' : run.reason === 'timeout' ? '時間內沒能擊敗敵人' : '全隊倒下'}；已通過層數的獎勵全部保留。` : ''}</small>`;
   } else if (open) detail = '<p class="muted">副本資料已清除，無法顯示逐層紀錄。</p>';
   return `<div class="card report dg-rep ${glow} ${r.status === 'fail' ? 'fail' : ''} ${fresh ? 'unread' : ''}">
-    <div class="row-between" data-action="toggleReport" data-id="${r.id}"><b>${fresh ? NEW : ''}${icon} 🕳️ ${escapeHtml(d.name)}${r.group != null ? `・第 ${r.group + 1} 團` : ''} ${badge}${(r.bps || []).length ? '<span class="dg-tag">✨ 副本圖紙</span>' : ''}</b><small class="muted">${hhmm(r.at)} ${open ? '▲' : '▼'}</small></div>
+    <div class="row-between" data-action="toggleReport" data-id="${r.id}"><b>${fresh ? NEW : ''}${icon} ${dgIcon()}${escapeHtml(d.name)}${r.group != null ? `・第 ${r.group + 1} 團` : ''} ${badge}${(r.bps || []).length ? '<span class="dg-tag">✨ 副本圖紙</span>' : ''}</b><small class="muted">${hhmm(r.at)} ${open ? '▲' : '▼'}</small></div>
     <div class="gains dg-chips">${chips}</div>${detail}</div>`;
 }
 
