@@ -123,8 +123,8 @@ export const AMMO_RECIPES = {
   casing: { bench: 3, batch: 10, cost: { scrap: 2 }, gun: 1 },
   ammo9: { bench: 3, batch: 30, cost: { casing: 15, scrap: 1, fuel: 2 }, gun: 1 },
   shell12: { bench: 3, batch: 15, cost: { casing: 8, plastic: 1, fuel: 3 }, gun: 1 },
-  ammo556: { bench: 3, batch: 30, cost: { casing: 15, scrap: 2, spring: 1, fuel: 4 }, gun: 1 },
-  ammo762: { bench: 3, batch: 30, cost: { casing: 15, scrap: 2, spring: 1, fuel: 5 }, gun: 1 },
+  ammo556: { bench: 3, batch: 30, cost: { casing: 15, scrap: 2, screw: 2, fuel: 4 }, gun: 1 },
+  ammo762: { bench: 3, batch: 30, cost: { casing: 15, scrap: 2, screw: 2, fuel: 5 }, gun: 1 },
   ammo308: { bench: 3, batch: 10, cost: { casing: 5, steelPipe: 1, firingPin: 1, fuel: 5 }, gun: 1 },
 };
 
