@@ -263,12 +263,41 @@ export class AssistSystem {
     return out;
   }
 
+  /** 被協防方：好友協防隊抵達、離開時各記一筆事件（離開時附上這次的戰果） */
+  trackArrivals(now = Date.now()) {
+    const g = this.game;
+    const here = Object.fromEntries(this.incoming(now).filter((h) => h.kind === 'team').map((h) => [h.id, h]));
+    const seen = g.state.assistHere || (g.state.assistHere = {});
+    Object.values(here).forEach((h) => {
+      if (seen[h.id]) return;
+      seen[h.id] = { name: h.name, at: now };
+      // 屍潮期間另有「派了 N 人前來協防」的紀錄，不重複
+      if (g.siege.of()?.active?.()) return;
+      g.log(`🛡️ 好友「${h.name}」前來協防（${h.count || (h.units || []).length || 1} 人）`, 'success');
+    });
+    Object.entries(seen).forEach(([id, x]) => {
+      if (here[id]) return;
+      delete seen[id];
+      const rec = g.shelter.primary()?.assistLog?.list?.[id];
+      const stat = rec && (rec.dmg || rec.kills) ? `（傷害 ${Math.round(rec.dmg).toLocaleString()}、擊殺 ${rec.kills}）` : '';
+      g.log(`🛡️ 好友「${x.name}」的協防隊離開${stat}`, 'info');
+    });
+  }
+
+  /** 取走剛記錄的協防清單（寫進防守紀錄用） */
+  takePending() {
+    const list = this.pendingAssists || [];
+    this.pendingAssists = null;
+    return list;
+  }
+
   /** 被攻打方：記錄這場防守戰的協防結果（公開給協防的人，對方據此套用傷勢與收到戰報） */
   recordRaid(base, attacker, success, helpers) {
     if (!base || !helpers || !Object.keys(helpers).length) return '';
     base.raidAssist = { id: uid('ra'), at: Date.now(), attacker: String(attacker).slice(0, 40), result: success ? 'ok' : 'breached', list: helpers };
-    const names = Object.values(helpers).map((x) => `「${x.name}」的協防隊（擊倒 ${x.kills}${x.units.some((u) => u.down) ? `，${x.units.filter((u) => u.down).length} 人重傷` : ''}）`);
-    return `🛡️ 友好協防：${names.join('、')}`;
+    // 據點紀錄用標籤顯示（緊接著寫入的防守紀錄會取走這份清單）
+    this.pendingAssists = Object.values(helpers).map((x) => ({ name: x.name, kills: x.kills || 0, down: (x.units || []).filter((u) => u.down).length }));
+    return '';
   }
 
   /** 協防的一方：讀取對方公開的防守戰結果，套用自己隊員的傷勢並收到戰報 */
@@ -384,6 +413,7 @@ export class AssistSystem {
       g.log(`⚔️ ${raid.by}正前往攻打友好玩家「${player.name}」的「${base.name}」（約 ${min} 分鐘後抵達）`, 'danger');
     });
     this.checkRaidResults();
+    this.trackArrivals(now);
     // 協防戰報：對方的屍潮結束（守住或被突破）時通知一次
     (g.world?.others || []).forEach((p) => {
       if (g.territory.relation(p.id) !== 'friend') return;

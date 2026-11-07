@@ -375,6 +375,8 @@ export class ShelterSystem {
       waves: e.waves || 0,
       wallLost: Math.round(e.wallLost || 0),
       note: e.note || '',
+      // 友好協防（標籤顯示）：屍潮由呼叫端傳入；NPC／玩家攻打由協防系統暫存
+      ...((() => { const list = e.assists || this.game.assist?.takePending?.() || []; return list.length ? { assists: list } : {}; })()),
       ...(e.siege ? { siege: e.siege } : {}),
       ...(e.battleIds?.length ? { battleIds: [...e.battleIds] } : {}),
       ...(e.reward ? { reward: e.reward } : {}),

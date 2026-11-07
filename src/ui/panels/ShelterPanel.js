@@ -265,6 +265,7 @@ export class ShelterPanel {
         ${lost.length ? `<div class="neg">損失資源：${lost.join('、')}</div>` : (e.success ? '<div class="pos">沒有損失資源</div>' : '')}
         ${e.damaged?.length ? `<div class="neg">毀損建築：${e.damaged.map(escapeHtml).join('、')}</div>` : ''}
         ${e.injured?.length ? `<div class="neg">🩸 重傷：${e.injured.map(escapeHtml).join('、')}</div>` : ''}`}
+        ${e.assists?.length ? `<div class="chips">${e.assists.map((x) => `<span class="ally-chip">🛡️ 協防：${escapeHtml(x.name)}${x.cover ? ' 防禦設施' : ''}${x.dmg ? ` ${x.dmg.toLocaleString()} 傷害` : ''}${x.kills ? `・擊殺 ${x.kills}` : ''}${x.down ? `・${x.down} 人重傷` : ''}</span>`).join('')}</div>` : ''}
         ${e.note ? `<small class="muted block">${escapeHtml(e.note)}</small>` : ''}
         ${battlesSectionHtml(this.game, e.battleIds, openBattle)}
       </div>`;

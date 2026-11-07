@@ -578,12 +578,12 @@ export class DungeonSystem {
       }
       const t = DungeonSystem.times(rec.day0);
       const sv = g.survivors.get(rec.svId);
-      // 報名期間：倖存者的能力有變動就更新快照（每 2 分鐘最多一次）
-      if (now < t.lock && sv && now - (rec.pushedAt || 0) > 120000) {
+      // 報名期間：倖存者的能力或戰力有變動（換裝備、升級…）就更新快照（最多每 15 秒寫入一次）
+      if (now < t.lock && sv && now - (rec.checkedAt || 0) >= 1000) {
+        rec.checkedAt = now;
         const sn = this.snapshot(sv);
         const snap = JSON.stringify([sn.u, sn.pw]);
-        if (snap !== rec.snap) this.pushEntry(rec, {}, now);
-        else rec.pushedAt = now;
+        if (snap !== rec.snap && now - (rec.pushedAt || 0) >= 15000) this.pushEntry(rec, {}, now);
       }
       if (now >= t.lock && !rec.locked) this.lock(rec, Math.min(now, t.lock));
       if (now >= t.depart && !rec.departed && rec.locked && !rec.excluded) this.depart(rec);
