@@ -319,10 +319,14 @@ export class NpcSystem {
         want.push(s);
       }
     });
+    NpcSystem.uniqueNames(want);
     const keep = new Set(want.map((s) => s.ident));
     const before = this.list.length;
     // 不再存在的共用 NPC 移除（正在掠奪途中的隊伍保留到結束）
     this.state.list = this.list.filter((n) => !n.sid || keep.has(n.ident) || (n.trip && n.trip.endAt > now && !n.gone));
+    // 已經在地圖上的 NPC 也套用不重複的名字（v12 改名後舊存檔的 NPC 一起更新）
+    const nameOf = new Map(want.map((s) => [s.ident, s.name]));
+    this.list.forEach((n) => { if (n.sid && nameOf.has(n.ident)) n.name = nameOf.get(n.ident); });
     const have = new Set(this.list.map((n) => n.ident).filter(Boolean));
     let added = 0;
     want.forEach((s) => {
@@ -334,6 +338,25 @@ export class NpcSystem {
     });
     if (added || this.list.length !== before) this.game.bus.emit('npcs:changed');
     return added;
+  }
+
+  /**
+   * 同一張地圖上的 NPC 名稱不重複：依編號排序，撞名時依編號決定的固定間隔往後找沒用過的名字
+   * （同一批 NPC 每位玩家算出來的結果相同）。
+   */
+  static uniqueNames(list) {
+    const used = new Set();
+    [...list].sort((a, b) => String(a.sid).localeCompare(String(b.sid))).forEach((s) => {
+      let idx = Math.max(0, NPC_NAMES.indexOf(s.name));
+      let h = 0;
+      for (const ch of String(s.sid)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      const step = 1 + (h % 97);
+      for (let k = 0; k < NPC_NAMES.length && used.has(NPC_NAMES[idx]); k += 1) idx = (idx + step) % NPC_NAMES.length;
+      if (used.has(NPC_NAMES[idx])) idx = Math.max(0, NPC_NAMES.findIndex((x) => !used.has(x)));
+      s.name = NPC_NAMES[idx];
+      used.add(s.name);
+    });
+    return list;
   }
 
   /** 由共用格子資料建立 NPC（本機另外記錄自己的行動時間） */

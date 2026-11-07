@@ -5613,6 +5613,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gn.state.survivors.filter((x) => x.name === names[1]).length === 1, '加入同名倖存者時自動改名');
 }
 
+// ---- 145. v12 NPC 名稱：中二風格、同一張地圖上不重複 ----
+{
+  const { NPC_NAMES: NN } = await import('../src/config/npcs.js');
+  const { NpcSystem: NS } = await import('../src/systems/NpcSystem.js');
+  assert(NN.length >= 300 && new Set(NN).size === NN.length, `NPC 名稱 ${NN.length} 種、不重複`);
+  const mk = () => Array.from({ length: 60 }, (_, i) => ({ sid: `c${i}:0`, name: NN[0] }));
+  const a = NS.uniqueNames(mk());
+  const b = NS.uniqueNames(mk().reverse());
+  const byA = Object.fromEntries(a.map((x) => [x.sid, x.name]));
+  assert(new Set(a.map((x) => x.name)).size === 60 && b.every((x) => byA[x.sid] === x.name), '撞名時自動換成不重複的名字，且順序不同結果也相同（每位玩家看到的一樣）');
+  const g145 = Game.newGame({ playerName: 'N145', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  g145.state.map.pois = fillPois([], 25.0339, 121.5645);
+  g145.shelter.establish(g145.state.map.pois.find((p) => g145.shelter.canEstablish(p).ok));
+  g145.npcs.fillCells(Date.now(), { silent: true });
+  const names = g145.npcs.list.map((n) => n.name);
+  assert(names.length > 0 && new Set(names).size === names.length && names.every((n) => NN.includes(n)), `地圖上的 NPC 名稱不重複（${names.length} 個：${names.slice(0, 4).join('、')}…）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
