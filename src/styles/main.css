@@ -1484,3 +1484,5 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .dg-hud .t { white-space: nowrap; min-width: 0; }
 .dg-hud .t .fl { white-space: nowrap; }
 .dg-hud .t > :not(.dg-ic):not(.fl):not(.dg-fold) { overflow: hidden; text-overflow: ellipsis; }
+.dg-cnt.low { color: #ff8a65; font-weight: 700; }
+.dg-cnt.ok { color: #a5d6a7; font-weight: 700; }
