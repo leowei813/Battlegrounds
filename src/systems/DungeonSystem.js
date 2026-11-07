@@ -409,9 +409,11 @@ export class DungeonSystem {
           u.atkSpeed = +(u.base.atkSpeed * spdMul).toFixed(2);
         });
         const level = D.baseLevel + f;
-        const MA = D.atk0 * D.atkGrow ** (f - 1) * (N / 5) ** D.sizePow * mods.atk;
-        const MH = D.hp0 * D.hpGrow ** (f - 1) * mods.hp;
-        const MD = D.defGrow ** (f - 1);
+        // 難度成長的層數：curve＝1 時就是 f−1；第 20 層一律是 19（最後一層難度不變）
+        const step = (DG_FLOORS - 1) * ((f - 1) / (DG_FLOORS - 1)) ** (D.curve || 1);
+        const MA = D.atk0 * D.atkGrow ** step * (N / 5) ** D.sizePow * mods.atk;
+        const MH = D.hp0 * D.hpGrow ** step * mods.hp;
+        const MD = D.defGrow ** step;
         const roster = DG_ROSTER(f);
         const guard = isBoss ? 1 - R.engineerGuard * count('engineer') : 1;
         const enemies = [];
