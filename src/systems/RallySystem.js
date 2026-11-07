@@ -222,6 +222,29 @@ export class RallySystem {
     return { ok: true, msg: `已加入「${d0.ownerName}」的集結` };
   }
 
+  /**
+   * 發起人提前出發（v12.2）：倒數立刻結束、不能再參加；部隊等最後一位參加的玩家抵達集結點後出發。
+   */
+  async departNow(rallyId) {
+    const g = this.game;
+    const me = this.myId();
+    const now = Date.now();
+    const r = await g.shared.update('rally', rallyId, (d) => {
+      if (!d) return { fail: '找不到集結' };
+      if (d.owner !== me) return { fail: '只有發起人可以提前出發' };
+      if (d.status !== 'gathering') return { fail: '已經出發了' };
+      if (!d.home) return { fail: '這個集結不能提前出發' };
+      d.departAt = Math.min(d.departAt, now);
+      d.early = true;
+      return { data: d };
+    });
+    if (!r.ok) return r;
+    const sc = RallySystem.schedule(r.data);
+    g.log(`🚩 集結「${r.data.target?.name}」提前出發${sc.go > now ? `，等所有隊伍抵達集結點（約 ${formatDuration(sc.go - now)}）` : ''}`, 'info');
+    this.lastAt = 0;
+    return { ok: true, msg: sc.go > now ? `已提前出發，等「${sc.waitFor?.name || '其他隊伍'}」抵達集結點` : '已提前出發，部隊出發' };
+  }
+
   /** 取消（發起人）或退出（參加者）：只能在出發前 */
   async leave(rallyId) {
     const g = this.game;
@@ -229,6 +252,7 @@ export class RallySystem {
     const r = await g.shared.update('rally', rallyId, (d) => {
       if (!d) return { fail: '找不到集結' };
       if (d.status !== 'gathering') return { fail: '已經出發了，不能取消' };
+      if (d.early) return { fail: d.owner === me ? '已經提前出發，不能取消' : '部隊已經準備出發，不能退出' };
       if (d.owner === me) d.status = 'cancelled';
       else d.teams = (d.teams || []).filter((x) => x.player !== me);
       return { data: d };
@@ -248,6 +272,8 @@ export class RallySystem {
     const d = this.get(exp.rallyId);
     if (!d || exp.recalled || exp.rallyResult) return false;
     const me = this.myId();
+    // 提前出發後視同已出發：不能單獨脫隊
+    if (d.status === 'gathering' && d.early) return false;
     if (d.status === 'gathering') {
       this.leave(exp.rallyId).catch(() => {});
       if (g.state.expeditions.includes(exp) && !exp.recalled) this.walkHome(exp, at, `${AUTO_HOME_LABEL} 自動回家：退出集結`);
@@ -607,7 +633,7 @@ export class RallySystem {
     return this.trips().map((e) => ({ exp: e, d: this.get(e.rallyId) })).filter((x) => x.d).map(({ exp, d }) => ({
       id: d.id, exp, target: d.target, mine: d.owner === this.myId(), status: d.status, teams: (d.teams || []).length, maxTeams: d.maxTeams,
       left: d.status === 'gathering' ? Math.max(0, (d.home ? RallySystem.schedule(d).go : d.departAt) - now) : d.status === 'departed' ? Math.max(0, (d.fightAt || now) - now) : 0,
-      ownerName: d.ownerName,
+      ownerName: d.ownerName, early: !!d.early,
     }));
   }
 

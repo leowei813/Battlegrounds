@@ -153,7 +153,8 @@ export class MapPanel {
     const joined = (d.teams || []).some((t) => t.player === me);
     const sc = d.home ? RallySystem.schedule(d) : null;
     const status = {
-      gathering: sc && now >= sc.trigger && sc.waitFor ? `⏳ 倒數結束・等「${escapeHtml(sc.waitFor.name)}」抵達集結點・約 ${formatDuration(Math.max(0, sc.go - now))}`
+      gathering: sc && now >= sc.trigger && sc.waitFor ? `⏳ ${d.early ? '已提前出發' : '倒數結束'}・等「${escapeHtml(sc.waitFor.name)}」抵達集結點・約 ${formatDuration(Math.max(0, sc.go - now))}`
+        : sc && d.early ? '⏳ 已提前出發・部隊準備出發'
         : `⏳ 集結中・${formatDuration(Math.max(0, (sc ? sc.trigger : d.departAt) - now))}後出發`,
       departed: `🚶 行軍中・約 ${formatDuration(Math.max(0, (d.fightAt || now) - now))}後抵達`,
       resolving: '⚔️ 交戰中',
@@ -167,7 +168,16 @@ export class MapPanel {
     return `<p>${rallyFlag(16)} 「${escapeHtml(d.ownerName)}」發起的集結・目標 <b>${escapeHtml(d.target.name)}</b>（${d.target.kind === 'inf' ? '☣️ 重度感染據點' : '🏴‍☠️ NPC 據點'}）</p>
       <p><b>${status}</b></p>${gatherHint}
       <div class="label">隊伍 ${(d.teams || []).length}/${d.maxTeams}</div><ul class="event-list">${teams}</ul>
-      <div class="btn-row">${canJoin ? btn('🛡️ 派隊參加', 'join', {}, { cls: 'btn-primary' }) : ''}${d.status === 'gathering' && joined ? btn(d.owner === me ? '取消集結' : '退出集結', 'leave', {}, { cls: 'btn-ghost' }) : ''}${btn('📍 查看目標', 'fly', {}, { cls: 'btn-ghost' })}</div>`;
+      ${this.rallyAsk === id && d.owner === me && d.status === 'gathering' && !d.early ? this.departAskHtml(d, now) : `<div class="btn-row">${canJoin ? btn('🛡️ 派隊參加', 'join', {}, { cls: 'btn-primary' }) : ''}${d.status === 'gathering' && d.home && d.owner === me && !d.early ? btn(`${rallyFlag(16)} 立即出發`, 'departAsk', {}, { cls: 'btn-rally' }) : ''}${d.status === 'gathering' && joined && !d.early ? btn(d.owner === me ? '取消集結' : '退出集結', 'leave', {}, { cls: 'btn-ghost' }) : ''}${btn('📍 查看目標', 'fly', {}, { cls: 'btn-ghost' })}</div>`}`;
+  }
+
+  /** 提前出發的確認提示（列出還在前往集結點的隊伍） */
+  departAskHtml(d, now) {
+    const late = (d.teams || []).filter((t) => (t.arriveAt || 0) > now).sort((a, b) => b.arriveAt - a.arriveAt);
+    return `<div class="rally-ask"><b>${rallyFlag(18)} 提前出發？</b>
+      <p>按下後倒數立刻結束，其他玩家不能再參加。<br>部隊會等最後一位參加的玩家抵達集結點（你的避難所）後再出發。</p>
+      ${late.length ? `<p class="pos">目前還在路上：${late.map((t) => `${escapeHtml(t.name)}・約 ${formatDuration(t.arriveAt - now)}後抵達`).join('、')}</p>` : '<p class="pos">所有隊伍都已經到齊，確定後馬上出發。</p>'}
+      <div class="btn-row">${btn('先不要', 'departNo', {}, { cls: 'btn-ghost' })}${btn('確定出發', 'departNow', {}, { cls: 'btn-rally' })}</div></div>`;
   }
 
   openRally(id) {
@@ -183,6 +193,12 @@ export class MapPanel {
         if (action === 'fly') {
           m.close();
           this.service.focus(d.target.lat, d.target.lon, 17);
+        }
+        if (action === 'departAsk') { this.rallyAsk = id; m.update(this.rallyBody(id)); }
+        if (action === 'departNo') { this.rallyAsk = null; m.update(this.rallyBody(id)); }
+        if (action === 'departNow') {
+          this.rallyAsk = null;
+          g.rally.departNow(id).then((r) => { this.ui.result(r); m.update(this.rallyBody(id)); });
         }
         if (action === 'leave' && confirm(d.owner === g.rally.myId() ? '取消這次集結？' : '退出這次集結？')) {
           g.rally.leave(id).then((r) => { this.ui.result(r); m.update(this.rallyBody(id)); });
@@ -571,7 +587,7 @@ export class MapPanel {
     // 集結：發起中／參加中（倒數），以及好友發起的集結（點擊參加）
     const rallyText = { gathering: '集結中・出發倒數', departed: '行軍中・約', resolving: '交戰中', done: '已結束' };
     g.rally.feed(now).forEach((r) => {
-      rows.push(`<button class="feed-chip rally" data-action="feedRally" data-id="${r.id}">${rallyFlag(16)} ${r.mine ? '發起' : '參加'}集結「${escapeHtml(r.target.name)}」・${r.teams}/${r.maxTeams} 隊・${rallyText[r.status] || ''}${r.left ? ` ${formatDuration(r.left)}` : ''}</button>`);
+      rows.push(`<button class="feed-chip rally" data-action="feedRally" data-id="${r.id}">${rallyFlag(16)} ${r.mine ? '發起' : '參加'}集結「${escapeHtml(r.target.name)}」・${r.teams}/${r.maxTeams} 隊・${r.status === 'gathering' && r.early ? '提前出發・等隊伍到齊・約' : rallyText[r.status] || ''}${r.left ? ` ${formatDuration(r.left)}` : ''}</button>`);
     });
     g.rally.invites(now).forEach((d) => {
       rows.push(`<button class="feed-chip friend" data-action="feedRally" data-id="${d.id}">${rallyFlag(16)} 好友「${escapeHtml(d.ownerName)}」集結「${escapeHtml(d.target.name)}」・${(d.teams || []).length}/${d.maxTeams} 隊・${formatDuration(d.departAt - now)}後出發・點擊參加</button>`);

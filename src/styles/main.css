@@ -1534,3 +1534,6 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .nav-btn .badge.rally-b.on { display: inline-flex; }
 .nav-btn .badge.map-rally { right: auto; left: calc(50% - 34px); }
 .gear-cell small b.gear-lv { color: #ffe082; white-space: normal; font-size: inherit; }
+.btn.btn-rally { background: #4527a0; border-color: #ffd54f; color: #ffe082; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
+.rally-ask { margin-top: 10px; padding: 10px 12px; border: 1px solid #ffd54f; border-radius: 10px; background: #24124a66; }
+.rally-ask p { margin: 6px 0; font-size: 13px; }

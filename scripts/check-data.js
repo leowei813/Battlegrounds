@@ -1904,6 +1904,38 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     B.exploration.update(eb2.endAt + 1, { silent: true });
     assert(!B.rally.trips().length && B.survivors.leader().status === 'idle', '參加者走回避難所後隊員回到家');
   }
+  // v12.2：發起人提前出發，等最後一位抵達集結點才出發；之後不能再參加、不能取消或退出
+  {
+    A.survivors.setHp(lead, 99999);
+    B.survivors.leader().severe = false;
+    const s4 = await A.rally.start(t2, 20, [lead.id]);
+    await B.shared.poll();
+    const j4 = await B.rally.join(s4.id, [B.survivors.leader().id]);
+    await A.shared.poll();
+    assert(!(await B.rally.departNow(s4.id)).ok, '只有發起人可以提前出發');
+    const e4 = await A.rally.departNow(s4.id);
+    await A.shared.poll();
+    const d4 = A.rally.get(s4.id);
+    const tb4 = d4.teams.find((t) => t.player !== d4.owner);
+    const sc4 = RallySys.schedule(d4);
+    assert(j4.ok && e4.ok && d4.early && d4.departAt <= Date.now() && sc4.go === tb4.arriveAt && sc4.waitFor?.player === tb4.player, `提前出發：倒數結束，等參加者抵達集結點（${e4.msg}）`);
+    assert(!(await A.rally.leave(s4.id)).ok && !(await B.rally.leave(s4.id)).ok, '提前出發後不能取消或退出');
+    const C4 = mk('C4');
+    C4.state.relations.players.A = { status: 'friend', name: 'A' };
+    A.state.relations.players.C4 = { status: 'friend', name: 'C4' };
+    await C4.shared.poll();
+    assert(!(await C4.rally.join(s4.id, [C4.survivors.leader().id])).ok, '提前出發後不能再參加');
+    await A.rally.step(A.rally.trips()[0], tb4.arriveAt - 1000);
+    await A.shared.poll();
+    assert(A.rally.get(s4.id).status === 'gathering', '最後一位還沒抵達前不出發');
+    await A.rally.step(A.rally.trips()[0], tb4.arriveAt + 1);
+    await A.shared.poll();
+    assert(A.rally.get(s4.id).status === 'departed' && A.rally.get(s4.id).departedAt === tb4.arriveAt, '最後一位抵達後部隊出發');
+    A.state.expeditions = A.state.expeditions.filter((e) => e.rallyId !== s4.id);
+    B.state.expeditions = B.state.expeditions.filter((e) => e.rallyId !== s4.id);
+    A.survivors.leader().status = 'idle';
+    B.survivors.leader().status = 'idle';
+  }
   // 倒數結束後不能再參加
   {
     A.survivors.setHp(lead, 99999);
