@@ -307,7 +307,7 @@ export class MapPanel {
         const sh = g.shelter.primary();
         openTeamPicker(this.ui, {
           title: `⚔️ 攻打：${n.name}`,
-          intro: `<p class="muted">守軍 ${g.npcs.intelView(n).level}${g.npcs.intel() >= 7 ? `・建議戰力 ${Math.round(g.npcs.power(n))} 以上` : ''}。帶載具可以搬走更多物資。</p>`,
+          intro: `<p class="muted">守軍 ${g.npcs.intelView(n).level}${g.npcs.intel() >= 7 ? `・建議戰力 ${g.npcs.displayPower(n)} 以上` : ''}。帶載具可以搬走更多物資。</p>`,
           vehicles: true,
           distanceM: sh ? haversine(sh.lat, sh.lon, n.lat, n.lon) : 0,
           trip: { poi: g.npcs.asPoi(n.id), searchMin: 2, searchLabel: '攻打' },

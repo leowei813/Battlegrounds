@@ -1,3 +1,4 @@
+import { unitPower } from '../utils/math.js';
 import { DUNGEONS, DG_CLEAR_M } from '../config/dungeons.js';
 import { AssistSystem } from './AssistSystem.js';
 import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL } from '../config/npcs.js';
@@ -114,6 +115,11 @@ export class NpcSystem {
   /** 攻打這個據點的建議戰力 */
   power(n) {
     return this.garrison(n, { assault: true }).reduce((s, e) => s + e.maxHp * 0.1 + e.atk, 0);
+  }
+
+  /** 顯示用的守軍戰力（與倖存者戰力同一套公式，方便比較）；NPC 行為判斷仍用 power() */
+  displayPower(n) {
+    return this.garrison(n, { assault: true }).reduce((s, e) => s + unitPower(e), 0);
   }
 
   aggression() {
@@ -592,7 +598,7 @@ export class NpcSystem {
       view.resources = Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => [k, lv >= 7 ? `${Math.floor(v)}` : approx(v, 50)]);
       view.coins = lv >= 7 ? `${n.coins}` : approx(n.coins, 100);
     }
-    if (lv >= 7) view.power = Math.round(this.power(n));
+    if (lv >= 7) view.power = this.displayPower(n);
     if (lv >= 9) view.nextRaid = Math.max(0, n.nextRaidAt - now);
     return view;
   }

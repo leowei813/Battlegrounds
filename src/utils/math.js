@@ -136,3 +136,15 @@ export function offsetLatLon(lat, lon, distanceM, bearingRad) {
   const dLon = (distanceM * Math.sin(bearingRad)) / (EARTH_R * Math.cos(toRad(lat)));
   return { lat: lat + (dLat * 180) / Math.PI, lon: lon + (dLon * 180) / Math.PI };
 }
+
+/**
+ * 戰鬥單位的戰力（與倖存者頁面顯示的戰力同一套公式）。
+ * 接受 { atk, atkSpeed, crit, critDmg, maxHp|hp, def, dodge, lifeSteal|ls }。
+ */
+export function unitPower(u) {
+  if (!u) return 0;
+  const hp = u.maxHp ?? u.hp ?? 0;
+  const ls = u.lifeSteal ?? u.ls ?? 0;
+  return Math.round((u.atk || 0) * (u.atkSpeed || 1) * (1 + (u.crit || 0) * ((u.critDmg || 1.5) - 1)) * (1 + ls) * 4
+    + (hp * 0.4) / Math.max(0.4, 1 - (u.dodge || 0)) + (u.def || 0) * 3);
+}

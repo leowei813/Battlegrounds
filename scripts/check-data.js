@@ -5642,6 +5642,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const real = g146.survivors.stats(sv).power;
   const pw = DS.powerOf({ u: AS.unitData(g146, sv, 0, { withMeds: true }) });
   assert(Math.abs(pw - real) <= Math.max(3, real * 0.01), `集結隊員戰力 ${pw} ≈ 倖存者戰力 ${real}`);
+  const { unitPower: UP } = await import('../src/utils/math.js');
+  g146.state.map.pois = fillPois([], 25.0339, 121.5645);
+  g146.shelter.establish(g146.state.map.pois.find((p) => g146.shelter.canEstablish(p).ok));
+  g146.npcs.fillCells(Date.now(), { silent: true });
+  const n146 = g146.npcs.list[0];
+  const want = g146.npcs.garrison(n146, { assault: true }).reduce((x, e) => x + UP(e), 0);
+  assert(n146 && g146.npcs.displayPower(n146) === want && want > g146.npcs.power(n146), `NPC 建議戰力改用同一套公式（${Math.round(g146.npcs.power(n146))} → ${want}）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
