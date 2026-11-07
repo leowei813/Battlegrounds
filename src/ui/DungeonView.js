@@ -148,7 +148,7 @@ function rosterHtml(g, data, gp) {
   if (!list.length) return '';
   const me = g.dungeon.myId();
   const miss = ROLE.filter((c) => !list.some((e) => e.c === c));
-  const who = (e) => `<div class="${e.p === me ? 'me' : ''}">${clsIcon(e.c)} <b>${escapeHtml(e.sn || '')}</b> <small class="muted">Lv${e.lv || '?'}${e.pw ? `・戰力 ${fmt(e.pw)}` : ''}・${escapeHtml(e.n || '')}${e.p === me ? '（我）' : ''}</small>${e.x || (e.sev && !e.med) ? '<small class="neg">無法出擊</small>' : ''}</div>`;
+  const who = (e) => `<div class="${e.p === me ? 'me' : ''}">${clsIcon(e.c)} <b>${escapeHtml(e.sn || '')}</b> <small class="muted">Lv${e.lv || '?'}${DungeonSystem.powerOf(e) ? `・戰力 ${fmt(DungeonSystem.powerOf(e))}` : ''}・${escapeHtml(e.n || '')}${e.p === me ? '（我）' : ''}</small>${e.x || (e.sev && !e.med) ? '<small class="neg">無法出擊</small>' : ''}</div>`;
   const groups = gp && !gp.cancelled && gp.groups.length > 1
     ? gp.groups.map((x, i) => `<div class="dg-grp"><h5>第 ${i + 1} 團・${x.length} 人<span class="dg-mini">${lamps(x, true)}</span></h5><div class="dg-who">${x.map(who).join('')}</div></div>`).join('')
       + (gp.out.length ? `<div class="dg-grp"><h5>無法出擊</h5><div class="dg-who">${gp.out.map(who).join('')}</div></div>` : '')
