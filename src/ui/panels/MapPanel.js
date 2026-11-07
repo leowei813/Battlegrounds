@@ -93,7 +93,12 @@ export class MapPanel {
       const rec = g.dungeon.record(id, now);
       if (rec && !rec.cancelled && ph === 'run') {
         const mine = g.dungeon.myRun(rec);
-        if (mine?.run) label = `攻略中 ${DungeonSystem.floorAt(mine.run, now)}/20`;
+        // 自己這團已經結束（通關或失敗）：顯示結果，不再顯示攻略中
+        if (mine?.run) {
+          label = now >= mine.run.endAt
+            ? `${mine.run.result === 'clear' ? '🏆 通關' : '失敗'} ${mine.run.endFloor}/20`
+            : `攻略中 ${DungeonSystem.floorAt(mine.run, now)}/20`;
+        }
       }
       return { id, name: d.name, lat: d.lat, lon: d.lon, label: `${CLASSES[d.cls].icon} ${label}` };
     });
