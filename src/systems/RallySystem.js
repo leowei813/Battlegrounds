@@ -84,7 +84,7 @@ export class RallySystem {
     const d = this.get(String(id).slice(6)) || this.pendingTarget;
     const t = d?.target || this.pendingTarget;
     return t && {
-      id, name: `📡 集結：${t.name}`, lat: t.lat, lon: t.lon, type: 'military', icon: '📡', rally: true,
+      id, name: `🚩 集結：${t.name}`, lat: t.lat, lon: t.lon, type: 'military', icon: '🚩', rally: true,
     };
   }
 
@@ -182,7 +182,7 @@ export class RallySystem {
       return r;
     }
     this.setDepartAt(dep.exp, data.departAt);
-    g.log(`📡 發起集結：目標「${target.name}」，${delayMin} 分鐘後出發（最多 ${data.maxTeams} 支隊伍）`, 'info');
+    g.log(`🚩 發起集結：目標「${target.name}」，${delayMin} 分鐘後出發（最多 ${data.maxTeams} 支隊伍）`, 'info');
     return { ok: true, id, msg: `已發起集結，好友會收到通知（${delayMin} 分鐘後出發）` };
   }
 
@@ -218,7 +218,7 @@ export class RallySystem {
       return r;
     }
     this.setDepartAt(dep.exp, r.data?.departAt || d0.departAt);
-    g.log(`📡 參加「${d0.ownerName}」的集結：目標「${d0.target.name}」`, 'info');
+    g.log(`🚩 參加「${d0.ownerName}」的集結：目標「${d0.target.name}」`, 'info');
     return { ok: true, msg: `已加入「${d0.ownerName}」的集結` };
   }
 
@@ -290,7 +290,7 @@ export class RallySystem {
       return;
     }
     exp.recalled = true;
-    exp.travelEvents = [...(exp.travelEvents || []), `📡 ${why}，隊伍走回避難所`];
+    exp.travelEvents = [...(exp.travelEvents || []), `🚩 ${why}，隊伍走回避難所`];
   }
 
   /**
@@ -358,12 +358,12 @@ export class RallySystem {
     const mine = (d.teams || []).find((t) => t.player === this.myId());
     const p = RallySystem.phaseOf(d, now, mine);
     if (!p) return null;
-    if (p.phase === 'gather') return { tag: '集結', line1: '📡 前往集結點', line2: `⏱ 剩 ${formatDuration(p.left)} 抵達` };
+    if (p.phase === 'gather') return { tag: '集結', line1: '🚩 前往集結點', line2: `⏱ 剩 ${formatDuration(p.left)} 抵達` };
     if (p.phase === 'wait') {
-      if (now >= p.s.trigger && p.s.waitFor) return { tag: '集結', line1: '📡 在集結點等待', line2: `⏳ 等${String(p.s.waitFor.name).slice(0, 8)}抵達・${formatDuration(p.left)}` };
-      return { tag: '集結', line1: '📡 在集結點等待', line2: `⏱ ${formatDuration(p.left)} 後出發` };
+      if (now >= p.s.trigger && p.s.waitFor) return { tag: '集結', line1: '🚩 在集結點等待', line2: `⏳ 等${String(p.s.waitFor.name).slice(0, 8)}抵達・${formatDuration(p.left)}` };
+      return { tag: '集結', line1: '🚩 在集結點等待', line2: `⏱ ${formatDuration(p.left)} 後出發` };
     }
-    if (p.phase === 'march') return { tag: '集結', line1: '📡 集結部隊行軍中', line2: `⏱ 剩 ${formatDuration(p.left)} 抵達` };
+    if (p.phase === 'march') return { tag: '集結', line1: '🚩 集結部隊行軍中', line2: `⏱ 剩 ${formatDuration(p.left)} 抵達` };
     return { tag: '集結', line1: '⚔️ 集結交戰中', line2: '⏱ 等待結果' };
   }
 
@@ -375,7 +375,7 @@ export class RallySystem {
     this.invites(now).forEach((d) => {
       if (this.st.seen[d.id]) return;
       this.st.seen[d.id] = now;
-      g.log(`📡 好友「${d.ownerName}」發起集結：目標「${d.target.name}」，${Math.max(1, Math.round((d.departAt - now) / 60000))} 分鐘後出發（地圖左上角點擊參加）`, 'info');
+      g.log(`🚩 好友「${d.ownerName}」發起集結：目標「${d.target.name}」，${Math.max(1, Math.round((d.departAt - now) / 60000))} 分鐘後出發（地圖左上角點擊參加）`, 'info');
     });
     Object.keys(this.st.seen).forEach((k) => { if (now - this.st.seen[k] > 86400000) delete this.st.seen[k]; });
     this.trips().forEach((exp) => this.step(exp, now));
@@ -389,7 +389,7 @@ export class RallySystem {
     const notListed = d.status === 'gathering' && !(d.teams || []).some((x) => x.player === this.myId());
     if (notListed && now - (exp.rallyJoinedAt || 0) < RALLY_JOIN_GRACE_MS) return;
     if (d.status === 'cancelled' || notListed) {
-      g.log(`📡 集結「${d.target?.name}」已取消，隊員回到避難所`, 'info');
+      g.log(`🚩 集結「${d.target?.name}」已取消，隊員回到避難所`, 'info');
       this.walkHome(exp, now);
       return;
     }
@@ -570,7 +570,7 @@ export class RallySystem {
     const members = exp.memberIds.map((id) => g.survivors.get(id)).filter(Boolean);
     const r = exp.rallyResult || { units: [], coins: 0, items: [], mats: {} };
     const report = {
-      id: uid('rp'), poiName: `📡 集結：${exp.rallyTarget?.name || ''}`, poiType: 'military', at: exp.endAt,
+      id: uid('rp'), poiName: `🚩 集結：${exp.rallyTarget?.name || ''}`, poiType: 'military', at: exp.endAt,
       events: [...(exp.travelEvents || [])], resources: {}, items: [], blueprints: [],
       kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: !!exp.rallyVictory, members: members.map((m) => m.name),
     };

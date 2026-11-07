@@ -1,4 +1,5 @@
-import { delegateActions } from '../utils/dom.js';
+import { delegateActions, escapeHtml } from '../utils/dom.js';
+import { flagText } from './components.js';
 
 /**
  * 通用彈窗。內容以 HTML 字串提供，按鈕以 data-action 觸發 onAction。
@@ -24,7 +25,7 @@ export class Modal {
         <header class="modal-head"><h3></h3><button class="icon-btn" data-action="close" aria-label="關閉">✕</button></header>
         <div class="modal-body"></div>
       </div>`;
-    wrap.querySelector('h3').textContent = title;
+    wrap.querySelector('h3').innerHTML = flagText(escapeHtml(title), 18);
     if (!dismissible) wrap.querySelector('[data-action="close"]').remove();
     const bodyEl = wrap.querySelector('.modal-body');
     bodyEl.innerHTML = body;

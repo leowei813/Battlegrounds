@@ -5025,7 +5025,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const go = Game.newGame({ playerName: 'O124', classId: 'warrior', lat: 25, lon: 121 });
   const lead = go.survivors.leader();
   go.state.expeditions = [{ id: 'x', kind: 'rally', memberIds: [lead.id] }];
-  assert(outLabel(go, lead) === '📡 集結中', '集結隊伍顯示集結中');
+  assert(outLabel(go, lead).includes('集結中') && outLabel(go, lead).includes('rally-flag'), '集結隊伍顯示戰旗＋集結中');
   go.state.expeditions = [{ id: 'x', kind: 'explore', memberIds: [lead.id] }];
   assert(outLabel(go, lead) === '探索中', '一般探索顯示探索中');
   go.state.expeditions = [];
