@@ -5388,6 +5388,21 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(new Date(midnight).getUTCHours() === 16, '重置時間為台灣時間 00:00');
 }
 
+// ---- 134. 屍潮期間 NPC 掠奪隊撤退：據點紀錄多一筆撤退紀錄 ----
+{
+  const gr = Game.newGame({ playerName: 'R134', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gr.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gr.shelter.establish(gr.state.map.pois.find((p) => gr.shelter.canEstablish(p).ok));
+  gr.npcs.update(Date.now());
+  const n = gr.npcs.list[0];
+  const before = (gr.state.defenseLog || []).length;
+  gr.time.phase = () => ({ zombies: true });
+  gr.npcs.resolveIncoming(n, { kind: 'raid', baseId: gr.shelter.primary().id, startAt: Date.now(), travelMs: 0 }, Date.now());
+  const e = gr.state.defenseLog[0];
+  assert(gr.state.defenseLog.length === before + 1 && e.retreat && e.attacker.includes(n.name) && !e.kills, '屍潮期間 NPC 撤退：據點紀錄多一筆撤退紀錄（沒有交戰）');
+  assert(gr.state.log.some((l) => l.msg.includes('見屍潮來襲，撤退了')), '事件紀錄仍保留撤退訊息');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

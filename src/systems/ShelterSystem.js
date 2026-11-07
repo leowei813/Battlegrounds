@@ -395,6 +395,19 @@ export class ShelterSystem {
     return entry;
   }
 
+  /** 掠奪隊在抵達前撤退（例如見屍潮來襲）：沒有交戰，只記一筆灰色的撤退紀錄 */
+  recordRetreat(base, attacker) {
+    const st = this.game.state;
+    const entry = {
+      id: `df_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      at: Date.now(), baseName: base?.name || '據點', attacker, retreat: true, success: true,
+      lost: {}, coins: 0, damaged: [], injured: [], kills: 0, waves: 0, wallLost: 0, note: '',
+    };
+    st.defenseLog = [entry, ...(st.defenseLog || [])].slice(0, 30);
+    this.game.bus.emit('defense:recorded', entry);
+    return entry;
+  }
+
   /** 防守前後比對，找出這次受重傷的人 */
   static newlySevere(before, survivors) {
     return survivors.filter((sv) => sv.severe && !before.has(sv.id)).map((sv) => sv.name);

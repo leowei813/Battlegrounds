@@ -249,6 +249,13 @@ export class ShelterPanel {
       const t = new Date(e.at);
       const pad = (v) => String(v).padStart(2, '0');
       const when = `${t.getMonth() + 1}/${t.getDate()} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
+      if (e.retreat) {
+        return `<div class="card defense-log retreat">
+        <div class="row-between"><b>${(e.at || 0) > since ? '<span class="tag tag-blue">未讀</span>' : ''}🏴‍☠️ 掠奪隊撤退</b><small class="muted">${when}</small></div>
+        <div>${escapeHtml(e.attacker)}的掠奪隊見屍潮來襲，撤退了</div>
+        <small class="muted block">目標：「${escapeHtml(e.baseName)}」・沒有交戰</small>
+      </div>`;
+      }
       const lost = Object.entries(e.lost || {}).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} −${v}`);
       if (e.coins) lost.push(`💰 −${e.coins}`);
       const lines = [
