@@ -244,11 +244,11 @@ export class DungeonSystem {
   // ================= 分團與計算 =================
 
   /**
-   * 依報名先後平均分團（每團 3～8 人）；鎖定時重傷又沒有藥品的人不能出擊。
+   * 依報名先後分團（v11.2：最多 12 人、只有一團）；鎖定時重傷又沒有藥品的人不能出擊。
    * @returns {{groups:object[][], out:object[], cancelled:boolean}}
    */
   static groupsOf(data) {
-    // 報名額滿 16 人（最多兩團）：超過的部分不計（正常不會發生）
+    // 報名額滿 12 人（同一團）：超過的部分不計（舊資料或同時搶名額才可能發生）
     const list = [...(data?.list || [])].filter((e) => e && e.p && e.u && DungeonSystem.validEntry(e))
       .sort((a, b) => (a.at || 0) - (b.at || 0) || String(a.p).localeCompare(String(b.p))).slice(0, DG_MAX_SIGNUPS);
     const out = list.filter((e) => e.x || (e.sev && !e.med));
@@ -338,7 +338,8 @@ export class DungeonSystem {
     const g = this.game;
     const R = DG_RULES;
     const D = DG_DIFF;
-    const N = members.length;
+    // 難度依人數成長，但最多以 DG_DIFF.maxPlayers（8 人）計算
+    const N = Math.min(members.length, D.maxPlayers || members.length);
     const units = members.map((e, i) => DungeonSystem.unitOf(e, i));
     const stat = units.map(() => ({
       dealt: 0, taken: 0, healed: 0, obs: 0, downs: 0, xp: 0, coins: 0, floors: [], boss: [], wins: 0,

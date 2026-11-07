@@ -5102,7 +5102,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 分團：依報名先後平均分配，每團 3～8 人
   const fakeList = (n) => ({ list: Array.from({ length: n }, (_, i) => ({ p: `p${i}`, s: `s${i}`, c: 'warrior', at: 1000 - i, u: { maxHp: 100 } })) });
   const sizes = (n) => DungeonSystem.groupsOf(fakeList(n)).groups.map((x) => x.length).join('+');
-  assert(DungeonSystem.groupsOf(fakeList(2)).cancelled && sizes(3) === '3' && sizes(8) === '8' && sizes(9) === '5+4' && sizes(10) === '5+5' && sizes(16) === '8+8' && sizes(20) === '8+8', `平均分團、最多兩團（9→${sizes(9)}、10→${sizes(10)}、16→${sizes(16)}）、不到 3 人取消`);
+  assert(DungeonSystem.groupsOf(fakeList(2)).cancelled && sizes(3) === '3' && sizes(8) === '8' && sizes(9) === '9' && sizes(12) === '12' && sizes(16) === '12', `不再分團：最多 12 人同一團（9→${sizes(9)}、12→${sizes(12)}、16→${sizes(16)}）、不到 3 人取消`);
+  assert(DGC.DG_MAX_SIGNUPS === 12, '副本每天報名上限 12 人');
   assert(DungeonSystem.groupsOf(fakeList(9)).groups[0][0].p === 'p8', '分團依報名先後（最早報名的在第 1 團）');
   const ex = fakeList(4);
   ex.list[0].x = 'nomed';
@@ -5477,6 +5478,19 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(JSON.stringify(c1) === JSON.stringify(RS.shareCoord('mbc123xyz9')) && c1.lat < -59 && (Math.abs(c1.lat - c2.lat) > 0.005 || Math.abs(c1.lon - c2.lon) > 0.005), '分享內容的存放位置固定、不同編號分開');
   const d = RS.shareDetail('report', rep);
   assert(d.t === 'report' && !d.x.battleIds && d.x.events.length <= 60 && JSON.stringify(d).length < 15000, '分享內容不含戰鬥明細編號、事件數有上限');
+}
+
+// ---- 138. 副本難度最多以 8 人計算（9～12 人與 8 人相同）----
+{
+  const gd = Game.newGame({ playerName: 'D138', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  const lead = gd.survivors.leader();
+  const snap = gd.dungeon.snapshot(lead);
+  const team = (n) => Array.from({ length: n }, (_, i) => ({ ...snap, p: `p${i}`, s: `s${i}`, sn: `隊員${i}`, c: ['warrior', 'medic', 'engineer', 'scout', 'farmer'][i % 5] }));
+  const firstWave = (n) => gd.dungeon.runFloors('drain', team(n)).floors[0].waves[0]?.enemies;
+  const e8 = firstWave(8);
+  const e12 = firstWave(12);
+  const e5 = firstWave(5);
+  assert(e8 === 24 && e12 === 24 && e5 === 15, `副本每波敵人數最多以 8 人計算（5 人 ${e5}、8 人 ${e8}、12 人 ${e12}）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
