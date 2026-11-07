@@ -4,7 +4,7 @@ import { btn, metaOf } from './components.js';
 import { DungeonSystem } from '../systems/DungeonSystem.js';
 import {
   DUNGEONS, DUNGEON_KEYS, DG_TIME, DG_FLOORS, DG_TEAM, DG_CLASS_NOTES, DG_OBSTACLES, DG_BOSSES, DG_FINAL_SKILL, DG_DROPS,
-  DG_CORES, DG_RULES, DG_MAX_SIGNUPS, DG_GEAR, DG_SLOTS, DG_CRAFT, DG_RECIPES,
+  DG_CORES, DG_RULES, DG_GEAR, DG_SLOTS, DG_CRAFT, DG_RECIPES,
 } from '../config/dungeons.js';
 import { CLASSES } from '../config/survivors.js';
 import { SUPPLIES } from '../config/supplies.js';
@@ -148,7 +148,7 @@ function rosterHtml(g, data, gp) {
   if (!list.length) return '';
   const me = g.dungeon.myId();
   const miss = ROLE.filter((c) => !list.some((e) => e.c === c));
-  const who = (e) => `<div class="${e.p === me ? 'me' : ''}">${clsIcon(e.c)} <b>${escapeHtml(e.sn || '')}</b> <small class="muted">Lv${e.lv || '?'}${e.pw ? `・戰力 ${fmt(e.pw)}` : ''}・${escapeHtml(e.n || '')}${e.p === me ? '（我）' : ''}</small>${e.x || (e.sev && !e.med) ? '<small class="neg">無法出擊</small>' : ''}</div>`;
+  const who = (e) => `<div class="${e.p === me ? 'me' : ''}">${clsIcon(e.c)} <b>${escapeHtml(e.sn || '')}</b> <small class="muted">Lv${e.lv || '?'}${DungeonSystem.powerOf(e) ? `・戰力 ${fmt(DungeonSystem.powerOf(e))}` : ''}・${escapeHtml(e.n || '')}${e.p === me ? '（我）' : ''}</small>${e.x || (e.sev && !e.med) ? '<small class="neg">無法出擊</small>' : ''}</div>`;
   const groups = gp && !gp.cancelled && gp.groups.length > 1
     ? gp.groups.map((x, i) => `<div class="dg-grp"><h5>第 ${i + 1} 團・${x.length} 人<span class="dg-mini">${lamps(x, true)}</span></h5><div class="dg-who">${x.map(who).join('')}</div></div>`).join('')
       + (gp.out.length ? `<div class="dg-grp"><h5>無法出擊</h5><div class="dg-who">${gp.out.map(who).join('')}</div></div>` : '')
@@ -183,7 +183,7 @@ function signupTab(g, dg, now) {
     return `<div class="dg-sv ${cls}">${clsIcon(sv.classId)} <b>${escapeHtml(sv.name)}</b> <small class="muted">Lv${sv.level}・戰力 ${fmt(pw)}</small><span class="push">${right}</span></div>`;
   }).join('');
   return `${timeline(now)}
-    <div class="kv"><span>👥 已報名 <b>${n}</b> 人${groups}</span><span>每團 ${DG_TEAM.min}～${DG_TEAM.max} 人，依報名先後平均分團</span><span>每天最多 ${DG_MAX_SIGNUPS} 人</span>${rec && !rec.cancelled ? '<span class="pos">今日已報名 ✓</span>' : ''}</div>
+    <div class="kv"><span>👥 已報名 <b>${n}</b> 人${groups}</span>${rec && !rec.cancelled ? '<span class="pos">今日已報名 ✓</span>' : ''}</div>
     ${rosterHtml(g, data, gp)}
     ${g.shared.online ? '' : '<p class="neg">目前沒有連線到伺服器，只能看到自己的報名（不到 3 人無法開打）。</p>'}
     <small class="muted">選擇一名倖存者（每個副本每天一次；同一名倖存者一天只能參加一個副本）：</small>${svs}

@@ -735,6 +735,7 @@ export class NpcSystem {
     if (!base) return;
     if (g.time.phase(arrive).zombies) {
       g.log(`🏴‍☠️「${n.name}」的掠奪隊見屍潮來襲，撤退了`, 'info');
+      g.shelter.recordRetreat(base, `NPC「${n.name}」（${this.intelView(n).levelShort}）`);
       return;
     }
     // 1. 掠奪者要先打破圍牆，期間防禦設施持續射擊

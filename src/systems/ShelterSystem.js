@@ -375,6 +375,8 @@ export class ShelterSystem {
       waves: e.waves || 0,
       wallLost: Math.round(e.wallLost || 0),
       note: e.note || '',
+      // 友好協防（標籤顯示）：屍潮由呼叫端傳入；NPC／玩家攻打由協防系統暫存
+      ...((() => { const list = e.assists || this.game.assist?.takePending?.() || []; return list.length ? { assists: list } : {}; })()),
       ...(e.siege ? { siege: e.siege } : {}),
       ...(e.battleIds?.length ? { battleIds: [...e.battleIds] } : {}),
       ...(e.reward ? { reward: e.reward } : {}),
@@ -389,6 +391,19 @@ export class ShelterSystem {
     if (entry.damaged.length) parts.push(`${entry.damaged.length} 棟建築毀損`);
     if (entry.injured.length) parts.push(`重傷：${entry.injured.join('、')}`);
     this.game.log(`${entry.success ? '🛡️' : '💥'}「${entry.baseName}」遭${entry.attacker}攻擊：${parts.join('，')}`, entry.success ? 'success' : 'danger');
+    this.game.bus.emit('defense:recorded', entry);
+    return entry;
+  }
+
+  /** 掠奪隊在抵達前撤退（例如見屍潮來襲）：沒有交戰，只記一筆灰色的撤退紀錄 */
+  recordRetreat(base, attacker) {
+    const st = this.game.state;
+    const entry = {
+      id: `df_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      at: Date.now(), baseName: base?.name || '據點', attacker, retreat: true, success: true,
+      lost: {}, coins: 0, damaged: [], injured: [], kills: 0, waves: 0, wallLost: 0, note: '',
+    };
+    st.defenseLog = [entry, ...(st.defenseLog || [])].slice(0, 30);
     this.game.bus.emit('defense:recorded', entry);
     return entry;
   }

@@ -111,13 +111,14 @@ export class BaseSiege {
     return b.assistLog;
   }
 
-  /** 防守紀錄裡的協防說明 */
-  assistNote(result) {
+  /** 防守紀錄裡的協防清單（標籤顯示）；同時把今晚的協防結果定案 */
+  assistList(result) {
     const log = this.base?.assistLog;
-    if (!log || !Object.keys(log.list).length) return '';
+    if (!log || !Object.keys(log.list).length) return [];
     if (log.result === 'ongoing') log.result = result;
-    const parts = Object.values(log.list).map((x) => `「${x.name}」${x.kind === 'cover' ? '的防禦設施' : '的協防隊'}（傷害 ${x.dmg}、擊殺 ${x.kills}）`);
-    return `🛡️ 友好協防：${parts.join('、')}`;
+    return Object.values(log.list).map((x) => ({
+      name: x.name, dmg: Math.round(x.dmg || 0), kills: x.kills || 0, ...(x.kind === 'cover' ? { cover: true } : {}),
+    }));
   }
 
   /** 今晚屍潮的戰鬥明細（存在據點上，天亮或被突破時記到避難所紀錄） */
@@ -169,7 +170,7 @@ export class BaseSiege {
       reward.recovered = this.collectRecovered();
       const entry = this.game.shelter.recordDefense({
         base: this.base, attacker: '屍潮', success: true, waves: this.wave, kills: this.nightKills,
-        wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)), note: this.assistNote('ok'),
+        wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)), assists: this.assistList('ok'),
         siege: reward, battleIds: this.takeNightBattles(),
       });
       this.game.bus.emit('siege:result', entry);
@@ -797,7 +798,7 @@ export class BaseSiege {
     const defenders = g.npcs.defenders(base);
     const allies = g.shelter.isPrimary(base) ? (g.assist?.allyUnits() || []) : [];
     if (!defenders.length && !allies.length) {
-      this.breach('圍牆被打破，據點裡沒有人可以應戰');
+      this.breach('圍牆被打破；據點裡沒有人可以防守');
       return;
     }
     const foes = zombies.map((z) => {
@@ -819,7 +820,7 @@ export class BaseSiege {
     });
     zombies.forEach((z) => { if (z.hp <= 0) this.pushFx({ type: 'shot', kind: 'melee', x1: 0, y1: 0, x2: z.x, y2: z.y }); });
     if (!result.victory) {
-      this.breach(`圍牆被打破，據點裡的人員（${defenders.map((d) => d.name).join('、') || '協防隊'}）迎戰失敗`);
+      this.breach(`圍牆被打破；防守人員（${[...defenders.map((d) => d.name), ...allies.map((a) => a.name)].join('、')}）戰敗`);
       return;
     }
     if (!this.gateLogged) {
@@ -862,7 +863,7 @@ export class BaseSiege {
     const entry = sh.recordDefense({
       base, attacker: '屍潮', success: false, lost, damaged, kills: this.nightKills, waves: Math.max(0, this.wave - 1), battleIds: this.takeNightBattles(),
       injured: injuries.filter((x) => x.severe).map((x) => x.name),
-      wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note: [note, this.assistNote('breached')].filter(Boolean).join('。'),
+      wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note, assists: this.assistList('breached'),
       siege: {
         lossPct: pct, wave: this.wave, maxWaves: this.maxWaves(), materials, injuries, boss: this.nightBoss, recovered,
       },

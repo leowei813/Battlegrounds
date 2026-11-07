@@ -249,6 +249,13 @@ export class ShelterPanel {
       const t = new Date(e.at);
       const pad = (v) => String(v).padStart(2, '0');
       const when = `${t.getMonth() + 1}/${t.getDate()} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
+      if (e.retreat) {
+        return `<div class="card defense-log retreat">
+        <div class="row-between"><b>${(e.at || 0) > since ? '<span class="tag tag-blue">未讀</span>' : ''}🏴‍☠️ 掠奪隊撤退</b><small class="muted">${when}</small></div>
+        <div>${escapeHtml(e.attacker)}的掠奪隊見屍潮來襲，撤退了</div>
+        <small class="muted block">目標：「${escapeHtml(e.baseName)}」・沒有交戰</small>
+      </div>`;
+      }
       const lost = Object.entries(e.lost || {}).map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name} −${v}`);
       if (e.coins) lost.push(`💰 −${e.coins}`);
       const lines = [
@@ -265,6 +272,7 @@ export class ShelterPanel {
         ${lost.length ? `<div class="neg">損失資源：${lost.join('、')}</div>` : (e.success ? '<div class="pos">沒有損失資源</div>' : '')}
         ${e.damaged?.length ? `<div class="neg">毀損建築：${e.damaged.map(escapeHtml).join('、')}</div>` : ''}
         ${e.injured?.length ? `<div class="neg">🩸 重傷：${e.injured.map(escapeHtml).join('、')}</div>` : ''}`}
+        ${e.assists?.length ? `<div class="chips">${e.assists.map((x) => `<span class="ally-chip">🛡️ 協防：${escapeHtml(x.name)}${x.cover ? ' 防禦設施' : ''}${x.dmg ? ` ${x.dmg.toLocaleString()} 傷害` : ''}${x.kills ? `・擊殺 ${x.kills}` : ''}${x.down ? `・${x.down} 人重傷` : ''}</span>`).join('')}</div>` : ''}
         ${e.note ? `<small class="muted block">${escapeHtml(e.note)}</small>` : ''}
         ${battlesSectionHtml(this.game, e.battleIds, openBattle)}
       </div>`;

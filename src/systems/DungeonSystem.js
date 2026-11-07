@@ -194,7 +194,7 @@ export class DungeonSystem {
     }
     if (!r.ok) return r;
     this.state.sign[id] = {
-      dg, day, day0: DungeonSystem.dayStart(now), svId: sv.id, svName: sv.name, at: now, pushedAt: now, snap: JSON.stringify(entry.u),
+      dg, day, day0: DungeonSystem.dayStart(now), svId: sv.id, svName: sv.name, at: now, pushedAt: now, snap: JSON.stringify([entry.u, entry.pw]),
     };
     g.log(`🕳️ ${sv.name} 報名「${DUNGEONS[dg].name}」（今天 18:00 開打）`, 'info');
     g.changed?.();
@@ -238,7 +238,7 @@ export class DungeonSystem {
       Object.assign(e, { ...snap, ...patch, at: e.at });
       return { data: d };
     }).catch(() => null);
-    if (r?.ok) rec.snap = JSON.stringify(snap.u);
+    if (r?.ok) rec.snap = JSON.stringify([snap.u, snap.pw]);
   }
 
   // ================= 分團與計算 =================
@@ -268,6 +268,15 @@ export class DungeonSystem {
     return {
       groups, out, cancelled: false, list,
     };
+  }
+
+  /** 報名資料的戰力（舊資料沒有 pw 時，用快照的能力依遊戲的戰力公式換算） */
+  static powerOf(e) {
+    if (Number.isFinite(e?.pw)) return e.pw;
+    const u = e?.u;
+    if (!u) return 0;
+    return Math.round((u.atk || 0) * (u.atkSpeed || 1) * (1 + (u.crit || 0) * ((u.critDmg || 1.5) - 1)) * (1 + (u.ls || 0)) * 4
+      + ((u.maxHp || 0) * 0.4) / Math.max(0.4, 1 - (u.dodge || 0)) + (u.def || 0) * 3);
   }
 
   static validEntry(e) {
@@ -569,11 +578,12 @@ export class DungeonSystem {
       }
       const t = DungeonSystem.times(rec.day0);
       const sv = g.survivors.get(rec.svId);
-      // 報名期間：倖存者的能力有變動就更新快照（每 2 分鐘最多一次）
-      if (now < t.lock && sv && now - (rec.pushedAt || 0) > 120000) {
-        const snap = JSON.stringify(this.snapshot(sv).u);
-        if (snap !== rec.snap) this.pushEntry(rec, {}, now);
-        else rec.pushedAt = now;
+      // 報名期間：倖存者的能力或戰力有變動（換裝備、升級…）就更新快照（最多每 15 秒寫入一次）
+      if (now < t.lock && sv && now - (rec.checkedAt || 0) >= 1000) {
+        rec.checkedAt = now;
+        const sn = this.snapshot(sv);
+        const snap = JSON.stringify([sn.u, sn.pw]);
+        if (snap !== rec.snap && now - (rec.pushedAt || 0) >= 15000) this.pushEntry(rec, {}, now);
       }
       if (now >= t.lock && !rec.locked) this.lock(rec, Math.min(now, t.lock));
       if (now >= t.depart && !rec.departed && rec.locked && !rec.excluded) this.depart(rec);

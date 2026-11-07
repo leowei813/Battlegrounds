@@ -2745,6 +2745,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(pa.trips.some((t) => t.kind === 'assist'), '協防隊在公開資料標示為協防（不會被當成突襲）');
   B.world.others = [pa];
   assert(B.assist.incoming().some((h) => h.kind === 'team'), '被協防的一方收到協防');
+  B.assist.trackArrivals();
   sb.waveLeft = 0;
   const ids = new Set(sb.zombies.map((z) => z.id));
   const hpOf = () => sb.zombies.filter((z) => ids.has(z.id)).reduce((s, z) => s + z.hp, 0);
@@ -2755,7 +2756,15 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const lg = B.state.bases[0].assistLog;
   assert(lg && lg.list.A && lg.list.A.dmg > 0, `記錄協防玩家的傷害（${JSON.stringify(lg?.list)}）`);
   sb.endNight();
-  assert(B.state.defenseLog[0].note.includes('協防') && B.state.defenseLog[0].note.includes('協防者'), `防守紀錄寫入協防（${B.state.defenseLog[0].note}）`);
+  assert(B.state.defenseLog[0].assists?.some((x) => x.name === '協防者' && x.dmg > 0), `防守紀錄寫入協防標籤（${JSON.stringify(B.state.defenseLog[0].assists)}）`);
+  assert(B.state.log.filter((l) => l.msg.includes('協防者') && /前來協防/.test(l.msg)).length <= 1, '好友協防隊抵達的事件不重複');
+  {
+    const others = B.world.others;
+    B.world.others = [];
+    B.assist.trackArrivals();
+    assert(B.state.log.some((l) => /「協防者」的協防隊離開（傷害 [\d,]+/.test(l.msg)), '好友協防隊離開時記一筆事件（附上傷害與擊殺）');
+    B.world.others = others;
+  }
   A.world.others = [pres(B, 'B')];
   const mr = A.assist.myResult(A.world.others[0]);
   assert(mr && mr.result === 'ok' && mr.dmg > 0 && mr.team, `協防方看得到自己的戰果（${JSON.stringify(mr)}）`);
@@ -2904,7 +2913,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   V.shelter.primary().wallHp = 0;
   V.npcs.resolveIncoming(n, n.trip, Date.now());
   const log = V.state.defenseLog[0];
-  assert(log && log.note.includes('友好協防') && log.note.includes('H'), `防守紀錄寫入協防（${log?.note}）`);
+  assert(log && log.assists?.some((x) => x.name === 'H'), `防守紀錄寫入協防（${JSON.stringify(log?.assists)}）`);
   const ra = V.shelter.primary().raidAssist;
   assert(ra && ra.list.H && ra.list.H.units.length === 1, '記錄協防隊員的戰果與傷勢');
   H.world.others = [pres(V, 'V')];
@@ -2919,7 +2928,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const rep = C.territory.resolvePvp({ poiId: 'pvp:V#0', memberIds: [C.survivors.leader().id], endAt: Date.now(), travelEvents: [], cargo: 40 });
   assert(rep.events.some((e) => e.includes('協防隊員')) && sent?.helpers?.H, `突襲結算包含協防隊員並回報給對方（${rep.events.slice(-2).join(' / ')}）`);
   V.territory.handleEvents([{ from: 'C', fromName: 'C', type: 'attack', data: sent }]);
-  assert(V.state.defenseLog[0].note.includes('友好協防'), `被突襲方的防守紀錄寫入協防（${V.state.defenseLog[0].note}）`);
+  assert(V.state.defenseLog[0].assists?.length > 0, `被突襲方的防守紀錄寫入協防（${JSON.stringify(V.state.defenseLog[0].assists)}）`);
 }
 
 // ---- 59. v9：NPC 據點大幅增強 ----
@@ -5130,6 +5139,21 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     const size = new TextEncoder().encode(JSON.stringify({ dg: 'greenhouse', day: '20261112', list: Array(DGC.DG_MAX_SIGNUPS).fill(e) })).length;
     assert(size < 16000, `副本報名額滿時資料大小在上限內（${size} bytes）`);
   }
+  // 報名後換裝備：名單上的戰力跟著更新
+  {
+    const day = DungeonSystem.dayKey(at);
+    const before = a.g.dungeon.data('lab', day).list.find((e) => e.p === 'dg_DG0').pw;
+    const weak = a.g.equipment.items.find((it) => a.sv.equipment.weapon === it.id);
+    a.sv.equipment.weapon = null;
+    a.g.dungeon.update(at + 20000);
+    await new Promise((r) => setTimeout(r, 5));
+    await a.g.shared.list('dg', 5);
+    const after = a.g.dungeon.data('lab', day).list.find((e) => e.p === 'dg_DG0').pw;
+    assert(after !== before, `報名後換裝備，名單上的戰力也會更新（${before} → ${after}）`);
+    a.sv.equipment.weapon = weak.id;
+    a.g.dungeon.update(at + 40000);
+    await new Promise((r) => setTimeout(r, 5));
+  }
   // 鎖定：外出中的小隊召回；鎖定後不能出發
   const b = ps[1];
   const poi = b.g.state.map.pois.find((p) => !b.g.shelter.baseAtPoi(p.id) && b.g.exploration.validate(p.id, [b.sv.id]).ok);
@@ -5362,6 +5386,21 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gp.shared.cache.set(`poi:${poi.id}`, { kind: 'poi', id: poi.id, ver: 1, data: { g: 0, r: { g: 0, res: { scrap: 5 }, done: 1, total: 3, t: midnight - 3600000 } } });
   assert(!gp.poiShare.view(poi, midnight - 60000)?.left === false && !gp.poiShare.view(poi, midnight + 60000).left, '探索到一半的進度：當天保留、過了 00:00 重置成完整建築');
   assert(new Date(midnight).getUTCHours() === 16, '重置時間為台灣時間 00:00');
+}
+
+// ---- 134. 屍潮期間 NPC 掠奪隊撤退：據點紀錄多一筆撤退紀錄 ----
+{
+  const gr = Game.newGame({ playerName: 'R134', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gr.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gr.shelter.establish(gr.state.map.pois.find((p) => gr.shelter.canEstablish(p).ok));
+  gr.npcs.update(Date.now());
+  const n = gr.npcs.list[0];
+  const before = (gr.state.defenseLog || []).length;
+  gr.time.phase = () => ({ zombies: true });
+  gr.npcs.resolveIncoming(n, { kind: 'raid', baseId: gr.shelter.primary().id, startAt: Date.now(), travelMs: 0 }, Date.now());
+  const e = gr.state.defenseLog[0];
+  assert(gr.state.defenseLog.length === before + 1 && e.retreat && e.attacker.includes(n.name) && !e.kills, '屍潮期間 NPC 撤退：據點紀錄多一筆撤退紀錄（沒有交戰）');
+  assert(gr.state.log.some((l) => l.msg.includes('見屍潮來襲，撤退了')), '事件紀錄仍保留撤退訊息');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
