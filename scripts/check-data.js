@@ -5102,7 +5102,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 分團：依報名先後平均分配，每團 3～8 人
   const fakeList = (n) => ({ list: Array.from({ length: n }, (_, i) => ({ p: `p${i}`, s: `s${i}`, c: 'warrior', at: 1000 - i, u: { maxHp: 100 } })) });
   const sizes = (n) => DungeonSystem.groupsOf(fakeList(n)).groups.map((x) => x.length).join('+');
-  assert(DungeonSystem.groupsOf(fakeList(2)).cancelled && sizes(3) === '3' && sizes(8) === '8' && sizes(9) === '5+4' && sizes(10) === '5+5' && sizes(16) === '8+8' && sizes(20) === '8+8', `平均分團、最多兩團（9→${sizes(9)}、10→${sizes(10)}、16→${sizes(16)}）、不到 3 人取消`);
+  assert(DungeonSystem.groupsOf(fakeList(2)).cancelled && sizes(3) === '3' && sizes(8) === '8' && sizes(9) === '9' && sizes(12) === '12' && sizes(16) === '12', `不再分團：最多 12 人同一團（9→${sizes(9)}、12→${sizes(12)}、16→${sizes(16)}）、不到 3 人取消`);
+  assert(DGC.DG_MAX_SIGNUPS === 12, '副本每天報名上限 12 人');
   assert(DungeonSystem.groupsOf(fakeList(9)).groups[0][0].p === 'p8', '分團依報名先後（最早報名的在第 1 團）');
   const ex = fakeList(4);
   ex.list[0].x = 'nomed';
@@ -5426,6 +5427,113 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(a.level > lv0 && !r.hurt.some((x) => x.name === a.name), '擊退掠奪隊：因升級而生命沒滿的人不列入傷勢');
   assert(!r.hurt.some((x) => x.name === c.name), '擊退掠奪隊：原本就沒滿血、這次沒受傷的人不列入傷勢');
   assert(r.hurt.length === 1 && r.hurt[0].name === b.name && r.hurt[0].down === false, '擊退掠奪隊：生命變少的人列入傷勢（標示受傷，不是被擊倒）');
+}
+
+// ---- 136. 協防隊在對方守住屍潮時獲得守城經驗（駐守的 40%，同一晚只給一次）----
+{
+  const { xpToNext: xpn136 } = await import('../src/config/survivors.js');
+  const { ASSIST_GUARD_XP_PCT } = await import('../src/systems/AssistSystem.js');
+  const ga = Game.newGame({ playerName: 'A136', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  const sv = ga.survivors.leader();
+  sv.level = 30; sv.xp = 0;
+  const want = Math.round(xpn136(30) * ASSIST_GUARD_XP_PCT);
+  ga.assist.player = () => ({ id: 'p1', name: '阿許', bases: [] });
+  let res = { night: 'n1', result: 'ok', team: true, cover: false, dmg: 100, kills: 5 };
+  ga.assist.myResult = () => res;
+  const exp = { assistTarget: { playerId: 'p1', name: '阿許' }, memberIds: [sv.id], endAt: Date.now(), travelEvents: [] };
+  const x0 = ga.survivors.totalXp(sv);
+  const rep = ga.assist.report(exp);
+  const got = Math.round(ga.survivors.totalXp(sv) - x0);
+  assert(ASSIST_GUARD_XP_PCT === 0.02 && got === want + 20, `協防守住：守城經驗 = 升級所需 2%＋擊殺經驗（${got} = ${want}+20）`);
+  const x1 = ga.survivors.totalXp(sv);
+  ga.assist.report(exp);
+  assert(Math.round(ga.survivors.totalXp(sv) - x1) === 20, '同一晚的守城經驗只給一次');
+  res = { night: 'n2', result: 'breached', team: true, dmg: 100, kills: 0 };
+  const x2 = ga.survivors.totalXp(sv);
+  ga.assist.report(exp);
+  assert(ga.survivors.totalXp(sv) === x2, '對方被突破：沒有守城經驗');
+  // 協防隊先回家、之後才收到「守住」的戰果：補發經驗並記到報告
+  res = null;
+  const pend = ga.assist.report({ ...exp, endAt: Date.now() });
+  ga.state.reports = [pend, ...(ga.state.reports || [])];
+  const x3 = ga.survivors.totalXp(sv);
+  const r3 = { night: 'n3', result: 'ok', team: true, dmg: 50, kills: 2 };
+  ga.assist.patchReport('p1', ga.assist.resultText('阿許', r3), 2, r3);
+  assert(Math.round(ga.survivors.totalXp(sv) - x3) === Math.round(xpn136(sv.level === 30 ? 30 : 30) * 0.02) && pend.xpBy?.some((x) => x.n === sv.name && x.d > 0), '回家後才收到守住戰果：補發守城經驗並列在報告經驗');
+  void rep;
+}
+
+// ---- 137. 分享卡片可點開詳細：連結編號、內容存放位置、長度上限 ----
+{
+  const RS = await import('../src/multiplayer/ReportShare.js');
+  const { CHAT_MAX_LEN } = await import('../src/multiplayer/Chat.js');
+  const rep = { poiName: '倒塌的住宅區 1號', success: true, kills: 12, resources: { food: 30, wood: 20, scrap: 9, fuel: 4 }, items: [{ name: '很長很長很長的裝備名稱一號', rarity: 'epic' }, { name: '很長很長很長的裝備名稱二號', rarity: 'rare' }], events: Array(80).fill('事件'), battleIds: ['bt1'], members: ['Leo'], blueprints: [] };
+  const t = RS.shareReportText(rep, '運氣不錯唷唷唷唷唷唷唷唷唷唷唷唷唷', 'mbc123xyz9');
+  const p = RS.parseShare(t);
+  assert([...t].length <= CHAT_MAX_LEN && p.link === 'mbc123xyz9' && p.note.startsWith('運氣不錯'), `分享文字帶連結編號且不超過字數上限（${[...t].length}）`);
+  assert(!p.lines.some((l) => l.includes('🔗')), '連結編號不會顯示成卡片內容');
+  assert(!RS.parseShare(RS.shareReportText(rep)).link, '沒有連結時（舊版分享）不能點開');
+  const c1 = RS.shareCoord('mbc123xyz9');
+  const c2 = RS.shareCoord('mbc123xyz8');
+  assert(JSON.stringify(c1) === JSON.stringify(RS.shareCoord('mbc123xyz9')) && c1.lat < -59 && (Math.abs(c1.lat - c2.lat) > 0.005 || Math.abs(c1.lon - c2.lon) > 0.005), '分享內容的存放位置固定、不同編號分開');
+  const d = RS.shareDetail('report', rep);
+  assert(d.t === 'report' && !d.x.battleIds && d.x.events.length <= 60 && JSON.stringify(d).length < 15000, '分享內容不含戰鬥明細編號、事件數有上限');
+}
+
+// ---- 138. 副本難度最多以 8 人計算（9～12 人與 8 人相同）----
+{
+  const gd = Game.newGame({ playerName: 'D138', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  const lead = gd.survivors.leader();
+  const snap = gd.dungeon.snapshot(lead);
+  const team = (n) => Array.from({ length: n }, (_, i) => ({ ...snap, p: `p${i}`, s: `s${i}`, sn: `隊員${i}`, c: ['warrior', 'medic', 'engineer', 'scout', 'farmer'][i % 5] }));
+  const firstWave = (n) => gd.dungeon.runFloors('drain', team(n)).floors[0].waves[0]?.enemies;
+  const e8 = firstWave(8);
+  const e12 = firstWave(12);
+  const e5 = firstWave(5);
+  assert(e8 === 24 && e12 === 24 && e5 === 15, `副本每波敵人數最多以 8 人計算（5 人 ${e5}、8 人 ${e8}、12 人 ${e12}）`);
+}
+
+// ---- 139. 藥品欄「不攜帶」：新加入的倖存者預設不攜帶，可切換，不會被自動補給 ----
+{
+  const { MED_NONE } = await import('../src/systems/SurvivorSystem.js');
+  const gm = Game.newGame({ playerName: 'M139', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gm.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gm.shelter.establish(gm.state.map.pois.find((p) => gm.shelter.canEstablish(p).ok));
+  gm.state.supplies.bandage = 50;
+  const lead = gm.survivors.leader();
+  assert(gm.survivors.supplyRules(lead).med === 'bandage', '原本的倖存者維持帶藥（預設繃帶）');
+  const nv = gm.survivors.makeCandidate(5);
+  gm.survivors.addSurvivor(nv);
+  nv.status = 'idle';
+  gm.survivors.autoResupply(nv);
+  assert(gm.survivors.supplyRules(nv).med === MED_NONE && !gm.survivors.loadout(nv).med, '新加入的倖存者預設不攜帶藥品，也不會被自動補給');
+  gm.survivors.setSupply(nv.id, 'med', 'bandage');
+  assert(gm.survivors.loadout(nv).med?.key === 'bandage', '改選藥品後會自動補進藥品欄');
+  const before = gm.state.supplies.bandage;
+  const r = gm.survivors.setSupply(nv.id, 'med', MED_NONE);
+  assert(r.ok && !gm.survivors.loadout(nv).med && gm.state.supplies.bandage > before && gm.survivors.supplyRules(nv).med === MED_NONE, '改回不攜帶：藥品欄的藥放回倉庫');
+  assert(gm.survivors.refillMeds([nv]).length === 0, '不攜帶時戰後不會從背包補藥');
+}
+
+// ---- 140. 副本難度曲線：越後面越難，第 20 層比原本低 5% ----
+{
+  const { DG_DIFF: DD } = await import('../src/config/dungeons.js');
+  const mul = (f) => DD.atk0 * DD.atkGrow ** (19 * ((f - 1) / 19) ** DD.curve);
+  assert(DD.curve === 2 && Math.abs(mul(20) / (16 * 1.14 ** 19) - 0.95) < 1e-9, `第 20 層敵人攻擊為原本的 95%（${(mul(20) / (16 * 1.14 ** 19)).toFixed(3)}）`);
+  assert(mul(1) === 16 && mul(10) < 16 * 1.14 ** 9 * 0.6 && mul(15) < 16 * 1.14 ** 14, `前中段較原本簡單（第 10 層 ${mul(10).toFixed(0)}、原本 ${(16 * 1.14 ** 9).toFixed(0)}）`);
+}
+
+// ---- 141. 據點紀錄的協防名單只算當晚（前一晚協防的人不會出現在今晚的紀錄）----
+{
+  const gs = Game.newGame({ playerName: 'S141', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gs.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gs.shelter.establish(gs.state.map.pois.find((p) => gs.shelter.canEstablish(p).ok));
+  const sg = gs.siege.of();
+  sg.base.assistLog = { night: 'n-old', result: 'ok', list: { p1: { name: '阿許', kind: 'team', dmg: 13440, kills: 0 } } };
+  assert(sg.assistList('ok', 'n-new').length === 0 && sg.base.assistLog.result === 'ok', '前一晚的協防不會出現在今晚的防守紀錄');
+  sg.base.assistLog = { night: 'n-new', result: 'ongoing', list: { p1: { name: '阿許', kind: 'team', dmg: 500, kills: 3 } } };
+  const l = sg.assistList('ok', 'n-new');
+  assert(l.length === 1 && l[0].dmg === 500 && sg.base.assistLog.result === 'ok', '當晚有協防時正常列出');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

@@ -245,7 +245,13 @@ export class ShelterPanel {
 
   defenseLogHtml(since = Infinity, openBattle = null) {
     const list = this.game.state.defenseLog || [];
-    const rows = list.slice(0, 15).map((e) => {
+    const rows = list.slice(0, 15).map((e) => this.defenseCardHtml(e, { since, openBattle })).join('');
+    return `<h4>🛡️ 據點遭襲紀錄</h4>${rows || '<p class="muted">據點還沒有被攻擊過。</p>'}`;
+  }
+
+  /** 一筆據點紀錄的卡片。shared：聊天室分享的詳細（不顯示未讀、分享按鈕與戰鬥明細，明細展開） */
+  defenseCardHtml(e, { since = Infinity, openBattle = null, shared = false } = {}) {
+    {
       const t = new Date(e.at);
       const pad = (v) => String(v).padStart(2, '0');
       const when = `${t.getMonth() + 1}/${t.getDate()} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
@@ -263,8 +269,8 @@ export class ShelterPanel {
         e.kills ? `☠️ 擊殺 ${e.kills}` : '',
         e.siege?.wallPct != null && e.success ? `🧱 城牆剩 ${e.siege.wallPct}%` : e.wallLost ? `🧱 圍牆 −${e.wallLost}` : '',
       ].filter(Boolean).join('・');
-      return `<div class="card defense-log ${e.success ? 'ok' : 'fail'}">
-        <div class="row-between"><b>${(e.at || 0) > since ? '<span class="tag tag-blue">未讀</span>' : ''}${e.success ? '🛡️ 防禦成功' : '💥 防禦失敗'}</b><span class="row-gap">${e.id ? shareBtn(this.game, 'defense', e.id) : ''}<small class="muted">${when}</small></span></div>
+      const html = `<div class="card defense-log ${e.success ? 'ok' : 'fail'}">
+        <div class="row-between"><b>${(e.at || 0) > since ? '<span class="tag tag-blue">未讀</span>' : ''}${e.success ? '🛡️ 防禦成功' : '💥 防禦失敗'}</b><span class="row-gap">${e.id && !shared ? shareBtn(this.game, 'defense', e.id) : ''}<small class="muted">${when}</small></span></div>
         <div>「${escapeHtml(e.baseName)}」遭 ${escapeHtml(e.attacker)} 攻擊</div>
         ${lines ? `<small class="muted block">${lines}</small>` : ''}
         ${e.reward ? `${raidRewardHtml(e, 'summary')}<details class="sr-details"><summary>查看獎勵明細</summary>${raidRewardHtml(e, 'detail')}</details>` : ''}
@@ -274,10 +280,10 @@ export class ShelterPanel {
         ${e.injured?.length ? `<div class="neg">🩸 重傷：${e.injured.map(escapeHtml).join('、')}</div>` : ''}`}
         ${e.assists?.length ? `<div class="chips">${e.assists.map((x) => `<span class="ally-chip">🛡️ 協防：${escapeHtml(x.name)}${x.cover ? ' 防禦設施' : ''}${x.dmg ? ` ${x.dmg.toLocaleString()} 傷害` : ''}${x.kills ? `・擊殺 ${x.kills}` : ''}${x.down ? `・${x.down} 人重傷` : ''}</span>`).join('')}</div>` : ''}
         ${e.note ? `<small class="muted block">${escapeHtml(e.note)}</small>` : ''}
-        ${battlesSectionHtml(this.game, e.battleIds, openBattle)}
+        ${shared ? '' : battlesSectionHtml(this.game, e.battleIds, openBattle)}
       </div>`;
-    }).join('');
-    return `<h4>🛡️ 據點遭襲紀錄</h4>${rows || '<p class="muted">據點還沒有被攻擊過。</p>'}`;
+      return shared ? html.replace(/<details class="sr-details">/g, '<details class="sr-details" open>') : html;
+    }
   }
 
   onAction(action, data) {

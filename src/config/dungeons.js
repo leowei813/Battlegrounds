@@ -21,10 +21,10 @@ export const DG_TIME = {
   floorMs: 9 * MIN,
 };
 export const DG_FLOORS = 20;
-/** 每團人數 */
-export const DG_TEAM = { min: 3, max: 8 };
-/** 每個副本每天最多報名人數：16 人（最多兩團） */
-export const DG_MAX_SIGNUPS = 16;
+/** 每團人數（v11.2：不再分團，所有報名者同一團） */
+export const DG_TEAM = { min: 3, max: 12 };
+/** 每個副本每天最多報名人數：12 人 */
+export const DG_MAX_SIGNUPS = 12;
 
 /** 副本戰鬥規則（只在副本內生效） */
 export const DG_RULES = {
@@ -49,10 +49,13 @@ export const DG_RULES = {
 
 /** 難度：依人數與層數成長（以正式計算模擬校準：滿配標準隊伍約一半以上通關，罕見裝備約停在 16～17 層） */
 export const DG_DIFF = {
+  maxPlayers: 8, // 難度最多以 8 人計算（9～12 人時難度與 8 人相同）
   perPlayer: 3, // 每波敵人數 = 人數 × 3
-  atk0: 16, atkGrow: 1.14, // 敵人攻擊倍率
-  hp0: 2.5, hpGrow: 1.08, // 敵人生命倍率
+  // v11.2：第 20 層的攻擊／生命比原本低 5%（每層成長率 × 0.95^(1/19)）
+  atk0: 16, atkGrow: 1.14 * 0.95 ** (1 / 19), // 敵人攻擊倍率
+  hp0: 2.5, hpGrow: 1.08 * 0.95 ** (1 / 19), // 敵人生命倍率
   defGrow: 1.04, // 敵人防禦成長（較慢）
+  curve: 2, // 難度曲線：1＝每層等比成長；2＝前面幾層較簡單、越後面成長越快（第 20 層不受曲線影響）
   sizePow: 0.42, // 依人數調整攻擊：（人數 / 5）^0.42（3、5、8 人的標準隊伍通關率接近）
   bossHpPer: 1.5, // 首領生命 × 人數 × 1.5
   bossAtk: 1.5,

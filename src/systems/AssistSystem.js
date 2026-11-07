@@ -1,3 +1,4 @@
+import { xpToNext } from '../config/survivors.js';
 import { haversine, uid } from '../utils/math.js';
 import { tripProgress } from './ExplorationSystem.js';
 
@@ -20,6 +21,8 @@ const clampNum = (v, min, max, d = min) => (Number.isFinite(v) ? Math.min(max, M
 
 /** 協防隊回家後多久內收到的戰果還會補進協防報告 */
 const PATCH_KEEP_MS = 12 * 3600000;
+/** 協防隊在對方守住屍潮時獲得的守城經驗：每人升級所需經驗的 2%（據點駐守人員為 5%） */
+export const ASSIST_GUARD_XP_PCT = 0.02;
 
 /**
  * 友好玩家的屍潮協防：
@@ -364,14 +367,16 @@ export class AssistSystem {
     // 協防的經驗：每擊殺 1 隻 4 點，平分給隊員
     const xp = r ? r.kills * 4 : 0;
     if (xp) members.forEach((m) => g.survivors.gainXp(m, xp / members.length));
+    // 對方守住屍潮：協防隊員另外獲得守城經驗（同一晚只給一次）
+    const guard = this.grantGuardXp(t.playerId, r, members);
     // 召回的協防隊也照樣顯示協防戰果；對方還沒回報時先註明，之後收到戰果會補進這份報告
     const pending = !r && !(exp.travelEvents || []).some((t2) => t2.startsWith('🛡️ 協防「'));
     return {
       id: uid('rp'), poiName: `🛡️ 協防「${t.name || '友好玩家'}」`, poiType: 'residential', at: exp.endAt,
       events: [...(exp.travelEvents || []), r ? this.resultText(t.name || '友好玩家', r) : pending ? '🛡️ 對方尚未回報戰果（對方上線結算後會自動補上）' : null, '🏠 協防結束，回到避難所'].filter(Boolean),
-      resources: {}, items: [], blueprints: [], kills: (exp.travelKills || 0) + (r?.kills || 0), xp: (exp.travelXp || 0) + xp, success: true,
+      resources: {}, items: [], blueprints: [], kills: (exp.travelKills || 0) + (r?.kills || 0), xp: (exp.travelXp || 0) + xp + guard.total, success: true,
       members: members.map((m) => m.name),
-      assistPlayerId: t.playerId || null, assistPending: pending,
+      assistPlayerId: t.playerId || null, assistPending: pending, assistMemberIds: [...exp.memberIds],
     };
   }
 
@@ -379,10 +384,41 @@ export class AssistSystem {
    * 協防隊已經回家後才收到的戰果：補進最近一份給這位玩家的協防報告。
    * 同一趟協防可能同時有屍潮與 NPC／玩家攻打，每一種戰果都會補上（同一段文字不重複）。
    */
-  patchReport(playerId, text, kills = 0) {
+  /**
+   * 協防的守城經驗：對方守住屍潮、自己有派協防隊時，每位隊員獲得升級所需經驗的 ASSIST_GUARD_XP_PCT。
+   * 同一位玩家的同一晚只給一次（協防隊回家、或回家後才收到戰果，哪個先發生就在哪裡給）。
+   * @returns {{total:number, list:{n:string, d:number}[]}}
+   */
+  grantGuardXp(playerId, r, members) {
+    const g = this.game;
+    const none = { total: 0, list: [] };
+    if (!playerId || !r || r.result !== 'ok' || !r.team || !members.length) return none;
+    const key = `gxp|${playerId}|${r.night}`;
+    g.state.assistXpSeen = g.state.assistXpSeen || [];
+    if (g.state.assistXpSeen.includes(key)) return none;
+    g.state.assistXpSeen = [key, ...g.state.assistXpSeen].slice(0, 20);
+    const list = members.map((m) => {
+      const d = Math.round(xpToNext(m.level) * ASSIST_GUARD_XP_PCT);
+      g.survivors.gainXp(m, d);
+      return { n: m.name, d };
+    });
+    g.log(`🎖️ 協防守住屍潮：${list.map((x) => `${x.n} +${x.d}`).join('、')} 守城經驗`, 'success');
+    return { total: list.reduce((a, x) => a + x.d, 0), list };
+  }
+
+  patchReport(playerId, text, kills = 0, r = null) {
     const now = Date.now();
     const rep = (this.game.state.reports || []).find((rp) => rp.assistPlayerId === playerId && (rp.assistPending || now - (rp.at || 0) < PATCH_KEEP_MS));
     if (!rep || rep.events.includes(text)) return false;
+    // 回家後才收到「守住」的戰果：補發守城經驗並記到報告的經驗明細
+    const members = (rep.assistMemberIds || []).map((id) => this.game.survivors.get(id)).filter(Boolean);
+    const guard = this.grantGuardXp(playerId, r, members);
+    if (guard.total) {
+      const by = rep.xpBy ? rep.xpBy.map((x) => ({ ...x })) : [];
+      guard.list.forEach((x) => { const o = by.find((y) => y.n === x.n); if (o) o.d += x.d; else by.push({ ...x }); });
+      rep.xpBy = by;
+      rep.xp = (rep.xp || 0) + guard.total;
+    }
     rep.assistPending = false;
     const i = rep.events.findIndex((e) => e.startsWith('🛡️ 對方尚未回報戰果'));
     if (i >= 0) rep.events.splice(i, 1, text);
@@ -425,7 +461,7 @@ export class AssistSystem {
       g.state.assistSeen = [key, ...(g.state.assistSeen || [])].slice(0, 20);
       const text = this.resultText(p.name, r);
       // 協防隊已經回到避難所：把戰果補進那份協防報告
-      if (!g.state.expeditions.some((e) => e.kind === 'assist' && e.assistTarget?.playerId === p.id)) this.patchReport(p.id, text, r.kills || 0);
+      if (!g.state.expeditions.some((e) => e.kind === 'assist' && e.assistTarget?.playerId === p.id)) this.patchReport(p.id, text, r.kills || 0, r);
       g.log(text, r.result === 'ok' ? 'success' : 'danger');
       g.toast(text, r.result === 'ok' ? 'success' : 'danger');
     });

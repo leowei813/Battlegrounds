@@ -7,7 +7,7 @@ import { RESOURCE_KEYS } from '../../config/constants.js';
 import { SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, unitWeight } from '../../config/supplies.js';
 import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
-import { LOADOUT_MAX, AMMO_CAP_OPTIONS } from '../../systems/SurvivorSystem.js';
+import { LOADOUT_MAX, AMMO_CAP_OPTIONS, MED_NONE } from '../../systems/SurvivorSystem.js';
 import {
   btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf, affixChips, towerTag,
 } from '../components.js';
@@ -534,9 +534,11 @@ export class SurvivorPanel {
     const rules = svs.supplyRules(sv);
     const store = g.state.supplies || {};
     const keys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === 'med' && (SUPPLIES[k].heal || 0) > 0);
-    const opts = keys.map((k) => `<option value="${k}" ${rules.med === k ? 'selected' : ''}>${SUPPLIES[k].icon} ${SUPPLIES[k].name}（回復 ${Math.round(SUPPLIES[k].heal * 100)}%・倉庫 ${Math.floor(store[k] || 0)}）</option>`).join('');
+    const none = rules.med === MED_NONE;
+    const opts = `<option value="${MED_NONE}" ${none ? 'selected' : ''}>🚫 不攜帶（藥品欄留空）</option>` + keys.map((k) => `<option value="${k}" ${rules.med === k ? 'selected' : ''}>${SUPPLIES[k].icon} ${SUPPLIES[k].name}（回復 ${Math.round(SUPPLIES[k].heal * 100)}%・倉庫 ${Math.floor(store[k] || 0)}）</option>`).join('');
     // 小標籤：藥名與數量；點一下跳出原生選單（透明的下拉選單蓋在標籤上）
     const cur = SUPPLIES[rules.med];
+    if (none) return `<label class="med-chip empty" title="不攜帶藥品：戰鬥後不會自動用藥，點一下選擇要攜帶的藥品">🚫 不攜帶藥品 <span class="dd">▾</span><select class="lo-med" aria-label="自動補給的藥品">${opts}</select></label>`;
     return `<label class="med-chip ${lo ? '' : 'empty'}" title="藥品欄一律自動補給，點一下更換種類">${cur?.icon || '💊'} ${escapeHtml(cur?.name || '藥品')} <b>${lo?.key === rules.med ? lo.qty : 0}</b>/${LOADOUT_MAX.med} <span class="auto-tag">🔄</span> <span class="dd">▾</span><select class="lo-med" aria-label="自動補給的藥品">${opts}</select></label>`;
   }
 

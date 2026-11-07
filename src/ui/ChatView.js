@@ -1,4 +1,4 @@
-import { shareCardHtml } from './ShareDialog.js';
+import { shareCardHtml, openSharedDetail } from './ShareDialog.js';
 import { escapeHtml } from '../utils/dom.js';
 import { CHAT_MAX_LEN, CHAT_COOLDOWN_MS } from '../multiplayer/Chat.js';
 
@@ -256,6 +256,11 @@ export class ChatView {
       return;
     }
     const act = t.dataset.chat;
+    if (act === 'share') {
+      const m = this.chat.visible().find((x) => String(x.id) === t.closest('[data-msg]')?.dataset.msg);
+      openSharedDetail(this.ui, t.dataset.id, m ? (m.mine ? '我' : m.name) : '');
+      return;
+    }
     const id = Number(t.dataset.id);
     if (act === 'close') this.close();
     else if (act === 'blocked') this.openSheet({ type: 'blocked' });
