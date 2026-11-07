@@ -5088,7 +5088,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const p4 = mkp();
   gw.rally.get = () => ({ id: 'r2', status: 'done', home: { lat: 25, lon: 121 }, fightAt: now - 60e3 });
   WS5.prototype.fixRallyTrips.call({ game: gw }, [p4], now);
-  assert(!p3.trips.length && p4.trips.length === 1 && tripProgress(p4.trips[0], now).phase === 'returning', '其他玩家看到的集結：行軍時只有集結圖示，打完各隊從目標返程');
+  const { rallyTripView: RTV } = await import('../src/multiplayer/WorldSync.js');
+  const dMarch = { id: 'r2', status: 'departed', home: { lat: 25, lon: 121 }, fightAt: now + 60e3 };
+  const dDone = { id: 'r2', status: 'done', home: { lat: 25, lon: 121 }, fightAt: now - 60e3 };
+  assert(p3.trips.length === 1 && RTV(p3.trips[0], dMarch, now) === null, '其他玩家看到的集結：行軍時不顯示各隊（只有集結戰旗），資料保留');
+  const v4 = RTV(p4.trips[0], dDone, now);
+  assert(v4 && tripProgress(v4, now).phase === 'returning', '打完各隊從目標返程');
+  assert(RTV(p3.trips[0], dDone, now) && tripProgress(RTV(p3.trips[0], dDone, now), now).phase === 'returning', '同一份資料在交戰結束後立刻顯示返程（不用等下一次同步）');
+  assert(RTV(p4.trips[0], dDone, now + 700e3) === null, '回到家後不再顯示');
 }
 
 // ---- 126. 白天高危區也有風險：遭遇率、殭屍等級、生命與攻擊依區域提高（一般區不變） ----

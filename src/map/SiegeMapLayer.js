@@ -3,6 +3,7 @@ import { WORLD } from '../systems/SiegeSystem.js';
 import { bus } from '../core/EventBus.js';
 import { EXP_PHASES, AMBUSH_RADIUS_M, tripProgress } from '../systems/ExplorationSystem.js';
 import { RallySystem } from '../systems/RallySystem.js';
+import { rallyTripView } from '../multiplayer/WorldSync.js';
 import { formatDuration } from '../utils/math.js';
 
 /** 停在目的地時的狀態名稱（不是探索） */
@@ -206,8 +207,10 @@ export const SiegeMapLayer = L.Layer.extend({
   drawOtherTrips(ctx, size) {
     const now = Date.now();
     this.teams = [];
-    (this.game.world?.others || []).forEach((player) => player.trips.forEach((trip) => {
-      if (now > trip.endAt) return;
+    (this.game.world?.others || []).forEach((player) => player.trips.forEach((raw) => {
+      // v12.2：集結隊伍每一幀依共用的集結資料決定（交戰前不顯示、打完立刻顯示返程）
+      const trip = raw.rally ? rallyTripView(raw, this.game.rally?.get?.(raw.rally), now) : raw;
+      if (!trip || now > trip.endAt) return;
       const p = tripProgress(trip, now);
       // 其他玩家的隊伍只看得到移動，看不到剩餘時間；被攔截撤回中的隊伍不能再攔截
       if (trip.kind === 'assist') {
@@ -251,6 +254,8 @@ export const SiegeMapLayer = L.Layer.extend({
     g.shared.all('rally').map((o) => ({ id: o.id, ...o.data })).forEach((d) => {
       if (!d.home || !['gathering', 'departed', 'resolving', 'done'].includes(d.status)) return;
       if (d.status === 'done' && (!d.fightAt || now >= d.fightAt)) return;
+      // 參加者都離線、一直沒有結算的集結：交戰時間過了 10 分鐘就不再顯示戰旗
+      if (d.fightAt && now > d.fightAt + 10 * 60000) return;
       const teams = d.teams || [];
       const label = (pos, l1, l2, big, n) => {
         const m = this.map.latLngToContainerPoint([pos.lat, pos.lon]);

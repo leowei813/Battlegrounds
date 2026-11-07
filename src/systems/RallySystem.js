@@ -182,6 +182,7 @@ export class RallySystem {
       return r;
     }
     this.setDepartAt(dep.exp, data.departAt);
+    g.world?.syncSoon?.();
     g.log(`🚩 發起集結：目標「${target.name}」，${delayMin} 分鐘後出發（最多 ${data.maxTeams} 支隊伍）`, 'info');
     return { ok: true, id, msg: `已發起集結，好友會收到通知（${delayMin} 分鐘後出發）` };
   }
@@ -219,6 +220,7 @@ export class RallySystem {
     }
     this.setDepartAt(dep.exp, r.data?.departAt || d0.departAt);
     g.log(`🚩 參加「${d0.ownerName}」的集結：目標「${d0.target.name}」`, 'info');
+    g.world?.syncSoon?.();
     return { ok: true, msg: `已加入「${d0.ownerName}」的集結` };
   }
 
@@ -393,11 +395,25 @@ export class RallySystem {
     return { tag: '集結', line1: '⚔️ 集結交戰中', line2: '⏱ 等待結果' };
   }
 
+  /** 附近有進行中（或剛結束）的集結：世界同步改為較快的頻率，讓大家的畫面盡快一致 */
+  active(now = Date.now()) {
+    return (this.game.shared?.all?.('rally') || []).some((o) => {
+      const d = o.data || {};
+      return ['gathering', 'departed', 'resolving'].includes(d.status) || (d.status === 'done' && now - (d.fightAt || 0) < 10 * 60000);
+    });
+  }
+
   /** 每 2 秒：出發、結算、套用結果、好友通知 */
   update(now = Date.now()) {
     if (now - this.lastAt < 2000) return;
     this.lastAt = now;
     const g = this.game;
+    // 快要開打或等待結算中的集結：每 3 秒重新讀取，戰鬥結果與返程能同步顯示（不用等下一次世界同步）
+    const due = (g.shared?.all?.('rally') || []).some((o) => ['departed', 'resolving'].includes(o.data?.status) && now >= (o.data.fightAt || 0) - 2000);
+    if (due && now - (this.fastAt || 0) >= 3000 && g.shared?.list) {
+      this.fastAt = now;
+      g.shared.list('rally', RALLY_KM).catch(() => {});
+    }
     this.invites(now).forEach((d) => {
       if (this.st.seen[d.id]) return;
       this.st.seen[d.id] = now;
