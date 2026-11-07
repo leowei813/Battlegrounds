@@ -798,7 +798,7 @@ export class BaseSiege {
     const defenders = g.npcs.defenders(base);
     const allies = g.shelter.isPrimary(base) ? (g.assist?.allyUnits() || []) : [];
     if (!defenders.length && !allies.length) {
-      this.breach('圍牆被打破，據點裡沒有人可以應戰');
+      this.breach('圍牆被打破；據點裡沒有人可以防守');
       return;
     }
     const foes = zombies.map((z) => {
@@ -820,7 +820,7 @@ export class BaseSiege {
     });
     zombies.forEach((z) => { if (z.hp <= 0) this.pushFx({ type: 'shot', kind: 'melee', x1: 0, y1: 0, x2: z.x, y2: z.y }); });
     if (!result.victory) {
-      this.breach(`圍牆被打破，據點裡的人員（${defenders.map((d) => d.name).join('、') || '協防隊'}）迎戰失敗`);
+      this.breach(`圍牆被打破；防守人員（${[...defenders.map((d) => d.name), ...allies.map((a) => a.name)].join('、')}）戰敗`);
       return;
     }
     if (!this.gateLogged) {
