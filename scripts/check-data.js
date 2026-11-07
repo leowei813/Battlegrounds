@@ -5586,6 +5586,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!RB143.expansion && !Object.values(R143).some((r) => r.branch === 'expansion'), '研究頁不再有擴張科技');
 }
 
+// ---- 144. v12 倖存者名單：至少 250 組、最多 6 個字；自己的倖存者不同名 ----
+{
+  const { SURVIVOR_NAMES: SN } = await import('../src/config/survivors.js');
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  assert(SN.length >= 250 && new Set(SN).size === SN.length && SN.every((n) => [...n].length <= 6), `倖存者名單 ${SN.length} 組、不重複、最多 6 個字`);
+  const gn = Game.newGame({ playerName: 'N144', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  ['阿傑', '阿傑', '小美', '阿傑'].forEach((n) => { const sv = createSurvivor(n, 'medic', 5); gn.state.survivors.push(sv); });
+  const ren = gn.survivors.dedupeNames();
+  const names = gn.state.survivors.map((x) => x.name);
+  assert(ren.length === 2 && new Set(names).size === names.length && names.filter((n) => n === '阿傑').length === 1, `讀檔時同名的倖存者改名（${ren.join('、')}）`);
+  const c = gn.survivors.makeCandidates(40, 5);
+  const all = [...gn.state.survivors.map((x) => x.name), ...c.map((x) => x.name)];
+  assert(new Set(all).size === all.length, '同一批候選人彼此不同名，也不和現有倖存者同名');
+  const dup = createSurvivor(names[1], 'scout', 3);
+  gn.survivors.addSurvivor(dup);
+  assert(gn.state.survivors.filter((x) => x.name === names[1]).length === 1, '加入同名倖存者時自動改名');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
