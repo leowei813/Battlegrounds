@@ -5428,6 +5428,40 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(r.hurt.length === 1 && r.hurt[0].name === b.name && r.hurt[0].down === false, '擊退掠奪隊：生命變少的人列入傷勢（標示受傷，不是被擊倒）');
 }
 
+// ---- 136. 協防隊在對方守住屍潮時獲得守城經驗（駐守的 40%，同一晚只給一次）----
+{
+  const { xpToNext: xpn136 } = await import('../src/config/survivors.js');
+  const { ASSIST_GUARD_XP_PCT } = await import('../src/systems/AssistSystem.js');
+  const ga = Game.newGame({ playerName: 'A136', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  const sv = ga.survivors.leader();
+  sv.level = 30; sv.xp = 0;
+  const want = Math.round(xpn136(30) * ASSIST_GUARD_XP_PCT);
+  ga.assist.player = () => ({ id: 'p1', name: '阿許', bases: [] });
+  let res = { night: 'n1', result: 'ok', team: true, cover: false, dmg: 100, kills: 5 };
+  ga.assist.myResult = () => res;
+  const exp = { assistTarget: { playerId: 'p1', name: '阿許' }, memberIds: [sv.id], endAt: Date.now(), travelEvents: [] };
+  const x0 = ga.survivors.totalXp(sv);
+  const rep = ga.assist.report(exp);
+  const got = Math.round(ga.survivors.totalXp(sv) - x0);
+  assert(ASSIST_GUARD_XP_PCT === 0.02 && got === want + 20, `協防守住：守城經驗 = 升級所需 2%＋擊殺經驗（${got} = ${want}+20）`);
+  const x1 = ga.survivors.totalXp(sv);
+  ga.assist.report(exp);
+  assert(Math.round(ga.survivors.totalXp(sv) - x1) === 20, '同一晚的守城經驗只給一次');
+  res = { night: 'n2', result: 'breached', team: true, dmg: 100, kills: 0 };
+  const x2 = ga.survivors.totalXp(sv);
+  ga.assist.report(exp);
+  assert(ga.survivors.totalXp(sv) === x2, '對方被突破：沒有守城經驗');
+  // 協防隊先回家、之後才收到「守住」的戰果：補發經驗並記到報告
+  res = null;
+  const pend = ga.assist.report({ ...exp, endAt: Date.now() });
+  ga.state.reports = [pend, ...(ga.state.reports || [])];
+  const x3 = ga.survivors.totalXp(sv);
+  const r3 = { night: 'n3', result: 'ok', team: true, dmg: 50, kills: 2 };
+  ga.assist.patchReport('p1', ga.assist.resultText('阿許', r3), 2, r3);
+  assert(Math.round(ga.survivors.totalXp(sv) - x3) === Math.round(xpn136(sv.level === 30 ? 30 : 30) * 0.02) && pend.xpBy?.some((x) => x.n === sv.name && x.d > 0), '回家後才收到守住戰果：補發守城經驗並列在報告經驗');
+  void rep;
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
