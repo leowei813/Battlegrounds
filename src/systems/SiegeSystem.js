@@ -111,10 +111,10 @@ export class BaseSiege {
     return b.assistLog;
   }
 
-  /** 防守紀錄裡的協防清單（標籤顯示）；同時把今晚的協防結果定案 */
-  assistList(result) {
+  /** 防守紀錄裡的協防清單（標籤顯示）；同時把這一晚的協防結果定案。只算結算的那一晚（前幾晚的協防不會帶進來） */
+  assistList(result, night = this.nightKey()) {
     const log = this.base?.assistLog;
-    if (!log || !Object.keys(log.list).length) return [];
+    if (!log || log.night !== night || !Object.keys(log.list).length) return [];
     if (log.result === 'ongoing') log.result = result;
     return Object.values(log.list).map((x) => ({
       name: x.name, dmg: Math.round(x.dmg || 0), kills: x.kills || 0, ...(x.kind === 'cover' ? { cover: true } : {}),
@@ -170,7 +170,7 @@ export class BaseSiege {
       reward.recovered = this.collectRecovered();
       const entry = this.game.shelter.recordDefense({
         base: this.base, attacker: '屍潮', success: true, waves: this.wave, kills: this.nightKills,
-        wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)), assists: this.assistList('ok'),
+        wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)), assists: this.assistList('ok', st?.night ?? this.nightKey()),
         siege: reward, battleIds: this.takeNightBattles(),
       });
       this.game.bus.emit('siege:result', entry);

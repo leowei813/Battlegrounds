@@ -5515,6 +5515,27 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gm.survivors.refillMeds([nv]).length === 0, '不攜帶時戰後不會從背包補藥');
 }
 
+// ---- 140. 副本難度曲線：越後面越難，第 20 層比原本低 5% ----
+{
+  const { DG_DIFF: DD } = await import('../src/config/dungeons.js');
+  const mul = (f) => DD.atk0 * DD.atkGrow ** (19 * ((f - 1) / 19) ** DD.curve);
+  assert(DD.curve === 2 && Math.abs(mul(20) / (16 * 1.14 ** 19) - 0.95) < 1e-9, `第 20 層敵人攻擊為原本的 95%（${(mul(20) / (16 * 1.14 ** 19)).toFixed(3)}）`);
+  assert(mul(1) === 16 && mul(10) < 16 * 1.14 ** 9 * 0.6 && mul(15) < 16 * 1.14 ** 14, `前中段較原本簡單（第 10 層 ${mul(10).toFixed(0)}、原本 ${(16 * 1.14 ** 9).toFixed(0)}）`);
+}
+
+// ---- 141. 據點紀錄的協防名單只算當晚（前一晚協防的人不會出現在今晚的紀錄）----
+{
+  const gs = Game.newGame({ playerName: 'S141', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gs.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gs.shelter.establish(gs.state.map.pois.find((p) => gs.shelter.canEstablish(p).ok));
+  const sg = gs.siege.of();
+  sg.base.assistLog = { night: 'n-old', result: 'ok', list: { p1: { name: '阿許', kind: 'team', dmg: 13440, kills: 0 } } };
+  assert(sg.assistList('ok', 'n-new').length === 0 && sg.base.assistLog.result === 'ok', '前一晚的協防不會出現在今晚的防守紀錄');
+  sg.base.assistLog = { night: 'n-new', result: 'ongoing', list: { p1: { name: '阿許', kind: 'team', dmg: 500, kills: 3 } } };
+  const l = sg.assistList('ok', 'n-new');
+  assert(l.length === 1 && l[0].dmg === 500 && sg.base.assistLog.result === 'ok', '當晚有協防時正常列出');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
