@@ -158,6 +158,18 @@ function rosterHtml(g, data, gp) {
     ${groups}${gp && !gp.cancelled && gp.groups.length > 1 ? '<small class="muted block">分團依目前報名順序預估，17:40 截止時才確定；鎖定時無法出擊的人會被移出。</small>' : ''}</div>`;
 }
 
+/** 副本資訊視窗的參與狀況（精簡）：職業燈號＋小標籤（職業・倖存者・等級・玩家），超過 8 人時依團分排 */
+function rosterMiniHtml(g, data, gp) {
+  const list = (data?.list || []).filter((e) => e && e.c && CLASSES[e.c]);
+  if (!list.length) return '';
+  const me = g.dungeon.myId();
+  const chip = (e) => `<span class="dg-chip ${e.p === me ? 'me' : ''}">${clsIcon(e.c)} <b>${escapeHtml(e.sn || '')}</b> <small class="muted">Lv${e.lv || '?'}・${escapeHtml(e.n || '')}${e.p === me ? '（我）' : ''}</small></span>`;
+  const rows = gp && !gp.cancelled && gp.groups.length > 1
+    ? gp.groups.map((x, i) => `<div class="dg-chips"><small class="dg-gl">第 ${i + 1} 團</small>${x.map(chip).join('')}</div>`).join('')
+    : `<div class="dg-chips">${[...list].sort((a, b) => (a.at || 0) - (b.at || 0)).map(chip).join('')}</div>`;
+  return `<div class="dg-roster mini"><div class="dg-lamps">${lamps(list)}</div>${rows}</div>`;
+}
+
 /** 報名頁 */
 function signupTab(g, dg, now) {
   const day = DungeonSystem.dayKey(now);
@@ -318,7 +330,11 @@ export function openStatus(ui, dg0) {
     const s = statusOf(g, rec, now);
     const tabs = recs.length > 1 ? `<div class="chips">${recs.map((r) => `<button class="chip ${r.dg === dg ? 'active' : ''}" data-action="dgPick" data-dg="${r.dg}">${clsIcon(g.survivors.get(r.svId)?.classId)} ${DUNGEONS[r.dg].short}</button>`).join('')}</div>` : '';
     const head = `<h4>${dgIcon()}${escapeHtml(DUNGEONS[dg].name)}${s.run ? `・第 ${s.run.group + 1} 團` : ''} <span class="tag ${s.cls}">${s.tag}</span></h4>`;
-    if (!s.run) return `${tabs}${head}<p>${s.sub}</p>${timeline(now)}${btn('打開副本畫面', 'dgOpen', { dg }, { cls: 'btn-sm' })}`;
+    if (!s.run) {
+      const data = g.dungeon.data(dg, DungeonSystem.dayKey(now));
+      const gp = data?.list?.length ? DungeonSystem.groupsOf(data) : null;
+      return `${tabs}${head}<p>${s.sub}</p>${rosterMiniHtml(g, data, gp)}${timeline(now)}${btn('打開副本畫面', 'dgOpen', { dg }, { cls: 'btn-sm' })}`;
+    }
     const run = s.run;
     const upto = DungeonSystem.revealed(run, now);
     const f = DungeonSystem.floorAt(run, now);
