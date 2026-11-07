@@ -219,11 +219,12 @@ export class BaseSiege {
     const got = g.grant({ coins, ...items }, true);
     const gained = Object.fromEntries(Object.entries(items).map(([k]) => [k, got[k] || 0]).filter(([, v]) => v > 0));
     g.state.inventory.blueprints.push(...blueprints);
-    // 駐守經驗：今晚有參與防守（任一波來襲時在駐守或在瞭望塔上），且天亮時仍在防守的人
+    // 駐守經驗：這一晚有參與防守的人（任一波來襲時在駐守或在瞭望塔上）
+    // v10.16：依結算的那一晚比對紀錄（天亮後才上線補結算也算），結算時已經出門探索的人也拿得到
     const rec = this.base.nightDefenders;
-    // 沒有今晚的紀錄（例如更新前就已入夜）：以天亮時在防守的人計
-    const joined = new Set(rec?.night === this.nightKey() ? rec.ids : this.defenderIds());
-    const xp = this.defenderIds().filter((id) => joined.has(id)).map((id) => g.survivors.get(id)).filter(Boolean).map((sv) => {
+    const night = this.base.nightStats?.night ?? this.nightKey();
+    const ids = rec?.night === night && rec.ids?.length ? rec.ids : this.defenderIds();
+    const xp = [...new Set(ids)].map((id) => g.survivors.get(id)).filter(Boolean).map((sv) => {
       const amount = Math.round(xpToNext(sv.level) * R.guardXpPct);
       g.survivors.gainXp(sv, amount);
       return { name: sv.name, level: sv.level, xp: amount };
@@ -415,12 +416,16 @@ export class BaseSiege {
     return [...new Set([...this.guards().map(({ sv }) => sv.id), ...tower])];
   }
 
-  /** 記下今晚參與防守的人（每波來襲時在防守的都算；存在據點上，重新整理也不會遺失） */
+  /**
+   * 記下今晚參與防守的人（存在據點上，重新整理也不會遺失）：每波來襲時，以及場上有殭屍時每隔幾秒記一次
+   * （v10.16：中途才開始駐守的人，只要殭屍還在場上、有參與迎戰就算）
+   */
   markDefenders() {
     if (!this.base) return;
-    const night = this.nightKey();
+    const night = this.base.nightStats?.night ?? this.nightKey();
     const cur = this.base.nightDefenders?.night === night ? this.base.nightDefenders.ids : [];
-    this.base.nightDefenders = { night, ids: [...new Set([...cur, ...this.defenderIds()])] };
+    const ids = [...new Set([...cur, ...this.defenderIds()])];
+    if (ids.length !== cur.length || this.base.nightDefenders?.night !== night) this.base.nightDefenders = { night, ids };
   }
 
   startWave() {
@@ -458,6 +463,11 @@ export class BaseSiege {
 
     // 生成（只在夜間）：一波一波來襲，波與波之間有喘息時間
     const active = this.active();
+    // 場上有殭屍時，每 3 秒記一次正在防守的人（中途加入駐守也算參與）
+    if (active && this.zombies.length && (this.clock || 0) - (this.markAt || 0) >= 3) {
+      this.markAt = this.clock || 0;
+      this.markDefenders();
+    }
     // 入夜與天亮時統計今晚的防守結果
     if (active && !this.wasActive) this.startNight();
     // 天亮（或白天回到遊戲時還有沒結算的夜晚）：結算防守結果

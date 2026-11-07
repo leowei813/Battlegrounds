@@ -2664,15 +2664,22 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(lead.loadout.med.qty === 10, `回到避難所時自動補滿藥品欄（${lead.loadout.med.qty}）`);
   assert(!ga.survivors.setSupply(lead.id, 'med', null).ok && lead.supply.med === 'bandage', 'v10.14.1：藥品一律自動補給（不能取消，只能換種類）');
   assert(!ga.survivors.setSupply(lead.id, 'ammo', 'ammo556').ok, 'v10.14.1：彈藥自動補給遠程武器使用的子彈，不能另外設定');
-  // 彈藥欄：最多 100，戰鬥優先用遠程，沒彈藥改用近戰
+  // 彈藥欄：預設最多 300（可自選 100~300），戰鬥優先用遠程，沒彈藥改用近戰
   const gun = ga.equipment.generate({ level: 5, model: 'm1911', rarity: 'common' });
   const knife = ga.equipment.generate({ level: 5, model: 'knife', rarity: 'common' });
   [gun, knife].forEach((it) => { ga.equipment.addItem(it, 't'); ga.equipment.equip(lead.id, it.id); });
   assert(lead.equipment.weapon === gun.id && lead.equipment.melee === knife.id, '遠程武器與近戰武器分開兩欄');
-  ga.state.supplies.ammo9 = 300;
-  assert(ga.survivors.loadSlot(lead.id, 'ammo', 'ammo9').ok && lead.loadout.ammo.qty === 100, '彈藥欄最多 100');
+  ga.state.supplies.ammo9 = 400;
+  assert(ga.survivors.loadSlot(lead.id, 'ammo', 'ammo9').ok && lead.loadout.ammo.qty === 300, '彈藥欄預設最多 300');
+  {
+    const before = ga.state.supplies.ammo9;
+    assert(ga.survivors.setAmmoCap(lead.id, 150).ok && lead.loadout.ammo.qty === 150 && ga.state.supplies.ammo9 === before + 150, '調低攜帶數量時多出的子彈放回倉庫');
+    assert(!ga.survivors.setAmmoCap(lead.id, 120).ok && !ga.survivors.setAmmoCap(lead.id, 350).ok, '攜帶數量只能選 100~300、每 50 一級');
+    assert(!ga.survivors.loadSlot(lead.id, 'ammo', 'ammo9').ok && lead.loadout.ammo.qty === 150, '補給不超過自選的攜帶數量');
+    assert(ga.survivors.setAmmoCap(lead.id, 300).ok && lead.loadout.ammo.qty === 300, '調高攜帶數量時在避難所立即補滿');
+  }
   const u1 = ga.combat.unitFromSurvivor(lead);
-  assert(u1.weapon === 'ranged' && lead.loadout.ammo.qty === 100 - (await import('../src/config/supplies.js')).AMMO_FOR.pistol.perFight, '有彈藥時優先使用遠程武器並消耗彈藥欄');
+  assert(u1.weapon === 'ranged' && lead.loadout.ammo.qty === 300 - (await import('../src/config/supplies.js')).AMMO_FOR.pistol.perFight, '有彈藥時優先使用遠程武器並消耗彈藥欄');
   lead.loadout.ammo = null;
   delete ga.state.supplies.ammo9;
   const u2 = ga.combat.unitFromSurvivor(lead);
@@ -3021,6 +3028,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const [rep] = ex.update(st.exp.endAt + 1, { silent: true });
   const next = gq3.state.expeditions[0];
   assert(rep && next && next.poiId === pois[1].id && next.queue.length === 1, `完成後自動前往佇列中的下一個地點（${rep?.events.slice(-1)}）`);
+  assert(!rep || rep.xpBy?.length, '連續探索前往下一站的報告也顯示經驗');
   const { labLevelFor: llf } = await import('../src/config/research.js');
   assert(llf('s_queue', 1) === 4 && llf('s_queue', 3) === 10, '佇列科技依研究中心等級解鎖（最後一級需要 Lv10）');
 }
@@ -3414,6 +3422,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const nAmmo = Object.entries(ok.siege.items).filter(([k]) => SP[k].cat === 'ammo').reduce((a, [, v]) => a + v, 0);
   assert(nParts === Math.round(4 * SR.partsPerWave * 1.5) && nAmmo === Math.round(4 * SR.ammoPerWave * 1.5), `物資箱：零件 ${nParts}、彈藥 ${nAmmo}`);
   assert(ok.siege.xp.length === 1 && ok.siege.xp[0].xp === Math.round(xpn(lv0) * SR.guardXpPct) && (sv.level > lv0 || sv.xp > xp0), '整晚駐守的人獲得升級所需 5% 經驗');
+  // v10.16：天亮後才補結算、駐守的人已經出門探索：仍然拿到駐守經驗
+  s.startNight(); s.wave = 3; s.nightKills = 30;
+  s.markDefenders();
+  sv.status = 'exploring';
+  s.endNight();
+  assert(gs.state.defenseLog[0].siege.xp.some((x) => x.name === sv.name), '結算時駐守的人已出門探索：參與防守的人仍有駐守經驗');
+  sv.status = 'idle';
   // 城牆 30% → 普通 ×1.0
   s.startNight(); s.wave = 2; s.nightKills = 10;
   b.wallHp = gs.shelter.wallMax(b) * 0.3;
@@ -3428,6 +3443,20 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   late.job = 'guard';
   s.endNight();
   assert(!gs.state.defenseLog[0].siege.xp.some((x) => x.name === '晚到'), '屍潮都打完才開始駐守的人不給駐守經驗');
+  // v10.16：中途才開始駐守，但殭屍還在場上（有參與迎戰）：給駐守經驗
+  s.base.nightDefenders = null;
+  s.startNight(); s.wave = 1; s.nightKills = 5;
+  s.markDefenders();
+  const mid = createSurvivor('中途', 'scout', 5, 'common');
+  gs.state.survivors.push(mid);
+  mid.job = 'guard';
+  s.zombies.push({ x: 0, y: 0, hp: 1, maxHp: 1 });
+  s.markAt = -10; s.clock = 0;
+  s.markDefenders();
+  s.zombies.length = 0;
+  s.endNight();
+  assert(gs.state.defenseLog[0].siege.xp.some((x) => x.name === '中途'), '中途開始駐守、殭屍還在場上：給駐守經驗');
+  mid.job = 'scavenge';
   // 警戒中全部倖存者都防守：來襲時都在防守的人都有經驗（不是只有遊戲開啟時在駐守的人）
   const others = [createSurvivor('甲', 'scout', 5, 'common'), createSurvivor('乙', 'medic', 5, 'common')];
   others.forEach((x) => { x.job = 'scavenge'; gs.state.survivors.push(x); });
@@ -4353,7 +4382,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!pois.some((p) => p.type === 'bakery'), '地圖上不再有麵包店');
 }
 
-// ---- 103. 自動回家：遊戲時間 19:00 所有外派隊伍回家、清空探索佇列；每天只觸發一次；可關閉；離線照 19:00 結算 ----
+// ---- 103. 自動回家：遊戲時間 19:30 所有外派隊伍回家、清空探索佇列；每天只觸發一次；可關閉；離線照 19:30 結算 ----
 {
   const mkH = (name) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon: 121 });
@@ -4374,11 +4403,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(r.ok, `派遣探索（${r.reason || ''}）`);
   gh.exploration.enqueue(r.exp.id, far[1].id);
   gh.exploration.enqueue(r.exp.id, far[2].id);
-  assert(!gh.autoHome.check(Date.now()), '19:00 以前不會觸發');
-  setHour(gh, 19); // 現在剛好 19:00（派遣在 19:00 之前）
+  assert(!gh.autoHome.check(Date.now()), '19:30 以前不會觸發');
+  setHour(gh, 19.5); // 現在剛好 19:30（派遣在 19:30 之前）
   const res = gh.autoHome.check(Date.now() + 2000);
-  assert(res && res.recalled === 1 && res.queued === 2 && r.exp.recalled && !r.exp.queue.length, `19:00 外派隊伍收到召回命令、清空探索佇列（召回 ${res?.recalled}、佇列 ${res?.queued}）`);
-  assert(r.exp.travelEvents.some((t) => t.includes('19:00 自動回家')), '報告寫出 19:00 自動回家');
+  assert(res && res.recalled === 1 && res.queued === 2 && r.exp.recalled && !r.exp.queue.length, `19:30 外派隊伍收到召回命令、清空探索佇列（召回 ${res?.recalled}、佇列 ${res?.queued}）`);
+  assert(r.exp.travelEvents.some((t) => t.includes('19:30 自動回家')), '報告寫出 19:30 自動回家');
   assert(!gh.autoHome.check(Date.now() + 60000), '同一天只觸發一次');
   gh.exploration.update(r.exp.endAt + 1, { silent: true });
   // 回家後可以再派出，當天不會再被召回
@@ -4392,18 +4421,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gk.state.settings.autoHome = false;
   setHour(gk, 18.5); gk.autoHome.check(Date.now());
   const rk = gk.exploration.start(gk.state.map.pois.find((p) => !gk.shelter.baseAtPoi(p.id)).id, ['leader'], 1, false, Date.now());
-  setHour(gk, 19);
-  assert(!gk.autoHome.check(Date.now() + 2000) && !rk.exp.recalled, '關閉時 19:00 不會召回');
-  // 離線：19:00 前出發、19:00 後才上線結算 → 照 19:00 當下召回（不是上線的時間）
+  setHour(gk, 19.5);
+  assert(!gk.autoHome.check(Date.now() + 2000) && !rk.exp.recalled, '關閉時 19:30 不會召回');
+  // 離線：19:30 前出發、19:30 後才上線結算 → 照 19:30 當下召回（不是上線的時間）
   const go = mkH('O103');
   setHour(go, 18.9); go.autoHome.check(Date.now());
   const fo = go.state.map.pois.filter((p) => !go.shelter.baseAtPoi(p.id) && haversine(p.lat, p.lon, go.shelter.primary().lat, go.shelter.primary().lon) > 700)[0];
   const ro = go.exploration.start(fo.id, ['leader'], 1, false, Date.now());
-  setHour(go, 19);
-  const later = Date.now() + 120000; // 19:00 之後兩分鐘才上線
+  setHour(go, 19.5);
+  const later = Date.now() + 120000; // 19:30 之後兩分鐘才上線
   const at19 = go.autoHome.triggerAt(later);
   go.autoHome.check(later, { silent: true });
-  assert(ro.exp.recalled && at19 < later - 100000 && Math.abs(ro.exp.endAt - (at19 + ro.exp.travelMs)) < 5, '離線時照 19:00 當下的位置召回');
+  assert(ro.exp.recalled && at19 < later - 100000 && Math.abs(ro.exp.endAt - (at19 + ro.exp.travelMs)) < 5, '離線時照 19:30 當下的位置召回');
   // 協防也召回
   const ga = mkH('A103');
   setHour(ga, 18.9); ga.autoHome.check(Date.now());
@@ -4411,7 +4440,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const ea = { id: 'ex_a103', kind: 'assist', poiId: tgtA.id, memberIds: [ga.survivors.leader().id], startAt: Date.now() - 1000, travelMs: 600000, searchMs: 0, endAt: Date.now() + 3600e3, distanceM: 800, from: { lat: 25, lon: 121 }, path: [{ lat: 25, lon: 121 }, { lat: 25.007, lon: 121 }], travelEvents: [], vehicleIds: [] };
   ga.state.expeditions.push(ea);
   ga.survivors.leader().status = 'exploring';
-  setHour(ga, 19);
+  setHour(ga, 19.5);
   ga.autoHome.check(Date.now() + 2000);
   assert(ea.recalled, '協防隊伍也會自動回家');
 }
@@ -4434,7 +4463,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const res = gr.autoHome.run(Date.now());
   await new Promise((r) => setTimeout(r, 10));
   await gr.shared.poll();
-  assert(res.recalled === 1 && !gr.rally.trips().length && gr.survivors.leader().status === 'idle', '19:00 集結隊伍也會召回（出發前直接留在避難所）');
+  assert(res.recalled === 1 && !gr.rally.trips().length && gr.survivors.leader().status === 'idle', '19:30 集結隊伍也會召回（出發前直接留在避難所）');
   assert(gr.rally.get(st.id || st.rally?.id || gr.shared.all('rally')[0]?.id)?.status === 'cancelled' || gr.shared.all('rally').every((o) => o.data.status === 'cancelled'), '自己發起的集結會取消');
 }
 
@@ -4902,8 +4931,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gr.rebirth.decide(sv.id, false);
   assert(Math.abs(gr.rebirth.discount() - 0.48) < 1e-9 && RB.maxDiscount === 0.5, `重生器 Lv6（−18%）＋基因調理滿級（−30%）＝ −48%，上限 −50%（${gr.rebirth.discount()}）`);
   // 搜索掉落率
-  assert(gr.rebirth.rollSearch('normal', () => 0.0099) === 1 && gr.rebirth.rollSearch('normal', () => 0.0101) === 0, '一般區每棟 1%');
-  assert(gr.rebirth.rollSearch('abyss', () => 0.0299) === 1, '深淵區 ×3');
+  assert(gr.rebirth.rollSearch('normal', () => 0.0039) === 1 && gr.rebirth.rollSearch('normal', () => 0.0041) === 0, '一般區每棟 0.4%');
+  assert(gr.rebirth.rollSearch('abyss', () => 0.0119) === 1 && gr.rebirth.rollSearch('abyss', () => 0.0121) === 0, '深淵區 ×3');
   assert(gr.rebirth.infectDrop(1) === 1 && gr.rebirth.infectDrop(3) === 2, '重度感染據點 1 個、3 人以上 2 個');
   // 黑市特殊品
   const coins0 = gr.state.player.coins;

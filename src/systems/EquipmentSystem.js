@@ -516,7 +516,7 @@ export class EquipmentSystem {
     }
     const ruleChanged = rules.ammo !== key;
     rules.ammo = key;
-    const r = (lo.ammo?.qty || 0) < 100 ? g.survivors.loadSlot(sv.id, 'ammo', key) : { ok: false };
+    const r = (lo.ammo?.qty || 0) < g.survivors.slotMax(sv, 'ammo') ? g.survivors.loadSlot(sv.id, 'ammo', key) : { ok: false };
     if (r.ok) notes.push(`彈藥改為 ${name}×${lo.ammo?.qty || r.n}`);
     const missing = !g.survivors.ammoAvailable(sv, key);
     if (missing) notes.push(`⚠️ 倉庫與背包沒有${name}，自動補給已設為${name}（有彈藥時自動裝填）`);

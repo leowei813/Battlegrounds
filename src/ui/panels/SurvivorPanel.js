@@ -7,7 +7,7 @@ import { RESOURCE_KEYS } from '../../config/constants.js';
 import { SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, unitWeight } from '../../config/supplies.js';
 import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
-import { LOADOUT_MAX } from '../../systems/SurvivorSystem.js';
+import { LOADOUT_MAX, AMMO_CAP_OPTIONS } from '../../systems/SurvivorSystem.js';
 import {
   btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf, affixChips, towerTag,
 } from '../components.js';
@@ -395,6 +395,11 @@ export class SurvivorPanel {
         this.game.changed();
         this.ui.refresh(true);
       }
+      if (e.target.classList?.contains('lo-cap')) {
+        this.ui.result(this.game.survivors.setAmmoCap(this.selId, e.target.value));
+        this.game.changed();
+        this.ui.refresh(true);
+      }
     });
   }
 
@@ -460,7 +465,7 @@ export class SurvivorPanel {
     const statsCard = `<section class="sh-card"><h3>能力 <small class="muted">${sv.isLeader ? '' : '素質越高，基礎能力與每次升級的成長越多'}</small></h3>${this.abilityRows(sv, s)}<small class="muted">暴傷 +${Math.round((s.critDmg - 1) * 100)}%${s.lifeSteal ? `・吸血 ${(s.lifeSteal * 100).toFixed(1)}%` : ''}${sv.isLeader ? '' : g.rebirth.level() > 0 ? '・素質 100% 以金色顯示' : '・素質 100% 以金色顯示，招募時決定；建造「脫胎換骨還你漂漂重生器」後可以重新洗鍊'}</small>${!sv.isLeader && g.rebirth.level() > 0 ? `<div class="rb-entry"><small class="muted">平均素質 ${g.survivors.avgQuality(sv)}%</small>${btn('🧬 超渡他', 'rebirth', {}, { cls: 'btn-sm rb-go', disabled: sv.status !== 'idle', title: sv.status !== 'idle' ? '倖存者要在避難所內才能超渡' : '' })}</div>` : ''}
       ${hurt ? `<div class="heal-box ${sv.severe ? 'warn' : ''}"><div class="row-between">${sv.severe ? '🩸 重傷：無法行動，生命回到 30% 才能脫離' : '🩹 受傷：有診療室或醫生照護時才會慢慢恢復，也可以直接用藥'}${starving ? '<span class="tag tag-red">🍽️ 飢餓中：生命會持續流失</span>' : ''}</div>
       <div class="label">💊 治療：選擇要使用的藥品</div>${this.medsHtml(sv)}</div>` : ''}</section>`;
-    const gearCard = `<section class="sh-card"><div class="gear-head"><h3>裝備</h3>${sv.status === 'dead' ? '' : this.medPill(sv)}</div>${this.gearGrid(sv)}${this.supplyHtml(sv)}</section>`;
+    const gearCard = `<section class="sh-card"><div class="gear-head"><h3>裝備</h3>${sv.status === 'dead' ? '' : this.medPill(sv)}</div>${this.gearGrid(sv)}<small class="muted block">戰鬥時優先使用遠程武器，子彈不足時自動改用近戰武器；生命低於 35% 時自動使用藥品欄的藥。子彈與藥品都會自動補給。</small></section>`;
     const bagCard = `<section class="sh-card">${this.bagHtml(sv)}</section>`;
     const skills = cls.skills.map((sk, i) => {
       const locked = i >= skillSlots;
@@ -507,12 +512,18 @@ export class SurvivorPanel {
     if (!need) return '';
     const lo = g.survivors.loadout(sv).ammo;
     const qty = lo?.key === need.ammo ? lo.qty : 0;
-    const max = LOADOUT_MAX.ammo;
+    const max = g.survivors.slotMax(sv, 'ammo');
     const store = Math.floor(g.state.supplies?.[need.ammo] || 0);
     const sp = SUPPLIES[need.ammo];
     const ratio = qty / max;
     const warn = qty < max && store <= 0 && !(sv.bag?.[need.ammo] > 0) ? `<span class="neg">・倉庫沒有${escapeHtml(sp.name)}了</span>` : '';
-    return `<div class="ammo-row ${ratio < 0.3 ? 'low' : ''}">${sp.icon} ${escapeHtml(sp.name)} <b>${qty}</b>/${max}<span class="ammo-bar"><i style="width:${Math.round(ratio * 100)}%"></i></span><span class="auto-tag">🔄 自動補給</span>${warn}</div>`;
+    return `<div class="ammo-row ${ratio < 0.3 ? 'low' : ''}">${sp.icon} ${escapeHtml(sp.name)} <b>${qty}</b>/${max}<span class="ammo-bar"><i style="width:${Math.round(ratio * 100)}%"></i></span>${this.ammoCapChip(sv, max)}<span class="auto-tag">🔄 自動補給</span>${warn}</div>`;
+  }
+
+  /** 彈藥攜帶數量：小標籤，點一下跳出原生選單（透明的下拉選單蓋在標籤上） */
+  ammoCapChip(sv, max) {
+    const opts = AMMO_CAP_OPTIONS.map((n) => `<option value="${n}" ${n === max ? 'selected' : ''}>${n} 發</option>`).join('');
+    return `<label class="cap-chip" title="點一下選擇要攜帶的子彈數量">攜帶 ${max} <span class="dd">▾</span><select class="lo-cap" aria-label="子彈攜帶數量">${opts}</select></label>`;
   }
 
   /** 裝備標題旁：藥品欄與自動補給的種類（下拉選擇） */
@@ -572,32 +583,6 @@ export class SurvivorPanel {
    * 個人背包（資源與負重）；在避難所時右側顯示倉庫，可存入／取出。
    * 倉庫的每種基本物資都是固定格子，只能改變存取數量。
    */
-  /** 彈藥欄（最多 100）與藥品欄（最多 10），以及自動補給（各一種） */
-  supplyHtml(sv) {
-    const g = this.game;
-    const svs = g.survivors;
-    const lo = svs.loadout(sv);
-    const rules = svs.supplyRules(sv);
-    const home = svs.atShelter(sv);
-    const need = svs.ammoNeed(sv);
-    const store = g.state.supplies || {};
-    const slot = (kind, label, max, keys) => {
-      const cur = lo[kind];
-      const opts = keys.map((k) => `<option value="${k}" ${(cur?.key || rules[kind] || (kind === 'ammo' ? need?.ammo : 'bandage')) === k ? 'selected' : ''}>${SUPPLIES[k].icon} ${SUPPLIES[k].name}（倉庫 ${Math.floor(store[k] || 0)}・背包 ${Math.floor(sv.bag?.[k] || 0)}）</option>`).join('');
-      return `<div class="card loadout-slot" data-kind="${kind}">
-        <div class="row-between"><b>${label}</b><span>${cur ? `${SUPPLIES[cur.key].icon} ${SUPPLIES[cur.key].name} <b>${cur.qty}</b> / ${max}` : '<span class="muted">— 空 —</span>'}</span></div>
-        <div class="trade-row"><select class="lo-key">${opts}</select>
-          ${btn('裝填', 'loLoad', { kind }, { cls: 'btn-xs btn-primary', disabled: !home && !keys.some((k) => sv.bag?.[k] > 0) })}${cur ? btn('卸下', 'loUnload', { kind }, { cls: 'btn-xs btn-ghost' }) : ''}</div>
-        <small class="muted block">🔄 自動補給：${kind === 'ammo' ? (need ? `${SUPPLIES[need.ammo].name}（依遠程武器）` : '沒有遠程武器') : SUPPLIES[rules.med]?.name || '—'}・回到避難所或探索找到時自動補滿</small>
-      </div>`;
-    };
-    const ammoKeys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === 'ammo');
-    const medKeys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === 'med' && (SUPPLIES[k].heal || 0) > 0);
-    return `<h4>🎯 彈藥與 💊 藥品欄</h4>
-      <p class="muted">戰鬥時優先使用遠程武器，彈藥不足時自動改用近戰武器${need ? `（目前遠程武器使用 ${SUPPLIES[need.ammo].name}，每場約 ${need.perFight} 發）` : ''}。生命低於 35% 時自動使用藥品欄的藥。</p>
-      <div class="grid">${slot('ammo', '🎯 彈藥欄', LOADOUT_MAX.ammo, ammoKeys)}${slot('med', '💊 藥品欄', LOADOUT_MAX.med, medKeys)}</div>`;
-  }
-
   /** 背包：方格排列，點一格後在下方操作（數量、存入倉庫、丟棄…） */
   bagHtml(sv) {
     const g = this.game;

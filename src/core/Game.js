@@ -274,7 +274,7 @@ export class Game {
     this.shelter.update(now, elapsed);
     this.research.update(now);
     this.survivors.updateVitals(now, elapsed, this.resources.lastStarvingMs);
-    // 離線期間跨過 19:00：照 19:00 當下的狀態自動回家
+    // 離線期間跨過 19:30：照 19:30 當下的狀態自動回家
     this.autoHome.check(now, { silent: true });
     const reports = this.exploration.update(now, { silent: true });
     this.npcs.update(now);

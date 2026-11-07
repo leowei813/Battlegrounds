@@ -25,7 +25,7 @@ export const LOCK_ITEM = {
   name: '就是要鎖你',
   icon: '🔒',
   /** 搜索建築：每搜完一棟的基礎機率（× 區域倍率 ×（1 + 鎖定雷達）） */
-  searchChance: 0.01,
+  searchChance: 0.004, // v10.16：1% → 0.4%
   zoneMul: { safe: 0.6, normal: 1, alert: 1.3, danger: 1.7, lethal: 2.2, abyss: 3 },
   /** 攻陷 NPC 據點的機率 */
   npcChance: 0.4,
