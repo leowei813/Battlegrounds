@@ -694,7 +694,7 @@ export class MapPanel {
     }
     const body = () => {
       const ex = g.state.expeditions.find((e) => e.id === expId);
-      if (!ex) return '<p class="muted">這支隊伍已經回到避難所了，請到「💬 消息」查看探索報告。</p>';
+      if (!ex) return '<p class="muted">這支隊伍已經回到避難所了，請到「📜 戰報」查看探索報告。</p>';
       const now = Date.now();
       const p = g.exploration.progress(ex, now);
       const poi = g.exploration.poi(ex.poiId);

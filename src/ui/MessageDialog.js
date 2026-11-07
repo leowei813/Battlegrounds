@@ -112,7 +112,7 @@ export function openMessages(ui) {
     return `${tabs}${tab === 'reports' ? reportsHtml(g, openId, since.reports, openBattle) : tab === 'events' ? eventsHtml(ui, since.events, openBattle) : baseHtml(ui, since.base, openBattle)}`;
   };
   ui.modal.open({
-    title: '💬 消息',
+    title: '📜 消息',
     wide: true,
     body: body(),
     onAction: (action, data, m) => {

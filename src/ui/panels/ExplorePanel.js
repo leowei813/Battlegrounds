@@ -42,7 +42,7 @@ export class ExplorePanel {
       <h3>進行中（${st.expeditions.length}/${MAX_EXPEDITIONS}）</h3>
       ${active || '<p class="muted">目前沒有隊伍在外。</p>'}
       <p class="muted">要派遣探索，請到「地圖」點選建築。</p>
-      <p class="muted">💬 探索報告移到地圖右上方的「消息」按鈕。</p>
+      <p class="muted">📜 探索報告移到地圖右上方的「戰報」按鈕。</p>
     </div>`;
   }
 
