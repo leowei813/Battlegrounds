@@ -23,7 +23,6 @@ export const RESEARCH_BRANCHES = {
   vehicles: { name: '載具科技', icon: '🚗' },
   crafting: { name: '製作科技', icon: '🛠️' },
   recruitment: { name: '招募科技', icon: '📻' },
-  expansion: { name: '擴張科技', icon: '🏴' },
   trade: { name: '交易科技', icon: '🤝' },
 };
 
@@ -154,10 +153,6 @@ export const RESEARCH = {
   r_radar: r('recruitment', 2, '鎖定雷達', '搜索建築時找到「就是要鎖你」的機率提升', { lockDropAdd: 0.1 }),
   r_eugen: r('recruitment', 3, '優生學', '重生器洗鍊時每項素質的最低保底提升', { washFloor: 2 }, { req: [['r_gene', 3]], max: 5 }),
   r_level: r('recruitment', 3, '老手', '招募到的倖存者等級提升', { recruitLevelAdd: 0.3 }, { req: [['r_tech', 3]] }),
-  // ---- 擴張 ----
-  e_outpost: r('expansion', 1, '前哨站', '每級可多建 1 座前哨站（只有防禦功能）', { outposts: 1 }, { max: 3, costMul: 2.5 }),
-  e_cost: r('expansion', 2, '前哨後勤', '建立前哨站的費用降低', { establishCostReduce: 0.05 }, { req: [['e_outpost', 1]] }),
-  e_wall: r('expansion', 2, '前哨工事', '前哨站圍牆耐久提升', { outpostWallPct: 0.08 }, { req: [['e_outpost', 1]] }),
 };
 
 export const requiredLabLevel = (tier) => tier * 2 - 1;
@@ -230,6 +225,10 @@ export function effectText(id, level) {
 /** 已移除的研究（只用來計算退還材料，不會出現在研究頁） */
 export const REMOVED_RESEARCH = {
   t_bm_vip: r('trade', 2, '黑市商人的厚愛', '（已移除）', {}, { max: 4 }),
+  // v12：移除前哨站（擴張科技）
+  e_outpost: r('expansion', 1, '前哨站', '（已移除）', {}, { max: 3, costMul: 2.5 }),
+  e_cost: r('expansion', 2, '前哨後勤', '（已移除）', {}, { req: [['e_outpost', 1]] }),
+  e_wall: r('expansion', 2, '前哨工事', '（已移除）', {}, { req: [['e_outpost', 1]] }),
 };
 
 export const LEGACY_RESEARCH = {

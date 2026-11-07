@@ -6,10 +6,73 @@ import { SLOT_KEYS, ITEM_MODELS } from '../config/equipment.js';
 import {
   RESEARCH, LEGACY_RESEARCH, REMOVED_RESEARCH, researchCost,
 } from '../config/research.js';
-import { BASE_SIZES, baseSizeOf, FACILITY_CAP_REFUND } from '../config/civilization.js';
+import { BASE_SIZES, baseSizeOf, FACILITY_CAP_REFUND, baseEstablishCost } from '../config/civilization.js';
+import { DEFENSES } from '../config/defenses.js';
 import { legacyToSupplies } from '../config/supplies.js';
 import { MAIN_QUESTS } from '../config/quests.js';
 import { rollQualities } from '../config/survivors.js';
+
+/** v12 移除的擴張科技 */
+const OUTPOST_RESEARCH = ['e_outpost', 'e_cost', 'e_wall'];
+
+/** 把退還的材料加回存檔（金錢、零件、資源、物品倉庫） */
+function grantRaw(data, refund) {
+  Object.entries(refund).forEach(([k, n]) => {
+    if (!(n > 0)) return;
+    if (k === 'coins') data.player.coins = (data.player.coins || 0) + n;
+    else if (k === 'parts') data.player.parts = (data.player.parts || 0) + n;
+    else {
+      const pool = data.resources && k in data.resources ? data.resources : (data.supplies = data.supplies || {});
+      pool[k] = (pool[k] || 0) + n;
+    }
+  });
+}
+
+/**
+ * v12：移除前哨站與擴張科技，全部全額退還。
+ * 前哨站：建立費用、設施與防禦建築的建造材料、施工佇列中已扣的材料；駐守資料跟著據點一起移除（倖存者留在避難所）。
+ * 擴張科技（前哨站、前哨後勤、前哨工事）：已研究等級的研究材料、研究中與排隊中已扣的材料。
+ */
+function removeOutposts(data, rs) {
+  const refund = {};
+  const add = (cost) => Object.entries(cost || {}).forEach(([k, n]) => { if (Number.isFinite(n)) refund[k] = (refund[k] || 0) + n; });
+  const outposts = (data.bases || []).filter((b) => b.kind === 'outpost');
+  outposts.forEach((b, i) => {
+    add(baseEstablishCost(i + 1));
+    Object.entries(b.facilities || {}).forEach(([id, f]) => {
+      if (!FACILITIES[id]) return;
+      for (let lv = (id === 'wall' ? 1 : 0) + 1; lv <= (f?.level || 0); lv += 1) add(FACILITIES[id].cost(lv));
+    });
+    (b.defenses || []).forEach((d) => {
+      if (!d?.type || !DEFENSES[d.type]) return;
+      for (let lv = 1; lv <= (d.level || 0); lv += 1) add(DEFENSES[d.type].cost(lv));
+    });
+    (b.buildQueue || []).forEach((q) => add(q.cost));
+  });
+  const names = outposts.map((b) => b.name);
+  if (outposts.length) {
+    data.bases = data.bases.filter((b) => b.kind !== 'outpost');
+  }
+  let researched = false;
+  OUTPOST_RESEARCH.forEach((id) => {
+    const lv = rs.levels?.[id] || 0;
+    for (let i = 1; i <= lv; i += 1) add(researchCost(id, i, REMOVED_RESEARCH[id]));
+    if (lv) researched = true;
+    if (rs.levels) delete rs.levels[id];
+  });
+  ['active', 'active2'].forEach((k) => {
+    if (rs[k] && OUTPOST_RESEARCH.includes(rs[k].id)) { add(rs[k].cost); rs[k] = null; researched = true; }
+  });
+  if (Array.isArray(rs.queue)) {
+    rs.queue.filter((q) => q && OUTPOST_RESEARCH.includes(q.id)).forEach((q) => { add(q.cost); researched = true; });
+    rs.queue = rs.queue.filter((q) => !q || !OUTPOST_RESEARCH.includes(q.id));
+  }
+  if (!outposts.length && !researched) return;
+  Object.keys(refund).forEach((k) => { refund[k] = Math.round(refund[k]); });
+  grantRaw(data, refund);
+  data.log = data.log || [];
+  data.log.unshift({ t: Date.now(), msg: `🏴 前哨站與擴張科技已移除${names.length ? `：拆除前哨站「${names.join('」「')}」` : ''}，建造與研究材料全額退還`, type: 'info' });
+}
 
 /** 依字串產生固定的亂數（同一位倖存者重新讀檔也得到相同素質） */
 function idRandom(str) {
@@ -174,6 +237,8 @@ export class SaveManager {
       });
       delete rs.completed;
     }
+    // v12：移除前哨站與擴張科技（每次載入都檢查，舊存檔或其他裝置的舊資料都會處理到）
+    removeOutposts(data, rs);
     if (rs.active && (!RESEARCH[rs.active.id] || !rs.active.level)) rs.active = null;
     if (rs.active2 && (!RESEARCH[rs.active2.id] || !rs.active2.level)) rs.active2 = null;
     // 研究佇列與剛完成標示也要保留（之前載入時被清掉，排隊中的研究與已扣的材料會消失）
