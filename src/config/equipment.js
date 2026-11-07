@@ -13,8 +13,12 @@ export const RARITIES = {
   epic: { name: '罕見', color: '#ab47bc', min: 1.45, max: 1.75, affixes: 3, weight: 3.4, sell: 80 },
   legendary: { name: '傳奇', color: '#ff9800', min: 1.75, max: 2.2, affixes: 4, weight: 0.6, sell: 250 },
 };
+/** 一般品級（隨機掉落、製作）的順序；「副本」品級不在其中，只能從副本圖紙製作 */
 export const RARITY_ORDER = Object.keys(RARITIES);
-export const rarityIndex = (r) => RARITY_ORDER.indexOf(r);
+/** 副本品級：強度約傳奇的 1.2 倍、每項素質 50% 起，綠色呼吸光，製作後綁定 */
+RARITIES.dungeon = { name: '副本', color: '#69f0ae', min: 2.1, max: 2.64, affixes: 4, weight: 0, sell: 600 };
+/** 品級高低（副本品級視為最高） */
+export const rarityIndex = (r) => (r === 'dungeon' ? RARITY_ORDER.length : RARITY_ORDER.indexOf(r));
 
 export const SLOTS = {
   weapon: { name: '遠程武器', icon: '🔫' },
@@ -304,6 +308,7 @@ export const AFFIXES = {
 
 /** 名稱前綴，依品級挑選 */
 export const RARITY_PREFIX = {
+  dungeon: [''],
   poor: ['破損的', '生鏽的', '粗糙的', '快壞的'],
   common: ['普通的', '堪用的', '標準'],
   uncommon: ['可靠的', '改良的', '堅固的'],

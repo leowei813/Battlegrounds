@@ -443,6 +443,12 @@ export class SaveManager {
       if (data.player) data.player.locks = Math.max(0, Math.floor(data.player.locks || 0));
       data.bmSpecial = data.bmSpecial || null;
     }
+    if (v < 29) {
+      // v11：地下感染區（多人副本）：報名紀錄、副本核心材料（不佔倉庫格子）
+      data.dungeon = data.dungeon && typeof data.dungeon === 'object' ? data.dungeon : { sign: {} };
+      data.dungeon.sign = data.dungeon.sign || {};
+      data.dgCores = data.dgCores && typeof data.dgCores === 'object' ? data.dgCores : {};
+    }
     if (v < 27) {
       // v10：地圖地點改為固定格子產生（載入後重新產生，據點與探索目的地保留）；建築殘留物資改為所有玩家共用
       delete data.map.remain;

@@ -1,5 +1,6 @@
+import { dgCraftHtml } from '../DungeonView.js';
 import {
-  SLOTS, ITEM_TYPES, RARITIES, RARITY_ORDER, ITEM_MODELS, benchFor,
+  SLOTS, ITEM_TYPES, RARITIES, RARITY_ORDER, ITEM_MODELS, benchFor, rarityIndex,
 } from '../../config/equipment.js';
 import { CLASSES } from '../../config/survivors.js';
 import { escapeHtml } from '../../utils/dom.js';
@@ -30,9 +31,9 @@ export class InventoryPanel {
   render() {
     const g = this.game;
     const eq = g.equipment;
-    const view = ['vehicles', 'ammo', 'meds', 'blueprints'].includes(this.view) ? this.view : 'craft';
+    const view = ['vehicles', 'ammo', 'meds', 'blueprints', 'dgcraft'].includes(this.view) ? this.view : 'craft';
     if (!ITEM_TYPES[this.craftCat]) this.craftCat = Object.keys(ITEM_TYPES)[0];
-    const bpN = g.state.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model]).length;
+    const bpN = g.state.inventory.blueprints.filter((bp) => g.equipment.blueprintInfo(bp)).length;
     const count = (type) => Object.values(ITEM_MODELS).filter((md) => md.type === type).length;
     // 分類選單：網頁版在左側直排，手機版改為上方分頁＋可左右滑動的類別
     const item = (v, cat, label, extra = '') => {
@@ -41,7 +42,7 @@ export class InventoryPanel {
     };
     const nav = `<nav class="sh-nav craft-nav" aria-label="製作分類">
       <div class="sh-base"><b>🛠️ 工作台 Lv ${eq.workbench()}</b><small class="muted">製作技術 Lv ${eq.craftTech()}・倉庫 ${eq.storeUsed()}/${eq.storeCap()}</small></div>
-      <div class="craft-kinds">${[['craft', '裝備'], ['ammo', '彈藥'], ['meds', '藥品'], ['vehicles', '載具'], ['blueprints', `設計圖${bpN ? ` ${bpN}` : ''}`]].map(([v, l]) => `<button class="sv-tab ${view === v ? 'active' : ''}" data-action="view" data-v="${v}">${l}</button>`).join('')}</div>
+      <div class="craft-kinds">${[['craft', '裝備'], ['ammo', '彈藥'], ['meds', '藥品'], ['vehicles', '載具'], ['blueprints', `設計圖${bpN ? ` ${bpN}` : ''}`], ['dgcraft', '✨ 副本裝備']].map(([v, l]) => `<button class="sv-tab ${view === v ? 'active' : ''}" data-action="view" data-v="${v}">${l}</button>`).join('')}</div>
       <div class="sh-nav-list craft-cats ${view === 'craft' ? '' : 'desk-only'}">
         <small class="muted nav-label2">裝備</small>
         ${Object.entries(ITEM_TYPES).map(([id, t]) => item('craft', id, `${t.icon} ${t.name}`, count(id))).join('')}
@@ -52,7 +53,7 @@ export class InventoryPanel {
         ${item('blueprints', null, '📜 設計圖', bpN || '')}
       </div>
     </nav>`;
-    const body = view === 'craft' ? this.renderCraft() : view === 'ammo' ? this.renderAmmoCraft() : view === 'meds' ? this.renderMedCraft() : view === 'vehicles' ? this.renderVehicleCraft() : this.renderBlueprints();
+    const body = view === 'craft' ? this.renderCraft() : view === 'ammo' ? this.renderAmmoCraft() : view === 'meds' ? this.renderMedCraft() : view === 'vehicles' ? this.renderVehicleCraft() : view === 'dgcraft' ? `<div class="sh-fac"><div class="sh-fac-main"><h3 class="sh-title">✨ 副本裝備</h3>${dgCraftHtml(g)}</div></div>` : this.renderBlueprints();
     return `<div class="sh-layout craft-layout">${nav}<div class="sh-main">${body}</div></div>`;
   }
 
@@ -86,7 +87,7 @@ export class InventoryPanel {
     const eq = g.equipment;
     const odds = Object.entries(eq.rarityOdds())
       .map(([r, p]) => `<div class="row-between"><span style="color:${RARITIES[r].color}">${RARITIES[r].name}</span><span>${(p * 100).toFixed(p < 0.01 ? 2 : 1)}%</span></div>`).join('');
-    const bps = g.state.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model]);
+    const bps = g.state.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model] && !bp.dg);
     return `<aside class="sh-fac-side">
       <section class="sh-card"><h3>製作品級機率</h3>${odds}<small class="muted">研究「製作技術」可提高高品級機率（Lv${eq.craftTech()}/15）</small></section>
       <section class="sh-card sh-rates"><h3>設計圖 ${bps.length}</h3>${bps.slice(0, 6).map((bp) => {
@@ -249,11 +250,23 @@ export class InventoryPanel {
     </div>${this.craftSide()}</div>`;
   }
 
-  /** 設計圖：製作時保底品級 */
+  /** 設計圖：製作時保底品級；可以賣給黑市或丟棄（交易市場也能刊登） */
   renderBlueprints() {
     const g = this.game;
     const eq = g.equipment;
-    const cards = g.state.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model]).map((bp) => {
+    const extra = (bp) => `${btn(`🕶️ 賣給黑市 💰${g.blackMarket.blueprintBuyback(bp).toLocaleString()}`, 'bpSell', { id: bp.id }, { cls: 'btn-sm btn-ghost bp-sell' })}${btn('🗑️ 丟棄', 'bpDiscard', { id: bp.id }, { cls: 'btn-sm btn-danger' })}`;
+    const cards = g.state.inventory.blueprints.map((bp) => {
+      const info = eq.blueprintInfo(bp);
+      if (!info) return '';
+      if (info.dungeon) {
+        const st = g.dungeon.canCraft(bp.model).ok ? 'ok' : 'short';
+        if (!this.passFilter(st)) return '';
+        return `<div class="fac-card2 dg-bp">
+        <div class="fac2-head"><span class="fac-icon">📜</span><b class="dg-name">${escapeHtml(info.name)}</b><span class="dg-tag">副本圖紙</span></div>
+        <div class="stat-line muted">${escapeHtml(g.dungeon.gearLine(bp.model))}</div>
+        <div class="row-between bp-acts"><span></span><span class="btn-row">${btn('製作', 'view', { v: 'dgcraft' }, { cls: 'btn-sm btn-primary' })}${extra(bp)}</span></div>
+      </div>`;
+      }
       const md = ITEM_MODELS[bp.model];
       const check = eq.canCraftModel(bp.model, true);
       const cost = eq.craftCost(bp.model, true);
@@ -263,14 +276,38 @@ export class InventoryPanel {
         <div class="fac2-head"><span class="fac-icon">📜</span><b>${md.name}</b><span style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</span></div>
         <div class="stat-line range">${statRangeLine(eq.craftStatRange(bp.model, bp.rarity))}</div>
         <div class="fac2-cost"><small class="muted">所需材料（擁有/需要）</small><div class="needs">${needHtml(g.state, cost)}</div>
-          <div class="row-between"><span></span>${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, check.reason)}</div></div>
+          <div class="row-between bp-acts"><span></span><span class="btn-row">${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, check.reason)}${extra(bp)}</span></div></div>
       </div>`;
     }).join('');
     return `<div class="sh-fac"><div class="sh-fac-main">
       <h3 class="sh-title">📜 設計圖</h3>
       ${this.filterChips()}
       <div class="fac-grid">${cards || '<p class="muted">沒有設計圖。探索時有機會找到，用設計圖製作時保底品級。</p>'}</div>
+      <small class="muted">設計圖也可以在交易所的交易市場刊登，賣給其他玩家。</small>
     </div>${this.craftSide()}</div>`;
+  }
+
+  /** 丟棄設計圖前確認（可以改賣黑市） */
+  confirmBpDiscard(id) {
+    const g = this.game;
+    const bp = g.state.inventory.blueprints.find((b) => b.id === id);
+    const info = g.equipment.blueprintInfo(bp);
+    if (!bp || !info) return;
+    const price = g.blackMarket.blueprintBuyback(bp);
+    this.ui.modal.open({
+      title: '🗑️ 丟棄設計圖？',
+      body: `<p>「${escapeHtml(info.name)}」${info.dungeon ? '副本圖紙' : '設計圖'}丟棄後無法復原。</p>
+        <p class="muted">賣給黑市可以得到 💰${price.toLocaleString()}，或到交易市場賣給其他玩家。</p>
+        <div class="btn-row end">${btn('取消', 'close', {}, { cls: 'btn-ghost' })}${btn('改賣黑市', 'bpSellNow', {}, { cls: '' })}${btn('確定丟棄', 'bpDropNow', {}, { cls: 'btn-danger' })}</div>`,
+      onAction: (action, _d, m) => {
+        if (action === 'bpSellNow') this.ui.result(g.blackMarket.sellBlueprint(id));
+        else if (action === 'bpDropNow') this.ui.result(g.equipment.discardBlueprint(id));
+        else return;
+        m.close();
+        g.changed?.();
+        this.ui.refresh(true);
+      },
+    });
   }
 
   /** 倉庫頁顯示的裝備：不含隊員身上已裝備的物品 */
@@ -299,7 +336,7 @@ export class InventoryPanel {
       });
     const slotOrder = Object.keys(SLOTS);
     g.equipment.storeItems()
-      .sort((a, b) => slotOrder.indexOf(a.slot) - slotOrder.indexOf(b.slot) || RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) || b.power - a.power)
+      .sort((a, b) => slotOrder.indexOf(a.slot) - slotOrder.indexOf(b.slot) || rarityIndex(b.rarity) - rarityIndex(a.rarity) || b.power - a.power)
       .forEach((it) => cells.push({ kind: 'gear', item: it, cat: 'gear' }));
     return cells;
   }
@@ -509,6 +546,19 @@ export class InventoryPanel {
       case 'craftAmmo': this.ui.result(g.equipment.craftAmmo(data.key, g.equipment.ammoBatch(data.key))); break;
       case 'ammoBatch': g.equipment.setAmmoBatch(data.key, data.n); g.requestSave?.(); break;
       case 'craftBp': this.showCraftResult(g.equipment.craft(data.type, data.id)); break;
+      case 'bpSell': {
+        const bp = g.state.inventory.blueprints.find((b) => b.id === data.id);
+        const info = g.equipment.blueprintInfo(bp);
+        if (bp && confirm(`把設計圖「${info?.name || ''}」賣給黑市，得到 💰${g.blackMarket.blueprintBuyback(bp).toLocaleString()}？`)) this.ui.result(g.blackMarket.sellBlueprint(data.id));
+        break;
+      }
+      case 'bpDiscard': this.confirmBpDiscard(data.id); break;
+      case 'dgCraft': {
+        const r = g.dungeon.craft(data.id);
+        this.ui.result(r);
+        if (r.ok) this.ui.toastEl.show(`✨ ${r.msg}`, 'loot');
+        break;
+      }
       case 'equipTo': this.pickSurvivor(data.id); break;
       case 'toStore': this.ui.result(g.equipment.moveToStore(data.id)); break;
       case 'toBag': this.pickSurvivor(data.id, 'carry'); break;

@@ -3,9 +3,14 @@ import {
 } from '../utils/math.js';
 import { SUPPLIES, SUPPLY_KEYS, AMMO_PRICE, AMMO_SELL_MUL } from '../config/supplies.js';
 import {
-  RARITIES, RARITY_ORDER, ITEM_TYPES, tierMul,
+  RARITIES, RARITY_ORDER, ITEM_TYPES, ITEM_MODELS, tierMul,
 } from '../config/equipment.js';
 import { sha256 } from '../utils/sha256.js';
+
+/** 設計圖回收價：同型號、同保底品級裝備回收價的倍數 */
+export const BLUEPRINT_PRICE_MUL = 1.5;
+/** 副本圖紙的回收價（固定） */
+export const BLUEPRINT_DUNGEON_PRICE = 5000;
 
 /** 價格基準（沿用過去流浪商人的定價，回收價也以此計算） */
 export const TRADER = {
@@ -231,6 +236,35 @@ export class BlackMarketSystem {
     const idx = Math.max(0, RARITY_ORDER.indexOf(item.rarity));
     const rate = (0.8 + 0.08 * idx) / 8;
     return Math.max(1, Math.round(this.baseGearPrice(item) * rate * (1 + this.game.research.bonus('sellPct'))));
+  }
+
+  /**
+   * 設計圖回收價：一般設計圖為「同型號、同保底品級裝備」回收價的 1.5 倍（以該型號通常出現的等級估算）；
+   * 副本圖紙固定 BLUEPRINT_DUNGEON_PRICE。研究「以物易物」提高回收價。
+   */
+  blueprintBuyback(bp) {
+    const bonus = 1 + this.game.research.bonus('sellPct');
+    if (bp?.dg) return Math.round(BLUEPRINT_DUNGEON_PRICE * bonus);
+    const md = ITEM_MODELS[bp?.model];
+    if (!md || !RARITIES[bp.rarity]) return 0;
+    const level = Math.max(1, (md.tier - 1) * 5);
+    const idx = Math.max(0, RARITY_ORDER.indexOf(bp.rarity));
+    const base = RARITIES[bp.rarity].sell * TRADER.gearMarkup * (1 + level * 0.08) * tierMul(md.tier);
+    return Math.max(1, Math.round(base * ((0.8 + 0.08 * idx) / 8) * BLUEPRINT_PRICE_MUL * bonus));
+  }
+
+  /** 把設計圖賣給黑市 */
+  sellBlueprint(id) {
+    const g = this.game;
+    const bp = g.state.inventory.blueprints.find((b) => b.id === id);
+    if (!bp) return { ok: false, reason: '找不到設計圖' };
+    const price = this.blueprintBuyback(bp);
+    if (price <= 0) return { ok: false, reason: '黑市不收這張設計圖' };
+    const name = g.equipment.blueprintInfo(bp)?.name || bp.model;
+    g.state.inventory.blueprints = g.state.inventory.blueprints.filter((b) => b.id !== id);
+    g.state.player.coins += price;
+    g.log(`🕶️ 把設計圖「${name}」賣到黑市（💰${price}）`, 'loot');
+    return { ok: true, msg: `賣出設計圖「${name}」，得到 💰${price}` };
   }
 
   /** 把倉庫裡的裝備賣到黑市（上鎖、穿戴中的不能賣） */

@@ -1,3 +1,4 @@
+import { dungeonReportHtml } from './DungeonView.js';
 import { escapeHtml } from '../utils/dom.js';
 import { RARITIES } from '../config/equipment.js';
 import { gainsHtml, btn } from './components.js';
@@ -47,6 +48,7 @@ function reportsHtml(game, openId, since, openBattle) {
   const list = (game.state.reports || []).map((r) => {
     const open = openId === r.id;
     const fresh = (r.at || 0) > since;
+    if (r.kind === 'dungeon') return dungeonReportHtml(game, r, open, fresh, NEW, hhmm);
     // 特殊道具（就是要鎖你）：報告發亮、排在獲得清單第一個
     const sp = r.locks || r.resources?.locks || 0;
     const res = sp ? Object.fromEntries(Object.entries(r.resources || {}).filter(([k]) => k !== 'locks')) : r.resources;

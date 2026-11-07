@@ -3,6 +3,7 @@ import { SUPPLIES, isSupply } from '../config/supplies.js';
 import { LOOT_CATS } from '../config/poiTypes.js';
 import { uid } from '../utils/math.js';
 import { OBJ_KEEP_MS } from '../multiplayer/SharedWorld.js';
+import { DG_CORES, isDgCore } from '../config/dungeons.js';
 
 /** 交易市場查詢範圍（公里） */
 export const MARKET_KM = 20;
@@ -10,11 +11,15 @@ export const MARKET_KM = 20;
 export const LISTING_MS = 3 * 24 * 3600 * 1000;
 /** 單筆刊登的數量與單價上限 */
 export const MAX_LISTING_QTY = 9999;
-export const MAX_LISTING_PRICE = 100000;
+export const MAX_LISTING_PRICE = 1000000;
 
-export const goodName = (k) => SUPPLIES[k]?.name || LOOT_CATS[k]?.name || k;
-export const goodIcon = (k) => SUPPLIES[k]?.icon || LOOT_CATS[k]?.icon || '📦';
-export const isGood = (k) => RESOURCE_KEYS.includes(k) || isSupply(k);
+export const goodName = (k) => SUPPLIES[k]?.name || DG_CORES[k]?.name || LOOT_CATS[k]?.name || k;
+export const goodIcon = (k) => SUPPLIES[k]?.icon || DG_CORES[k]?.icon || LOOT_CATS[k]?.icon || '📦';
+/** 可以交易的東西：基礎物資、材料、副本核心材料 */
+export const isGood = (k) => RESOURCE_KEYS.includes(k) || isSupply(k) || isDgCore(k);
+
+/** 裝備／設計圖刊登的名稱（材料刊登回傳空字串） */
+export const listingName = (d) => (d?.bp ? `📜「${d.bpName || '設計圖'}」` : d?.item ? `「${d.item.name}」` : '');
 
 const int = (v, min, max) => Math.min(max, Math.max(min, Math.floor(Number(v) || 0)));
 
@@ -72,8 +77,8 @@ export class MarketSystem {
     const me = this.myId();
     return this.game.shared.all('mk').map((o) => ({ id: o.id, ...o.data, mine: o.data?.owner === me }))
       .filter((d) => d && d.status === 'open' && d.qty > d.filled && now < (d.at || 0) + LISTING_MS
-        && (d.item || isGood(d.key)))
-      .sort((a, b) => (b.mine ? 1 : 0) - (a.mine ? 1 : 0) || (a.key || a.item?.name || '').localeCompare(b.key || b.item?.name || '') || a.price - b.price || a.at - b.at);
+        && (d.item || (d.bp && typeof d.bp.model === 'string') || isGood(d.key)))
+      .sort((a, b) => (b.mine ? 1 : 0) - (a.mine ? 1 : 0) || (a.key || a.item?.name || a.bpName || '').localeCompare(b.key || b.item?.name || b.bpName || '') || a.price - b.price || a.at - b.at);
   }
 
   refresh() {
@@ -83,7 +88,7 @@ export class MarketSystem {
   /** 從倉庫取出物品（資源或材料） */
   take(key, n) {
     const st = this.game.state;
-    const pool = RESOURCE_KEYS.includes(key) ? st.resources : (st.supplies = st.supplies || {});
+    const pool = this.poolOf(key);
     if ((pool[key] || 0) < n) return false;
     pool[key] -= n;
     if (pool !== st.resources && pool[key] <= 0) delete pool[key];
@@ -94,13 +99,22 @@ export class MarketSystem {
   give(key, n) {
     const st = this.game.state;
     if (n <= 0) return;
-    const pool = RESOURCE_KEYS.includes(key) ? st.resources : (st.supplies = st.supplies || {});
+    const pool = this.poolOf(key);
     pool[key] = (pool[key] || 0) + n;
+  }
+
+  /** 物品存放處：資源、副本核心材料（不佔倉庫格子）、材料 */
+  poolOf(key) {
+    const st = this.game.state;
+    if (RESOURCE_KEYS.includes(key)) return st.resources;
+    if (isDgCore(key)) return (st.dgCores = st.dgCores || {});
+    return (st.supplies = st.supplies || {});
   }
 
   /** 買進的物品要有空間 */
   room(key) {
     const g = this.game;
+    if (isDgCore(key)) return MAX_LISTING_QTY;
     if (RESOURCE_KEYS.includes(key)) return Math.max(0, g.resources.storageCap() - Math.floor(g.state.resources[key] || 0));
     return g.equipment.supplyRoom(key);
   }
@@ -109,7 +123,9 @@ export class MarketSystem {
    * 刊登。賣單：{ side:'sell', key, qty, price } 或 { side:'sell', itemId, price }；收購：{ side:'buy', key, qty, price }。
    * price 為單價（裝備為總價）。
    */
-  async post({ side, key, itemId, qty, price }) {
+  async post({
+    side, key, itemId, bpId, qty, price,
+  }) {
     const g = this.game;
     const sh = g.shelter.primary();
     if (!sh) return { ok: false, reason: '需要先有避難所' };
@@ -119,8 +135,19 @@ export class MarketSystem {
     const p = int(price, 0, MAX_LISTING_PRICE);
     let data;
     let undo;
-    if (side === 'sell' && itemId) {
+    if (side === 'sell' && bpId) {
+      const list = g.state.inventory.blueprints;
+      const bp = list.find((b) => b.id === bpId);
+      const info = g.equipment.blueprintInfo(bp);
+      if (!bp || !info) return { ok: false, reason: '找不到設計圖' };
+      if (p <= 0) return { ok: false, reason: '請輸入價格' };
+      const copy = { ...bp };
+      g.state.inventory.blueprints = list.filter((b) => b.id !== bpId);
+      undo = () => { g.state.inventory.blueprints.push(copy); };
+      data = { bp: copy, bpName: info.name, qty: 1, price: p };
+    } else if (side === 'sell' && itemId) {
       const it = g.equipment.getItem(itemId);
+      if (it?.bound) return { ok: false, reason: '副本裝備製作後綁定，不能交易' };
       if (!it || it.locked || g.equipment.equippedBy(it.id) || (it.loc || 'store') !== 'store') return { ok: false, reason: '只能刊登倉庫裡、未上鎖且沒有穿戴的裝備' };
       if (p <= 0) return { ok: false, reason: '請輸入價格' };
       const copy = JSON.parse(JSON.stringify(it));
@@ -151,10 +178,10 @@ export class MarketSystem {
     const r = await g.shared.update('mk', id, (cur) => (cur ? { fail: '刊登編號重複，請再試一次' } : { data: body }), { lat: null, lon: null }); // 全服可見（不限距離）
     if (!r.ok) { undo(); return r; }
     this.state.mine[id] = {
-      side, key: data.key || null, item: data.item || null, qty: data.qty, price: p, at: now, filled: 0, paid: 0,
+      side, key: data.key || null, item: data.item || null, bp: data.bp || null, bpName: data.bpName || null, qty: data.qty, price: p, at: now, filled: 0, paid: 0,
     };
-    const what = data.item ? `「${data.item.name}」` : `${goodName(key)}×${data.qty}`;
-    g.log(`🏪 在交易市場刊登${side === 'sell' ? '賣出' : '收購'}${what}（${data.item ? `💰${p}` : `每個 💰${p}`}）`, 'info');
+    const what = listingName(data) || `${goodName(key)}×${data.qty}`;
+    g.log(`🏪 在交易市場刊登${side === 'sell' ? '賣出' : '收購'}${what}（${data.item || data.bp ? `💰${p}` : `每個 💰${p}`}）`, 'info');
     g.changed?.();
     return { ok: true, id, msg: `已刊登${side === 'sell' ? '賣出' : '收購'}${what}` };
   }
@@ -169,17 +196,18 @@ export class MarketSystem {
     if (!cur || cur.status !== 'open' || cur.qty <= cur.filled) return { ok: false, reason: '這筆刊登已經結束了' };
     if (cur.owner === this.myId()) return { ok: false, reason: '不能和自己交易' };
     if (Date.now() >= (cur.at || 0) + LISTING_MS) return { ok: false, reason: '這筆刊登已經過期了' };
-    const n = cur.item ? 1 : int(qty, 1, cur.qty - cur.filled);
+    const n = cur.item || cur.bp ? 1 : int(qty, 1, cur.qty - cur.filled);
     const total = n * cur.price;
     let undo;
     let deliver;
     if (cur.side === 'sell') {
       if (g.state.player.coins < total) return { ok: false, reason: `金錢不足（需要 💰${total}）` };
-      if (cur.item ? !g.equipment.fits(cur.item, 'store') : this.room(cur.key) < n) return { ok: false, reason: '倉庫空間不足' };
+      if (cur.bp ? false : cur.item ? !g.equipment.fits(cur.item, 'store') : this.room(cur.key) < n) return { ok: false, reason: '倉庫空間不足' };
       g.state.player.coins -= total;
       undo = () => { g.state.player.coins += total; };
       deliver = (d) => {
-        if (d.item) g.equipment.addItem({ ...JSON.parse(JSON.stringify(d.item)), id: uid('it') }, '交易市場');
+        if (d.bp) g.state.inventory.blueprints.push({ ...d.bp, id: uid('bp') });
+        else if (d.item) g.equipment.addItem({ ...JSON.parse(JSON.stringify(d.item)), id: uid('it') }, '交易市場');
         else this.give(d.key, n);
       };
     } else {
@@ -198,7 +226,7 @@ export class MarketSystem {
     });
     if (!r.ok) { undo(); g.changed?.(); return r; }
     deliver(r.data);
-    const what = cur.item ? `「${cur.item.name}」` : `${goodName(cur.key)}×${n}`;
+    const what = listingName(cur) || `${goodName(cur.key)}×${n}`;
     const msg = cur.side === 'sell' ? `向「${cur.ownerName}」買了${what}（💰${total}）` : `把${what}賣給「${cur.ownerName}」（💰${total}）`;
     g.log(`🏪 交易市場：${msg}`, 'loot');
     g.changed?.();
@@ -245,11 +273,11 @@ export class MarketSystem {
   /** 把成交所得與退還物交給自己 */
   credit(m, pending, remain) {
     const g = this.game;
-    const what = m.item ? `「${m.item.name}」` : goodName(m.key);
+    const what = listingName(m) || goodName(m.key);
     if (pending > 0) {
       if (m.side === 'sell') {
         g.state.player.coins += pending * m.price;
-        g.log(`🏪 交易市場：${what}${m.item ? '' : `×${pending}`} 已售出，收到 💰${pending * m.price}`, 'loot');
+        g.log(`🏪 交易市場：${what}${m.item || m.bp ? '' : `×${pending}`} 已售出，收到 💰${pending * m.price}`, 'loot');
       } else {
         this.give(m.key, pending);
         g.log(`🏪 交易市場：收購到 ${what}×${pending}`, 'loot');
@@ -257,11 +285,13 @@ export class MarketSystem {
     }
     if (remain > 0) {
       if (m.side === 'sell') {
-        if (m.item) {
+        if (m.bp) {
+          if (!g.state.inventory.blueprints.some((b) => b.id === m.bp.id)) g.state.inventory.blueprints.push({ ...m.bp });
+        } else if (m.item) {
           const copy = { ...JSON.parse(JSON.stringify(m.item)), loc: 'store' };
           if (!g.equipment.getItem(copy.id)) g.equipment.items.push(copy);
         } else this.give(m.key, remain);
-        g.log(`🏪 交易市場：${what}${m.item ? '' : `×${remain}`} 下架並退回倉庫`, 'info');
+        g.log(`🏪 交易市場：${what}${m.item || m.bp ? '' : `×${remain}`} 下架並退回${m.bp ? '設計圖' : '倉庫'}`, 'info');
       } else {
         g.state.player.coins += remain * m.price;
         g.log(`🏪 交易市場：收購 ${what} 下架，退還 💰${remain * m.price}`, 'info');
