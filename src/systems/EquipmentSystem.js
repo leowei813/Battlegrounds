@@ -766,6 +766,8 @@ export class EquipmentSystem {
     const lv = clamp(Math.round(this.craftLevel(modelId)), 1, 60);
     const table = craftRarityTable(this.craftTech());
     const possible = RARITY_ORDER.filter((r) => table[r] > 0 && (!withBlueprint || rarityIndex(r) >= rarityIndex(withBlueprint)));
+    // 設計圖的保底品級比目前製作技術能做出的還高：就以保底品級計算（避免畫面出錯）
+    if (!possible.length) possible.push(withBlueprint && RARITIES[withBlueprint] ? withBlueprint : RARITY_ORDER[0]);
     const lo = RARITIES[possible[0]];
     const hi = RARITIES[possible[possible.length - 1]];
     const q0 = clamp(this.game.research.bonus('craftQualityAdd'), 0, 0.9);

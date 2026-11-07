@@ -756,6 +756,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .fac2-head { display: flex; align-items: center; gap: 8px; }
 .fac2-head b { flex: 1; font-size: 15px; }
 .fac2-head .fac-icon { font-size: 22px; }
+.slot-tag { font-size: 12px; padding: 0 8px; border-radius: 8px; background: #ffffff12; border: 1px solid #ffffff2a; color: #cfd8dc; white-space: nowrap; }
 .fac2-effect { font-size: 13px; }
 .fac2-cost { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
 .needs { display: flex; flex-wrap: wrap; gap: 4px; }

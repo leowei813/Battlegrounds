@@ -12,6 +12,15 @@ import {
   SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, AMMO_RECIPES, MED_RECIPES, AMMO_FOR, AMMO_RECOVER,
 } from '../../config/supplies.js';
 import { STACK_MAX } from '../../config/equipment.js';
+import { DG_GEAR } from '../../config/dungeons.js';
+
+/** 設計圖的裝備部位標籤（遠程武器另外標示槍種） */
+function slotTag(type, slot = ITEM_TYPES[type]?.slot) {
+  const sl = SLOTS[slot];
+  if (!sl) return '';
+  const sub = slot === 'weapon' && ITEM_TYPES[type] ? `・${ITEM_TYPES[type].name}` : '';
+  return `<span class="slot-tag">${sl.icon} ${sl.name}${sub}</span>`;
+}
 
 /**
  * 製作分頁（裝備與載具製作）；倉庫裝備清單與車庫顯示在避難所頁的「倉庫」「車庫」分頁。
@@ -250,11 +259,11 @@ export class InventoryPanel {
     </div>${this.craftSide()}</div>`;
   }
 
-  /** 設計圖：製作時保底品級；可以賣給黑市或丟棄（交易市場也能刊登） */
+  /** 設計圖：製作時保底品級；可以出售（交易市場也能刊登） */
   renderBlueprints() {
     const g = this.game;
     const eq = g.equipment;
-    const extra = (bp) => `${btn(`🕶️ 賣給黑市 💰${g.blackMarket.blueprintBuyback(bp).toLocaleString()}`, 'bpSell', { id: bp.id }, { cls: 'btn-sm btn-ghost bp-sell' })}${btn('🗑️ 丟棄', 'bpDiscard', { id: bp.id }, { cls: 'btn-sm btn-danger' })}`;
+    const extra = (bp) => `${btn(`出售 💰${g.blackMarket.blueprintBuyback(bp).toLocaleString()}`, 'bpSell', { id: bp.id }, { cls: 'btn-sm btn-ghost bp-sell' })}`;
     const cards = g.state.inventory.blueprints.map((bp) => {
       const info = eq.blueprintInfo(bp);
       if (!info) return '';
@@ -262,7 +271,7 @@ export class InventoryPanel {
         const st = g.dungeon.canCraft(bp.model).ok ? 'ok' : 'short';
         if (!this.passFilter(st)) return '';
         return `<div class="fac-card2 dg-bp">
-        <div class="fac2-head"><span class="fac-icon">📜</span><b class="dg-name">${escapeHtml(info.name)}</b><span class="dg-tag">副本圖紙</span></div>
+        <div class="fac2-head"><span class="fac-icon">📜</span><b class="dg-name">${escapeHtml(info.name)}</b>${slotTag(null, DG_GEAR[bp.model]?.slot)}<span class="dg-tag">副本圖紙</span></div>
         <div class="stat-line muted">${escapeHtml(g.dungeon.gearLine(bp.model))}</div>
         <div class="row-between bp-acts"><span></span><span class="btn-row">${btn('製作', 'view', { v: 'dgcraft' }, { cls: 'btn-sm btn-primary' })}${extra(bp)}</span></div>
       </div>`;
@@ -273,7 +282,7 @@ export class InventoryPanel {
       const st = this.craftState(check, cost);
       if (!this.passFilter(st)) return '';
       return `<div class="fac-card2 ${st === 'lock' ? 'unbuilt' : ''}">
-        <div class="fac2-head"><span class="fac-icon">📜</span><b>${md.name}</b><span style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</span></div>
+        <div class="fac2-head"><span class="fac-icon">📜</span><b>${md.name}</b>${slotTag(md.type)}<span style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</span></div>
         <div class="stat-line range">${statRangeLine(eq.craftStatRange(bp.model, bp.rarity))}</div>
         <div class="fac2-cost"><small class="muted">所需材料（擁有/需要）</small><div class="needs">${needHtml(g.state, cost)}</div>
           <div class="row-between bp-acts"><span></span><span class="btn-row">${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, check.reason)}${extra(bp)}</span></div></div>
@@ -297,8 +306,8 @@ export class InventoryPanel {
     this.ui.modal.open({
       title: '🗑️ 丟棄設計圖？',
       body: `<p>「${escapeHtml(info.name)}」${info.dungeon ? '副本圖紙' : '設計圖'}丟棄後無法復原。</p>
-        <p class="muted">賣給黑市可以得到 💰${price.toLocaleString()}，或到交易市場賣給其他玩家。</p>
-        <div class="btn-row end">${btn('取消', 'close', {}, { cls: 'btn-ghost' })}${btn('改賣黑市', 'bpSellNow', {}, { cls: '' })}${btn('確定丟棄', 'bpDropNow', {}, { cls: 'btn-danger' })}</div>`,
+        <p class="muted">出售可以得到 💰${price.toLocaleString()}，或到交易市場賣給其他玩家。</p>
+        <div class="btn-row end">${btn('取消', 'close', {}, { cls: 'btn-ghost' })}${btn('改為出售', 'bpSellNow', {}, { cls: '' })}${btn('確定丟棄', 'bpDropNow', {}, { cls: 'btn-danger' })}</div>`,
       onAction: (action, _d, m) => {
         if (action === 'bpSellNow') this.ui.result(g.blackMarket.sellBlueprint(id));
         else if (action === 'bpDropNow') this.ui.result(g.equipment.discardBlueprint(id));
@@ -549,7 +558,7 @@ export class InventoryPanel {
       case 'bpSell': {
         const bp = g.state.inventory.blueprints.find((b) => b.id === data.id);
         const info = g.equipment.blueprintInfo(bp);
-        if (bp && confirm(`把設計圖「${info?.name || ''}」賣給黑市，得到 💰${g.blackMarket.blueprintBuyback(bp).toLocaleString()}？`)) this.ui.result(g.blackMarket.sellBlueprint(data.id));
+        if (bp && confirm(`出售設計圖「${info?.name || ''}」，得到 💰${g.blackMarket.blueprintBuyback(bp).toLocaleString()}？`)) this.ui.result(g.blackMarket.sellBlueprint(data.id));
         break;
       }
       case 'bpDiscard': this.confirmBpDiscard(data.id); break;
