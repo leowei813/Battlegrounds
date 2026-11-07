@@ -11,8 +11,8 @@ import { zoneIndexAt } from '../config/zones.js';
  */
 export const WORLD_GEN = {
   cellM: 48,
-  /** 有地點的格子比例：避難所周圍（1.2 公里）約 1,400 個地點 */
-  fill: 0.73,
+  /** 有地點的格子比例：避難所周圍（1.2 公里）約 1,200 個地點 */
+  fill: 0.614,
   /** 軍事基地在深淵區內的比例 */
   militaryInAbyss: 0.15,
 };
