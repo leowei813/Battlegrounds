@@ -5752,6 +5752,22 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(n146 && g146.npcs.displayPower(n146) === want && want > g146.npcs.power(n146), `NPC 建議戰力改用同一套公式（${Math.round(g146.npcs.power(n146))} → ${want}）`);
 }
 
+// ---- 147. v12.2 高等裝備製作耗材加重、拆解固定回收三成 ----
+{
+  const { craftRecipe: CR, craftTierMul: CTM } = await import('../src/systems/EquipmentSystem.js');
+  const { ITEM_MODELS: IM } = await import('../src/config/equipment.js');
+  const total = (o) => Object.entries(o).filter(([k]) => k !== 'wood').reduce((a, [, v]) => a + v, 0);
+  assert(CTM(5) === 1 && CTM(6) === 1.25 && CTM(10) === 2.25, 'T1～T5 耗材不變、T6 起逐級加重（T10 ×2.25）');
+  const helm = Object.values(IM).find((m) => m.name === '鈦合金頭盔');
+  assert(helm && total(CR(helm)) >= 45, `T10 鈦合金頭盔耗材加重（${total(CR(helm))}）`);
+  const g147 = Game.newGame({ playerName: 'E147', classId: 'warrior', lat: 25, lon: 121 });
+  const hid = Object.keys(IM).find((k) => IM[k] === helm);
+  const it = g147.equipment.generate({ level: 50, model: hid, rarity: 'common' });
+  const back = g147.equipment.dismantleValue(it);
+  const rec = CR(helm);
+  assert(Object.entries(back).filter(([k]) => k !== 'parts').every(([k, v]) => v <= rec[k] && v <= Math.max(1, Math.round(rec[k] * 0.3))), `拆解高等裝備只回收約三成材料（${total(back)}/${total(rec)}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

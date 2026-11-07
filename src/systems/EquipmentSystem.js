@@ -78,8 +78,17 @@ export function craftRecipe(md) {
     add(t <= 3 ? 'ironWire' : 'plastic', q(1));
     add('cotton', q(1));
   }
+  // v12.2：高等裝備（強度 6 起）耗材逐級加重：T6 ×1.25 … T10 ×2.25
+  const hi = craftTierMul(t);
+  if (hi > 1) Object.keys(out).forEach((k) => { out[k] = Math.ceil(out[k] * hi); });
   return out;
 }
+
+/** 高等裝備製作耗材倍率（強度 1～5 不變） */
+export const craftTierMul = (tier) => (tier >= 6 ? 1 + (tier - 5) * 0.25 : 1);
+
+/** 拆解回收製作材料的比例（不再乘裝備等級倍率） */
+export const DISMANTLE_RATE = 0.3;
 
 /** 整數顯示的屬性（其餘為小數/百分比） */
 const INT_STATS = new Set(['atk', 'def', 'hp']);
@@ -605,13 +614,13 @@ export class EquipmentSystem {
 
   dismantleValue(item) {
     const idx = RARITY_ORDER.indexOf(item.rarity);
-    const mul = tierMul(item.tier || 1) * (1 + this.game.research.bonus('dismantlePct'));
-    // 拆解回收約三成的製作材料（至少 1 個），高品級另外回收稀有材料
+    const mul = DISMANTLE_RATE * (1 + this.game.research.bonus('dismantlePct'));
+    // 拆解回收約三成的製作材料（至少 1 個，不超過製作耗材），高品級另外回收稀有材料
     const recipe = craftRecipe(ITEM_MODELS[item.model] || { type: item.type, tier: item.tier || 1 });
     const gain = {};
     Object.entries(recipe).forEach(([k, v]) => {
       if (k === 'wood') return;
-      const n = Math.max(1, Math.round(v * 0.3 * mul));
+      const n = Math.min(v, Math.max(1, Math.round(v * mul)));
       gain[k] = n;
     });
     const parts = [0, 0, 0, 1, 3, 8][idx] || 0;
