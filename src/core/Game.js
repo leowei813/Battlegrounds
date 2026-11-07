@@ -304,7 +304,7 @@ export class Game {
     };
     this.log(`🌙 離線 ${Math.round(elapsed / 60000)} 分鐘，收益已結算`, 'info');
     return {
-      done, labIdle: this.research.labLevel() > 0 && !this.state.research.active,
+      done, labIdle: this.research.labLevel() > 0 && !this.research.actives().length,
       elapsed, gains, expeditions: reports.length, defense, kills: this.state.stats.kills - killsBefore,
       capped: now - this.state.lastSaveAt > OFFLINE_CAP_MS,
       starving: !!this.state.starving,

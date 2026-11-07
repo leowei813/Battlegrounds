@@ -483,9 +483,9 @@ export class UIManager {
   researchBadge() {
     const g = this.game;
     if (!g.research.labLevel()) return null;
-    const a = g.state.research.active;
-    if (!a) return { kind: 'idle', text: '閒置' };
-    const left = Math.max(0, a.endAt - Date.now());
+    const acts = g.research.actives().map((x) => x.a);
+    if (!acts.length) return { kind: 'idle', text: '閒置' };
+    const left = Math.max(0, Math.min(...acts.map((a) => a.endAt)) - Date.now());
     const min = Math.ceil(left / 60000);
     return { kind: 'busy', text: min >= 60 ? `${Math.floor(min / 60)}時` : `${min}分` };
   }

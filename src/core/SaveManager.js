@@ -175,10 +175,11 @@ export class SaveManager {
       delete rs.completed;
     }
     if (rs.active && (!RESEARCH[rs.active.id] || !rs.active.level)) rs.active = null;
+    if (rs.active2 && (!RESEARCH[rs.active2.id] || !rs.active2.level)) rs.active2 = null;
     // 研究佇列與剛完成標示也要保留（之前載入時被清掉，排隊中的研究與已扣的材料會消失）
     const queue = (Array.isArray(rs.queue) ? rs.queue : []).filter((q) => q && RESEARCH[q.id] && q.level > 0);
     data.research = {
-      levels: rs.levels, active: rs.active || null, queue, ...(rs.fresh && typeof rs.fresh === 'object' ? { fresh: rs.fresh } : {}),
+      levels: rs.levels, active: rs.active || null, ...(rs.active2 ? { active2: rs.active2 } : {}), queue, ...(rs.fresh && typeof rs.fresh === 'object' ? { fresh: rs.fresh } : {}),
     };
     (data.inventory?.items || []).forEach((it) => {
       if (it.model && ITEM_MODELS[it.model]) return;
@@ -442,6 +443,10 @@ export class SaveManager {
       // v10.12：新增「就是要鎖你」（貨幣，不佔物品格）、重生器（設施於下方自動補 Lv0）、黑市特殊品每日購買紀錄
       if (data.player) data.player.locks = Math.max(0, Math.floor(data.player.locks || 0));
       data.bmSpecial = data.bmSpecial || null;
+    }
+    if (v < 30) {
+      // v11.1：研究中心 Lv10 起第二研究位（research.active2）；沒有的補 null
+      if (data.research && !data.research.active2) data.research.active2 = null;
     }
     if (v < 29) {
       // v11：地下感染區（多人副本）：報名紀錄、副本核心材料（不佔倉庫格子）

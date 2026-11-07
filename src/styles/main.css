@@ -1463,3 +1463,35 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .dg-ic-inline svg { width: 100%; height: 100%; display: block; }
 .dg-head { display: flex; align-items: center; gap: 6px; font-size: 15px; margin-bottom: 2px; }
 .dg-head .dg-ic-inline { width: 2.2em; height: 1.8em; }
+/* 報名名單、職業燈號 */
+.dg-roster { border: 1px solid #ffffff14; border-radius: 10px; padding: 8px 10px; margin: 8px 0; }
+.dg-lamps { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.dg-lamp { display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 12px; border: 1px solid #ffffff14; background: #ffffff06; font-size: 12px; color: #78909c; }
+.dg-lamp i { font-style: normal; font-size: 16px; filter: grayscale(1) brightness(.5); }
+.dg-lamp.on { border-color: #66bb6a; background: #1b5e2033; color: #fff; box-shadow: 0 0 8px #66bb6a66; }
+.dg-lamp.on i { filter: none; }
+.dg-grp { border: 1px solid #ffffff14; border-radius: 10px; padding: 6px 8px; margin-top: 8px; }
+.dg-grp h5 { margin: 0 0 4px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.dg-mini { margin-left: auto; display: flex; gap: 3px; }
+.dg-mini span { font-size: 14px; filter: grayscale(1) brightness(.45); } .dg-mini span.on { filter: none; }
+.dg-who { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; margin-top: 6px; font-size: 12.5px; }
+.dg-who > div { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; padding: 3px 6px; border-radius: 8px; background: #ffffff08; }
+.dg-who > div.me { background: #ffd54f18; border: 1px solid #ffd54f55; }
+@media (max-width: 560px) { .dg-who { grid-template-columns: 1fr; } }
+.dg-fold { margin-left: 6px; width: 24px; height: 22px; flex: none; border-radius: 6px; border: 1px solid #ffffff33; background: #ffffff10; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; cursor: pointer; }
+.dg-fold:hover { background: #ffffff22; }
+.dg-hud .sum { color: #cfd8dc; font-size: 11.5px; }
+.dg-hud .t { white-space: nowrap; min-width: 0; }
+.dg-hud .t .fl { white-space: nowrap; }
+.dg-hud .t > :not(.dg-ic):not(.fl):not(.dg-fold) { overflow: hidden; text-overflow: ellipsis; }
+.dg-cnt.low { color: #ff8a65; font-weight: 700; }
+.dg-cnt.ok { color: #a5d6a7; font-weight: 700; }
+.rq-slot { display: inline-block; font-size: 11px; color: #ffe082; border: 1px solid #ffe08266; border-radius: 6px; padding: 0 6px; margin-right: 6px; }
+/* 左上角：屍潮資訊、副本資訊、隊伍清單由上往下排，內容多時自動往下推（不重疊） */
+.map-topleft { position: absolute; top: 10px; left: 56px; right: 64px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
+.map-topleft > .siege-banner, .map-topleft > .map-feed { position: static; left: auto; right: auto; top: auto; }
+.map-topleft > .siege-banner { width: 100%; }
+.map-hint ~ .map-topleft { top: 64px; }
+.map-alert-banner ~ .map-topleft { top: 46px; }
+.map-topleft > .map-alert-banner { position: static; width: 100%; left: auto; right: auto; top: auto; }
+.map-topleft > .dg-hud { pointer-events: auto; }

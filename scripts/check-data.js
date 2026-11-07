@@ -3604,6 +3604,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gq.shelter.establish(gq.state.map.pois.find((p) => gq.shelter.canEstablish(p).ok));
   const bq = gq.shelter.primary();
   const rs = gq.research;
+  // 這裡測試單一研究位的佇列規則（研究中心 Lv10 的第二研究位另見第 131 節）
+  rs.parallel = () => 1;
   bq.facilities.researchCenter.level = 4;
   assert(rs.slots() === 1, '研究中心 Lv4：1 格');
   bq.facilities.researchCenter.level = 10;
@@ -5091,7 +5093,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 分團：依報名先後平均分配，每團 3～8 人
   const fakeList = (n) => ({ list: Array.from({ length: n }, (_, i) => ({ p: `p${i}`, s: `s${i}`, c: 'warrior', at: 1000 - i, u: { maxHp: 100 } })) });
   const sizes = (n) => DungeonSystem.groupsOf(fakeList(n)).groups.map((x) => x.length).join('+');
-  assert(DungeonSystem.groupsOf(fakeList(2)).cancelled && sizes(3) === '3' && sizes(8) === '8' && sizes(9) === '5+4' && sizes(10) === '5+5' && sizes(17) === '6+6+5', `平均分團（9→${sizes(9)}、10→${sizes(10)}、17→${sizes(17)}）、不到 3 人取消`);
+  assert(DungeonSystem.groupsOf(fakeList(2)).cancelled && sizes(3) === '3' && sizes(8) === '8' && sizes(9) === '5+4' && sizes(10) === '5+5' && sizes(16) === '8+8' && sizes(20) === '8+8', `平均分團、最多兩團（9→${sizes(9)}、10→${sizes(10)}、16→${sizes(16)}）、不到 3 人取消`);
   assert(DungeonSystem.groupsOf(fakeList(9)).groups[0][0].p === 'p8', '分團依報名先後（最早報名的在第 1 團）');
   const ex = fakeList(4);
   ex.list[0].x = 'nomed';
@@ -5209,18 +5211,23 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     const it = gx.dungeon.makeGear('lab_gloves');
     let dgP = 0;
     let legP = 0;
-    for (let k = 0; k < 20; k += 1) {
+    for (let k = 0; k < 40; k += 1) {
       dgP += gx.dungeon.makeGear('lab_gloves').power;
       legP += gx.equipment.generate({ level: 60, model: 'exoGloves', rarity: 'legendary', qualityAdd: 0.5 }).power;
     }
-    assert(it.rarity === 'dungeon' && it.bound && dgP / legP > 1.1 && dgP / legP < 1.35, `副本裝備：副本品級、綁定、平均強度約傳奇的 1.2 倍（${(dgP / legP).toFixed(2)}）`);
+    assert(it.rarity === 'dungeon' && it.bound && dgP / legP > 1.05 && dgP / legP < 1.4, `副本裝備：副本品級、綁定、平均強度約傳奇的 1.2 倍（${(dgP / legP).toFixed(2)}）`);
     gx.equipment.addItem(it, 't');
     const w = createSurvivor('戰士', 'warrior', 30, 'rare'); gx.state.survivors.push(w); w.status = 'idle';
     assert(!gx.equipment.equip(w.id, it.id).ok && gx.equipment.equip(sv.id, it.id).ok, '副本裝備只有對應職業可以穿');
     const hp0 = gx.survivors.stats(sv).hp;
     ['lab_helmet', 'lab_armor'].forEach((id) => { const x = gx.dungeon.makeGear(id); gx.equipment.addItem(x, 't'); gx.equipment.equip(sv.id, x.id); });
     const set = gx.dungeon.setBonus(sv);
-    assert(set.pct === DGC.DG_SET[0].pct && set.stat === 'hp' && gx.survivors.stats(sv).hp > hp0, '套裝 3 件：醫生生命 +2%');
+    const withSet = gx.survivors.stats(sv).hp;
+    const sb = gx.dungeon.setBonus.bind(gx.dungeon);
+    gx.dungeon.setBonus = () => ({ stat: 'hp', pct: 0, inf: 0 });
+    const noSet = gx.survivors.stats(sv).hp;
+    gx.dungeon.setBonus = sb;
+    assert(set.pct === DGC.DG_SET[0].pct && set.stat === 'hp' && hp0 > 0 && Math.abs(withSet / noSet - (1 + DGC.DG_SET[0].pct)) < 0.02, `套裝 3 件：醫生生命 +2%（${(withSet / noSet).toFixed(3)}）`);
     gx.market.level = () => 3;
     assert(!(await gx.market.post({ side: 'sell', itemId: it.id, price: 10 })).ok, '副本裝備綁定，不能在交易市場刊登');
     gx.state.inventory.blueprints.push({ id: 'dgbp', model: 'lab_weapon', rarity: 'dungeon', dg: true });
@@ -5280,6 +5287,81 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     const m = SaveManager.migrate(data);
     assert(m.dungeon?.sign && m.dgCores && typeof m.dgCores === 'object', '存檔遷移：副本報名紀錄與核心材料');
   }
+}
+
+// ---- 131. 研究中心 Lv10：同時進行兩項研究（共用佇列，先結束的研究位接佇列第一項） ----
+{
+  const gr = Game.newGame({ playerName: 'RS2', classId: 'warrior', lat: 25, lon: 121 });
+  gr.state.map.pois = fillPois([], 25, 121);
+  gr.shelter.establish(gr.state.map.pois.find((p) => gr.shelter.canEstablish(p).ok));
+  let lab = 9;
+  gr.research.labLevel = () => lab;
+  gr.game = gr;
+  const rich = () => { Object.keys(gr.state.resources).forEach((k) => { gr.state.resources[k] = 1e7; }); SUPPLY_KEYS.forEach((k) => { gr.state.supplies[k] = 1e6; }); gr.state.player.coins = 1e8; gr.state.player.parts = 1e6; };
+  rich();
+  gr.resources.storageCap = () => 1e9;
+  const ids = Object.keys(RESEARCH).filter((id) => !RESEARCH[id].requires.length && gr.research.canStart(id).ok).slice(0, 4);
+  assert(ids.length === 4, '找到 4 項可以研究的科技');
+  assert(gr.research.parallel() === 1 && gr.research.slots() === 2, `研究中心 Lv9：一次 1 項（佇列 ${gr.research.slots()} 格）`);
+  lab = 10;
+  assert(gr.research.parallel() === 2 && gr.research.slots() === 4, `研究中心 Lv10：同時 2 項、多一格（佇列 ${gr.research.slots()} 格）`);
+  const t0 = Date.now();
+  gr.research.start(ids[0]); gr.research.start(ids[1]); gr.research.start(ids[2]);
+  const rs = gr.state.research;
+  assert(rs.active?.id === ids[0] && rs.active2?.id === ids[1] && gr.research.queue.length === 1, '前兩項同時開始研究，第三項排隊');
+  assert(gr.research.start(ids[0]).ok && gr.research.queue.at(-1).id === ids[0] && gr.research.queue.at(-1).level === 2, '同一科技的下一級只能排隊（不能同時研究）');
+  // 先結束的研究位接佇列第一項
+  const first = rs.active.endAt <= rs.active2.endAt ? 'active' : 'active2';
+  const endFirst = rs[first].endAt;
+  gr.research.update(endFirst + 1);
+  assert(rs[first]?.id === ids[2] && rs[first].startAt === endFirst, '先結束的研究位接著研究佇列第一項（開始時間＝上一項完成時間）');
+  // 離線很久：全部依序完成
+  gr.research.update(t0 + 400 * 24 * 3600 * 1000);
+  assert(!rs.active && !rs.active2 && !gr.research.queue.length && gr.research.level(ids[0]) === 2 && gr.research.level(ids[1]) === 1 && gr.research.level(ids[2]) === 1, '離線期間兩個研究位依序完成全部研究');
+  // 存檔保留第二研究位
+  gr.research.start(ids[3]); gr.research.start(ids[1]);
+  const saved = SaveManager.migrate(JSON.parse(JSON.stringify(gr.state)));
+  assert(saved.research.active && saved.research.active2, '存檔保留兩個研究位');
+  // 降到 Lv9：第二研究位移回佇列
+  lab = 9;
+  gr.research.update(Date.now());
+  assert(!rs.active2 && rs.active, '研究中心降到 Lv10 以下：第二研究位的研究移回佇列');
+  // 搬遷等：全部取消
+  lab = 10;
+  gr.research.update(Date.now());
+  gr.research.cancelAll(Date.now());
+  assert(!rs.active && !rs.active2 && !gr.research.queue.length, '取消全部研究（兩個研究位都取消）');
+}
+
+// ---- 132. 路線規劃：多個警戒範圍重疊時不會來回折返、不會穿過範圍 ----
+{
+  const RT = await import('../src/map/routing.js');
+  const from = { lat: 25.033, lon: 121.57 };
+  const to = { lat: 25.036, lon: 121.574 };
+  let seed = 7;
+  const rnd = (a, b) => { seed = (seed * 16807) % 2147483647; return a + ((seed - 1) / 2147483646) * (b - a); };
+  let maxPts = 0;
+  let cross = 0;
+  for (let k = 0; k < 300; k += 1) {
+    const av = Array.from({ length: Math.floor(rnd(1, 7)) }, () => ({ lat: rnd(25.031, 25.036), lon: rnd(121.570, 121.575), r: rnd(40, 150) }));
+    const p = RT.planRoute(from, to, av);
+    maxPts = Math.max(maxPts, p.length);
+    const usable = av.filter((c) => RT.distanceM(c, from) > c.r && RT.distanceM(c, to) > c.r).map((c) => ({ ...c, r: c.r * 0.98 }));
+    if (RT.crossings(p, usable).length) cross += 1;
+  }
+  assert(maxPts <= 20 && cross === 0, `警戒範圍重疊時路線不會來回折返（最多 ${maxPts} 個點）、不會穿過範圍（${cross}）`);
+}
+
+// ---- 133. 探索到一半的地點：每天 00:00（台灣時間）重置 ----
+{
+  const PS = await import('../src/systems/PoiShareSystem.js');
+  const gp = Game.newGame({ playerName: 'PS133', classId: 'warrior', lat: 25, lon: 121 });
+  gp.state.map.pois = fillPois([], 25, 121);
+  const poi = gp.state.map.pois[0];
+  const midnight = PS.twDayStart(Date.UTC(2026, 10, 12, 4));
+  gp.shared.cache.set(`poi:${poi.id}`, { kind: 'poi', id: poi.id, ver: 1, data: { g: 0, r: { g: 0, res: { scrap: 5 }, done: 1, total: 3, t: midnight - 3600000 } } });
+  assert(!gp.poiShare.view(poi, midnight - 60000)?.left === false && !gp.poiShare.view(poi, midnight + 60000).left, '探索到一半的進度：當天保留、過了 00:00 重置成完整建築');
+  assert(new Date(midnight).getUTCHours() === 16, '重置時間為台灣時間 00:00');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

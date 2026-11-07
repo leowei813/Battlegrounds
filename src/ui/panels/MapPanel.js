@@ -338,9 +338,7 @@ export class MapPanel {
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
         ${btn('☣️', 'zoneMode', {}, { cls: `btn-icon ${this.service.zoneMode?.() === 'off' ? '' : 'on'}`, title: '危險度圖層：淡／關閉' })}
       </div>
-      ${has && this.game.shelter.alert ? '<div class="map-alert-banner">🔔 警戒中・全部倖存者防禦駐守</div>' : ''}
-      ${this.siegeBanner()}
-      ${this.feedHtml(hudHtml(this.game))}
+      <div class="map-topleft">${hudHtml(this.game)}${this.siegeBanner()}${this.feedHtml()}</div>
       ${this.scanning ? `<div class="scan-progress">📡 掃描建築中 ${this.scanProgress || ''}</div>` : ''}
       ${this.worldChip()}
       <div class="map-info">建築 ${st.map.pois.length}・殭屍群 ${st.map.zombieGroups.length}・資料：${src}</div>`;
@@ -607,7 +605,7 @@ export class MapPanel {
       if (st?.state === 'broke') { cls = 'broke'; text = `💥 今夜屍潮已結束${st.wave ? `（第 ${st.wave} 波被突破）` : '（防線被突破）'}・${dawn}`; }
       return `
       <button class="siege-chip ${cls}" data-action="flyTo" data-id="${b.id}">
-        ${g.shelter.isPrimary(b) ? '⭐' : '🏠'} ${escapeHtml(b.name)}・${text}${help}
+        屍潮來襲・${text}${help}
       </button>`;
     }).join('')}</div>`;
   }
@@ -615,6 +613,15 @@ export class MapPanel {
   async onAction(action, data = {}) {
     const sh = this.game.shelter.primary();
     if (action === 'dgStatus') { openStatus(this.ui, data.dg); return; }
+    if (action === 'dgFold') {
+      const st = this.game.state;
+      st.settings = st.settings || {};
+      st.settings.dgHudOpen = !st.settings.dgHudOpen;
+      this.game.requestSave?.();
+      this.lastOverlay = '';
+      this.renderOverlay();
+      return;
+    }
     if (action === 'gotoShelter' && sh) this.service.focus(sh.lat, sh.lon);
     if (action === 'messages') openMessages(this.ui);
     if (action === 'chat') this.ui.chatView.toggle();

@@ -177,7 +177,7 @@ export class ShelterPanel {
     }
     const storeRatio = g.equipment.storeUsed() / Math.max(1, g.equipment.storeCap());
     if (storeRatio >= 0.85) todo.push({ cls: storeRatio >= 1 ? 'warn' : 'info', text: `倉庫 ${storeN}${storeRatio >= 1 ? '，已經滿了' : '，快滿了'}`, sub: '探索帶回的物資會放不下', btn: btn('整理倉庫', 'shelterTab', { t: 'storage' }, { cls: 'btn-sm' }) });
-    if (!g.research.state.active && g.shelter.maxLevel('researchCenter') > 0) todo.push({ cls: 'info', text: '研究中心目前沒有研究', sub: '', btn: btn('前往研究', 'gotoTab', { tab: 'research' }, { cls: 'btn-sm' }) });
+    if (!g.research.actives().length && g.shelter.maxLevel('researchCenter') > 0) todo.push({ cls: 'info', text: '研究中心目前沒有研究', sub: '', btn: btn('前往研究', 'gotoTab', { tab: 'research' }, { cls: 'btn-sm' }) });
     const net = g.resources.rates().net;
     if ((net.food || 0) < 0) todo.push({ cls: 'warn', text: `食物每小時 ${Math.round(net.food)}`, sub: '升級農場或多探索食物來源', btn: '' });
     const todoHtml = todo.map((t) => `<div class="todo ${t.cls}"><div><span>${t.text}</span>${t.sub ? `<small class="muted block">${t.sub}</small>` : ''}</div>${t.btn}</div>`).join('')
