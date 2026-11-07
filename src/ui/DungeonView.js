@@ -120,7 +120,7 @@ export function hudHtml(g, now = Date.now()) {
     const icons = recs.map((rec) => clsIcon(g.survivors.get(rec.svId)?.classId)).join('');
     return `<div class="dg-hud multi" data-action="dgStatus" data-dg="${recs[0].dg}">${head}<div class="r sum">${Object.entries(count).map(([k, n]) => `${k} ${n}`).join('・')}・${icons}</div></div>`;
   }
-  const rows = recs.map((rec, i) => `<div class="row">${clsIcon(g.survivors.get(rec.svId)?.classId)} ${escapeHtml(DUNGEONS[rec.dg].short)}<span class="tag ${sts[i].cls}">${sts[i].tag}</span><span class="push">${sts[i].floor}</span></div>`).join('');
+  const rows = recs.map((rec, i) => `<div class="row" data-action="dgStatus" data-dg="${rec.dg}">${clsIcon(g.survivors.get(rec.svId)?.classId)} ${escapeHtml(DUNGEONS[rec.dg].short)}<span class="tag ${sts[i].cls}">${sts[i].tag}</span><span class="push">${sts[i].floor}</span></div>`).join('');
   return `<div class="dg-hud multi" data-action="dgStatus" data-dg="${recs[0].dg}">${head}${rows}</div>`;
 }
 
