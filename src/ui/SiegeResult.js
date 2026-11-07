@@ -157,7 +157,7 @@ const gearChip = (x) => chip(`🎁 ${escapeHtml(RARITIES[x.rarity]?.name || '')}
 export function raidRewardHtml(e, mode = 'popup') {
   const r = e.reward;
   if (!r) return '';
-  const hurtText = (x) => (x.severe ? '<span class="neg">重傷（需醫療站治療）</span>' : `<span class="neg">被擊倒，剩 ${x.pct}% 生命</span>`);
+  const hurtText = (x) => (x.severe ? '<span class="neg">重傷（需醫療站治療）</span>' : `<span class="neg">${x.down === false ? '受傷' : '被擊倒'}，剩 ${x.pct}% 生命</span>`);
   if (mode === 'summary') {
     return `<div class="sr-items">${chip(`💰 ${r.coins}`)}${r.gear.length ? chip(`🎁 裝備 ×${r.gear.length}`, 'gold') : ''}${r.xp.length ? chip(`🎖️ ${r.xp.length} 人經驗`) : ''}${r.hurt.length ? chip(`🩹 受傷 ${r.hurt.length}`, 'loss') : ''}</div>`;
   }
