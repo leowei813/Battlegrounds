@@ -5633,6 +5633,17 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(names.length > 0 && new Set(names).size === names.length && names.every((n) => NN.includes(n)), `地圖上的 NPC 名稱不重複（${names.length} 個：${names.slice(0, 4).join('、')}…）`);
 }
 
+// ---- 146. v12.0.1 集結隊伍戰力：與倖存者顯示的戰力相同 ----
+{
+  const { AssistSystem: AS } = await import('../src/systems/AssistSystem.js');
+  const { DungeonSystem: DS } = await import('../src/systems/DungeonSystem.js');
+  const g146 = Game.newGame({ playerName: 'R146', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  const sv = g146.survivors.list[0];
+  const real = g146.survivors.stats(sv).power;
+  const pw = DS.powerOf({ u: AS.unitData(g146, sv, 0, { withMeds: true }) });
+  assert(Math.abs(pw - real) <= Math.max(3, real * 0.01), `集結隊員戰力 ${pw} ≈ 倖存者戰力 ${real}`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

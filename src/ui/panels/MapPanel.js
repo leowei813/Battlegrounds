@@ -157,7 +157,7 @@ export class MapPanel {
       done: d.result?.summary || '已結束',
       cancelled: '已取消',
     }[d.status] || d.status;
-    const teams = (d.teams || []).map((t) => `<li>${t.player === d.owner ? '⭐' : '🛡️'} ${escapeHtml(t.name)}・${(t.units || []).length} 人・戰力 ${(t.units || []).reduce((s, u) => s + (u.atk || 0) + (u.maxHp || 0) * 0.1, 0).toFixed(0)}</li>`).join('');
+    const teams = (d.teams || []).map((t) => `<li>${t.player === d.owner ? '⭐' : '🛡️'} ${escapeHtml(t.name)}・${(t.units || []).length} 人・戰力 ${Math.round((t.units || []).reduce((s, u) => s + DungeonSystem.powerOf({ u }), 0))}</li>`).join('');
     const canJoin = d.status === 'gathering' && !joined && d.owner !== me && g.territory.relation(d.owner) === 'friend' && (d.teams || []).length < d.maxTeams;
     return `<p>📡 「${escapeHtml(d.ownerName)}」發起的集結・目標 <b>${escapeHtml(d.target.name)}</b>（${d.target.kind === 'inf' ? '☣️ 重度感染據點' : '🏴‍☠️ NPC 據點'}）</p>
       <p><b>${status}</b></p>
