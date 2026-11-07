@@ -605,7 +605,7 @@ export class MapPanel {
       if (st?.state === 'broke') { cls = 'broke'; text = `💥 今夜屍潮已結束${st.wave ? `（第 ${st.wave} 波被突破）` : '（防線被突破）'}・${dawn}`; }
       return `
       <button class="siege-chip ${cls}" data-action="flyTo" data-id="${b.id}">
-        ${g.shelter.isPrimary(b) ? '⭐' : '🏠'} ${escapeHtml(b.name)}・${text}${help}
+        屍潮來襲・${text}${help}
       </button>`;
     }).join('')}</div>`;
   }
