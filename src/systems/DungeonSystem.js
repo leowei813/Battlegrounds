@@ -141,6 +141,7 @@ export class DungeonSystem {
     const out = {
       p: this.myId(), n: String(g.state.player.name || '倖存者').slice(0, 8), s: sv.id, sn: String(sv.name).slice(0, 8), c: sv.classId, lv: sv.level, u,
       bpm: +(1 + g.research.bonus('blueprintPct')).toFixed(2),
+      pw: Math.round(g.survivors.stats(sv).power),
     };
     if (sv.severe) { out.sev = true; out.med = heal >= lost; }
     const si = this.setInfReduce(sv);
@@ -247,8 +248,9 @@ export class DungeonSystem {
    * @returns {{groups:object[][], out:object[], cancelled:boolean}}
    */
   static groupsOf(data) {
+    // 報名額滿 16 人（最多兩團）：超過的部分不計（正常不會發生）
     const list = [...(data?.list || [])].filter((e) => e && e.p && e.u && DungeonSystem.validEntry(e))
-      .sort((a, b) => (a.at || 0) - (b.at || 0) || String(a.p).localeCompare(String(b.p)));
+      .sort((a, b) => (a.at || 0) - (b.at || 0) || String(a.p).localeCompare(String(b.p))).slice(0, DG_MAX_SIGNUPS);
     const out = list.filter((e) => e.x || (e.sev && !e.med));
     const ready = list.filter((e) => !out.includes(e));
     if (ready.length < DG_TEAM.min) return { groups: [], out, cancelled: true, list };

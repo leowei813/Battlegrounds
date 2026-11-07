@@ -23,8 +23,8 @@ export const DG_TIME = {
 export const DG_FLOORS = 20;
 /** 每團人數 */
 export const DG_TEAM = { min: 3, max: 8 };
-/** 每個副本每天最多報名人數（共用資料每筆上限 16KB：40 人、5 團） */
-export const DG_MAX_SIGNUPS = 40;
+/** 每個副本每天最多報名人數：16 人（最多兩團） */
+export const DG_MAX_SIGNUPS = 16;
 
 /** 副本戰鬥規則（只在副本內生效） */
 export const DG_RULES = {

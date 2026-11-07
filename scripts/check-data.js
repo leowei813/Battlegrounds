@@ -5091,7 +5091,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 分團：依報名先後平均分配，每團 3～8 人
   const fakeList = (n) => ({ list: Array.from({ length: n }, (_, i) => ({ p: `p${i}`, s: `s${i}`, c: 'warrior', at: 1000 - i, u: { maxHp: 100 } })) });
   const sizes = (n) => DungeonSystem.groupsOf(fakeList(n)).groups.map((x) => x.length).join('+');
-  assert(DungeonSystem.groupsOf(fakeList(2)).cancelled && sizes(3) === '3' && sizes(8) === '8' && sizes(9) === '5+4' && sizes(10) === '5+5' && sizes(17) === '6+6+5', `平均分團（9→${sizes(9)}、10→${sizes(10)}、17→${sizes(17)}）、不到 3 人取消`);
+  assert(DungeonSystem.groupsOf(fakeList(2)).cancelled && sizes(3) === '3' && sizes(8) === '8' && sizes(9) === '5+4' && sizes(10) === '5+5' && sizes(16) === '8+8' && sizes(20) === '8+8', `平均分團、最多兩團（9→${sizes(9)}、10→${sizes(10)}、16→${sizes(16)}）、不到 3 人取消`);
   assert(DungeonSystem.groupsOf(fakeList(9)).groups[0][0].p === 'p8', '分團依報名先後（最早報名的在第 1 團）');
   const ex = fakeList(4);
   ex.list[0].x = 'nomed';
@@ -5220,7 +5220,12 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     const hp0 = gx.survivors.stats(sv).hp;
     ['lab_helmet', 'lab_armor'].forEach((id) => { const x = gx.dungeon.makeGear(id); gx.equipment.addItem(x, 't'); gx.equipment.equip(sv.id, x.id); });
     const set = gx.dungeon.setBonus(sv);
-    assert(set.pct === DGC.DG_SET[0].pct && set.stat === 'hp' && gx.survivors.stats(sv).hp > hp0, '套裝 3 件：醫生生命 +2%');
+    const withSet = gx.survivors.stats(sv).hp;
+    const sb = gx.dungeon.setBonus.bind(gx.dungeon);
+    gx.dungeon.setBonus = () => ({ stat: 'hp', pct: 0, inf: 0 });
+    const noSet = gx.survivors.stats(sv).hp;
+    gx.dungeon.setBonus = sb;
+    assert(set.pct === DGC.DG_SET[0].pct && set.stat === 'hp' && hp0 > 0 && Math.abs(withSet / noSet - (1 + DGC.DG_SET[0].pct)) < 0.02, `套裝 3 件：醫生生命 +2%（${(withSet / noSet).toFixed(3)}）`);
     gx.market.level = () => 3;
     assert(!(await gx.market.post({ side: 'sell', itemId: it.id, price: 10 })).ok, '副本裝備綁定，不能在交易市場刊登');
     gx.state.inventory.blueprints.push({ id: 'dgbp', model: 'lab_weapon', rarity: 'dungeon', dg: true });

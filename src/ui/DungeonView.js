@@ -35,23 +35,26 @@ export function statusOf(g, rec, now = Date.now()) {
   const base = {
     floor: `—/${DG_FLOORS}`, time: '', inf: null, hp: null, sub: '',
   };
-  if (rec.settled && rec.excluded === 'nomed') return { ...base, tag: '無法出擊', cls: 't-fail', sub: '重傷且倉庫沒有藥品，今天無法參加' };
-  if (rec.excluded === 'nomed') return { ...base, tag: '無法出擊', cls: 't-fail', sub: '重傷且倉庫沒有藥品，今天無法參加' };
-  if (now < t.close) return { ...base, tag: '已報名', cls: 't-sign', sub: `目前 ${n} 人報名・17:40 截止，18:00 開打` };
-  if (now < t.lock) return { ...base, tag: '已截止', cls: 't-sign', sub: `${n} 人報名・17:50 鎖定、18:00 開打` };
+  if (rec.settled && rec.excluded === 'nomed') return { ...base, floor: '—', tag: '無法出擊', cls: 't-fail', sub: '重傷且倉庫沒有藥品，今天無法參加' };
+  if (rec.excluded === 'nomed') return { ...base, floor: '—', tag: '無法出擊', cls: 't-fail', sub: '重傷且倉庫沒有藥品，今天無法參加' };
+  const short = n < DG_TEAM.min ? `👥 ${n} 人・未滿 ${DG_TEAM.min}` : `👥 ${n} 人`;
+  if (now < t.close) return { ...base, floor: short, tag: '已報名', cls: 't-sign', sub: `目前 ${n} 人報名・17:40 截止，18:00 開打` };
+  if (now < t.lock) return { ...base, floor: short, tag: '已截止', cls: 't-sign', sub: `${n} 人報名・17:50 鎖定、18:00 開打` };
   if (now < t.start) {
     const gp = DungeonSystem.groupsOf(data);
     const me = g.dungeon.myId();
-    if (gp.cancelled) return { ...base, tag: '人數不足', cls: 't-cancel', sub: `報名 ${gp.list?.length || 0} 人（至少 ${DG_TEAM.min} 人），開打時取消` };
+    if (gp.cancelled) return { ...base, floor: '—', tag: '人數不足', cls: 't-cancel', sub: `報名 ${gp.list?.length || 0} 人（至少 ${DG_TEAM.min} 人），開打時取消` };
     const gi = gp.groups.findIndex((x) => x.some((e) => e.p === me));
     const size = gi >= 0 ? gp.groups[gi].length : 0;
-    if (now < t.depart) return { ...base, tag: '🔒 已鎖定', cls: 't-lock', sub: `第 ${gi + 1} 團・${size} 人・17:55 出發集結` };
-    return { ...base, tag: '集結中', cls: 't-gather', sub: `前往副本入口・第 ${gi + 1} 團 ${size} 人・剩 ${formatDuration(t.start - now)} 開打` };
+    // 超過 8 人（分成兩團以上）才顯示第幾團
+    const team = gp.groups.length > 1 ? `第 ${gi + 1} 團 ${size} 人` : `${size} 人`;
+    if (now < t.depart) return { ...base, floor: team, tag: '🔒 已鎖定', cls: 't-lock', sub: `${team}・17:55 出發集結` };
+    return { ...base, floor: team, tag: '集結中', cls: 't-gather', sub: `前往副本入口・${team}・剩 ${formatDuration(t.start - now)} 開打` };
   }
   const mine = g.dungeon.myRun(rec);
   if (!mine) return { ...base, tag: '同步中', cls: 't-sign', sub: '正在讀取副本資料…' };
-  if (mine.cancelled) return { ...base, tag: '今日取消', cls: 't-cancel', sub: `報名人數不足（至少 ${DG_TEAM.min} 人）・倖存者已回到避難所，沒有扣除任何東西` };
-  if (mine.out || mine.missing) return { ...base, tag: '無法出擊', cls: 't-fail', sub: '鎖定時重傷且藥品不足，今天無法參加' };
+  if (mine.cancelled) return { ...base, floor: '—', tag: '今日取消', cls: 't-cancel', sub: `報名人數不足（至少 ${DG_TEAM.min} 人）・倖存者已回到避難所，沒有扣除任何東西` };
+  if (mine.out || mine.missing) return { ...base, floor: '—', tag: '無法出擊', cls: 't-fail', sub: '鎖定時重傷且藥品不足，今天無法參加' };
   const { run, i } = mine;
   const shown = DungeonSystem.revealed(run, now);
   const last = run.floors[shown - 1];
@@ -62,12 +65,12 @@ export function statusOf(g, rec, now = Date.now()) {
     const clear = run.result === 'clear';
     const rw = run.rewards[i];
     return {
-      ...out, tag: clear ? '🏆 通關' : '失敗', cls: clear ? 't-win' : 't-fail', floor: `${run.endFloor}/${DG_FLOORS}`, time: formatDuration(run.endAt - run.start),
+      ...out, tag: clear ? '🏆 通關' : '失敗', cls: clear ? 't-win' : 't-fail', floor: `${run.endFloor}/${DG_FLOORS} 層`, time: formatDuration(run.endAt - run.start),
       sub: clear ? `${rw.bps.length ? '✨ 拿到圖紙！' : ''}點這裡看副本報告` : `停在第 ${run.endFloor} 層・已通過的獎勵保留`, done: true,
     };
   }
   const f = DungeonSystem.floorAt(run, now);
-  out.floor = `${f}/${DG_FLOORS}`;
+  out.floor = `${f}/${DG_FLOORS} 層`;
   out.time = formatDuration(now - run.start);
   const sevNow = last ? last.hp?.[i] === 0 : false;
   const restJust = shown > 0 && shown % DG_RULES.restEvery === 0 && run.floors[shown - 1]?.rest && now - (run.start + shown * DG_TIME.floorMs) < 3 * 60000;
@@ -102,7 +105,9 @@ export function hudHtml(g, now = Date.now()) {
     return `<div class="row">${clsIcon(g.survivors.get(rec.svId)?.classId)} ${escapeHtml(DUNGEONS[rec.dg].short)}<span class="tag ${s.cls}">${s.tag}</span><span class="push">${s.floor}</span></div>`;
   }).join('');
   const any = recs.map((rec) => statusOf(g, rec, now)).find((s) => s.time);
-  return `<button class="dg-hud multi" data-action="dgStatus" data-dg="${recs[0].dg}"><div class="t"><span class="dg-ic">${DG_PIN_SVG}</span>地下感染區 ×${recs.length}<span class="fl">${any ? `⏱ ${any.time}` : ''}</span></div>${rows}</button>`;
+  const ph = DungeonSystem.phase(now);
+  const right = any ? `⏱ ${any.time}` : ph === 'signup' ? '17:40 截止' : ph === 'closed' ? '17:50 鎖定' : ph === 'locked' || ph === 'gather' ? '18:00 開打' : '';
+  return `<button class="dg-hud multi" data-action="dgStatus" data-dg="${recs[0].dg}"><div class="t"><span class="dg-ic">${DG_PIN_SVG}</span>地下感染區 ×${recs.length}<span class="fl">${right}</span></div>${rows}</button>`;
 }
 
 /** 時程表 */
@@ -110,6 +115,33 @@ function timeline(now) {
   const t = DungeonSystem.times(DungeonSystem.dayStart(now));
   const row = (at, label, text) => `<b class="${now >= at ? 'past' : ''}">${label}</b><span>${text}${now >= at ? ' ✓' : ''}</span>`;
   return `<div class="dg-tl">${row(t.open, '07:00', '開放報名')}${row(t.close, '17:40', `報名截止${now < t.close && now >= t.open ? `（剩 ${formatDuration(t.close - now)}）` : ''}`)}${row(t.lock, '17:50', '鎖定倖存者：外出中自動回家、重傷自動用藥治療')}${row(t.depart, '17:55', '出發集結')}${row(t.start, '18:00', `開始攻略，${DG_FLOORS} 層、約 3 小時`)}</div>`;
+}
+
+const ROLE = ['warrior', 'medic', 'engineer', 'scout', 'farmer'];
+
+/** 職業燈號：有人報名就亮燈（圖示＋人數） */
+function lamps(list, mini = false) {
+  return ROLE.map((c) => {
+    const n = list.filter((e) => e.c === c).length;
+    return mini ? `<span class="${n ? 'on' : ''}" title="${CLASSES[c].name} ${n}">${CLASSES[c].icon}</span>`
+      : `<span class="dg-lamp ${n ? 'on' : ''}" title="${CLASSES[c].name}"><i>${CLASSES[c].icon}</i><b>${n}</b></span>`;
+  }).join('');
+}
+
+/** 報名名單：職業燈號＋名單（超過 8 人分成兩團以上才依團分開） */
+function rosterHtml(g, data, gp) {
+  const list = (data?.list || []).filter((e) => e && e.c && CLASSES[e.c]);
+  if (!list.length) return '';
+  const me = g.dungeon.myId();
+  const miss = ROLE.filter((c) => !list.some((e) => e.c === c));
+  const who = (e) => `<div class="${e.p === me ? 'me' : ''}">${clsIcon(e.c)} <b>${escapeHtml(e.sn || '')}</b> <small class="muted">Lv${e.lv || '?'}${e.pw ? `・戰力 ${fmt(e.pw)}` : ''}・${escapeHtml(e.n || '')}${e.p === me ? '（我）' : ''}</small>${e.x || (e.sev && !e.med) ? '<small class="neg">無法出擊</small>' : ''}</div>`;
+  const groups = gp && !gp.cancelled && gp.groups.length > 1
+    ? gp.groups.map((x, i) => `<div class="dg-grp"><h5>第 ${i + 1} 團・${x.length} 人<span class="dg-mini">${lamps(x, true)}</span></h5><div class="dg-who">${x.map(who).join('')}</div></div>`).join('')
+      + (gp.out.length ? `<div class="dg-grp"><h5>無法出擊</h5><div class="dg-who">${gp.out.map(who).join('')}</div></div>` : '')
+    : `<div class="dg-who">${[...list].sort((a, b) => (a.at || 0) - (b.at || 0)).map(who).join('')}</div>`;
+  return `<div class="dg-roster"><div class="dg-lamps">${lamps(list)}</div>
+    <small class="muted">${miss.length ? `目前缺：${miss.map((c) => `${CLASSES[c].icon} ${CLASSES[c].name}`).join('、')}` : `五職業到齊 ✓（全隊攻擊／防禦 +${DG_RULES.all5 * 100}%）`}</small>
+    ${groups}${gp && !gp.cancelled && gp.groups.length > 1 ? '<small class="muted block">分團依目前報名順序預估，17:40 截止時才確定；鎖定時無法出擊的人會被移出。</small>' : ''}</div>`;
 }
 
 /** 報名頁 */
@@ -120,7 +152,7 @@ function signupTab(g, dg, now) {
   const rec = g.dungeon.record(dg, now);
   const ph = DungeonSystem.phase(now);
   const gp = n ? DungeonSystem.groupsOf(data) : null;
-  const groups = gp && !gp.cancelled ? `（${gp.groups.map((x, i) => `第 ${i + 1} 團 ${x.length}/${DG_TEAM.max}`).join('、')}）` : '';
+  const groups = gp && !gp.cancelled && gp.groups.length > 1 ? `（${gp.groups.map((x, i) => `第 ${i + 1} 團 ${x.length}/${DG_TEAM.max}`).join('、')}）` : '';
   const svs = g.state.survivors.map((sv) => {
     const other = g.dungeon.signedDungeon(sv.id, now);
     const mine = rec && !rec.cancelled && rec.svId === sv.id;
@@ -138,6 +170,7 @@ function signupTab(g, dg, now) {
   }).join('');
   return `${timeline(now)}
     <div class="kv"><span>👥 已報名 <b>${n}</b> 人${groups}</span><span>每團 ${DG_TEAM.min}～${DG_TEAM.max} 人，依報名先後平均分團</span><span>每天最多 ${DG_MAX_SIGNUPS} 人</span>${rec && !rec.cancelled ? '<span class="pos">今日已報名 ✓</span>' : ''}</div>
+    ${rosterHtml(g, data, gp)}
     ${g.shared.online ? '' : '<p class="neg">目前沒有連線到伺服器，只能看到自己的報名（不到 3 人無法開打）。</p>'}
     <small class="muted">選擇一名倖存者（每個副本每天一次；同一名倖存者一天只能參加一個副本）：</small>${svs}
     <p class="muted small">建議：隊伍裡沒有醫生時幾乎無法通關；五種職業都有時全隊攻擊／防禦 +10%。</p>`;
