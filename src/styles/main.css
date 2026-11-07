@@ -1455,5 +1455,6 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 @media (max-width: 560px) {
   .dg-mvp { grid-template-columns: repeat(2, 1fr); }
   .dg-tbl .hide-m { display: none; }
+  .dg-tbl { display: block; overflow-x: auto; white-space: nowrap; }
   .dg-hud { width: 230px; }
 }
