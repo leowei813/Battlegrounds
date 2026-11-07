@@ -615,6 +615,15 @@ export class MapPanel {
   async onAction(action, data = {}) {
     const sh = this.game.shelter.primary();
     if (action === 'dgStatus') { openStatus(this.ui, data.dg); return; }
+    if (action === 'dgFold') {
+      const st = this.game.state;
+      st.settings = st.settings || {};
+      st.settings.dgHudOpen = !st.settings.dgHudOpen;
+      this.game.requestSave?.();
+      this.lastOverlay = '';
+      this.renderOverlay();
+      return;
+    }
     if (action === 'gotoShelter' && sh) this.service.focus(sh.lat, sh.lon);
     if (action === 'messages') openMessages(this.ui);
     if (action === 'chat') this.ui.chatView.toggle();

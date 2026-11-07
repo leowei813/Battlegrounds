@@ -84,30 +84,43 @@ export function statusOf(g, rec, now = Date.now()) {
   return { ...out, tag: '攻略中', cls: 't-run', sub: '' };
 }
 
-/** 地圖左上角的資訊框 */
+/** 資訊框是否展開（預設收起；記在設定裡） */
+export const hudOpen = (g) => !!g.state.settings?.dgHudOpen;
+const foldBtn = (open) => `<span class="dg-fold" data-action="dgFold" role="button" title="${open ? '收起' : '展開'}">${open ? '▾' : '▸'}</span>`;
+
+/** 地圖左上角的資訊框（右上角 ▸／▾ 收合，預設收起） */
 export function hudHtml(g, now = Date.now()) {
   const recs = hudRecords(g, now);
   if (!recs.length) return '';
+  const open = hudOpen(g);
   if (recs.length === 1) {
     const rec = recs[0];
     const s = statusOf(g, rec, now);
     const d = DUNGEONS[rec.dg];
     const glow = s.cls === 't-boss' ? 'boss-glow' : s.cls === 't-win' ? 'win-glow' : s.cls === 't-fail' && rec.excluded ? 'warn' : '';
     const hp = s.hp != null && !s.done && s.cls !== 't-down' ? ` ❤️ ${s.hp}%` : '';
-    return `<button class="dg-hud ${glow}" data-action="dgStatus" data-dg="${rec.dg}">
-      <div class="t"><span class="dg-ic">${DG_PIN_SVG}</span>${escapeHtml(d.name)}<span class="fl">${s.floor}</span></div>
-      <div class="r"><span class="tag ${s.cls}">${s.tag}</span>${clsIcon(g.survivors.get(rec.svId)?.classId)} ${escapeHtml(rec.svName)}${hp}${s.time ? `<span class="muted push">⏱ ${s.time}</span>` : ''}</div>
+    const who = `${clsIcon(g.survivors.get(rec.svId)?.classId)} ${escapeHtml(rec.svName)}${hp}`;
+    const head = `<div class="t"><span class="dg-ic">${DG_PIN_SVG}</span>${escapeHtml(d.name)}<span class="fl">${s.floor}</span>${foldBtn(open)}</div>`;
+    if (!open) return `<div class="dg-hud ${glow}" data-action="dgStatus" data-dg="${rec.dg}">${head}<div class="r sum">${s.tag}・${who}</div></div>`;
+    return `<div class="dg-hud ${glow}" data-action="dgStatus" data-dg="${rec.dg}">${head}
+      <div class="r"><span class="tag ${s.cls}">${s.tag}</span>${who}${s.time ? `<span class="muted push">⏱ ${s.time}</span>` : ''}</div>
       ${s.inf != null && !s.done && s.run ? `<div class="r">☣️ 感染<span class="bar inf"><i style="width:${Math.min(100, s.inf)}%"></i></span><b>${Math.round(s.inf)}</b></div>` : ''}
-      ${s.sub ? `<div class="r muted">${s.sub}</div>` : ''}</button>`;
+      ${s.sub ? `<div class="r muted">${s.sub}</div>` : ''}</div>`;
   }
-  const rows = recs.map((rec) => {
-    const s = statusOf(g, rec, now);
-    return `<div class="row">${clsIcon(g.survivors.get(rec.svId)?.classId)} ${escapeHtml(DUNGEONS[rec.dg].short)}<span class="tag ${s.cls}">${s.tag}</span><span class="push">${s.floor}</span></div>`;
-  }).join('');
-  const any = recs.map((rec) => statusOf(g, rec, now)).find((s) => s.time);
+  const sts = recs.map((rec) => statusOf(g, rec, now));
+  const any = sts.find((x) => x.time);
   const ph = DungeonSystem.phase(now);
   const right = any ? `⏱ ${any.time}` : ph === 'signup' ? '17:40 截止' : ph === 'closed' ? '17:50 鎖定' : ph === 'locked' || ph === 'gather' ? '18:00 開打' : '';
-  return `<button class="dg-hud multi" data-action="dgStatus" data-dg="${recs[0].dg}"><div class="t"><span class="dg-ic">${DG_PIN_SVG}</span>地下感染區 ×${recs.length}<span class="fl">${right}</span></div>${rows}</button>`;
+  const head = `<div class="t"><span class="dg-ic">${DG_PIN_SVG}</span>地下感染區 ×${recs.length}<span class="fl">${right}</span>${foldBtn(open)}</div>`;
+  if (!open) {
+    // 收起：一行摘要（各狀態的數量＋派出的倖存者職業）
+    const count = {};
+    sts.forEach((x) => { const k = x.tag.replace(/^[^\p{L}]+/u, ''); count[k] = (count[k] || 0) + 1; });
+    const icons = recs.map((rec) => clsIcon(g.survivors.get(rec.svId)?.classId)).join('');
+    return `<div class="dg-hud multi" data-action="dgStatus" data-dg="${recs[0].dg}">${head}<div class="r sum">${Object.entries(count).map(([k, n]) => `${k} ${n}`).join('・')}・${icons}</div></div>`;
+  }
+  const rows = recs.map((rec, i) => `<div class="row">${clsIcon(g.survivors.get(rec.svId)?.classId)} ${escapeHtml(DUNGEONS[rec.dg].short)}<span class="tag ${sts[i].cls}">${sts[i].tag}</span><span class="push">${sts[i].floor}</span></div>`).join('');
+  return `<div class="dg-hud multi" data-action="dgStatus" data-dg="${recs[0].dg}">${head}${rows}</div>`;
 }
 
 /** 時程表 */
