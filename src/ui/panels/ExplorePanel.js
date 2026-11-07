@@ -4,7 +4,7 @@ import { VEHICLES } from '../../config/vehicles.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { formatDuration } from '../../utils/math.js';
 import {
-  btn, timerBar, metaOf,
+  btn, timerBar, metaOf, flagText,
 } from '../components.js';
 
 /**
@@ -31,7 +31,7 @@ export class ExplorePanel {
         ${this.progressHtml(ex, now)}
         ${ex.kind === 'rally' && !ex.rallyResult ? '' : timerBar(ex.startAt, ex.endAt, now)}
         ${this.checkpointHtml(ex)}
-        ${(ex.travelEvents || []).length ? `<ul class="event-list">${ex.travelEvents.slice(-3).map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul>` : ''}
+        ${(ex.travelEvents || []).length ? `<ul class="event-list">${ex.travelEvents.slice(-3).map((e) => `<li>${flagText(escapeHtml(e))}</li>`).join('')}</ul>` : ''}
         <div class="btn-row">${btn('🗺️ 在地圖上追蹤', 'track', { id: ex.id }, { cls: 'btn-sm btn-primary' })}${g.exploration.canRecall(ex, now) ? btn('召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' }) : ''}</div>
       </div>`;
     }).join('');
@@ -42,7 +42,7 @@ export class ExplorePanel {
       <h3>進行中（${st.expeditions.length}/${MAX_EXPEDITIONS}）</h3>
       ${active || '<p class="muted">目前沒有隊伍在外。</p>'}
       <p class="muted">要派遣探索，請到「地圖」點選建築。</p>
-      <p class="muted">💬 探索報告移到地圖右上方的「消息」按鈕。</p>
+      <p class="muted">📜 探索報告移到地圖右上方的「戰報」按鈕。</p>
     </div>`;
   }
 
@@ -54,8 +54,10 @@ export class ExplorePanel {
     // 只顯示整體進度（不顯示前往／搜索／返程階段）
     return `<div class="row-between exp-stats">
         <span>${p.totalM ? `📏 已移動 <b>${km(p.movedM)}</b> / ${km(p.totalM)}` : ''}</span>
-        <span>${ex.kind === 'rally' && !ex.rallyResult && !ex.recalled
-    ? (now < ex.startAt ? `📡 集結中・<b>${formatDuration(ex.startAt - now)}</b> 後出發` : p.phase === 'outbound' ? `⏱ 剩 <b>${formatDuration(p.phaseRemainingMs)}</b> 抵達` : ex.rallyFightAt && now < ex.rallyFightAt ? `📡 已抵達，等待其他隊伍・<b>${formatDuration(ex.rallyFightAt - now)}</b> 後開打` : '⚔️ 交戰中，等待結果')
+        <span>${ex.kind === 'rally' && this.game.rally.statusOf(ex, now)
+    ? `${flagText(escapeHtml(this.game.rally.statusOf(ex, now).line1))}・${this.game.rally.statusOf(ex, now).line2}`
+    : ex.kind === 'rally' && !ex.rallyResult && !ex.recalled
+    ? (now < ex.startAt ? `🚩 集結中・<b>${formatDuration(ex.startAt - now)}</b> 後出發` : p.phase === 'outbound' ? `⏱ 剩 <b>${formatDuration(p.phaseRemainingMs)}</b> 抵達` : ex.rallyFightAt && now < ex.rallyFightAt ? `📡 已抵達，等待其他隊伍・<b>${formatDuration(ex.rallyFightAt - now)}</b> 後開打` : '⚔️ 交戰中，等待結果')
     : `⏱ 剩餘 <b>${formatDuration(p.remainingMs)}</b>`}</span>
       </div>
       ${p.phase !== 'searching' && this.game.state.map.zombieGroups.length ? '<div class="tag tag-red">🌙 夜間移動中：經過殭屍群附近可能遇襲</div>' : ''}`;

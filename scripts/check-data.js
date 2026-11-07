@@ -47,6 +47,8 @@ const fillSupplies = (game, n = 900) => {
 
 // 舊測試用隨機補足的地圖建立據點：預設不套用 v10「重度感染據點範圍內不能建立據點」（專門的測試會開啟）
 const { InfectedSystem: InfSys } = await import('../src/systems/InfectedSystem.js');
+const { RallySystem: RallySys } = await import('../src/systems/RallySystem.js');
+const { tripProgress } = await import('../src/systems/ExplorationSystem.js');
 const realBlocking = InfSys.prototype.blocking;
 InfSys.prototype.blocking = function blocking(...a) { return this.game.testInfBlock ? realBlocking.apply(this, a) : null; };
 let failures = 0;
@@ -1751,10 +1753,15 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
   const store = new MemoryObjects();
   const pois = fillPois([], 25.15, 121.15);
+  let firstHome = null;
   const mk = (name) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.15, lon: 121.15 });
     gx.state.map.pois = JSON.parse(JSON.stringify(pois));
-    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
+    // v12.1：參加者要先走到發起人的避難所，兩位玩家的避難所分開一段距離
+    const ok = gx.state.map.pois.filter((p) => gx.shelter.canEstablish(p).ok);
+    const pick = firstHome ? ok.find((p) => haversine(p.lat, p.lon, firstHome.lat, firstHome.lon) > 400) || ok[0] : ok[0];
+    gx.shelter.establish(pick);
+    firstHome = firstHome || pick;
     gx.shared.backend = store;
     gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
     setHour(gx, 10);
@@ -1786,7 +1793,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   {
     const ex0 = A.rally.trips()[0];
     const dd = A.rally.get(st.id);
-    assert(ex0 && dd && ex0.startAt === dd.departAt && ex0.startAt > Date.now() + 60000, '發起集結後隊伍等到倒數結束才出發（不會馬上出發）');
+    assert(ex0 && dd && dd.home && dd.status === 'gathering' && dd.departAt > Date.now() + 60000 && dd.teams[0].arriveAt <= Date.now(), '發起集結：發起人的避難所就是集結點，倒數結束才出發');
+    assert(A.rally.statusOf(ex0).tag === '集結' && A.rally.statusOf(ex0).line1.includes('集結點'), `發起人的隊伍顯示「集結」（${A.rally.statusOf(ex0).line1}）`);
   }
   assert(!(await A.rally.start(target, 5, [])).ok, '同時只能發起一個集結');
   await B.shared.poll();
@@ -1815,13 +1823,31 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
       B.shared.cache.set(key, saved);
     } else assert(!!exB, '加入集結後隊伍在集結中');
   }
-  // 滿員立即出發；A 之後離線
+  // v12.1：滿員後等參加者走到集結點才一起出發；A 之後離線
   await A.shared.poll();
-  await A.rally.step(A.rally.trips()[0], Date.now());
+  {
+    const d0 = A.rally.get(st.id);
+    const tb = d0.teams.find((t) => t.player !== d0.owner);
+    const exB = B.rally.trips()[0];
+    assert(tb && tb.from && tb.arriveAt > Date.now() && exB.rallyGatherMs > 0, `參加者先走到發起人的避難所（約 ${Math.round((tb?.arriveAt - Date.now()) / 1000)} 秒）`);
+    assert(B.rally.statusOf(exB).line1.includes('前往集結點'), `參加者顯示「前往集結點」（${B.rally.statusOf(exB).line1}）`);
+    await A.rally.step(A.rally.trips()[0], Date.now());
+    await A.shared.poll();
+    assert(A.rally.get(st.id).status === 'gathering', '滿員但參加者還沒到集結點：先不出發');
+    const midPos = B.rally.position(exB, (tb.at + tb.arriveAt) / 2);
+    const bh = B.shelter.primary();
+    assert(midPos && haversine(midPos.lat, midPos.lon, bh.lat, bh.lon) > 5, '前往集結點途中的位置在路上');
+    await A.rally.step(A.rally.trips()[0], tb.arriveAt + 1);
+  }
   await B.shared.poll();
   const d1 = B.rally.get(st.id);
-  assert(d1.status === 'departed' && d1.fightAt >= Date.now() - 1000, '滿員時立即出發');
-  assert(d1.teams.every((t) => typeof t.travelMs === 'number') && d1.fightAt === d1.departedAt + Math.max(d1.travelMs || 0, ...d1.teams.map((t) => t.travelMs || 0)), `等最晚抵達的隊伍到了才開打（${d1.teams.map((t) => t.travelMs).join('/')}）`);
+  assert(d1.status === 'departed' && d1.departedAt === Math.max(...d1.teams.map((t) => t.arriveAt)), `所有隊伍到齊後一起出發（${d1.status}）`);
+  assert(d1.fightAt === d1.departedAt + d1.travelMs, '部隊從集結點出發，路程以集結點到目標計算');
+  {
+    const mid = RallySys.phaseOf(d1, (d1.departedAt + d1.fightAt) / 2);
+    assert(mid.phase === 'march' && RallySys.phaseOf(d1, d1.fightAt + 1).phase === 'fight', '地圖上只有一支集結部隊：行軍 → 交戰');
+    assert(!(await B.rally.withdraw(B.rally.trips()[0], d1.departedAt + 10)), '部隊出發後不能單獨脫隊');
+  }
   // 發起人 A 離線（不再執行）；B 到時間自己結算
   await B.rally.step(B.rally.trips()[0], d1.fightAt + 1);
   await B.shared.poll();
@@ -1829,6 +1855,10 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(d2.status === 'done' && d2.result, `發起人離線時，其他參加者也能結算（${d2.status}）`);
   await B.rally.step(B.rally.trips()[0], d1.fightAt + 2);
   const eb = B.rally.trips()[0];
+  {
+    const pb = B.exploration.progress(eb, d1.fightAt + 2);
+    assert(pb.phase === 'returning' && eb.endAt === Math.max(d1.fightAt + 2, d1.fightAt + eb.travelMs) && B.rally.statusOf(eb).tag === '返程', `打完從目標各自回家（${pb.phase}・${B.rally.statusOf(eb).tag}）`);
+  }
   const cb0 = B.state.player.coins;
   const reps = B.exploration.update(eb.endAt + 1, { silent: true });
   assert(reps.some((r) => r.poiName.includes('集結')) && !B.rally.trips().length, 'B 的隊伍帶著結果回家');
@@ -1867,8 +1897,30 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(s2.ok && j2.ok, `第二次集結（${s2.reason || j2.reason || ''}）`);
   assert((await A.rally.leave(s2.id)).ok && lead.status === 'idle', '發起人可以在出發前取消');
   await B.shared.poll();
-  await B.rally.step(B.rally.trips()[0], Date.now());
-  assert(!B.rally.trips().length && B.survivors.leader().status === 'idle', '集結取消後參加者的隊員留在避難所');
+  await B.rally.step(B.rally.trips()[0], Date.now() + 1000);
+  {
+    const eb2 = B.state.expeditions.find((e) => e.kind === 'rally');
+    assert(eb2 && eb2.recalled && eb2.endAt > Date.now(), '集結取消時，正在前往集結點的參加者從目前位置走回家');
+    B.exploration.update(eb2.endAt + 1, { silent: true });
+    assert(!B.rally.trips().length && B.survivors.leader().status === 'idle', '參加者走回避難所後隊員回到家');
+  }
+  // 倒數結束後不能再參加
+  {
+    A.survivors.setHp(lead, 99999);
+    const s3 = await A.rally.start(t2, 5, [lead.id]);
+    await B.shared.poll();
+    const key = [...A.shared.cache.keys()].find((k) => k.includes(s3.id));
+    const dB = B.rally.get(s3.id);
+    if (dB) {
+      const realNow = Date.now;
+      Date.now = () => dB.departAt + 1000;
+      const late = await B.rally.join(s3.id, [B.survivors.leader().id]);
+      Date.now = realNow;
+      assert(!late.ok, `倒數結束後不能再參加（${late.reason}）`);
+    }
+    void key;
+    await A.rally.leave(s3.id);
+  }
 }
 
 // ---- 25g. v9.0.1：帶不走的物資留在建築裡，重複探索不會越變越多 ----
@@ -4973,7 +5025,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const go = Game.newGame({ playerName: 'O124', classId: 'warrior', lat: 25, lon: 121 });
   const lead = go.survivors.leader();
   go.state.expeditions = [{ id: 'x', kind: 'rally', memberIds: [lead.id] }];
-  assert(outLabel(go, lead) === '📡 集結中', '集結隊伍顯示集結中');
+  assert(outLabel(go, lead).includes('集結中') && outLabel(go, lead).includes('rally-flag'), '集結隊伍顯示戰旗＋集結中');
   go.state.expeditions = [{ id: 'x', kind: 'explore', memberIds: [lead.id] }];
   assert(outLabel(go, lead) === '探索中', '一般探索顯示探索中');
   go.state.expeditions = [];
@@ -4995,6 +5047,16 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gw.rally.get = () => ({ id: 'r1', status: 'done', fightAt: now - 300e3 });
   WS5.prototype.fixRallyTrips.call({ game: gw }, [p2], now);
   assert(p2.trips.length === 1 && p2.trips[0].endAt === now - 300e3 + 600e3, '返程中：依交戰時間＋路程計算回家時間');
+
+  // v12.1：有集結點的集結，交戰前不顯示各隊（由集結圖示統一顯示），打完才從目標返程
+  const mkp = () => ({ id: 'q', name: 'Q', trips: [{ id: 't', from: { lat: 25, lon: 121 }, to: { lat: 25.01, lon: 121 }, startAt: now - 100e3, endAt: now + 20 * 3600e3, travelMs: 600e3, searchMs: 0, members: 4, target: 'NPC', rally: 'r2' }] });
+  const p3 = mkp();
+  gw.rally.get = () => ({ id: 'r2', status: 'departed', home: { lat: 25, lon: 121 }, fightAt: now + 60e3 });
+  WS5.prototype.fixRallyTrips.call({ game: gw }, [p3], now);
+  const p4 = mkp();
+  gw.rally.get = () => ({ id: 'r2', status: 'done', home: { lat: 25, lon: 121 }, fightAt: now - 60e3 });
+  WS5.prototype.fixRallyTrips.call({ game: gw }, [p4], now);
+  assert(!p3.trips.length && p4.trips.length === 1 && tripProgress(p4.trips[0], now).phase === 'returning', '其他玩家看到的集結：行軍時只有集結圖示，打完各隊從目標返程');
 }
 
 // ---- 126. 白天高危區也有風險：遭遇率、殭屍等級、生命與攻擊依區域提高（一般區不變） ----
@@ -5631,6 +5693,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   g145.npcs.fillCells(Date.now(), { silent: true });
   const names = g145.npcs.list.map((n) => n.name);
   assert(names.length > 0 && new Set(names).size === names.length && names.every((n) => NN.includes(n)), `地圖上的 NPC 名稱不重複（${names.length} 個：${names.slice(0, 4).join('、')}…）`);
+}
+
+// ---- 146. v12.0.1 集結隊伍戰力：與倖存者顯示的戰力相同 ----
+{
+  const { AssistSystem: AS } = await import('../src/systems/AssistSystem.js');
+  const { DungeonSystem: DS } = await import('../src/systems/DungeonSystem.js');
+  const g146 = Game.newGame({ playerName: 'R146', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  const sv = g146.survivors.list[0];
+  const real = g146.survivors.stats(sv).power;
+  const pw = DS.powerOf({ u: AS.unitData(g146, sv, 0, { withMeds: true }) });
+  assert(Math.abs(pw - real) <= Math.max(3, real * 0.01), `集結隊員戰力 ${pw} ≈ 倖存者戰力 ${real}`);
+  const { unitPower: UP } = await import('../src/utils/math.js');
+  g146.state.map.pois = fillPois([], 25.0339, 121.5645);
+  g146.shelter.establish(g146.state.map.pois.find((p) => g146.shelter.canEstablish(p).ok));
+  g146.npcs.fillCells(Date.now(), { silent: true });
+  const n146 = g146.npcs.list[0];
+  const want = g146.npcs.garrison(n146, { assault: true }).reduce((x, e) => x + UP(e), 0);
+  assert(n146 && g146.npcs.displayPower(n146) === want && want > g146.npcs.power(n146), `NPC 建議戰力改用同一套公式（${Math.round(g146.npcs.power(n146))} → ${want}）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

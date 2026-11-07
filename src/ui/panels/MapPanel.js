@@ -18,10 +18,11 @@ import { POI_SHARE } from '../../systems/PoiShareSystem.js';
 import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
 import {
   btn, costHtml, metaOf, itemCard, progressBar,
+  rallyFlag,
 } from '../components.js';
 import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { INFECTED } from '../../systems/InfectedSystem.js';
-import { RALLY_DELAYS } from '../../systems/RallySystem.js';
+import { RALLY_DELAYS, RallySystem } from '../../systems/RallySystem.js';
 import { AUTO_HOME_LABEL } from '../../systems/AutoHomeSystem.js';
 import { PLASTIC_SPOTS } from '../../systems/LootStock.js';
 import { openTeamPicker } from '../TeamPicker.js';
@@ -109,12 +110,12 @@ export class MapPanel {
   openRallySetup(target) {
     const g = this.game;
     let delay = RALLY_DELAYS[1];
-    const body = () => `<p>📡 目標：<b>${escapeHtml(target.name)}</b>・距避難所 ${g.rally.distanceTo(target)} 公尺</p>
-      <p class="muted">發起後好友會收到通知，可以派隊參加（最多 ${g.rally.maxTeams()} 支隊伍，含你自己）。倒數結束或滿員時一起出發；出發前可以取消。成功後金錢平分，其他物品隨機分配給參加的隊伍。</p>
+    const body = () => `<p>${rallyFlag(16)} 目標：<b>${escapeHtml(target.name)}</b>・距避難所 ${g.rally.distanceTo(target)} 公尺</p>
+      <p class="muted">發起後好友會收到通知，可以派隊參加（最多 ${g.rally.maxTeams()} 支隊伍，含你自己）。參加的隊伍會先走到你的避難所集合，倒數結束（或滿員）且全員到齊後一起出發；出發前可以取消。成功後金錢平分，其他物品隨機分配給參加的隊伍。</p>
       <div class="label">出發倒數</div><div class="chips">${RALLY_DELAYS.map((d) => `<button class="chip ${d === delay ? 'active' : ''}" data-action="delay" data-d="${d}">${d} 分鐘</button>`).join('')}</div>
       <div class="btn-row">${btn('選擇隊伍', 'pick', {}, { cls: 'btn-primary' })}</div>`;
     this.ui.modal.open({
-      title: '📡 發起集結',
+      title: '🚩 發起集結',
       body: body(),
       onAction: (action, data, m) => {
         if (action === 'delay') {
@@ -124,7 +125,7 @@ export class MapPanel {
         }
         if (action !== 'pick') return;
         openTeamPicker(this.ui, {
-          title: `📡 集結：${target.name}`,
+          title: `🚩 集結：${target.name}`,
           intro: `<p class="muted">${delay} 分鐘後（或滿員時）出發。</p>`,
           vehicles: true,
           distanceM: g.rally.distanceTo(target),
@@ -150,17 +151,21 @@ export class MapPanel {
     if (!d) return '<p class="muted">找不到這個集結（可能已經結束）。</p>';
     const me = g.rally.myId();
     const joined = (d.teams || []).some((t) => t.player === me);
+    const sc = d.home ? RallySystem.schedule(d) : null;
     const status = {
-      gathering: `⏳ 集結中・${formatDuration(Math.max(0, d.departAt - now))}後出發`,
+      gathering: sc && now >= sc.trigger && sc.waitFor ? `⏳ 倒數結束・等「${escapeHtml(sc.waitFor.name)}」抵達集結點・約 ${formatDuration(Math.max(0, sc.go - now))}`
+        : `⏳ 集結中・${formatDuration(Math.max(0, (sc ? sc.trigger : d.departAt) - now))}後出發`,
       departed: `🚶 行軍中・約 ${formatDuration(Math.max(0, (d.fightAt || now) - now))}後抵達`,
       resolving: '⚔️ 交戰中',
       done: d.result?.summary || '已結束',
       cancelled: '已取消',
     }[d.status] || d.status;
-    const teams = (d.teams || []).map((t) => `<li>${t.player === d.owner ? '⭐' : '🛡️'} ${escapeHtml(t.name)}・${(t.units || []).length} 人・戰力 ${(t.units || []).reduce((s, u) => s + (u.atk || 0) + (u.maxHp || 0) * 0.1, 0).toFixed(0)}</li>`).join('');
-    const canJoin = d.status === 'gathering' && !joined && d.owner !== me && g.territory.relation(d.owner) === 'friend' && (d.teams || []).length < d.maxTeams;
-    return `<p>📡 「${escapeHtml(d.ownerName)}」發起的集結・目標 <b>${escapeHtml(d.target.name)}</b>（${d.target.kind === 'inf' ? '☣️ 重度感染據點' : '🏴‍☠️ NPC 據點'}）</p>
-      <p><b>${status}</b></p>
+    const way = (t) => (d.status === 'gathering' && d.home && (t.arriveAt || 0) > now ? `・🚶 ${formatDuration(t.arriveAt - now)}後抵達集結點` : '');
+    const teams = (d.teams || []).map((t) => `<li>${t.player === d.owner ? '⭐' : '🛡️'} ${escapeHtml(t.name)}・${(t.units || []).length} 人・戰力 ${Math.round((t.units || []).reduce((s, u) => s + DungeonSystem.powerOf({ u }), 0))}${way(t)}</li>`).join('');
+    const canJoin = d.status === 'gathering' && now < d.departAt && !joined && d.owner !== me && g.territory.relation(d.owner) === 'friend' && (d.teams || []).length < d.maxTeams;
+    const gatherHint = canJoin && d.home ? `<p class="pos">🚶 前往集結點（${escapeHtml(d.ownerName)}的避難所）約 ${formatDuration(g.rally.gatherEstimate(d))}・倒數結束時還沒到，全隊會等你抵達再出發</p>` : '';
+    return `<p>${rallyFlag(16)} 「${escapeHtml(d.ownerName)}」發起的集結・目標 <b>${escapeHtml(d.target.name)}</b>（${d.target.kind === 'inf' ? '☣️ 重度感染據點' : '🏴‍☠️ NPC 據點'}）</p>
+      <p><b>${status}</b></p>${gatherHint}
       <div class="label">隊伍 ${(d.teams || []).length}/${d.maxTeams}</div><ul class="event-list">${teams}</ul>
       <div class="btn-row">${canJoin ? btn('🛡️ 派隊參加', 'join', {}, { cls: 'btn-primary' }) : ''}${d.status === 'gathering' && joined ? btn(d.owner === me ? '取消集結' : '退出集結', 'leave', {}, { cls: 'btn-ghost' }) : ''}${btn('📍 查看目標', 'fly', {}, { cls: 'btn-ghost' })}</div>`;
   }
@@ -169,7 +174,7 @@ export class MapPanel {
     const g = this.game;
     g.shared.list('rally', 20).then(() => this.ui.refresh(true)).catch(() => {});
     this.ui.modal.open({
-      title: '📡 集結',
+      title: '🚩 集結',
       body: this.rallyBody(id),
       live: () => this.rallyBody(id),
       onAction: (action, _d, m) => {
@@ -184,8 +189,8 @@ export class MapPanel {
         }
         if (action === 'join') {
           openTeamPicker(this.ui, {
-            title: `📡 參加集結：${d.target.name}`,
-            intro: `<p class="muted">和「${escapeHtml(d.ownerName)}」一起出發攻打。</p>`,
+            title: `🚩 參加集結：${d.target.name}`,
+            intro: `<p class="muted">先走到「${escapeHtml(d.ownerName)}」的避難所集合，再和大家一起出發攻打；打完從目標直接回家。</p>`,
             vehicles: true,
             distanceM: g.rally.distanceTo(d.target),
             confirmLabel: '參加',
@@ -218,7 +223,7 @@ export class MapPanel {
       ${v.power != null ? `<p class="muted">⚔️ 守軍總戰力約 ${v.power}（建議多人集結）</p>` : ''}
       <p class="muted">每場戰鬥打到全員倒下或淨化 100%，淨化度會累積（所有倖存者共用）。淨化 100% 時消滅據點。</p>
       <div class="sp-hint">✨ <b>特殊物品</b>：消滅時必得 🔒「${LOCK_ITEM.name}」×${LOCK_ITEM.infectBase}，參戰 ${LOCK_ITEM.infectBonusAt} 人以上 ×${LOCK_ITEM.infectBase + 1}（集結時每支隊伍各得一份）</div>
-      <div class="btn-row">${btn('☣️ 派隊淨化', 'attackInf', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${btn('📡 發起集結', 'rallyInf', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' })}</div>`;
+      <div class="btn-row">${btn('☣️ 派隊淨化', 'attackInf', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${btn(`${rallyFlag(16)} 發起集結`, 'rallyInf', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' })}</div>`;
   }
 
   openInfected(id) {
@@ -284,7 +289,7 @@ export class MapPanel {
       <div class="sp-hint">✨ <b>特殊物品</b>：攻陷時 ${Math.round(LOCK_ITEM.npcChance * 100)}% 機率在保險箱找到 🔒「${LOCK_ITEM.name}」×1（集結時每支隊伍各抽一次）</div>
       <div class="btn-row">${btn('⚔️ 派隊攻打', 'attackNpc', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${(() => {
     const c = g.rally.canStart({ kind: 'npc', id: n.id });
-    return btn('📡 發起集結', 'rallyNpc', {}, { cls: 'btn-primary', disabled: !c.ok || !n.sid, title: c.reason || (n.sid ? '' : '這個據點不能集結') });
+    return btn(`${rallyFlag(16)} 發起集結`, 'rallyNpc', {}, { cls: 'btn-primary', disabled: !c.ok || !n.sid, title: c.reason || (n.sid ? '' : '這個據點不能集結') });
   })()}</div>`;
   }
 
@@ -307,7 +312,7 @@ export class MapPanel {
         const sh = g.shelter.primary();
         openTeamPicker(this.ui, {
           title: `⚔️ 攻打：${n.name}`,
-          intro: `<p class="muted">守軍 ${g.npcs.intelView(n).level}${g.npcs.intel() >= 7 ? `・建議戰力 ${Math.round(g.npcs.power(n))} 以上` : ''}。帶載具可以搬走更多物資。</p>`,
+          intro: `<p class="muted">守軍 ${g.npcs.intelView(n).level}${g.npcs.intel() >= 7 ? `・建議戰力 ${g.npcs.displayPower(n)} 以上` : ''}。帶載具可以搬走更多物資。</p>`,
           vehicles: true,
           distanceM: sh ? haversine(sh.lat, sh.lon, n.lat, n.lon) : 0,
           trip: { poi: g.npcs.asPoi(n.id), searchMin: 2, searchLabel: '攻打' },
@@ -337,8 +342,8 @@ export class MapPanel {
       <div class="map-tools">
         ${btn('🏰', 'gotoShelter', {}, { cls: 'btn-icon', disabled: !has, title: '回到避難所' })}
         ${btn(`🔔<small class="alert-lbl ${this.game.shelter.alert ? 'on' : ''}">${this.game.shelter.alert ? '警戒中' : '正常'}</small>`, 'mapAlert', {}, { cls: `btn-icon alert-btn ${this.game.shelter.alert ? 'on' : ''}`, disabled: !has, title: this.game.shelter.alert ? '警戒中：按一下解除警戒' : '按一下切換警戒（全部倖存者暫時防禦駐守）' })}
-        ${btn(`💬${unreadCount(this.game) ? `<small class="unread">${unreadCount(this.game)}</small>` : ''}`, 'messages', {}, { cls: 'btn-icon', title: '消息：探索報告與避難所紀錄' })}
-        ${btn(`🗨️${this.game.chat.unread() ? `<small class="unread">${Math.min(99, this.game.chat.unread())}</small>` : ''}`, 'chat', {}, { cls: `btn-icon ${this.ui.chatView?.isOpen ? 'on' : ''}`, title: '全服聊天：所有玩家都看得到' })}
+        ${btn(`📜<em class="ic-lbl">戰報</em>${unreadCount(this.game) ? `<small class="unread">${unreadCount(this.game)}</small>` : ''}`, 'messages', {}, { cls: 'btn-icon', title: '消息：探索報告與避難所紀錄' })}
+        ${btn(`💬<em class="ic-lbl">聊天</em>${this.game.chat.unread() ? `<small class="unread">${Math.min(99, this.game.chat.unread())}</small>` : ''}`, 'chat', {}, { cls: `btn-icon ${this.ui.chatView?.isOpen ? 'on' : ''}`, title: '全服聊天：所有玩家都看得到' })}
         ${btn(`🏠<small class="home-lbl ${this.game.autoHome.on() ? 'on' : ''}">${this.game.autoHome.on() ? `${AUTO_HOME_LABEL} 回家` : '關閉'}</small>`, 'autoHome', {}, { cls: `btn-icon home-btn ${this.game.autoHome.on() ? 'on' : ''}`, title: this.game.autoHome.on() ? `自動回家：遊戲時間 ${AUTO_HOME_LABEL} 所有外派隊伍自動回家（按一下關閉）` : '自動回家已關閉（按一下打開）' })}
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
         ${btn('☣️', 'zoneMode', {}, { cls: `btn-icon ${this.service.zoneMode?.() === 'off' ? '' : 'on'}`, title: '危險度圖層：淡／關閉' })}
@@ -566,10 +571,10 @@ export class MapPanel {
     // 集結：發起中／參加中（倒數），以及好友發起的集結（點擊參加）
     const rallyText = { gathering: '集結中・出發倒數', departed: '行軍中・約', resolving: '交戰中', done: '已結束' };
     g.rally.feed(now).forEach((r) => {
-      rows.push(`<button class="feed-chip rally" data-action="feedRally" data-id="${r.id}">📡 ${r.mine ? '發起' : '參加'}集結「${escapeHtml(r.target.name)}」・${r.teams}/${r.maxTeams} 隊・${rallyText[r.status] || ''}${r.left ? ` ${formatDuration(r.left)}` : ''}</button>`);
+      rows.push(`<button class="feed-chip rally" data-action="feedRally" data-id="${r.id}">${rallyFlag(16)} ${r.mine ? '發起' : '參加'}集結「${escapeHtml(r.target.name)}」・${r.teams}/${r.maxTeams} 隊・${rallyText[r.status] || ''}${r.left ? ` ${formatDuration(r.left)}` : ''}</button>`);
     });
     g.rally.invites(now).forEach((d) => {
-      rows.push(`<button class="feed-chip friend" data-action="feedRally" data-id="${d.id}">📡 好友「${escapeHtml(d.ownerName)}」集結「${escapeHtml(d.target.name)}」・${(d.teams || []).length}/${d.maxTeams} 隊・${formatDuration(d.departAt - now)}後出發・點擊參加</button>`);
+      rows.push(`<button class="feed-chip friend" data-action="feedRally" data-id="${d.id}">${rallyFlag(16)} 好友「${escapeHtml(d.ownerName)}」集結「${escapeHtml(d.target.name)}」・${(d.teams || []).length}/${d.maxTeams} 隊・${formatDuration(d.departAt - now)}後出發・點擊參加</button>`);
     });
     // 探索佇列：類型、距離、剩餘時間
     const sh = g.shelter.primary();
@@ -689,7 +694,7 @@ export class MapPanel {
     }
     const body = () => {
       const ex = g.state.expeditions.find((e) => e.id === expId);
-      if (!ex) return '<p class="muted">這支隊伍已經回到避難所了，請到「💬 消息」查看探索報告。</p>';
+      if (!ex) return '<p class="muted">這支隊伍已經回到避難所了，請到「📜 戰報」查看探索報告。</p>';
       const now = Date.now();
       const p = g.exploration.progress(ex, now);
       const poi = g.exploration.poi(ex.poiId);
@@ -744,6 +749,10 @@ export class MapPanel {
     const g = this.game;
     if (team.kind === 'own') {
       this.openOwnTeam(team.expId);
+      return;
+    }
+    if (team.kind === 'rally') {
+      this.openRally(team.rallyId);
       return;
     }
     const t = g.intercept.target(team);

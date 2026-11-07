@@ -2,6 +2,7 @@ import L from 'leaflet';
 import { WORLD } from '../systems/SiegeSystem.js';
 import { bus } from '../core/EventBus.js';
 import { EXP_PHASES, AMBUSH_RADIUS_M, tripProgress } from '../systems/ExplorationSystem.js';
+import { RallySystem } from '../systems/RallySystem.js';
 import { formatDuration } from '../utils/math.js';
 
 /** 停在目的地時的狀態名稱（不是探索） */
@@ -198,6 +199,7 @@ export const SiegeMapLayer = L.Layer.extend({
     this.drawPulses(ctx, frames, dt);
     this.drawExpeditions(ctx, size);
     this.drawOtherTrips(ctx, size);
+    this.drawRallies(ctx, size);
   },
 
   /** 其他玩家的探索隊伍（青色）與 NPC 的探索／掠奪隊（紅色），依行程時間即時推算位置 */
@@ -236,6 +238,128 @@ export const SiegeMapLayer = L.Layer.extend({
     });
   },
 
+  /**
+   * v12.1 集結：前往集結點的各隊（小戰旗）、在集結點等待與行軍中的部隊（一個大戰旗＋總人數）。
+   * 所有看得到這個集結的玩家都畫成一樣的圖示。
+   */
+  drawRallies(ctx, size) {
+    const g = this.game;
+    if (!g.shared?.all || !g.rally) return;
+    const now = Date.now();
+    const me = g.rally.myId?.();
+    this.rallyTeams = [];
+    g.shared.all('rally').map((o) => ({ id: o.id, ...o.data })).forEach((d) => {
+      if (!d.home || !['gathering', 'departed', 'resolving', 'done'].includes(d.status)) return;
+      if (d.status === 'done' && (!d.fightAt || now >= d.fightAt)) return;
+      const teams = d.teams || [];
+      const label = (pos, l1, l2, big, n) => {
+        const m = this.map.latLngToContainerPoint([pos.lat, pos.lon]);
+        if (m.x < -60 || m.y < -60 || m.x > size.x + 60 || m.y > size.y + 60) return;
+        this.drawFlagPin(ctx, m.x, m.y, big ? 14 : 10, n);
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const w = Math.max(ctx.measureText(l1).width, l2 ? ctx.measureText(l2).width : 0) + 12;
+        const y = m.y + (big ? 19 : 15);
+        const h = l2 ? 30 : 16;
+        ctx.fillStyle = 'rgba(36,18,74,0.92)';
+        ctx.fillRect(m.x - w / 2, y, w, h);
+        ctx.strokeStyle = '#ffd54f';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(m.x - w / 2, y, w, h);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(l1, m.x, y + 9);
+        if (l2) {
+          ctx.fillStyle = '#ffe082';
+          ctx.fillText(l2, m.x, y + 22);
+        }
+      };
+      const line = (pts, color) => {
+        const q = pts.map((x) => this.map.latLngToContainerPoint([x.lat, x.lon]));
+        ctx.beginPath();
+        q.forEach((x, i) => (i ? ctx.lineTo(x.x, x.y) : ctx.moveTo(x.x, x.y)));
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      };
+      // 前往集結點的隊伍
+      let arrived = 0;
+      let people = 0;
+      teams.forEach((t) => {
+        const p = RallySystem.phaseOf(d, now, t);
+        if (p?.phase === 'gather') {
+          line([p.pos, d.home], 'rgba(255,213,79,0.8)');
+          const mine = t.player === me;
+          label(p.pos, `${mine ? '' : `${String(t.name).slice(0, 8)}・`}前往集結點`, mine ? `⏱ 剩 ${formatDuration(p.left)} 抵達` : '', false, (t.units || []).length);
+          this.rallyTeams.push({ kind: 'rally', rallyId: d.id, pos: p.pos });
+        } else {
+          arrived += 1;
+          people += (t.units || []).length;
+        }
+      });
+      const p = RallySystem.phaseOf(d, now);
+      if (!p) return;
+      if (p.phase === 'wait' && !arrived) return;
+      let l1;
+      let l2;
+      if (p.phase === 'wait') {
+        l1 = `集結 ${arrived}/${d.maxTeams} 隊・${people} 人`;
+        l2 = now >= p.s.trigger && p.s.waitFor ? `⏳ 等${String(p.s.waitFor.name).slice(0, 8)}抵達・${formatDuration(p.left)}` : `⏱ ${formatDuration(p.left)} 後出發`;
+      } else if (p.phase === 'march') {
+        line([p.pos, ...(p.path || [d.target]).slice(-1)], 'rgba(255,112,67,0.85)');
+        l1 = `集結部隊・${teams.length} 隊`;
+        l2 = `⏱ 剩 ${formatDuration(p.left)} 抵達`;
+      } else {
+        l1 = '⚔️ 集結交戰中';
+        l2 = '⏱ 等待結果';
+      }
+      label(p.pos, l1, l2, true, p.phase === 'wait' ? people : teams.reduce((a, t) => a + (t.units || []).length, 0));
+      this.rallyTeams.push({ kind: 'rally', rallyId: d.id, pos: p.pos });
+    });
+  },
+
+  /** 集結戰旗：紫底金框＋金色旗子（不用表情符號，各種手機顯示一致） */
+  drawFlagPin(ctx, x, y, r, count) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#311b92';
+    ctx.fill();
+    ctx.strokeStyle = '#ffd54f';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    const k = r / 12;
+    ctx.beginPath();
+    ctx.moveTo(x - 4 * k, y - 7 * k);
+    ctx.lineTo(x - 4 * k, y + 7 * k);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = Math.max(1.5, 2.2 * k);
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+    ctx.beginPath();
+    ctx.moveTo(x - 3 * k, y - 7 * k);
+    ctx.lineTo(x + 6 * k, y - 7 * k);
+    ctx.lineTo(x + 3.5 * k, y - 3.5 * k);
+    ctx.lineTo(x + 6 * k, y);
+    ctx.lineTo(x - 3 * k, y);
+    ctx.closePath();
+    ctx.fillStyle = '#ffd54f';
+    ctx.fill();
+    if (count) {
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const t = String(count);
+      const w = ctx.measureText(t).width + 7;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(x + r * 0.55, y - r - 5, w, 13);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(t, x + r * 0.55 + w / 2, y - r + 1.5);
+    }
+  },
+
   /** 點擊位置附近的隊伍（優先自己的探索隊，其次其他玩家、NPC） */
   teamAt(pt) {
     if (!this.map) return null;
@@ -250,6 +374,8 @@ export const SiegeMapLayer = L.Layer.extend({
       }
     });
     near(this.ownTeams);
+    if (best) return best;
+    near(this.rallyTeams);
     if (best) return best;
     near(this.teams);
     return best;
@@ -299,6 +425,8 @@ export const SiegeMapLayer = L.Layer.extend({
     const { exploration } = this.game;
     this.ownTeams = [];
     this.game.state.expeditions.forEach((exp) => {
+      // v12.1：集結隊伍在交戰前由集結圖示統一顯示（drawRallies）
+      if (exp.kind === 'rally' && !exp.rallyResult && !exp.recalled && this.game.rally?.get(exp.rallyId)?.home) return;
       const p = exploration.progress(exp, now);
       if (!p) return;
       this.ownTeams.push({ kind: 'own', expId: exp.id, pos: p.pos });
@@ -351,12 +479,15 @@ export const SiegeMapLayer = L.Layer.extend({
       let line1 = exp.defeated || exp.recalled ? `${phName}・剩 ${km(Math.max(0, p.totalM - p.movedM))}` : p.totalM ? `${phName}・${km(p.movedM)} / ${km(p.totalM)}` : phName;
       let line2 = `⏱ 剩 ${formatDuration(p.remainingMs)}`;
       // 集結：出發前在避難所等待；交戰結果出來前顯示抵達時間（不顯示預留的回家時間）
-      if (exp.kind === 'rally' && !exp.rallyResult && !exp.recalled) {
+      if (exp.kind === 'rally' && (exp.rallyResult || exp.recalled)) {
+        const rs = this.game.rally.statusOf(exp, now);
+        if (rs) { line1 = rs.line1; line2 = rs.line2; }
+      } else if (exp.kind === 'rally') {
         if (now < exp.startAt) {
-          line1 = '📡 集結中・等待出發';
+          line1 = '集結中・等待出發';
           line2 = `⏱ ${formatDuration(exp.startAt - now)} 後出發`;
         } else if (p.phase === 'outbound') line2 = `⏱ 剩 ${formatDuration(p.phaseRemainingMs)} 抵達`;
-        else if (exp.rallyFightAt && now < exp.rallyFightAt) { line1 = '📡 已抵達・等待其他隊伍'; line2 = `⏱ ${formatDuration(exp.rallyFightAt - now)} 後開打`; }
+        else if (exp.rallyFightAt && now < exp.rallyFightAt) { line1 = '已抵達・等待其他隊伍'; line2 = `⏱ ${formatDuration(exp.rallyFightAt - now)} 後開打`; }
         else { line1 = '⚔️ 集結交戰中'; line2 = '⏱ 等待結果'; }
       }
       ctx.font = 'bold 11px sans-serif';

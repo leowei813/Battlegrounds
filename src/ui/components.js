@@ -183,12 +183,12 @@ export function towerTag(game, sv) {
 
 /** 外出中的倖存者正在做什麼（依所在隊伍的任務類型） */
 const OUT_LABELS = {
-  rally: '📡 集結中', raid: '⚔️ 攻打中', pvp: '⚔️ 突襲中', infect: '☣️ 淨化中', assist: '🛡️ 協防中', intercept: '🎯 攔截中', hunt: '🧟 獵殺中',
+  rally: '🚩 集結中', raid: '⚔️ 攻打中', pvp: '⚔️ 突襲中', infect: '☣️ 淨化中', assist: '🛡️ 協防中', intercept: '🎯 攔截中', hunt: '🧟 獵殺中',
 };
 export function outLabel(game, sv) {
   const ex = (game.state.expeditions || []).find((e) => e.memberIds?.includes(sv.id));
   if (sv.dungeon && !ex) return `<span class="dg-ic-inline">${DG_PIN_SVG}</span>副本中`;
-  return OUT_LABELS[ex?.kind] || '探索中';
+  return flagText(OUT_LABELS[ex?.kind] || '探索中');
 }
 
 export function survivorStatus(game, sv, now = Date.now()) {
@@ -249,4 +249,14 @@ export function slotName(slot) {
 export function btn(label, action, data = {}, { cls = '', disabled = false, title = '' } = {}) {
   const attrs = Object.entries(data).map(([k, v]) => `data-${k}="${escapeHtml(v)}"`).join(' ');
   return `<button class="btn ${cls}" data-action="${action}" ${attrs} ${disabled ? 'disabled' : ''} ${title ? `title="${escapeHtml(title)}"` : ''}>${label}</button>`;
+}
+
+/** 集結戰旗小圖示（紫底金框＋金旗，與地圖上的集結圖示相同；不用表情符號，各種手機顯示一致） */
+export function rallyFlag(size = 16) {
+  return `<svg class="rally-flag" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><circle cx="12" cy="12" r="10.5" fill="#311b92" stroke="#ffd54f" stroke-width="2.5"/><path d="M8 5v14" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><path d="M9 5h9l-2.6 3.5L18 12H9z" fill="#ffd54f"/></svg>`;
+}
+
+/** 文字中的 🚩（集結）換成集結戰旗小圖示；傳入的字串必須已經過 escapeHtml */
+export function flagText(html, size = 14) {
+  return String(html).replace(/🚩/g, rallyFlag(size));
 }

@@ -1,7 +1,7 @@
 import { dungeonReportHtml } from './DungeonView.js';
 import { escapeHtml } from '../utils/dom.js';
 import { RARITIES } from '../config/equipment.js';
-import { gainsHtml, btn } from './components.js';
+import { gainsHtml, btn, flagText } from './components.js';
 import { ZONES } from '../config/zones.js';
 import { shareBtn, openShareDialog } from './ShareDialog.js';
 import { battlesSectionHtml, battleHtml } from './BattleLog.js';
@@ -65,10 +65,10 @@ export function reportCardHtml(game, r, { open = false, fresh = false, openBattl
     const res = sp ? Object.fromEntries(Object.entries(r.resources || {}).filter(([k]) => k !== 'locks')) : r.resources;
     return `<div class="card report ${r.success ? '' : 'fail'} ${fresh ? 'unread' : ''} ${sp ? 'has-sp' : ''}">
       <div class="row-between"${shared ? '' : ` data-action="toggleReport" data-id="${r.id}"`}>
-        <b>${fresh ? NEW : ''}${r.success ? '✅' : '⚠️'} ${escapeHtml(r.poiName)}${zoneTag(r.zone)}${sp ? '<span class="sp-badge">✨ 特殊道具</span>' : ''}</b><span class="row-gap">${shared ? '' : shareBtn(game, 'report', r.id)}<small class="muted">${hhmm(r.at)}${shared ? '' : ` ${open ? '▲' : '▼'}`}</small></span>
+        <b>${fresh ? NEW : ''}${r.success ? '✅' : '⚠️'} ${flagText(escapeHtml(r.poiName))}${zoneTag(r.zone)}${sp ? '<span class="sp-badge">✨ 特殊道具</span>' : ''}</b><span class="row-gap">${shared ? '' : shareBtn(game, 'report', r.id)}<small class="muted">${hhmm(r.at)}${shared ? '' : ` ${open ? '▲' : '▼'}`}</small></span>
       </div>
       <div class="gains">${sp ? `<span class="sp-chip">🔒 就是要鎖你 ×${sp}</span>` : ''}${xpChip(r)}${r.emptied && !sp && !Object.values(r.resources || {}).some((v) => v > 0) && !(r.items || []).length ? `<span class="tag empty-tag">🕸️ 已被搜空・${escapeHtml(r.emptied)}</span>` : gainsHtml(res)} ${(r.items || []).map((it) => `<span class="rarity" style="--rc:${RARITIES[it.rarity].color}">${escapeHtml(it.name)}</span>`).join('')}${r.carried && ((r.items || []).length || Object.keys(r.resources || {}).length) ? '<span class="tag">🎒 背在身上，回到避難所才入庫</span>' : ''}${r.blueprints?.length ? `<span class="tag">📜×${r.blueprints.length}</span>` : ''}</div>
-      ${open ? `<ul class="event-list">${(r.events || []).map((e) => `<li${String(e).includes('就是要鎖你') ? ' class="sp-line"' : ''}>${escapeHtml(e)}</li>`).join('')}</ul><small class="muted">隊員：${(r.members || []).map(escapeHtml).join('、')}・擊殺 ${r.kills}${r.xpBy?.length ? `・<b class="xp-by">⭐ 經驗：${r.xpBy.map((x) => `${escapeHtml(x.n)} ${x.d >= 0 ? '+' : '−'}${Math.abs(x.d)}`).join('、')}</b>${r.xpBy.some((x) => x.d < 0) ? '（倒下重傷會扣經驗）' : ''}` : ''}</small>${shared ? '' : battlesSectionHtml(game, r.battleIds, openBattle)}` : (r.battleIds?.length ? `<small class="muted block">⚔️ ${r.battleIds.length} 場戰鬥・點開查看</small>` : '')}
+      ${open ? `<ul class="event-list">${(r.events || []).map((e) => `<li${String(e).includes('就是要鎖你') ? ' class="sp-line"' : ''}>${flagText(escapeHtml(e))}</li>`).join('')}</ul><small class="muted">隊員：${(r.members || []).map(escapeHtml).join('、')}・擊殺 ${r.kills}${r.xpBy?.length ? `・<b class="xp-by">⭐ 經驗：${r.xpBy.map((x) => `${escapeHtml(x.n)} ${x.d >= 0 ? '+' : '−'}${Math.abs(x.d)}`).join('、')}</b>${r.xpBy.some((x) => x.d < 0) ? '（倒下重傷會扣經驗）' : ''}` : ''}</small>${shared ? '' : battlesSectionHtml(game, r.battleIds, openBattle)}` : (r.battleIds?.length ? `<small class="muted block">⚔️ ${r.battleIds.length} 場戰鬥・點開查看</small>` : '')}
     </div>`;
   }
 }
@@ -82,7 +82,7 @@ function eventsHtml(ui, since, openBattle) {
   const logs = ui.game.state.log.slice(0, 80).map((l) => {
     const b = l.battleId ? ui.game.combat.battle(l.battleId) : null;
     const open = b && openBattle === b.id;
-    return `<li class="log-${l.type}"><time>${hhmm(l.t)}</time>${escapeHtml(l.msg)}${b ? ` ${btn(open ? '收起戰鬥' : '⚔️ 戰鬥明細', 'toggleBattle', { id: b.id }, { cls: 'btn-xs btn-ghost' })}${open ? battleHtml(b, true) : ''}` : ''}</li>`;
+    return `<li class="log-${l.type}"><time>${hhmm(l.t)}</time>${flagText(escapeHtml(l.msg))}${b ? ` ${btn(open ? '收起戰鬥' : '⚔️ 戰鬥明細', 'toggleBattle', { id: b.id }, { cls: 'btn-xs btn-ghost' })}${open ? battleHtml(b, true) : ''}` : ''}</li>`;
   }).join('');
   return `<ul class="log-list">${logs || '<li class="muted">尚無紀錄</li>'}</ul>`;
 }
@@ -112,7 +112,7 @@ export function openMessages(ui) {
     return `${tabs}${tab === 'reports' ? reportsHtml(g, openId, since.reports, openBattle) : tab === 'events' ? eventsHtml(ui, since.events, openBattle) : baseHtml(ui, since.base, openBattle)}`;
   };
   ui.modal.open({
-    title: '💬 消息',
+    title: '📜 消息',
     wide: true,
     body: body(),
     onAction: (action, data, m) => {

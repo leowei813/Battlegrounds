@@ -1,3 +1,4 @@
+import { unitPower } from '../utils/math.js';
 import {
   DG_TZ_MS, DG_TIME, DG_FLOORS, DG_TEAM, DG_MAX_SIGNUPS, DG_RULES, DG_DIFF, DG_ROSTER, DG_OBSTACLES, DG_BOSSES, DG_DROPS,
   DG_FLOOR_LOOT, DUNGEONS, DUNGEON_KEYS, DG_CORES, DG_GEAR, DG_SLOTS, DG_CRAFT, DG_RECIPES, DG_SET, DG_SET_STAT,
@@ -275,8 +276,7 @@ export class DungeonSystem {
     if (Number.isFinite(e?.pw)) return e.pw;
     const u = e?.u;
     if (!u) return 0;
-    return Math.round((u.atk || 0) * (u.atkSpeed || 1) * (1 + (u.crit || 0) * ((u.critDmg || 1.5) - 1)) * (1 + (u.ls || 0)) * 4
-      + ((u.maxHp || 0) * 0.4) / Math.max(0.4, 1 - (u.dodge || 0)) + (u.def || 0) * 3);
+    return unitPower(u);
   }
 
   static validEntry(e) {

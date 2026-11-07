@@ -1,3 +1,4 @@
+import { unitPower } from '../utils/math.js';
 import { BOSSES, ALL_ENEMIES, ZOMBIE_VS_SURVIVOR } from '../config/enemies.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { zoneAt } from '../config/zones.js';
@@ -213,7 +214,7 @@ export class InfectedSystem {
       boss: lv >= 1 ? ALL_ENEMIES[s.bossId]?.name : null,
       level: lv >= 3 ? `Lv${s.level}` : lv >= 1 ? `Lv${Math.floor(s.level / 10) * 10}+` : 'Lv?',
       roster: lv >= 3 ? `Boss ${r.boss}・精英 ${r.elite}・殭屍 ${r.normal}` : null,
-      power: lv >= 6 ? Math.round(this.roster(s, 0).list.reduce((sum, e) => sum + e.maxHp * 0.1 + e.atk, 0)) : null,
+      power: lv >= 6 ? Math.round(this.roster(s, 0).list.reduce((sum, e) => sum + unitPower(e), 0)) : null,
       decay: lv >= 2 ? INFECTED.decayPerHour : null,
     };
   }

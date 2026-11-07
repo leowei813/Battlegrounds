@@ -303,6 +303,14 @@ export class WorldSync {
       p.trips = (p.trips || []).filter((t) => {
         if (!t.rally) return true;
         const d = g.rally?.get?.(t.rally);
+        // v12.1（有集結點的集結）：交戰前由集結圖示統一顯示，打完才顯示各隊從目標返程
+        if (d?.home && d.status !== 'cancelled') {
+          if (d.status !== 'done' || !d.fightAt || now < d.fightAt) return false;
+          t.startAt = d.fightAt - (t.travelMs || 0);
+          t.searchMs = 0;
+          t.endAt = d.fightAt + (t.travelMs || 0);
+          return t.endAt > now;
+        }
         if (!d?.fightAt || (d.status !== 'done' && d.status !== 'departed')) return true;
         t.searchMs = Math.max(0, d.fightAt - (t.startAt + (t.travelMs || 0)));
         t.endAt = d.fightAt + (t.travelMs || 0);

@@ -3,7 +3,7 @@ import {
   parseShare, shareReportText, shareDefenseText, isShared, markShared, SHARE_NOTE_MAX,
   SHARE_OBJ_KIND, SHARE_QUERY_KM, shareCoord, shareDetail,
 } from '../multiplayer/ReportShare.js';
-import { btn } from './components.js';
+import { btn, flagText } from './components.js';
 import { reportCardHtml } from './MessageDialog.js';
 
 /** 分享卡片（聊天室與分享前預覽共用） */
@@ -11,7 +11,7 @@ export function shareCardHtml(text) {
   const s = parseShare(text);
   if (!s) return null;
   const attrs = s.link ? ` data-chat="share" data-id="${escapeHtml(s.link)}" role="button"` : '';
-  return `<span class="share-card ${s.cls}${s.link ? ' linked' : ''}"${attrs}><span class="t">${escapeHtml(s.title)}</span>${s.lines.map((l) => `<span class="l">${escapeHtml(l)}</span>`).join('')}${s.note ? `<span class="n">「${escapeHtml(s.note)}」</span>` : ''}${s.link ? '<span class="more">▸ 點擊查看詳細</span>' : ''}</span>`;
+  return `<span class="share-card ${s.cls}${s.link ? ' linked' : ''}"${attrs}><span class="t">${flagText(escapeHtml(s.title))}</span>${s.lines.map((l) => `<span class="l">${escapeHtml(l)}</span>`).join('')}${s.note ? `<span class="n">「${escapeHtml(s.note)}」</span>` : ''}${s.link ? '<span class="more">▸ 點擊查看詳細</span>' : ''}</span>`;
 }
 
 /** 分享編號（8～12 個英數字） */

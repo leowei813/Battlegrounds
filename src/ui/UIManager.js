@@ -7,7 +7,8 @@ import { formatNumber } from '../utils/math.js';
 import { Toast } from './Toast.js';
 import { Modal } from './Modal.js';
 import { openSiegeResult, openRaidResult } from './SiegeResult.js';
-import { progressBar, metaOf } from './components.js';
+import { progressBar, metaOf, rallyFlag } from './components.js';
+import { NotifyStack } from './NotifyStack.js';
 import { MapPanel } from './panels/MapPanel.js';
 import { ShelterPanel } from './panels/ShelterPanel.js';
 import { ExplorePanel } from './panels/ExplorePanel.js';
@@ -94,7 +95,7 @@ export class UIManager {
     // 網頁版顯示全部分頁；手機版只顯示前 4 個，其餘收進「更多」
     this.nav.innerHTML = `${TABS.map((t) => `
       <button class="nav-btn ${t.more ? 'nav-secondary' : ''}" data-action="tab" data-tab="${t.id}">
-        <span class="nav-icon">${t.icon}</span><span class="nav-label">${t.name}</span><i class="badge" data-badge="${t.id}"></i>
+        <span class="nav-icon">${t.icon}</span><span class="nav-label">${t.name}</span><i class="badge" data-badge="${t.id}"></i>${t.id === 'map' ? '<i class="badge rally-b map-rally" data-badge="mapRally"></i>' : ''}
       </button>`).join('')}
       <button class="nav-btn nav-more-btn" data-action="navMore" aria-expanded="false">
         <span class="nav-icon">☰</span><span class="nav-label">更多</span><i class="badge" data-badge="more"></i>
@@ -221,6 +222,7 @@ export class UIManager {
     });
     this.phaser.registry.set('viewBaseId', this.viewBase()?.id || null);
     this.chatView = new ChatView(this);
+    this.notify = new NotifyStack(this);
     this.chatView.mount(document.querySelector('#stage'));
     this.panels.map.init();
     this.switchTab(this.game.shelter.hasShelter() ? 'shelter' : 'map');
@@ -463,8 +465,19 @@ export class UIManager {
     const legend = [...(st.recruitOffer || []), ...(st.recruitPool || []), ...(st.recruitBoard?.list || [])].some((c) => c.rarity === 'legendary');
     this.nav.querySelector('[data-tab="market"]')?.classList.toggle('glow-bm', bmNew);
     this.nav.querySelector('[data-tab="survivors"]')?.classList.toggle('glow-legend', legend);
+    this.notify?.tick();
+    // v12.1 地圖分頁：聊天未讀（藍）與集結邀請（紫戰旗）
+    const chatN = g.chat?.unread() || 0;
+    const rallyN = g.rally?.invites().length || 0;
     this.nav.querySelectorAll('[data-badge]').forEach((el) => {
       const key = el.dataset.badge;
+      if (key === 'map' || key === 'mapRally') {
+        const n = key === 'map' ? chatN : rallyN;
+        el.innerHTML = n ? `${key === 'map' ? '💬' : rallyFlag(11)}${Math.min(99, n)}` : '';
+        el.classList.toggle('on', n > 0);
+        el.classList.toggle('chat-b', key === 'map');
+        return;
+      }
       if (key === 'market') {
         el.textContent = mk ? String(Math.min(999, mk)) : '';
         el.classList.toggle('on', mk > 0);
