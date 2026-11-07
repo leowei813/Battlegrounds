@@ -5536,6 +5536,15 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(l.length === 1 && l[0].dmg === 500 && sg.base.assistLog.result === 'ok', '當晚有協防時正常列出');
 }
 
+// ---- 142. 製作技術低時，高品級設計圖的數值範圍仍可計算（設計圖頁不會出錯）----
+{
+  const gb = Game.newGame({ playerName: 'B142', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  Object.keys(gb.state.research.levels).forEach((k) => { gb.state.research.levels[k] = 0; }); gb.research.invalidate();
+  let ok = true;
+  try { gb.equipment.craftStatRange('exoBoots', 'legendary'); } catch { ok = false; }
+  assert(ok, '製作技術 0 級時，傳奇設計圖的數值範圍可以正常計算');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
