@@ -5403,6 +5403,31 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(gr.state.log.some((l) => l.msg.includes('見屍潮來襲，撤退了')), '事件紀錄仍保留撤退訊息');
 }
 
+// ---- 135. 擊退 NPC 掠奪隊：傷勢只列出這次真的受傷的人 ----
+{
+  const { xpToNext: xpn135 } = await import('../src/config/survivors.js');
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const gh = Game.newGame({ playerName: 'H135', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gh.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gh.shelter.establish(gh.state.map.pois.find((p) => gh.shelter.canEstablish(p).ok));
+  gh.npcs.update(Date.now());
+  const n = gh.npcs.list[0];
+  const a = gh.survivors.leader();
+  a.xp = xpn135(a.level) - 1; // 這次經驗會升級（生命上限變高）
+  const b = createSurvivor('受傷者', 'medic', 10);
+  gh.state.survivors.push(b);
+  const c = createSurvivor('原本沒滿', 'scout', 10);
+  gh.state.survivors.push(c);
+  gh.survivors.setHp(c, gh.survivors.maxHp(c) * 0.5);
+  const before = new Map(gh.state.survivors.map((sv) => [sv.id, gh.survivors.hpOf(sv)]));
+  gh.survivors.setHp(b, gh.survivors.hpOf(b) * 0.6);
+  const lv0 = a.level;
+  const r = gh.npcs.raidReward(n, [], { alive: [] }, null, [a, b, c], new Set(), before);
+  assert(a.level > lv0 && !r.hurt.some((x) => x.name === a.name), '擊退掠奪隊：因升級而生命沒滿的人不列入傷勢');
+  assert(!r.hurt.some((x) => x.name === c.name), '擊退掠奪隊：原本就沒滿血、這次沒受傷的人不列入傷勢');
+  assert(r.hurt.length === 1 && r.hurt[0].name === b.name && r.hurt[0].down === false, '擊退掠奪隊：生命變少的人列入傷勢（標示受傷，不是被擊倒）');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

@@ -597,7 +597,9 @@ export class MapPanel {
       const wall = `🧱${Math.round(ratio * 100)}%`;
       const help = g.shelter.isPrimary(b) && helpers.length ? `・🛡️協防 ${helpers.length}` : '';
       let cls = ratio < 0.3 ? 'danger' : '';
-      let text = `🧟${n}・${wall}`;
+      // 白天（沒有屍潮）：只是提醒圍牆受損
+      let text = `🧱 圍牆受損・${Math.round(ratio * 100)}%・需修繕${n ? `・🧟${n}` : ''}`;
+      if (!st) cls = 'wall';
       if (st?.state === 'wait') { cls = 'wait'; text = `🌙 屍潮將至・第 1 波 <b>${formatDuration(st.nextIn * 1000)}</b>後來襲・今晚共 <b>${st.maxWaves}</b> 波`; }
       if (st?.state === 'attack') text = `🧟 第 <b>${st.wave}/${st.maxWaves}</b> 波・剩 <b>${st.leftWaves}</b> 波・🧟${n}・${wall}`;
       if (st?.state === 'lull') { cls = ratio < 0.3 ? 'danger' : 'lull'; text = `第 <b>${st.wave}/${st.maxWaves}</b> 波已擊退・剩 <b>${st.leftWaves}</b> 波・下一波 <b>${formatDuration(st.nextIn * 1000)}</b>後・${wall}`; }
@@ -605,7 +607,7 @@ export class MapPanel {
       if (st?.state === 'broke') { cls = 'broke'; text = `💥 今夜屍潮已結束${st.wave ? `（第 ${st.wave} 波被突破）` : '（防線被突破）'}・${dawn}`; }
       return `
       <button class="siege-chip ${cls}" data-action="flyTo" data-id="${b.id}">
-        屍潮來襲・${text}${help}
+        ${st ? '屍潮來襲・' : ''}${text}${help}
       </button>`;
     }).join('')}</div>`;
   }

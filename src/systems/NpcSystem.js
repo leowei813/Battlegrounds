@@ -749,6 +749,8 @@ export class NpcSystem {
     const allies = isHome ? g.assist.allyUnits() : [];
     const helpDps = helpers.reduce((s, h) => s + (h.dps || 0), 0);
     const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));
+    // 防守前的生命：結算傷勢時只列出這次真的受傷的人（升級或原本就沒滿血都不算）
+    const hpBefore = new Map(g.state.survivors.map((sv) => [sv.id, g.survivors.hpOf(sv)]));
     const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps({ raw: true }) * (1 + g.research.bonus('raidDefensePct')) + helpDps);
     base.wallHp = Math.max(0, as.wallLeft);
     // 守城時：近戰防守的人會受傷，對方有遠程武器時遠程防守的人也可能中彈
@@ -776,7 +778,7 @@ export class NpcSystem {
     if (victory) {
       const injured = ShelterSystem.newlySevere(severeBefore, defenders);
       const participants = [...new Set([...wallGuards, ...(as.breached ? defenders : [])])];
-      const reward = this.raidReward(n, all, as, result, participants, severeBefore);
+      const reward = this.raidReward(n, all, as, result, participants, severeBefore, hpBefore);
       g.state.stats.battlesWon += 1;
       const how = !as.breached
         ? (enemies.length ? `圍牆撐住了 ${as.sec} 秒，掠奪隊放棄撤退` : '防禦設施在圍牆被打破前擊退了掠奪隊')
@@ -818,7 +820,7 @@ export class NpcSystem {
    * 擊退掠奪隊的獎勵（只給防守方）：賞金、被擊倒的掠奪者遺落的裝備、參與防守的人的經驗。
    * @returns {{coins:number, gear:object[], xp:object[], hurt:object[], level:number, npc:string}}
    */
-  raidReward(n, all, as, result, participants, severeBefore) {
+  raidReward(n, all, as, result, participants, severeBefore, hpBefore = new Map()) {
     const g = this.game;
     const R = NPC_CONFIG.raidReward;
     // 被擊倒的掠奪者：守城時被防禦設施擊倒的，加上破牆後戰鬥中被擊倒的
@@ -833,14 +835,17 @@ export class NpcSystem {
       const kept = g.equipment.addItem(item, '掠奪隊遺落') !== false;
       gear.push({ name: item.name, rarity: item.rarity, chief: e.enemyId === 'raiderChief', kept });
     });
+    // 傷勢（在發經驗前計算，避免升級拉高生命上限被誤判）：重傷、交戰中被擊倒、或生命比防守前少
+    const downIds = new Set((result?.team || []).filter((u) => u.down).map((u) => u.id));
+    const hurt = participants.filter((sv) => !severeBefore.has(sv.id)
+      && (sv.severe || downIds.has(sv.id) || g.survivors.hpOf(sv) < (hpBefore.get(sv.id) ?? Infinity) - 0.5))
+      .map((sv) => ({ name: sv.name, severe: !!sv.severe, down: downIds.has(sv.id), pct: Math.round((g.survivors.hpOf(sv) / g.survivors.maxHp(sv)) * 100) }));
     const xp = participants.map((sv) => {
       const amount = Math.round(xpToNext(sv.level) * R.xpPct);
       const level = sv.level;
       g.survivors.gainXp(sv, amount);
       return { name: sv.name, level, xp: amount };
     });
-    const hurt = participants.filter((sv) => !severeBefore.has(sv.id) && (sv.severe || g.survivors.hpOf(sv) < g.survivors.maxHp(sv)))
-      .map((sv) => ({ name: sv.name, severe: !!sv.severe, pct: Math.round((g.survivors.hpOf(sv) / g.survivors.maxHp(sv)) * 100) }));
     const list = [`💰${coins}`, ...gear.map((x) => `🎁${x.name}${x.kept ? '' : '（空間不足，留在原地）'}`)];
     g.log(`🛡️ 擊退「${n.name}」的獎勵：${list.join('、')}${xp.length ? `；${xp.length} 名防守人員獲得經驗` : ''}`, 'success');
     return {
