@@ -4228,7 +4228,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { zoneIndexAt } = await import('../src/config/zones.js');
   const a = generatePois(25.0339, 121.5645, 1200);
   const b = generatePois(25.0339, 121.5645, 1200);
-  assert(a.length > 1100 && a.length < 1300, `避難所周圍 1.2 公里約 1,200 個地點（${a.length}）`);
+  assert(a.length > 1250 && a.length < 1550, `避難所周圍 1.2 公里約 1,400 個地點（${a.length}）`);
   assert(JSON.stringify(a) === JSON.stringify(b), '同一位置每次（每位玩家）產生的地點完全相同');
   const big = [[25.03, 121.56], [24.8, 121.0], [23.0, 120.2], [22.6, 120.3], [24.15, 120.67]].flatMap(([la, lo]) => generatePois(la, lo, 2500));
   const share = (t) => big.filter((p) => p.type === t).length / big.length;
