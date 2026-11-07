@@ -816,10 +816,7 @@ export class MapPanel {
         ? `<small class="block neg">⚠️ 這裡設施最高 Lv${cp.cap}：${cp.changes.map((c) => `${FACILITIES[c.id].name} Lv${c.from}→Lv${c.to}`).join('、')}，降掉的等級退還 50% 建造材料</small>`
         : '<small class="block pos">✅ 搬遷保留的設施都不會降級</small>') : ''}`;
     } else {
-      const check = g.shelter.canEstablish(poi);
       { const ve = g.poiShare.view(poi); actions.push(btn(ve.empty ? '🕸️ 已搜空' : ve.left ? '🧭 繼續探索' : '🧭 派遣探索', 'explore', {}, { cls: 'btn-primary', disabled: ve.empty })); }
-      actions.push(btn(`🏴 建立前哨站（${g.shelter.outposts().length}/${g.shelter.outpostLimit()}）`, 'setShelter', {}, { cls: 'btn-ghost', disabled: !check.ok, title: check.reason || '' }));
-      establish = `${sizeLine}<small class="muted block">前哨站只有防禦功能。建立費用：<span class="costs inline">${costHtml(g.state, g.shelter.establishCost())}</span>${check.ok ? '' : `（${check.reason}）`}</small>`;
     }
     return `
       <div class="poi-detail">

@@ -246,7 +246,8 @@ export class MapService {
     if (!this.map) return;
     this.layers.others.clearLayers();
     const COLORS = { hostile: '#e53935', friend: '#43a047', neutral: '#26c6da' };
-    players.forEach((p) => p.bases.forEach((b) => {
+    // v12：前哨站已移除；還沒更新的玩家的舊前哨站不顯示
+    players.forEach((p) => p.bases.filter((b) => b.primary).forEach((b) => {
       const rel = relationOf(p.id);
       // 警戒範圍：敵對紅、友好綠、中立青
       L.circle([b.lat, b.lon], {

@@ -67,7 +67,7 @@ export class ShelterSystem {
 
   /** 可建立的前哨站數量（研究解鎖） */
   outpostLimit() {
-    return Math.min(MAX_OUTPOSTS, this.game.research.bonus('outposts'));
+    return 0; // v12：前哨站已移除
   }
 
   /** 據點物件 / ID / undefined（主要據點）→ 據點物件 */
@@ -196,11 +196,8 @@ export class ShelterSystem {
     // 重度感染據點位置固定：據點（含警戒範圍）不能和它重疊
     const inf = this.game.infected?.blocking(poi, BASE_SIZES[baseSizeOf(poi)]?.alert || 80);
     if (inf) return { ok: false, reason: `這裡太靠近重度感染據點「${inf.name}」，無法建立據點` };
-    if (this.primary()) {
-      const limit = this.outpostLimit();
-      if (!limit) return { ok: false, reason: '需研究「前哨站」科技' };
-      if (this.outposts().length >= limit) return { ok: false, reason: `前哨站最多 ${limit} 座（研究可增加，最多 ${MAX_OUTPOSTS} 座）` };
-    }
+    // v12：前哨站已移除，只能有一座避難所（搬遷時先放棄原本的避難所）
+    if (this.primary()) return { ok: false, reason: '已經有避難所了' };
     if (!canAfford(this.game.state, this.establishCost())) return { ok: false, reason: '資源不足' };
     return { ok: true };
   }

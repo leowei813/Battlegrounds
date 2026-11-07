@@ -161,6 +161,8 @@ export class Game {
     this.equipment.items.forEach((it) => { it.power = this.equipment.itemPower(it); });
     // v10：地圖地點由固定格子產生（舊存檔的真實建築地圖在這裡換成新地圖）
     this.genMap();
+    // v12：自己的倖存者不同名（舊版名單只有 30 個，可能有重複）
+    this.survivors.dedupeNames();
     // 電磁塔、電網每個據點限 1 座：舊存檔多出的拆除並退還材料
     this.shelter.enforceDefenseLimits();
     // 標記地點已移除：清除舊存檔的標記（不再保留遠處的標記建築）

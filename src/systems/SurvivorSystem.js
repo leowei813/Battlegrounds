@@ -580,10 +580,47 @@ export class SurvivorSystem {
     return { ok: true };
   }
 
-  randomName() {
-    const used = new Set(this.list.map((s) => s.name));
+  /** 目前已使用的名字：自己的倖存者、招募板、廣播招募、探索遇到的候選人（避免同名） */
+  usedNames(extra = []) {
+    const st = this.game.state;
+    return new Set([
+      ...this.list.map((s) => s.name), ...(st.recruitBoard?.list || []).map((c) => c.name),
+      ...(st.recruitOffer || []).map((c) => c.name), ...(st.recruitPool || []).map((c) => c.name), ...extra,
+    ]);
+  }
+
+  /** 隨機取一個沒人用過的名字；名單都用完時加上「二世、三世…」 */
+  randomName(extra = []) {
+    const used = this.usedNames(extra);
     const free = SURVIVOR_NAMES.filter((n) => !used.has(n));
-    return pick(free.length ? free : SURVIVOR_NAMES);
+    if (free.length) return pick(free);
+    const base = pick(SURVIVOR_NAMES);
+    for (let i = 2; ; i += 1) {
+      const n = `${base}${'二三四五六七八九'[i - 2] || i}世`;
+      if (!used.has(n)) return n;
+    }
+  }
+
+  /** 同一批產生的候選人彼此也不同名 */
+  makeCandidates(count, level) {
+    const out = [];
+    for (let i = 0; i < count; i += 1) out.push(this.makeCandidate(level, out.map((c) => c.name)));
+    return out;
+  }
+
+  /** 讀檔時：自己的倖存者若有同名（舊版名單較少），後加入的改名（領袖不改名） */
+  dedupeNames() {
+    const seen = new Set();
+    const renamed = [];
+    [...this.list].sort((a, b) => (b.isLeader ? 1 : 0) - (a.isLeader ? 1 : 0)).forEach((sv) => {
+      if (!seen.has(sv.name)) { seen.add(sv.name); return; }
+      const old = sv.name;
+      sv.name = this.randomName([...seen]);
+      seen.add(sv.name);
+      renamed.push(`${old} → ${sv.name}`);
+    });
+    if (renamed.length) this.game.log(`📛 倖存者不再同名，以下倖存者改名：${renamed.join('、')}`, 'info');
+    return renamed;
   }
 
   /** 各品級出現機率（%）：研究「招募技術」提升高品級機率 */
@@ -596,9 +633,9 @@ export class SurvivorSystem {
   }
 
   /** 生成候選倖存者（探索遭遇或招募所用），品級隨機；研究「老手」提高等級 */
-  makeCandidate(level = 1) {
+  makeCandidate(level = 1, extra = []) {
     const lv = Math.max(1, level + Math.floor(this.game.research.bonus('recruitLevelAdd')));
-    return createSurvivor(this.randomName(), pick(CLASS_KEYS), lv, this.rollRarity());
+    return createSurvivor(this.randomName(extra), pick(CLASS_KEYS), lv, this.rollRarity());
   }
 
   currentRecruitCost() {
@@ -633,7 +670,8 @@ export class SurvivorSystem {
     const st = this.game.state;
     const board = st.recruitBoard;
     if (now < (board.refreshAt || 0) && board.list.length) return;
-    board.list = Array.from({ length: this.boardSize() }, () => this.makeCandidate(this.candidateLevel()));
+    board.list = [];
+    board.list = this.makeCandidates(this.boardSize(), this.candidateLevel());
     board.refreshAt = (Math.floor(now / RECRUIT_BOARD_MS) + 1) * RECRUIT_BOARD_MS;
     this.game.bus.emit('recruit:board');
   }
@@ -668,7 +706,7 @@ export class SurvivorSystem {
     // 人數已滿也可以廣播：候選人會停留 1 小時，期間擴充宿舍或空出位置後再雇用
     if (!canAfford(this.game.state, this.currentRecruitCost())) return { ok: false, reason: '資源不足' };
     payCost(this.game.state, this.currentRecruitCost());
-    this.game.state.recruitOffer = Array.from({ length: RECRUIT_CHOICES }, () => this.makeCandidate(this.candidateLevel()));
+    this.game.state.recruitOffer = this.makeCandidates(RECRUIT_CHOICES, this.candidateLevel());
     this.game.state.recruitOfferUntil = now + RECRUIT_STAY_MS;
     return { ok: true, offer: this.game.state.recruitOffer };
   }
@@ -715,6 +753,8 @@ export class SurvivorSystem {
   addSurvivor(sv) {
     // v11.2：新加入的倖存者預設不攜帶藥品（需要時在裝備的藥品欄選擇）
     if (!sv.supply || !('med' in sv.supply)) sv.supply = { ammo: null, med: MED_NONE };
+    // 不同名：已經有同名的倖存者時改一個名字
+    if (this.list.some((s) => s.name === sv.name)) sv.name = this.randomName([sv.name]);
     this.list.push(sv);
     this.game.state.stats.recruits += 1;
     this.game.log(`🤝 ${sv.name}（${RARITIES[sv.rarity]?.name || ''}${CLASSES[sv.classId].name} Lv${sv.level}）加入`, 'success');

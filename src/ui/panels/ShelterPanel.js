@@ -152,7 +152,6 @@ export class ShelterPanel {
     const nav = `<nav class="sh-nav" aria-label="避難所分頁">
       <div class="sh-base">
         <b>${g.shelter.isPrimary(sh) ? '⭐' : '🏴'} ${escapeHtml(sh.name)}</b>
-        <small class="muted">避難所 ${g.shelter.hasShelter() ? 1 : 0}/1・前哨站 ${g.shelter.outposts().length}/${g.shelter.outpostLimit()}</small>
         ${st.bases.length > 1 ? `<div class="sh-bases">${tabs}</div>` : ''}
       </div>
       <div class="sh-nav-list">

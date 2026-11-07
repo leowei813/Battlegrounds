@@ -1509,3 +1509,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .dg-chip { display: inline-flex; gap: 4px; align-items: center; padding: 2px 8px; border-radius: 12px; border: 1px solid #ffffff22; background: #ffffff0d; font-size: 12px; }
 .dg-chip.me { border-color: #d4b44a; background: #3a3215; }
 .dg-gl { color: var(--muted, #90a4ae); margin-right: 2px; }
+
+/* v12：倖存者小卡片不顯示品級文字，改為整張卡片依品級淡色底＋加粗左側色條（名字可完整顯示） */
+.sv-mini.v2 { background: linear-gradient(135deg, color-mix(in srgb, var(--rc) 16%, #1c2018) 0%, color-mix(in srgb, var(--rc) 7%, #1c2018) 100%); border-left-width: 5px; }
+.sv-mini.v2 .sv-mini-foot .sv-tag { margin-left: auto; font-size: 11px; }
+.sv-mini.v2.on { background: linear-gradient(135deg, color-mix(in srgb, var(--rc) 16%, #2a2410) 0%, #ffb30018 100%); border-color: var(--accent); }

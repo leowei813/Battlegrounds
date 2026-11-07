@@ -158,11 +158,11 @@ export class SurvivorPanel {
         <span class="sv-qe-btn up" role="button" data-action="miniQuickEquip" data-id="${sv.id}" title="快速換裝">👕<i>▲</i></span>
         <span class="sv-qe-btn down" role="button" data-action="miniQuickUnequip" data-id="${sv.id}" title="快速脫裝">👕<i>▼</i></span></span>` : '';
     return `<button class="sv-mini v2 ${this.selId === sv.id ? 'on' : ''}" data-action="selSv" data-id="${sv.id}" data-sv="${sv.id}" style="--rc:${r}" title="長按可拖移調整順序">
-      <span class="sv-mini-top"><b>${cls.icon} ${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b>${sv.isLeader ? '' : rarityTag(sv.rarity)}<i class="sv-mini-sp"></i>${tag}</span>
+      <span class="sv-mini-top"><b>${cls.icon} ${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b></span>
       <small class="muted sv-mini-sub">${cls.name} Lv${sv.level}・戰力 <b>${s.power}</b></small>
       ${this.hpRow(sv, hp)}
       <span class="sv-mini-act"><span class="sv-mini-actl">${act}</span>${qe}</span>
-      <span class="sv-mini-foot"><small class="muted">🎒 ${load}/${g.survivors.bagCap(sv)}</small>${sv.isLeader ? '' : this.qTag(g.survivors.avgQuality(sv))}</span>
+      <span class="sv-mini-foot"><small class="muted">🎒 ${load}/${g.survivors.bagCap(sv)}</small>${sv.isLeader ? '' : this.qTag(g.survivors.avgQuality(sv))}${tag}</span>
     </button>`;
   }
 

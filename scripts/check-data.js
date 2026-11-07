@@ -146,19 +146,17 @@ g2.civilization.invalidate();
 assert(g2.siege.of().zombieLevel() - lvDay1 <= 1, '天數本身不會提升屍潮強度（夜間 ±1）');
 
 const outpostPoi = g.state.map.pois.find((p) => !g.shelter.baseAtPoi(p.id) && !g.infected.blocking(p, 200));
-assert(!g.shelter.canEstablish(outpostPoi).ok, '避難所只能一座，未研究前哨站科技不能建第二個據點');
+assert(!g.shelter.canEstablish(outpostPoi).ok, '避難所只能一座，不能建第二個據點');
+// v12：前哨站已移除：就算有舊的擴張科技等級，也不能再建第二個據點
 g.state.research.levels.e_outpost = 1;
 g.research.invalidate();
 Object.assign(g.state.resources, { wood: 5000 });
 fillSupplies(g);
 g.state.player.coins = 5000;
 const est = g.shelter.establish(outpostPoi);
-assert(est.ok && g.state.bases.length === 2 && est.base.kind === 'outpost', '研究「前哨站」後可建立前哨站');
-assert(!g.shelter.canEstablish(g.state.map.pois.find((p) => !g.shelter.baseAtPoi(p.id))).ok, '前哨站數量受研究限制');
-assert(g.shelter.dangerLevel(est.base) === g.shelter.baseDanger(est.base), '前哨站危險度不受文明度加成');
-assert(!g.shelter.canUpgradeFacility(est.base, 'farm').ok && g.shelter.canUpgradeFacility(est.base, 'watchtower').ok, '前哨站只能建造防禦設施');
-for (let i = 0; i < 300; i += 1) g.siege.update(0.1);
-assert(g.siege.sieges.size === 2, '每個據點各自承受屍潮');
+assert(!est.ok && g.state.bases.length === 1, '前哨站已移除：無法建立第二個據點');
+delete g.state.research.levels.e_outpost;
+g.research.invalidate();
 
 // ---- 4. 舊存檔遷移（v1 單一避難所 → v2 多據點）----
 const v1 = JSON.parse(JSON.stringify(g2.state));
@@ -858,14 +856,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const cap0 = Math.floor(gs.survivors.bagCap(lead) - gs.survivors.loadoutWeight(lead));
   assert(lead.bag.wood === cap0 && lost === 10000 - cap0, `倉庫放不下的探索物資由隊員背包攜帶（${lead.bag.wood}/${cap0}）`);
 
-  // 重新掃描包含前哨站附近（較小範圍）
-  gs.state.research.levels.e_outpost = 1;
-  gs.research.invalidate();
-  fillSupplies(gs);
-  gs.state.player.coins = 1e5;
-  gs.shelter.establish(gs.state.map.pois.find((p) => !gs.shelter.baseAtPoi(p.id) && gs.shelter.canEstablish(p).ok));
+  // v12：前哨站已移除，只掃描避難所周圍
   const areas = gs.scanAreas(25.03, 121.56);
-  assert(areas.length === 2 && areas[1].radius < areas[0].radius, '重新掃描包含前哨站附近，範圍較小');
+  assert(areas.length === 1, '只掃描避難所周圍（前哨站已移除）');
 }
 
 // ---- 13. v6.1：起始無產出、主角無品級、刪除進度移除公開資料 ----
@@ -3575,12 +3568,21 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { NPC_CONFIG: NC } = await import('../src/config/npcs.js');
   const { POI_SCAN_RADIUS: PSR } = await import('../src/config/constants.js');
   const t = new Date(2026, 10, 4, 9, 30).getTime();
-  assert(nextNoon(t) === new Date(2026, 10, 4, 12, 0).getTime() && nextNoon(new Date(2026, 10, 4, 12, 0).getTime()) === new Date(2026, 10, 5, 12, 0).getTime(), '被擊敗的 NPC 據點在下一個中午 12:00 重新出現');
+  void nextNoon; void t;
+  assert(NC.respawnAfterMs === 36 * 3600000, '被消滅的 NPC 據點 36 小時後重新出現');
   const g79 = Game.newGame({ playerName: 'N79', classId: 'warrior', lat: 25, lon: 121 });
   g79.state.map.pois = fillPois([], 25, 121);
   g79.shelter.establish(g79.state.map.pois.find((p) => g79.shelter.canEstablish(p).ok));
   const b79 = g79.shelter.primary();
   g79.npcs.fillCells(Date.now(), { silent: true });
+  {
+    const n0 = g79.npcs.list[0];
+    const t0 = Date.now();
+    const cell = n0.cell || g79.npcs.cellOf(n0.lat, n0.lon);
+    g79.npcs.destroy(n0, t0);
+    assert(g79.npcs.state.cellNext[cell] === t0 + 36 * 3600000, '消滅 NPC 據點後，該格 36 小時後才重生');
+    g79.npcs.fillCells(Date.now(), { silent: true });
+  }
   assert(g79.npcs.list.length > 0 && g79.npcs.list.every((n) => haversine(n.lat, n.lon, b79.lat, b79.lon) <= PSR + 1), `NPC 據點只出現在避難所的可視範圍（${PSR} 公尺）內（${g79.npcs.list.length} 個）`);
   // 擊退掠奪隊：賞金、裝備、經驗
   const all = Array.from({ length: 6 }, () => g79.combat.createEnemy('raider', 20));
@@ -5543,6 +5545,90 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   let ok = true;
   try { gb.equipment.craftStatRange('exoBoots', 'legendary'); } catch { ok = false; }
   assert(ok, '製作技術 0 級時，傳奇設計圖的數值範圍可以正常計算');
+}
+
+// ---- 143. v12 移除前哨站與擴張科技：舊存檔的前哨站拆除、建造與研究材料全額退還 ----
+{
+  const { researchCost: rc143, REMOVED_RESEARCH: RR143 } = await import('../src/config/research.js');
+  const { baseEstablishCost: bec143 } = await import('../src/config/civilization.js');
+  const { FACILITIES: F143 } = await import('../src/config/facilities.js');
+  const { DEFENSES: D143 } = await import('../src/config/defenses.js');
+  const go = Game.newGame({ playerName: 'O143', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  go.state.map.pois = fillPois([], 25.0339, 121.5645);
+  go.shelter.establish(go.state.map.pois.find((p) => go.shelter.canEstablish(p).ok));
+  const raw = JSON.parse(JSON.stringify(go.state));
+  raw.version = 30;
+  const home = raw.bases[0];
+  const op = JSON.parse(JSON.stringify(home));
+  op.id = 'b_out1'; op.kind = 'outpost'; op.name = '舊前哨站'; op.poiId = 'poi_x';
+  Object.keys(op.facilities).forEach((k) => { op.facilities[k] = { level: 0 }; });
+  op.facilities.wall = { level: 3 };
+  op.facilities.watchtower = { level: 2 };
+  const dType = Object.keys(D143)[0];
+  op.defenses = [{ slot: 0, type: dType, level: 2, garrisonId: null }];
+  op.buildQueue = [{ kind: 'facility', id: 'watchtower', targetLevel: 3, cost: { wood: 77 } }];
+  raw.bases.push(op);
+  raw.research.levels.e_outpost = 2;
+  raw.research.levels.e_wall = 1;
+  raw.research.queue = [{ id: 'e_cost', level: 1, cost: { wood: 11 } }];
+  const want = {};
+  const add = (c) => Object.entries(c).forEach(([k, n]) => { want[k] = (want[k] || 0) + n; });
+  add(bec143(1));
+  for (let lv = 2; lv <= 3; lv += 1) add(F143.wall.cost(lv));
+  for (let lv = 1; lv <= 2; lv += 1) add(F143.watchtower.cost(lv));
+  for (let lv = 1; lv <= 2; lv += 1) add(D143[dType].cost(lv));
+  add({ wood: 77 });
+  for (let lv = 1; lv <= 2; lv += 1) add(rc143('e_outpost', lv, RR143.e_outpost));
+  add(rc143('e_wall', 1, RR143.e_wall));
+  add({ wood: 11 });
+  const before = JSON.parse(JSON.stringify({ r: raw.resources, s: raw.supplies, c: raw.player.coins, p: raw.player.parts || 0 }));
+  const m = SaveManager.migrate(raw);
+  const got = (k) => (k === 'coins' ? m.player.coins - before.c : k === 'parts' ? (m.player.parts || 0) - before.p : k in m.resources ? m.resources[k] - before.r[k] : (m.supplies[k] || 0) - (before.s[k] || 0));
+  const bad = Object.entries(want).filter(([k, n]) => Math.abs(got(k) - Math.round(n)) > 1);
+  assert(m.bases.length === 1 && m.bases[0].kind === 'shelter' && !m.bases.some((b) => b.kind === 'outpost'), '舊存檔的前哨站被拆除，只留下避難所');
+  assert(!bad.length, `前哨站與擴張科技全額退還（不符：${bad.map(([k, n]) => `${k} ${got(k)}/${Math.round(n)}`).join('、') || '無'}）`);
+  assert(!m.research.levels.e_outpost && !m.research.levels.e_wall && !m.research.queue.some((q) => q.id === 'e_cost'), '擴張科技等級與排隊中的擴張科技都移除');
+  assert(m.log[0].msg.includes('前哨站與擴張科技已移除') && m.log[0].msg.includes('舊前哨站'), '事件紀錄說明前哨站已移除');
+  const m2 = SaveManager.migrate(JSON.parse(JSON.stringify(m)));
+  assert(m2.player.coins === m.player.coins && !m2.log[0].msg.includes('前哨站與擴張科技已移除，建造') || m2.log.length === m.log.length, '再次讀檔不會重複退還');
+  const { RESEARCH_BRANCHES: RB143, RESEARCH: R143 } = await import('../src/config/research.js');
+  assert(!RB143.expansion && !Object.values(R143).some((r) => r.branch === 'expansion'), '研究頁不再有擴張科技');
+}
+
+// ---- 144. v12 倖存者名單：至少 250 組、最多 6 個字；自己的倖存者不同名 ----
+{
+  const { SURVIVOR_NAMES: SN } = await import('../src/config/survivors.js');
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  assert(SN.length >= 250 && new Set(SN).size === SN.length && SN.every((n) => [...n].length <= 6), `倖存者名單 ${SN.length} 組、不重複、最多 6 個字`);
+  const gn = Game.newGame({ playerName: 'N144', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  ['阿傑', '阿傑', '小美', '阿傑'].forEach((n) => { const sv = createSurvivor(n, 'medic', 5); gn.state.survivors.push(sv); });
+  const ren = gn.survivors.dedupeNames();
+  const names = gn.state.survivors.map((x) => x.name);
+  assert(ren.length === 2 && new Set(names).size === names.length && names.filter((n) => n === '阿傑').length === 1, `讀檔時同名的倖存者改名（${ren.join('、')}）`);
+  const c = gn.survivors.makeCandidates(40, 5);
+  const all = [...gn.state.survivors.map((x) => x.name), ...c.map((x) => x.name)];
+  assert(new Set(all).size === all.length, '同一批候選人彼此不同名，也不和現有倖存者同名');
+  const dup = createSurvivor(names[1], 'scout', 3);
+  gn.survivors.addSurvivor(dup);
+  assert(gn.state.survivors.filter((x) => x.name === names[1]).length === 1, '加入同名倖存者時自動改名');
+}
+
+// ---- 145. v12 NPC 名稱：中二風格、同一張地圖上不重複 ----
+{
+  const { NPC_NAMES: NN } = await import('../src/config/npcs.js');
+  const { NpcSystem: NS } = await import('../src/systems/NpcSystem.js');
+  assert(NN.length >= 300 && new Set(NN).size === NN.length, `NPC 名稱 ${NN.length} 種、不重複`);
+  const mk = () => Array.from({ length: 60 }, (_, i) => ({ sid: `c${i}:0`, name: NN[0] }));
+  const a = NS.uniqueNames(mk());
+  const b = NS.uniqueNames(mk().reverse());
+  const byA = Object.fromEntries(a.map((x) => [x.sid, x.name]));
+  assert(new Set(a.map((x) => x.name)).size === 60 && b.every((x) => byA[x.sid] === x.name), '撞名時自動換成不重複的名字，且順序不同結果也相同（每位玩家看到的一樣）');
+  const g145 = Game.newGame({ playerName: 'N145', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  g145.state.map.pois = fillPois([], 25.0339, 121.5645);
+  g145.shelter.establish(g145.state.map.pois.find((p) => g145.shelter.canEstablish(p).ok));
+  g145.npcs.fillCells(Date.now(), { silent: true });
+  const names = g145.npcs.list.map((n) => n.name);
+  assert(names.length > 0 && new Set(names).size === names.length && names.every((n) => NN.includes(n)), `地圖上的 NPC 名稱不重複（${names.length} 個：${names.slice(0, 4).join('、')}…）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
