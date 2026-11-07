@@ -33,7 +33,9 @@ import { hashAccessCode, ACCESS_ITERATIONS } from '../src/security/accessHash.js
 import { haversine } from '../src/utils/math.js';
 import { fetchPois, classify } from '../src/map/OverpassService.js';
 import crypto from 'node:crypto';
-import { SUPPLY_KEYS } from '../src/config/supplies.js';
+import { SUPPLY_KEYS, SUPPLIES as SUPPLIES_ALL } from '../src/config/supplies.js';
+
+const SUPPLIES_T = Object.fromEntries(Object.entries(SUPPLIES_ALL).map(([k, v]) => [k, v.tier]));
 
 /** 測試用：所有材料物品各 n 個，並擴大物品倉庫 */
 const fillSupplies = (game, n = 900) => {
@@ -3025,7 +3027,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(st.ok && ex.squads().length === 1, '派出後成為臨時小隊');
   assert(ex.queueLimit() === 2, '探索佇列基本 2 個');
   assert(ex.enqueue(st.exp.id, pois[1].id).ok && ex.enqueue(st.exp.id, pois[2].id).ok && !ex.enqueue(st.exp.id, pois[3].id).ok, '佇列滿了不能再加入');
+  const rollQ = gq3.rebirth.rollSearch.bind(gq3.rebirth);
+  gq3.rebirth.rollSearch = () => 1; // 每一格搜索都找到特殊物品
   const [rep] = ex.update(st.exp.endAt + 1, { silent: true });
+  gq3.rebirth.rollSearch = rollQ;
+  assert(!rep || !rep.carried || rep.locks > 0, `連續探索前往下一站的報告也標示找到的特殊物品（${rep?.locks}）`);
   const next = gq3.state.expeditions[0];
   assert(rep && next && next.poiId === pois[1].id && next.queue.length === 1, `完成後自動前往佇列中的下一個地點（${rep?.events.slice(-1)}）`);
   assert(!rep || rep.xpBy?.length, '連續探索前往下一站的報告也顯示經驗');
@@ -5043,6 +5049,237 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const rep2 = { events: [] };
   gx.exploration.attachXp(rep2, { memberIds: [lead.id], xp0: { [lead.id]: gx.survivors.totalXp(lead) } });
   assert(!rep2.xpBy, '沒有拿到經驗時不顯示');
+}
+
+// ---- 130. 地下感染區（多人副本）：報名、分團、鎖定、確定性計算、結算、離線補算、製作、設計圖交易 ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const { DungeonSystem } = await import('../src/systems/DungeonSystem.js');
+  const { createSurvivor } = await import('../src/core/GameState.js');
+  const DGC = await import('../src/config/dungeons.js');
+  const store = new MemoryObjects();
+  const GEAR = ['chainsaw', 'vector', 'titanHelmet', 'eodSuit', 'exoLegs', 'exoGloves', 'exoBoots', 'pack3', 'nvg'];
+  const mkP = (name, cls, opt = {}) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.03, lon: 121.56 });
+    gx.state.map.pois = fillPois([], 25.03, 121.56);
+    gx.shelter.establish(gx.state.map.pois.find((p) => gx.shelter.canEstablish(p).ok));
+    gx.shared.backend = store;
+    gx.world = { myId: `dg_${name}` };
+    const sv = createSurvivor(`${name}的倖存者`, cls, opt.level ?? 50, 'legendary');
+    gx.state.survivors.push(sv);
+    sv.status = 'idle';
+    gx.state.supplies.mediumKit = opt.meds ?? 30;
+    gx.state.supplies.ammo9 = 2000;
+    GEAR.forEach((m) => { const it = gx.equipment.generate({ level: 60, model: m, rarity: 'legendary', qualityAdd: 0.5 }); gx.equipment.items.push({ ...it, loc: 'store' }); gx.equipment.equipRaw(sv.id, it.id); });
+    sv.loadout = { ammo: { key: 'ammo9', qty: 300 }, med: { key: 'mediumKit', qty: 10 } };
+    return { g: gx, sv };
+  };
+  const day0 = DungeonSystem.dayStart(Date.UTC(2026, 10, 12, 4));
+  const T = DungeonSystem.times(day0);
+  // 時程：台灣時間
+  {
+    const NPCC = await import('../src/systems/NpcSystem.js');
+    const gq = Game.newGame({ playerName: 'NQ', classId: 'warrior', lat: 25.034, lon: 121.567 });
+    gq.state.map.pois = fillPois([], 25.034, 121.567);
+    gq.shelter.establish(gq.state.map.pois.find((p) => gq.shelter.canEstablish(p).ok));
+    const t0 = Date.now(); gq.npcs.update(t0); gq.npcs.update(t0 + 61000);
+    const near = gq.npcs.list.filter((n) => Object.values(DGC.DUNGEONS).some((d) => haversine(n.lat, n.lon, d.lat, d.lon) < DGC.DG_CLEAR_M - 1));
+    assert(gq.npcs.list.length > 0 && !near.length && NPCC, `NPC 據點不會出現在副本入口 ${DGC.DG_CLEAR_M} 公尺內`);
+  }
+  assert(DungeonSystem.dayKey(day0) === '20261112' && new Date(T.start).getUTCHours() === 10 && T.end - T.start === 3 * 3600 * 1000, '副本時程：台灣時間 18:00 開打、20 層共 3 小時');
+  assert(DungeonSystem.phase(T.open - 1) === 'before' && DungeonSystem.phase(T.open) === 'signup' && DungeonSystem.phase(T.close) === 'closed' && DungeonSystem.phase(T.lock) === 'locked' && DungeonSystem.phase(T.depart) === 'gather' && DungeonSystem.phase(T.start) === 'run' && DungeonSystem.phase(T.end) === 'after', '副本各階段：07:00 報名、17:40 截止、17:50 鎖定、17:55 集結、18:00 開打');
+  // 分團：依報名先後平均分配，每團 3～8 人
+  const fakeList = (n) => ({ list: Array.from({ length: n }, (_, i) => ({ p: `p${i}`, s: `s${i}`, c: 'warrior', at: 1000 - i, u: { maxHp: 100 } })) });
+  const sizes = (n) => DungeonSystem.groupsOf(fakeList(n)).groups.map((x) => x.length).join('+');
+  assert(DungeonSystem.groupsOf(fakeList(2)).cancelled && sizes(3) === '3' && sizes(8) === '8' && sizes(9) === '5+4' && sizes(10) === '5+5' && sizes(17) === '6+6+5', `平均分團（9→${sizes(9)}、10→${sizes(10)}、17→${sizes(17)}）、不到 3 人取消`);
+  assert(DungeonSystem.groupsOf(fakeList(9)).groups[0][0].p === 'p8', '分團依報名先後（最早報名的在第 1 團）');
+  const ex = fakeList(4);
+  ex.list[0].x = 'nomed';
+  assert(DungeonSystem.groupsOf(ex).groups[0].length === 3 && DungeonSystem.groupsOf(ex).out.length === 1, '鎖定時無法出擊的人不分團');
+  // 報名
+  const CL = ['warrior', 'medic', 'engineer', 'scout', 'farmer'];
+  const ps = CL.map((c, i) => mkP(`DG${i}`, c));
+  const at = T.open + 3600e3;
+  for (const [i, p] of ps.entries()) assert((await p.g.dungeon.signup('lab', p.sv.id, at + i)).ok, `玩家 ${i + 1} 報名副本`);
+  const [a] = ps;
+  assert(!(await a.g.dungeon.signup('lab', a.sv.id, at + 99)).ok, '每個副本每天只能報名一次');
+  assert(!a.g.dungeon.canSignup('lab', a.g.survivors.leader().id, at).ok, '指揮官不能參加副本');
+  assert(!a.g.dungeon.canSignup('bunker', a.sv.id, at).ok, '同一名倖存者一天只能參加一個副本');
+  assert(!a.g.dungeon.canSignup('bunker', a.sv.id, T.close + 1).ok, '17:40 之後不能報名');
+  const extra = mkP('DGX', 'medic');
+  assert((await extra.g.dungeon.signup('lab', extra.sv.id, at + 50)).ok && (await extra.g.dungeon.cancel('lab', at + 60)).ok && !extra.g.dungeon.record('lab', at + 60), '截止前可以取消報名');
+  assert(!(await a.g.dungeon.cancel('lab', T.close + 1)).ok, '截止後不能取消報名');
+  // 同時搶最後一個名額：只有一個人成功
+  {
+    const s2 = new MemoryObjects();
+    const full = { dg: 'drain', day: DungeonSystem.dayKey(at), list: Array.from({ length: DGC.DG_MAX_SIGNUPS - 1 }, (_, i) => ({ p: `x${i}`, s: `s${i}`, c: 'scout', at: i, u: { maxHp: 1 } })) };
+    await s2.objPut('x', 'x', 'dg', `drain-${full.day}`, { data: full, ver: 0 });
+    const r1 = mkP('R1', 'scout');
+    const r2 = mkP('R2', 'scout');
+    r1.g.shared.backend = s2; r2.g.shared.backend = s2;
+    await r1.g.shared.list('dg', 5); await r2.g.shared.list('dg', 5);
+    const [x1, x2] = await Promise.all([r1.g.dungeon.signup('drain', r1.sv.id, at), r2.g.dungeon.signup('drain', r2.sv.id, at)]);
+    const n = (await s2.objList('dg', 0, 0, 5))[0].data.list.length;
+    assert((x1.ok ? 1 : 0) + (x2.ok ? 1 : 0) === 1 && n === DGC.DG_MAX_SIGNUPS, `同時搶最後名額只有一人成功（${x1.ok}/${x2.ok}，共 ${n} 人）`);
+  }
+  // 共用資料大小：報名額滿（40 人）時仍在伺服器上限 16KB 以內
+  {
+    const e = { ...a.g.dungeon.snapshot(a.sv), p: 'x'.repeat(36), n: '名'.repeat(8), sn: '名'.repeat(8), s: `sv_${'x'.repeat(14)}`, at: Date.now() };
+    const size = new TextEncoder().encode(JSON.stringify({ dg: 'greenhouse', day: '20261112', list: Array(DGC.DG_MAX_SIGNUPS).fill(e) })).length;
+    assert(size < 16000, `副本報名額滿時資料大小在上限內（${size} bytes）`);
+  }
+  // 鎖定：外出中的小隊召回；鎖定後不能出發
+  const b = ps[1];
+  const poi = b.g.state.map.pois.find((p) => !b.g.shelter.baseAtPoi(p.id) && b.g.exploration.validate(p.id, [b.sv.id]).ok);
+  const trip = b.g.exploration.start(poi.id, [b.sv.id], 5, false, T.lock - 60000);
+  assert(trip.ok, `報名的倖存者鎖定前可以外出（${trip.reason || ''}）`);
+  for (const p of ps) { await p.g.shared.list('dg', 5); p.g.dungeon.update(T.lock + 1000); }
+  assert(trip.exp.recalled, '17:50 鎖定時外出中的小隊自動召回');
+  assert(b.g.dungeon.isLocked(b.sv, T.lock + 2000) && b.g.survivors.isAvailable(b.sv) === false, '鎖定後倖存者不能外出');
+  // 集結、開打、結算
+  for (const t of [T.depart + 1000, T.start + 1000, T.start + 60 * 60e3]) {
+    for (const p of ps) { await p.g.shared.list('dg', 5); p.g.dungeon.update(t); }
+  }
+  assert(ps.every((p) => p.sv.status === 'exploring' && p.sv.dungeon), '17:55 起倖存者在副本中（不在家）');
+  const day = DungeonSystem.dayKey(T.start);
+  const sig = ps.map((p) => JSON.stringify(p.g.dungeon.results('lab', day).runs.map((r) => [r.result, r.endFloor, r.stat, r.rewards])));
+  assert(sig.every((x) => x === sig[0]), '所有參加者算出的每層結果與每人獎勵完全相同');
+  // 重新開啟（快取清空）結果一樣
+  a.g.dungeon.cache.clear();
+  assert(JSON.stringify(a.g.dungeon.results('lab', day).runs.map((r) => [r.result, r.endFloor, r.stat, r.rewards])) === sig[0], '重新計算（重新開啟遊戲）結果相同');
+  const run = a.g.dungeon.results('lab', day).runs[0];
+  assert(run.floors.length === run.endFloor && run.floors.every((f) => f.obs.length >= 1 && f.obs.length <= 3), '每層 1～3 個障礙並記錄每一層');
+  assert(run.floors.every((f) => f.waves.length >= 1) && run.mvp && run.stat.length === 5, '每層戰報、每人輸出／承傷／治療／障礙與 MVP');
+  const coins0 = ps.map((p) => p.g.state.player.coins);
+  for (const p of ps) { await p.g.shared.list('dg', 5); p.g.dungeon.update(T.end + 1000); }
+  assert(ps.every((p) => p.g.dungeon.record('lab', T.start).settled && p.g.state.reports[0]?.kind === 'dungeon'), '結束時每位參加者各自結算並收到副本報告');
+  assert(ps.every((p, i) => p.g.state.player.coins > coins0[i] && !p.sv.dungeon && (p.sv.status === 'idle' || p.g.state.expeditions.some((e) => e.memberIds.includes(p.sv.id)))), '結算後拿到金錢、倖存者回家');
+  const coins1 = ps.map((p) => p.g.state.player.coins);
+  for (const p of ps) p.g.dungeon.update(T.end + 5000);
+  assert(ps.every((p, i) => p.g.state.player.coins === coins1[i]), '不會重複結算');
+  const ri = run.stat.findIndex((s) => s.downs > 0);
+  if (ri >= 0) assert(!ps[ri].g.state.reports[0].lost && ps[ri].sv.xp >= 0, '副本中重傷不扣經驗');
+  {
+    // 重傷不扣經驗：直接驗證結算前後經驗只增不減
+    const t = ps.find((p, i) => run.stat[i].downs > 0) || ps[0];
+    assert(!t.g.state.log.some((l) => /重傷.*經驗 -/.test(l.msg) && /副本/.test(l.msg)), '副本結算沒有重傷扣經驗的紀錄');
+  }
+  // 離線：報名後一直沒上線，隔天才開遊戲 → 依序鎖定、出發、結算
+  {
+    const s3 = new MemoryObjects();
+    const off = CL.map((c, i) => mkP(`OF${i}`, c));
+    off.forEach((p) => { p.g.shared.backend = s3; });
+    for (const [i, p] of off.entries()) await p.g.dungeon.signup('bunker', p.sv.id, at + i);
+    for (const p of off.slice(1)) { await p.g.shared.list('dg', 5); p.g.dungeon.update(T.lock + 1000); }
+    const lone = off[0];
+    await lone.g.shared.list('dg', 5);
+    lone.g.dungeon.update(T.end + DGC.DG_TIME.floorMs);
+    const rp = lone.g.state.reports[0];
+    assert(rp?.kind === 'dungeon' && (rp.status === 'clear' || rp.status === 'fail') && !lone.sv.dungeon, `離線的玩家上線後補算並結算（${rp?.status}）`);
+  }
+  // 人數不足：取消、倖存者回家
+  {
+    const s4 = new MemoryObjects();
+    const two = ['warrior', 'medic'].map((c, i) => mkP(`TW${i}`, c));
+    two.forEach((p) => { p.g.shared.backend = s4; });
+    for (const p of two) await p.g.dungeon.signup('depot', p.sv.id, at);
+    for (const t of [T.lock + 1000, T.depart + 1000, T.start + 1000]) for (const p of two) { await p.g.shared.list('dg', 5); p.g.dungeon.update(t); }
+    assert(two.every((p) => p.g.state.reports[0]?.status === 'cancel' && p.sv.status === 'idle' && !p.sv.dungeon), '報名不到 3 人：今日取消、倖存者回家、不扣任何東西');
+  }
+  // 鎖定時重傷：有藥治療後出擊；沒有藥無法出擊
+  {
+    const s5 = new MemoryObjects();
+    const team = CL.map((c, i) => mkP(`SV${i}`, c, i === 0 ? { meds: 0 } : {}));
+    team.forEach((p) => { p.g.shared.backend = s5; });
+    for (const [i, p] of team.entries()) await p.g.dungeon.signup('greenhouse', p.sv.id, at + i);
+    team[0].sv.severe = true; team[0].g.survivors.setHp(team[0].sv, 0); team[0].sv.loadout.med = null;
+    Object.keys(team[0].g.state.supplies).filter((k) => SUPPLIES_ALL[k]?.cat === 'med').forEach((k) => { delete team[0].g.state.supplies[k]; });
+    team[0].sv.bag = {};
+    team[1].sv.severe = true; team[1].g.survivors.setHp(team[1].sv, 0);
+    for (const p of team) { await p.g.shared.list('dg', 5); p.g.dungeon.update(T.lock + 1000); }
+    assert(team[0].g.dungeon.record('greenhouse', T.lock).excluded === 'nomed', '鎖定時重傷又沒有藥品：無法出擊');
+    assert(!team[1].sv.severe && !team[1].g.dungeon.record('greenhouse', T.lock).excluded, '鎖定時重傷：自動用藥治療後照常出擊');
+    await team[2].g.shared.list('dg', 5);
+    const gp = DungeonSystem.groupsOf(team[2].g.dungeon.data('greenhouse', DungeonSystem.dayKey(at)));
+    assert(gp.groups.length === 1 && gp.groups[0].length === 4 && gp.out.length === 1, '無法出擊的人不分團，其他人照常出發');
+  }
+  // 副本裝備：副本品級、綁定、職業專用、套裝、製作
+  {
+    const { g: gx, sv } = mkP('CR', 'medic');
+    const it = gx.dungeon.makeGear('lab_gloves');
+    let dgP = 0;
+    let legP = 0;
+    for (let k = 0; k < 20; k += 1) {
+      dgP += gx.dungeon.makeGear('lab_gloves').power;
+      legP += gx.equipment.generate({ level: 60, model: 'exoGloves', rarity: 'legendary', qualityAdd: 0.5 }).power;
+    }
+    assert(it.rarity === 'dungeon' && it.bound && dgP / legP > 1.1 && dgP / legP < 1.35, `副本裝備：副本品級、綁定、平均強度約傳奇的 1.2 倍（${(dgP / legP).toFixed(2)}）`);
+    gx.equipment.addItem(it, 't');
+    const w = createSurvivor('戰士', 'warrior', 30, 'rare'); gx.state.survivors.push(w); w.status = 'idle';
+    assert(!gx.equipment.equip(w.id, it.id).ok && gx.equipment.equip(sv.id, it.id).ok, '副本裝備只有對應職業可以穿');
+    const hp0 = gx.survivors.stats(sv).hp;
+    ['lab_helmet', 'lab_armor'].forEach((id) => { const x = gx.dungeon.makeGear(id); gx.equipment.addItem(x, 't'); gx.equipment.equip(sv.id, x.id); });
+    const set = gx.dungeon.setBonus(sv);
+    assert(set.pct === DGC.DG_SET[0].pct && set.stat === 'hp' && gx.survivors.stats(sv).hp > hp0, '套裝 3 件：醫生生命 +2%');
+    gx.market.level = () => 3;
+    assert(!(await gx.market.post({ side: 'sell', itemId: it.id, price: 10 })).ok, '副本裝備綁定，不能在交易市場刊登');
+    gx.state.inventory.blueprints.push({ id: 'dgbp', model: 'lab_weapon', rarity: 'dungeon', dg: true });
+    assert(/工作台/.test(gx.dungeon.canCraft('lab_weapon').reason), '副本裝備需要 5 級工作台');
+    gx.shelter.maxLevel = (k) => (k === 'workbench' ? DGC.DG_CRAFT.bench : 1);
+    gx.equipment.storeCap = () => 999;
+    assert(/核心/.test(gx.dungeon.canCraft('lab_weapon').reason), '副本裝備需要核心材料');
+    gx.state.dgCores = { coreLab: DGC.DG_CRAFT.core.weapon };
+    Object.entries(DGC.DG_RECIPES.lab_weapon).forEach(([k, v]) => { gx.state.supplies[k] = v; });
+    gx.state.player.coins = DGC.DG_CRAFT.coins.weapon;
+    const r = gx.dungeon.craft('lab_weapon');
+    assert(r.ok && gx.state.dgCores.coreLab === 0 && gx.state.player.coins === 0 && !gx.state.inventory.blueprints.some((x) => x.id === 'dgbp') && r.item.bound, '製作副本裝備：消耗圖紙、核心材料、金錢與材料');
+    assert(Object.values(DGC.DG_RECIPES).every((rc) => [1, 2, 3, 4, 5].every((t) => Object.keys(rc).filter((k) => SUPPLIES_T[k] === t).length === 3) && Object.entries(rc).filter(([k]) => SUPPLIES_T[k] === 1).every(([, v]) => v >= 800)), '配方：每件 5 個品級各 3 種材料，1 品材料上千');
+    // 核心材料可以交易
+    const buyer = mkP('CB', 'medic');
+    buyer.g.market.level = () => 3;
+    gx.state.dgCores.coreLab = 5;
+    const post = await gx.market.post({ side: 'sell', key: 'coreLab', qty: 3, price: 100 });
+    await buyer.g.shared.list('mk', 20);
+    buyer.g.state.player.coins = 1000;
+    const L = buyer.g.market.listings().find((d) => d.key === 'coreLab');
+    assert(post.ok && L && (await buyer.g.market.buy(L.id, 2)).ok && buyer.g.state.dgCores.coreLab === 2, '核心材料可以在交易市場交易');
+  }
+  // 設計圖：賣黑市、丟棄、交易市場刊登與購買
+  {
+    const s6 = new MemoryObjects();
+    const sell = mkP('BP1', 'medic');
+    const buy = mkP('BP2', 'medic');
+    sell.g.shared.backend = s6; buy.g.shared.backend = s6;
+    sell.g.market.level = () => 3; buy.g.market.level = () => 3;
+    sell.g.state.inventory.blueprints = [{ id: 'q1', model: 'hk416', rarity: 'rare' }, { id: 'q2', model: 'm1911', rarity: 'epic' }, { id: 'q3', model: 'lab_boots', rarity: 'dungeon', dg: true }, { id: 'q4', model: 'aug', rarity: 'rare' }];
+    const c0 = sell.g.state.player.coins;
+    const price = sell.g.blackMarket.blueprintBuyback({ model: 'm1911', rarity: 'epic' });
+    assert(sell.g.blackMarket.sellBlueprint('q2').ok && sell.g.state.player.coins === c0 + price && price > 0, `設計圖可以賣給黑市（💰${price}）`);
+    assert(sell.g.blackMarket.blueprintBuyback({ model: 'x', rarity: 'dungeon', dg: true }) >= 5000, '副本圖紙黑市回收 💰5000');
+    assert(sell.g.equipment.discardBlueprint('q4').ok && !sell.g.state.inventory.blueprints.some((x) => x.id === 'q4'), '設計圖可以丟棄');
+    const pp = await sell.g.market.post({ side: 'sell', bpId: 'q3', price: 30000 });
+    await buy.g.shared.list('mk', 20);
+    buy.g.state.player.coins = 40000;
+    const BL = buy.g.market.listings().find((d) => d.bp);
+    const br = BL && await buy.g.market.buy(BL.id, 1);
+    assert(pp.ok && br?.ok && buy.g.state.inventory.blueprints.some((x) => x.dg && x.model === 'lab_boots') && buy.g.state.player.coins === 10000, '副本圖紙可以在交易市場賣給其他玩家');
+    await sell.g.shared.list('mk', 20);
+    const cBefore = sell.g.state.player.coins;
+    await sell.g.market.settle();
+    assert(sell.g.state.player.coins === cBefore + 30000, '賣出設計圖後收到貨款');
+    const p2 = await sell.g.market.post({ side: 'sell', bpId: 'q1', price: 10 });
+    const cc = await sell.g.market.cancel(p2.id);
+    assert(cc.ok && sell.g.state.inventory.blueprints.some((x) => x.id === 'q1'), '設計圖刊登下架後退回');
+  }
+  // 存檔：v29 遷移
+  {
+    const data = JSON.parse(JSON.stringify(a.g.state));
+    data.version = 28;
+    delete data.dungeon;
+    delete data.dgCores;
+    const m = SaveManager.migrate(data);
+    assert(m.dungeon?.sign && m.dgCores && typeof m.dgCores === 'object', '存檔遷移：副本報名紀錄與核心材料');
+  }
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

@@ -1,3 +1,4 @@
+import { DUNGEONS, DG_CLEAR_M } from '../config/dungeons.js';
 import { AssistSystem } from './AssistSystem.js';
 import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL } from '../config/npcs.js';
 import { xpToNext } from '../config/survivors.js';
@@ -159,6 +160,19 @@ export class NpcSystem {
         },
         coins: randInt(40, 120),
       };
+    });
+    // 不會出現在地下感染區（副本）入口附近：推到 DG_CLEAR_M 以外（所有玩家算法相同）
+    Object.values(DUNGEONS).forEach((dg) => {
+      const dist = haversine(npc.lat, npc.lon, dg.lat, dg.lon);
+      if (dist >= DG_CLEAR_M) return;
+      const kLat = 111320;
+      const kLon = 111320 * Math.cos((dg.lat * Math.PI) / 180);
+      let dx = (npc.lon - dg.lon) * kLon;
+      let dy = (npc.lat - dg.lat) * kLat;
+      const len = Math.hypot(dx, dy);
+      if (len < 1) { dx = 0; dy = 1; } else { dx /= len; dy /= len; }
+      npc.lat = dg.lat + (dy * DG_CLEAR_M) / kLat;
+      npc.lon = dg.lon + (dx * DG_CLEAR_M) / kLon;
     });
     // 被攻陷後重生的據點：至少 respawnMinLevel 級
     if (dc > 0) npc.baseLevel = Math.max(npc.baseLevel, this.minLevel(npc));

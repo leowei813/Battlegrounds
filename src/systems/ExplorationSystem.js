@@ -752,7 +752,8 @@ export class ExplorationSystem {
     if (exp.claimed) this.game.poiShare?.release(exp, this.poi(exp.poiId), null);
     exp.memberIds.forEach((id) => {
       const m = this.game.survivors.get(id);
-      if (m && m.status === 'exploring') m.status = 'idle';
+      // 副本中的倖存者（17:50 召回後還在回家路上）不改回在家
+      if (m && m.status === 'exploring' && !m.dungeon) m.status = 'idle';
       // 回到避難所：依自動補給設定從倉庫補貨
       const got = m && this.game.survivors.autoResupply(m);
       if (got) this.game.log(`🔄 ${m.name} 回到避難所，自動補給 ${got}`, 'info');
@@ -853,7 +854,7 @@ export class ExplorationSystem {
         continue;
       }
       // 先確認下一個地點能出發（不能的話照原本回家）
-      members.forEach((m) => { m.status = 'idle'; });
+      members.forEach((m) => { if (!m.dungeon) m.status = 'idle'; });
       const check = this.validate(nextId, exp.memberIds);
       if (!check.ok) {
         members.forEach((m) => { m.status = 'exploring'; });
@@ -865,7 +866,7 @@ export class ExplorationSystem {
       report.at = searchEnd;
       const nextPoi = this.poi(nextId);
       this.list.splice(this.list.indexOf(exp), 1);
-      members.forEach((m) => { m.status = 'idle'; });
+      members.forEach((m) => { if (!m.dungeon) m.status = 'idle'; });
       this.game.vehicles.release(exp.vehicleIds || []);
       const r = this.start(nextId, exp.memberIds, exp.durationMin, exp.auto, searchEnd, {
         vehicleIds: (exp.vehicleIds || []).filter((id) => { const v = this.game.vehicles.get(id); return v && !this.game.vehicles.isBroken(v); }),
@@ -873,7 +874,7 @@ export class ExplorationSystem {
       });
       if (!r.ok) {
         // 理論上已檢查過；萬一失敗，物資照樣帶回避難所
-        members.forEach((m) => { m.status = 'idle'; });
+        members.forEach((m) => { if (!m.dungeon) m.status = 'idle'; });
         report.carried = false;
         this.game.grant(exp.carried?.gained || {}); // 報告仍只列這一站的收穫
         report.events.push(`⏭️ 無法前往下一個地點（${r.reason}），物資已帶回避難所`);
@@ -1395,6 +1396,7 @@ export class ExplorationSystem {
       report.items = [...cp.items];
       report.blueprints = [...cp.blueprints];
       report.carried = true;
+      if (cp.locks) report.locks = cp.locks;
       this.markVisited(exp, poi, cp, complete);
       if (cp.searchXp) report.events.push(`⭐ 搜完「${poi.name}」：每人經驗 +${cp.searchXp}`);
       return report;

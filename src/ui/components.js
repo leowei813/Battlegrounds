@@ -1,3 +1,4 @@
+import { DG_PIN_SVG } from './DungeonView.js';
 import { RESOURCES, CURRENCIES } from '../config/constants.js';
 import {
   RARITIES, SLOTS, AFFIXES, ITEM_TYPES, ITEM_MODELS, itemWeight,
@@ -186,6 +187,7 @@ const OUT_LABELS = {
 };
 export function outLabel(game, sv) {
   const ex = (game.state.expeditions || []).find((e) => e.memberIds?.includes(sv.id));
+  if (sv.dungeon && !ex) return `<span class="dg-ic-inline">${DG_PIN_SVG}</span>副本中`;
   return OUT_LABELS[ex?.kind] || '探索中';
 }
 
@@ -197,6 +199,9 @@ export function survivorStatus(game, sv, now = Date.now()) {
   if (game.survivors.isStarving()) tags.push('<span class="tag tag-red">🍽️ 飢餓</span>');
   if (sv.status === 'exploring') tags.push(`<span class="tag tag-blue">${outLabel(game, sv)}</span>`);
   else if (!sv.severe) tags.push(`<span class="tag">${JOBS[sv.job]?.icon || ''} ${JOBS[sv.job]?.name || '閒置'}</span>`);
+  // 副本：今天已報名（還沒結算）
+  const dg = !sv.dungeon && game.dungeon?.signedDungeon(sv.id, now);
+  if (dg && !game.dungeon.state.sign[`${dg}-${game.dungeon.constructor.dayKey(now)}`]?.settled) tags.push(`<span class="tag tag-dg" title="今天報名地下感染區，17:50 鎖定"><span class="dg-ic-inline">${DG_PIN_SVG}</span>副本${game.dungeon.isLocked(sv, now) ? '・已鎖定' : ''}</span>`);
   const tw = towerTag(game, sv);
   if (tw) tags.push(tw);
   return `<span class="tags">${tags.join('')}</span>`;

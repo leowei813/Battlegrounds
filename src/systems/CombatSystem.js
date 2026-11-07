@@ -221,7 +221,9 @@ export class CombatSystem {
       }
     };
 
-    while (t < MAX_TIME && alive(team).length && alive(foes).length) {
+    // 時間上限：一般 90 秒；副本首領戰可指定較長的時間（opts.maxTime）
+    const maxT = opts.maxTime || MAX_TIME;
+    while (t < maxT && alive(team).length && alive(foes).length) {
       t += STEP;
       for (const u of [...team, ...foes]) {
         if (u.hp <= 0) continue;
@@ -277,6 +279,7 @@ export class CombatSystem {
       kills,
       team: team.map((u) => ({
         id: u.id, name: u.name, hp: Math.max(0, Math.round(u.hp)), maxHp: u.maxHp, down: u.hp <= 0, kills: u.kills || 0, ally: u.ally, medsUsed: u.medsUsed || 0, weapon: u.weapon, dealt: Math.round(u.dealt || 0),
+        taken: Math.round(u.taken || 0), healed: Math.round(u.healed || 0),
       })),
       foes: foes.map((u) => ({ id: u.id, ally: u.ally, down: u.hp <= 0, hp: Math.max(0, Math.round(u.hp)), kills: u.kills || 0 })),
       enemies: foes.map((f) => ({ name: f.name, icon: f.icon, hp: Math.max(0, Math.round(f.hp)), maxHp: f.maxHp })),

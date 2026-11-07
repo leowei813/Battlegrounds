@@ -2,6 +2,12 @@ import { NPC_CONFIG } from '../../config/npcs.js';
 import { LOCK_ITEM } from '../../config/rebirth.js';
 import { FACILITIES } from '../../config/facilities.js';
 import { RARITY_ORDER } from '../../config/equipment.js';
+import { DUNGEONS } from '../../config/dungeons.js';
+import { CLASSES } from '../../config/survivors.js';
+import { DungeonSystem } from '../../systems/DungeonSystem.js';
+import {
+  DG_PIN_SVG, hudHtml, openStatus,
+} from '../DungeonView.js';
 import { MapService } from '../../map/MapService.js';
 import { POI_TYPES, LOOT_CATS } from '../../config/poiTypes.js';
 import { ALL_ENEMIES } from '../../config/enemies.js';
@@ -51,6 +57,7 @@ export class MapPanel {
     this.service.renderOthers(players, (id) => this.game.territory.relation(id));
     // 重度感染據點會避開玩家據點：其他玩家的據點更新後重新計算位置
     this.service.renderInfected(this.game.infected.list(), INFECTED.pin);
+    this.renderDungeons();
     this.lastOverlay = '';
     if (this.ui.tab === 'map') this.renderOverlay();
   }
@@ -71,6 +78,26 @@ export class MapPanel {
     this.service.render(this.game.state);
     this.service.renderNpcs(this.game.npcs.list);
     this.service.renderInfected(this.game.infected.list(), INFECTED.pin);
+    this.renderDungeons();
+  }
+
+  /** 副本入口：圖示下方顯示今天的狀態（報名人數／攻略中層數） */
+  renderDungeons(now = Date.now()) {
+    const g = this.game;
+    const ph = DungeonSystem.phase(now);
+    const day = DungeonSystem.dayKey(now);
+    const list = Object.entries(DUNGEONS).map(([id, d]) => {
+      const data = g.dungeon.data(id, day);
+      const n = (data?.list || []).length;
+      let label = ph === 'before' ? '07:00 開放報名' : ph === 'signup' ? `報名 ${n}` : ph === 'run' ? (n >= 3 ? '攻略中' : '今日休息') : ph === 'after' ? '今日已結束' : n >= 3 ? '即將開打' : `報名 ${n}`;
+      const rec = g.dungeon.record(id, now);
+      if (rec && !rec.cancelled && ph === 'run') {
+        const mine = g.dungeon.myRun(rec);
+        if (mine?.run) label = `攻略中 ${DungeonSystem.floorAt(mine.run, now)}/20`;
+      }
+      return { id, name: d.name, lat: d.lat, lon: d.lon, label: `${CLASSES[d.cls].icon} ${label}` };
+    });
+    this.service.renderDungeons(list, DG_PIN_SVG);
   }
 
   /** 發起集結：選擇出發倒數與自己的隊伍 */
@@ -313,7 +340,7 @@ export class MapPanel {
       </div>
       ${has && this.game.shelter.alert ? '<div class="map-alert-banner">🔔 警戒中・全部倖存者防禦駐守</div>' : ''}
       ${this.siegeBanner()}
-      ${this.feedHtml()}
+      ${this.feedHtml(hudHtml(this.game))}
       ${this.scanning ? `<div class="scan-progress">📡 掃描建築中 ${this.scanProgress || ''}</div>` : ''}
       ${this.worldChip()}
       <div class="map-info">建築 ${st.map.pois.length}・殭屍群 ${st.map.zombieGroups.length}・資料：${src}</div>`;
@@ -517,10 +544,10 @@ export class MapPanel {
   /**
    * 地圖左上角資訊欄：威脅接近（誰、多久後抵達）、好友遭攻打求援（點擊增援）、探索佇列（點擊查看／召回）。
    */
-  feedHtml() {
+  feedHtml(hud = '') {
     const g = this.game;
     const now = Date.now();
-    const rows = [];
+    const rows = hud ? [hud] : [];
     g.threatDetails(now).filter((t) => t.kind !== 'siege').forEach((t) => {
       rows.push(`<button class="feed-chip danger" data-action="gotoShelter">⚠️ ${escapeHtml(t.text)}${t.at ? `・約 ${formatDuration(t.at - now)}後抵達` : ''}</button>`);
     });
@@ -587,6 +614,7 @@ export class MapPanel {
 
   async onAction(action, data = {}) {
     const sh = this.game.shelter.primary();
+    if (action === 'dgStatus') { openStatus(this.ui, data.dg); return; }
     if (action === 'gotoShelter' && sh) this.service.focus(sh.lat, sh.lon);
     if (action === 'messages') openMessages(this.ui);
     if (action === 'chat') this.ui.chatView.toggle();

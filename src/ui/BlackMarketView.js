@@ -1,5 +1,5 @@
 import { SUPPLIES, SUPPLY_CATS } from '../config/supplies.js';
-import { RARITIES, RARITY_ORDER } from '../config/equipment.js';
+import { RARITIES, rarityIndex } from '../config/equipment.js';
 import { BLACK_MARKET, EXCHANGE } from '../systems/BlackMarketSystem.js';
 import { escapeHtml } from '../utils/dom.js';
 import { formatDuration, formatNumber } from '../utils/math.js';
@@ -49,7 +49,7 @@ export function blackMarketBody(ui, view = 'buy') {
         <span>${btn(`賣 ${ten}（💰${bm.buybackPrice(k, ten)}）`, 'bmSell', { key: k, qty: ten }, { cls: 'btn-xs', disabled: bm.buybackPrice(k, ten) <= 0 })}${btn(`全賣（💰${bm.buybackPrice(k, sup[k])}）`, 'bmSell', { key: k, qty: sup[k] }, { cls: 'btn-xs btn-primary', disabled: bm.buybackPrice(k, sup[k]) <= 0 })}</span></div>`;
     }).join('');
     const gear = g.equipment.storeItems()
-      .sort((a, b) => RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) || b.power - a.power || String(a.id).localeCompare(String(b.id)))
+      .sort((a, b) => rarityIndex(b.rarity) - rarityIndex(a.rarity) || b.power - a.power || String(a.id).localeCompare(String(b.id)))
       .map((it) => itemCard(it, { compact: true, actions: btn(`賣出 💰${bm.gearBuyback(it)}`, 'bmSellItem', { id: it.id }, { cls: 'btn-xs btn-primary', disabled: it.locked, title: it.locked ? '已上鎖' : '' }) })).join('');
     return `${head}<p class="muted">收購倉庫裡的材料與裝備，越稀有回收比例越好。上鎖與穿戴中的裝備不會賣出。</p>
       <h4>材料</h4><div class="grid">${sells || '<p class="muted">倉庫裡沒有可以回收的物資。</p>'}</div>

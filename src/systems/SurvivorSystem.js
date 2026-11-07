@@ -217,6 +217,13 @@ export class SurvivorSystem {
     s.atkSpeed += rb.atkSpeedAdd || 0;
     s.lifeSteal += rb.lifeStealAdd || 0;
 
+    // 副本裝備套裝：該職業主要能力（3／6／9 件）
+    const set = this.game.dungeon?.setBonus(sv);
+    if (set?.pct) {
+      if (set.stat === 'atk') atkPct += set.pct;
+      else if (set.stat === 'hp') hpPct += set.pct;
+      else defPct += set.pct;
+    }
     s.atk = Math.round(s.atk * (1 + atkPct));
     s.hp = Math.round(s.hp * (1 + hpPct));
     s.def = Math.round(s.def * (1 + defPct));
@@ -234,6 +241,8 @@ export class SurvivorSystem {
   isAvailable(sv) {
     const at = this.game.shelter.garrisonOf(sv.id);
     // 駐守前哨站的人不能派出；主要避難所的瞭望塔人員出門時就離開瞭望塔
+    // 副本：17:50 鎖定後到結算前不能外出
+    if (this.game.dungeon?.isLocked(sv)) return false;
     return sv.status === 'idle' && !sv.severe && !(at && !this.game.shelter.isPrimary(at.base));
   }
 

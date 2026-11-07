@@ -8,6 +8,8 @@ import {
   weightedPick, pick, randFloat, uid, clamp, chance,
 } from '../utils/math.js';
 import { canAfford, payCost, grant, amountOf } from './costUtils.js';
+import { CLASSES } from '../config/survivors.js';
+import { DG_GEAR } from '../config/dungeons.js';
 import {
   SUPPLIES, AMMO_RECIPES, MED_RECIPES, AMMO_FOR,
 } from '../config/supplies.js';
@@ -22,6 +24,9 @@ const ELEC = [null, 'wire', 'wire', 'battery', 'battery', 'circuit', 'circuit', 
  * 製作配方：依裝備類別與強度消耗不同的零件與布料。
  * 例：一級甲（強度 4）= 鐵板 + 科技棉；二級甲（強度 7）= 鋼板 + 強化布料。
  */
+/** 副本裝備與圖紙的顯示顏色（綠色呼吸光） */
+export const DUNGEON_COLOR = '#69f0ae';
+
 export function craftRecipe(md) {
   const t = md.tier;
   const q = (n) => Math.max(1, Math.round(n * (1 + (t - 1) * 0.35)));
@@ -417,6 +422,7 @@ export class EquipmentSystem {
     const item = this.getItem(itemId);
     if (!sv || !item) return { ok: false, reason: '找不到目標' };
     if (sv.status !== 'idle') return { ok: false, reason: '已派出的倖存者無法更換裝備' };
+    if (!this.canWear(sv, item)) return { ok: false, reason: `「${item.name}」是${CLASSES[DG_GEAR[item.dg]?.cls]?.name || ''}專用的副本裝備` };
     // 不能拿走已派出的人身上或背包裡的裝備
     const holder = this.game.state.survivors.find((s) => s.id !== sv.id && (SLOT_KEYS.some((slot) => s.equipment[slot] === itemId) || item.loc === s.id));
     if (holder && holder.status !== 'idle') return { ok: false, reason: `「${holder.name}」已派出，無法拿取他的裝備` };
@@ -474,6 +480,7 @@ export class EquipmentSystem {
       const cur = this.getItem(sv.equipment[slot]);
       const pool = this.items.filter((i) => i.slot === slot && !this.equippedBy(i.id)
         && ((i.loc || 'store') === 'store' || homeIds.has(i.loc))
+        && this.canWear(sv, i)
         // 背包：不會換成格數比較少的
         && (slot !== 'backpack' || slotsOf(i) >= slotsOf(cur)));
       // 遠程武器也一律換戰力最高的（沒有彈藥時武器卡片會提示，自動補給會設成它的彈藥）
@@ -803,6 +810,35 @@ export class EquipmentSystem {
     this.addItem(item, '製作');
     this.game.state.stats.crafted += 1;
     return { ok: true, item, msg: `製作完成：${RARITIES[item.rarity].name}「${item.name}」` };
+  }
+
+  /** 副本裝備只有對應職業可以穿 */
+  canWear(sv, item) {
+    if (!item?.dg) return true;
+    return DG_GEAR[item.dg]?.cls === sv?.classId;
+  }
+
+  /** 設計圖的顯示資料：一般設計圖（型號＋保底品級）或副本圖紙 */
+  blueprintInfo(bp) {
+    if (!bp) return null;
+    if (bp.dg) {
+      const d = this.game.dungeon?.gearDef(bp.model);
+      return d ? { name: d.name, label: '副本圖紙', color: DUNGEON_COLOR, dungeon: true } : null;
+    }
+    const md = ITEM_MODELS[bp.model];
+    if (!md || !RARITIES[bp.rarity]) return null;
+    return { name: md.name, label: `保底${RARITIES[bp.rarity].name}`, color: RARITIES[bp.rarity].color, dungeon: false };
+  }
+
+  /** 丟棄設計圖（無法復原） */
+  discardBlueprint(id) {
+    const list = this.game.state.inventory.blueprints;
+    const bp = list.find((b) => b.id === id);
+    if (!bp) return { ok: false, reason: '找不到設計圖' };
+    const info = this.blueprintInfo(bp);
+    this.game.state.inventory.blueprints = list.filter((b) => b.id !== id);
+    this.game.log(`🗑️ 丟棄設計圖「${info?.name || bp.model}」`, 'info');
+    return { ok: true, msg: `已丟棄設計圖「${info?.name || bp.model}」` };
   }
 
   /** 生成設計圖（指定型號，保底精良以上） */

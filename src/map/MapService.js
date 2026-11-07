@@ -69,6 +69,7 @@ export class MapService {
     this.layers.others = L.layerGroup().addTo(this.map);
     this.layers.npcs = L.layerGroup().addTo(this.map);
     this.layers.infected = L.layerGroup().addTo(this.map);
+    this.layers.dungeons = L.layerGroup().addTo(this.map);
     this.layers.gps = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
     this.poiLayer.teamHit = (pt) => {
@@ -217,6 +218,26 @@ export class MapService {
       }).on('click', () => bus.emit('ui:openInfected', { id: s.id }))
         .bindTooltip(`☣️ 重度感染據點「${escapeHtml(s.name)}」・淨化 ${Math.floor(s.purity)}%`, { direction: 'top', offset: [0, -pin / 2] })
         .addTo(this.layers.infected);
+    });
+  }
+
+  /**
+   * 地下感染區（副本）入口：地裂獸口圖示＋今天的狀態。
+   * @param {{id:string, name:string, lat:number, lon:number, label:string}[]} list
+   */
+  renderDungeons(list = [], svg = '') {
+    if (!this.map) return;
+    const key = list.map((d) => `${d.id}:${d.label}`).join('|');
+    if (key === this.dgKey) return;
+    this.dgKey = key;
+    this.layers.dungeons.clearLayers();
+    list.forEach((d) => {
+      L.marker([d.lat, d.lon], {
+        icon: L.divIcon({ html: `<div class="dg-pin"><span class="dg-pin-ic">${svg}</span><i class="dg-pin-lb">${escapeHtml(d.label)}</i></div>`, className: 'dg-pin-wrap', iconSize: [58, 48], iconAnchor: [29, 24] }),
+        zIndexOffset: 870,
+      }).on('click', () => bus.emit('ui:openDungeon', { id: d.id }))
+        .bindTooltip(`🕳️ 地下感染區「${escapeHtml(d.name)}」・${escapeHtml(d.label)}`, { direction: 'top', offset: [0, -24] })
+        .addTo(this.layers.dungeons);
     });
   }
 
