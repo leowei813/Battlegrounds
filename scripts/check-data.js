@@ -5462,6 +5462,23 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   void rep;
 }
 
+// ---- 137. 分享卡片可點開詳細：連結編號、內容存放位置、長度上限 ----
+{
+  const RS = await import('../src/multiplayer/ReportShare.js');
+  const { CHAT_MAX_LEN } = await import('../src/multiplayer/Chat.js');
+  const rep = { poiName: '倒塌的住宅區 1號', success: true, kills: 12, resources: { food: 30, wood: 20, scrap: 9, fuel: 4 }, items: [{ name: '很長很長很長的裝備名稱一號', rarity: 'epic' }, { name: '很長很長很長的裝備名稱二號', rarity: 'rare' }], events: Array(80).fill('事件'), battleIds: ['bt1'], members: ['Leo'], blueprints: [] };
+  const t = RS.shareReportText(rep, '運氣不錯唷唷唷唷唷唷唷唷唷唷唷唷唷', 'mbc123xyz9');
+  const p = RS.parseShare(t);
+  assert([...t].length <= CHAT_MAX_LEN && p.link === 'mbc123xyz9' && p.note.startsWith('運氣不錯'), `分享文字帶連結編號且不超過字數上限（${[...t].length}）`);
+  assert(!p.lines.some((l) => l.includes('🔗')), '連結編號不會顯示成卡片內容');
+  assert(!RS.parseShare(RS.shareReportText(rep)).link, '沒有連結時（舊版分享）不能點開');
+  const c1 = RS.shareCoord('mbc123xyz9');
+  const c2 = RS.shareCoord('mbc123xyz8');
+  assert(JSON.stringify(c1) === JSON.stringify(RS.shareCoord('mbc123xyz9')) && c1.lat < -59 && (Math.abs(c1.lat - c2.lat) > 0.005 || Math.abs(c1.lon - c2.lon) > 0.005), '分享內容的存放位置固定、不同編號分開');
+  const d = RS.shareDetail('report', rep);
+  assert(d.t === 'report' && !d.x.battleIds && d.x.events.length <= 60 && JSON.stringify(d).length < 15000, '分享內容不含戰鬥明細編號、事件數有上限');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

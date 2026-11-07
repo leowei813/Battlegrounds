@@ -1071,6 +1071,9 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .share-card.siege { border-color: #ffab4055; border-left-color: #ffab40; background: #2a2116; }
 .share-card .t { font-weight: 800; }
 .share-card .n { color: var(--muted, #90a4ae); }
+.share-card.linked { cursor: pointer; }
+.share-card.linked:hover { filter: brightness(1.12); }
+.share-card .more { color: #8fb8ff; margin-top: 3px; font-size: 12px; }
 .chat-msg.mine .share-card { margin-left: auto; }
 .share-preview { margin: 8px 0; }
 .share-note { display: block; margin: 8px 0 4px; }
