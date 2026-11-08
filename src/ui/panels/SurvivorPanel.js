@@ -170,7 +170,7 @@ export class SurvivorPanel {
     const cur = sv.keepMin();
     const label = (r, i) => (i === 0 ? '全部留下' : i === KEEP_ORDER.length - 1 ? `只留${RARITIES[r].name}` : `${RARITIES[r].name}以上`);
     const opts = KEEP_ORDER.map((r, i) => `<option value="${r}" ${r === cur ? 'selected' : ''}>${label(r, i)}</option>`).join('');
-    return `<div class="keep-row">⚙️ 探索遇到時留下<select class="keep-min" aria-label="探索遇到的倖存者留下品級">${opts}</select><small class="muted">其他自動婉拒</small></div>`;
+    return `<div class="keep-row">⚙️ 探索遇到留存品級<select class="keep-min" aria-label="探索遇到的倖存者留下品級">${opts}</select><small class="muted">其他自動婉拒</small></div>`;
   }
 
   /** 列表中每位倖存者的狀態分類 */
