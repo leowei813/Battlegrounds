@@ -123,7 +123,7 @@ export const RESEARCH = {
   s_parts: r('survival', 2, '零件辨識', '探索時有機率多找到一種零件', { partKindPct: 0.05 }, { max: 10, req: [['s_loot', 2]] }),
   s_loot: r('survival', 1, '拾荒技巧', '探索物資提升', { lootPct: 0.03 }),
   s_carry: r('survival', 1, '負重訓練', '每人徒步運載量提升', { carryPct: 0.05 }),
-  s_night: r('survival', 2, '夜行者', '夜間探索懲罰降低', { nightPenaltyReduce: 0.06 }, { req: [['s_scout', 2]] }),
+  s_night: r('survival', 2, '夜行者', '夜間探索懲罰降低（移動速度）', { nightPenaltyReduce: 0.06 }, { req: [['s_scout', 2]] }),
   s_stealth: r('survival', 2, '潛行', '移動途中遇襲機率降低', { ambushReduce: 0.05 }, { req: [['s_scout', 2]] }),
   s_items: r('survival', 2, '尋寶', '探索時找到裝備的機率提升', { itemFindPct: 0.05 }, { req: [['s_loot', 2]] }),
   s_survivor: r('survival', 2, '搜救', '探索時遇到倖存者的機率提升', { survivorFindPct: 0.08 }),

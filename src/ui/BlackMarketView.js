@@ -1,5 +1,5 @@
 import { SUPPLIES, SUPPLY_CATS } from '../config/supplies.js';
-import { RARITIES, rarityIndex } from '../config/equipment.js';
+import { RARITIES, rarityIndex, ITEM_TYPES, ITEM_MODELS } from '../config/equipment.js';
 import { BLACK_MARKET, EXCHANGE } from '../systems/BlackMarketSystem.js';
 import { escapeHtml } from '../utils/dom.js';
 import { formatDuration, formatNumber } from '../utils/math.js';
@@ -8,6 +8,16 @@ import { btn, itemCard } from './components.js';
 
 /** 依階級與名稱排序（不依數量，賣出一部分後順序不會跳動） */
 const supplyOrder = (a, b) => SUPPLIES[b].tier - SUPPLIES[a].tier || SUPPLIES[a].name.localeCompare(SUPPLIES[b].name, 'zh-Hant') || a.localeCompare(b);
+
+/** v12.2.1 清單式一行：圖示、名稱、說明，右側動作 */
+const bmRow = ({ icon, name, color, sub, right, cls = '' }) => `<div class="bm-row ${cls}"><span class="bm-ic">${icon}</span><span class="bm-nm"><b${color ? ` style="color:${color}"` : ''}>${name}</b><small>${sub}</small></span><span class="bm-act">${right}</span></div>`;
+
+/** 裝備一行，點一下展開完整能力（和裝備卡片相同） */
+const gearRow = (it, right, cls = '') => {
+  const r = RARITIES[it.rarity] || RARITIES.common;
+  const icon = ITEM_MODELS[it.model]?.icon || ITEM_TYPES[it.type]?.icon || '❔';
+  return `<div class="bm-gear ${cls}" data-action="bmGearInfo" data-id="${it.id}">${bmRow({ icon, name: escapeHtml(it.name), color: r.color, sub: `${r.name} ${ITEM_TYPES[it.type]?.name || ''}${it.tier ? ` T${it.tier}` : ''}・Lv${it.level}・戰力 ${it.power}・ⓘ`, right })}</div>`;
+};
 
 /**
  * 黑市分頁（避難所頁）：全體玩家共用的 20 格商品＋回收。
@@ -44,33 +54,40 @@ export function blackMarketBody(ui, view = 'buy') {
       const sp = SUPPLIES[k];
       const ten = Math.min(10, sup[k]);
       const unit = bm.buybackUnit(k);
-      return `<div class="card row-between"><div><b>${sp.icon} ${sp.name}</b> <small class="muted">倉庫 ${sup[k]}</small>
-        <small class="muted block">${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier)}・回收價每個 💰${unit.toFixed(unit < 1 ? 2 : 1)}</small></div>
-        <span>${btn(`賣 ${ten}（💰${bm.buybackPrice(k, ten)}）`, 'bmSell', { key: k, qty: ten }, { cls: 'btn-xs', disabled: bm.buybackPrice(k, ten) <= 0 })}${btn(`全賣（💰${bm.buybackPrice(k, sup[k])}）`, 'bmSell', { key: k, qty: sup[k] }, { cls: 'btn-xs btn-primary', disabled: bm.buybackPrice(k, sup[k]) <= 0 })}</span></div>`;
+      return bmRow({
+        icon: sp.icon, name: `${sp.name} <small class="muted">倉庫 ${sup[k]}</small>`,
+        sub: `${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier)}・每個 💰${unit.toFixed(unit < 1 ? 2 : 1)}`,
+        right: `${btn(`賣 ${ten}（💰${bm.buybackPrice(k, ten)}）`, 'bmSell', { key: k, qty: ten }, { cls: 'btn-xs', disabled: bm.buybackPrice(k, ten) <= 0 })}${btn(`全賣（💰${bm.buybackPrice(k, sup[k])}）`, 'bmSell', { key: k, qty: sup[k] }, { cls: 'btn-xs btn-primary', disabled: bm.buybackPrice(k, sup[k]) <= 0 })}`,
+      });
     }).join('');
     const gear = g.equipment.storeItems()
       .sort((a, b) => rarityIndex(b.rarity) - rarityIndex(a.rarity) || b.power - a.power || String(a.id).localeCompare(String(b.id)))
-      .map((it) => itemCard(it, { compact: true, actions: btn(`賣出 💰${bm.gearBuyback(it)}`, 'bmSellItem', { id: it.id }, { cls: 'btn-xs btn-primary', disabled: it.locked, title: it.locked ? '已上鎖' : '' }) })).join('');
+      .map((it) => gearRow(it, btn(`賣出 💰${bm.gearBuyback(it)}`, 'bmSellItem', { id: it.id }, { cls: 'btn-xs btn-primary', disabled: it.locked, title: it.locked ? '已上鎖' : '' }))).join('');
     return `${head}<p class="muted">收購倉庫裡的材料與裝備，越稀有回收比例越好。上鎖與穿戴中的裝備不會賣出。</p>
-      <h4>材料</h4><div class="grid">${sells || '<p class="muted">倉庫裡沒有可以回收的物資。</p>'}</div>
+      <h4>材料</h4><div class="bm-list">${sells || '<p class="muted">倉庫裡沒有可以回收的物資。</p>'}</div>
       <div class="row-between"><h4>裝備</h4>${btn('一鍵賣出劣質/一般', 'bmSellCommon', {}, { cls: 'btn-sm btn-ghost' })}</div>
-      <div class="grid">${gear || '<p class="muted">倉庫裡沒有裝備。</p>'}</div>`;
+      <div class="bm-list">${gear || '<p class="muted">倉庫裡沒有裝備。</p>'}</div>`;
   }
   const rows = bm.shelf(now).map((x) => {
     const afford = g.state.player.coins >= x.price;
     const mine = boughtIds.includes(x.id);
-    const soldTag = mine ? '<small class="pos block">✅ 你買了這件</small>' : x.soldTo ? `<small class="muted block">✅ 已被 ${escapeHtml(x.soldTo)} 買走</small>` : '';
+    const soldTag = mine ? '<span class="bm-tag mine">✅ 你買了</span>' : x.soldTo ? `<span class="bm-tag">已被 ${escapeHtml(String(x.soldTo).slice(0, 8))} 買走</span>` : '';
     const buyBtn = x.soldTo || mine ? '' : bought ? btn('本輪已購買', 'bmBuy', { id: x.id }, { cls: 'btn-xs', disabled: true })
       : btn(`💰${x.price} 購買`, 'bmBuy', { id: x.id }, { cls: 'btn-xs btn-primary', disabled: !afford || ui.bmBusy === x.id });
     // 已售出的裝備沒有購買鈕，把「已被買走」放進卡片內，避免掉到格子外面
-    if (x.kind === 'gear') return `<div class="${mine ? 'bm-mine' : x.soldTo ? 'sold-out' : ''}">${itemCard(x.item, { actions: x.soldTo || mine ? soldTag : buyBtn })}</div>`;
+    const cls = mine ? 'bm-mine' : x.soldTo ? 'sold-out' : '';
+    const right = x.soldTo || mine ? soldTag : buyBtn;
+    // v12.2.1：清單式一行、照原本的順序打散排列（不分類別）；裝備點一下展開完整能力
+    if (x.kind === 'gear') return gearRow(x.item, right, cls);
     const sp = SUPPLIES[x.key];
     const r = RARITIES[x.rarity];
-    return `<div class="card row-between ${mine ? 'bm-mine' : x.soldTo ? 'sold-out' : ''}"><div><b style="color:${r?.color || ''}">${sp.icon} ${sp.name} ×${x.qty}</b>
-      <small class="muted block">${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier)}${sp.heal ? `・回復 ${Math.round(sp.heal * 100)}%` : ''}・倉庫有 ${g.state.supplies?.[x.key] || 0}</small>${soldTag}</div>
-      ${buyBtn}</div>`;
+    return bmRow({
+      icon: sp.icon, name: `${sp.name} ×${x.qty}`, color: r?.color || '', cls,
+      sub: `${SUPPLY_CATS[sp.cat].name}・${'★'.repeat(sp.tier)}${sp.heal ? `・回復 ${Math.round(sp.heal * 100)}%` : ''}・倉庫 ${g.state.supplies?.[x.key] || 0}`,
+      right,
+    });
   }).join('');
-  return `${head}<div class="grid">${rows}</div>`;
+  return `${head}<div class="bm-list">${rows}</div>`;
 }
 
 const exNum = (v) => (Number.isInteger(v) ? v : v.toFixed(1));
@@ -187,6 +204,12 @@ function openSpecialBuy(ui) {
 export function blackMarketAction(ui, action, data) {
   const g = ui.game;
   const bm = g.blackMarket;
+  if (action === 'bmGearInfo') {
+    // 點裝備那一行（不是按鈕）：彈出完整能力
+    const it = bm.shelf(Date.now()).find((x) => x.kind === 'gear' && x.item.id === data.id)?.item || g.equipment.getItem(data.id);
+    if (it) ui.modal.open({ title: it.name, body: itemCard(it) });
+    return true;
+  }
   if (action === 'bmView') {
     ui.bmView = data.v;
     if (data.v === 'buy') bm.refresh().then(() => ui.refresh(true));

@@ -3129,7 +3129,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 出發時的 endAt 含回程時間；連續探索搜完就直接前往下一站，第二站很近又很小時可能在這段時間內也搜完，已在前往第三站
   const onQueue = next && ((next.poiId === pois[1].id && next.queue.length === 1) || (next.poiId === pois[2].id && next.queue.length === 0));
   assert(rep && onQueue, `完成後自動前往佇列中的下一個地點（${rep?.events.slice(-1)}）`);
-  assert(!rep || rep.xpBy?.length, '連續探索前往下一站的報告也顯示經驗');
+  // 這一站沒有拿到任何經驗（例如沒有戰鬥、搜索經驗為 0）時本來就不顯示
+  assert(!rep || rep.xpBy?.length || !(rep.xp > 0), `連續探索前往下一站的報告也顯示經驗（經驗 ${rep?.xp}）`);
   const { labLevelFor: llf } = await import('../src/config/research.js');
   assert(llf('s_queue', 1) === 4 && llf('s_queue', 3) === 10, '佇列科技依研究中心等級解鎖（最後一級需要 Lv10）');
 }
@@ -3822,7 +3823,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   e3.carried = { gained: { wood: Math.ceil(e3.cargo * CHAIN_RETURN_LOAD) + 1 }, items: [], blueprints: [], vehicles: [] };
   ex.update(e3.startAt + e3.travelMs + e3.searchMs + 1);
   // 背包一開始就很重時，搜索途中可能已經停止回家（甚至已經到家）；重點是沒有前往下一站
-  assert(!ex.list.some((e) => e.poiId === near[2].id) && (!ex.list.includes(e3) || e3.travelEvents.some((t) => t.includes('返回避難所卸貨')) || e3.cp?.stopped), '負重達 90% 時返回避難所（不前往下一站）');
+  // 只看這支隊伍（e3）：其他先前留下的隊伍可能剛好前往同一個地點
+  assert(!(ex.list.includes(e3) && e3.poiId === near[2].id) && (!ex.list.includes(e3) || e3.travelEvents.some((t) => t.includes('返回避難所卸貨')) || e3.cp?.stopped), `負重達 90% 時返回避難所（不前往下一站）（${ex.list.map((e) => `${e === e3 ? 'e3' : 'x'}:${e.poiId === near[2].id ? 'n2' : e.poiId === near[0].id ? 'n0' : '?'}:${e.recalled ? 'R' : ''}${e.defeated ? 'D' : ''}:${(e.travelEvents || []).slice(-2).join('|')}`).join(' ; ')}）`);
   if (ex.list.includes(e3)) ex.update(e3.endAt + 1);
   // 關閉開關：每個地點探索完都先回家
   heal();
@@ -5270,7 +5272,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 鎖定：外出中的小隊召回；鎖定後不能出發
   const b = ps[1];
   const poi = b.g.state.map.pois.find((p) => !b.g.shelter.baseAtPoi(p.id) && b.g.exploration.validate(p.id, [b.sv.id]).ok);
-  const trip = b.g.exploration.start(poi.id, [b.sv.id], 5, false, T.lock - 60000);
+  // 鎖定前 5 秒出發：確保鎖定時還在去程（太早出發的小地點可能已經在返程，返程中不能召回）
+  const trip = b.g.exploration.start(poi.id, [b.sv.id], 5, false, T.lock - 5000);
   assert(trip.ok, `報名的倖存者鎖定前可以外出（${trip.reason || ''}）`);
   for (const p of ps) { await p.g.shared.list('dg', 5); p.g.dungeon.update(T.lock + 1000); }
   assert(trip.exp.recalled, '17:50 鎖定時外出中的小隊自動召回');
@@ -5790,6 +5793,52 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     ammoKeys.forEach((k) => { const got = (gq.state.supplies?.[k] || 0) - (before[k] || 0); if (got > 0) { seen += 1; if (got < QS.ammoFloor(k)) bad += 1; } });
   }
   assert(bad === 0, `每日物資箱開出的彈藥都夠打兩場（開出 ${seen} 次，不足 ${bad} 次）`);
+}
+
+// ---- 149. v12.2.1 分頁從背景回來：先結算隊伍返程（含 19:30 自動回家），再補算屍潮 ----
+{
+  const gb = Game.newGame({ playerName: 'BG149', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gb.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gb.shelter.establish(gb.state.map.pois.find((p) => gb.shelter.canEstablish(p).ok));
+  const lead = gb.survivors.leader();
+  const poi = gb.state.map.pois.find((p) => !gb.shelter.baseAtPoi(p.id) && gb.exploration.start(p.id, [lead.id], 5, false, Date.now() - 3600e3, {}).ok);
+  const exp = gb.state.expeditions[0];
+  assert(poi && exp, '派出一支隊伍');
+  // 這支隊伍在背景期間已經回到家（行程結束時間已過），但遊戲還沒結算
+  exp.endAt = Date.now() - 60e3;
+  gb.state.lastTickAt = Date.now() - 10 * 60e3;
+  let outWhenSiege = null;
+  const realUpdate = gb.siege.update.bind(gb.siege);
+  gb.siege.update = (dt) => { if (outWhenSiege == null) outWhenSiege = gb.state.expeditions.length; return realUpdate(dt); };
+  gb.siegeCatchUp(5);
+  assert(outWhenSiege === 0 && lead.status === 'idle', `補算屍潮之前，已經回到家的隊伍先回到避難所（補算時外出隊伍 ${outWhenSiege}）`);
+}
+
+// ---- 150. 快速換裝：遠程與近戰各自比較（不互相影響） ----
+{
+  for (const ammo of [0, 67]) {
+    const gq = Game.newGame({ playerName: `QE150${ammo}`, classId: 'warrior', lat: 25, lon: 121 });
+    const sv = gq.survivors.leader(); sv.level = 40;
+    const mk = (type, level, rarity) => { const it = gq.equipment.generate({ level, type, rarity }); gq.equipment.addItem(it); return it; };
+    gq.equipment.items.filter((i) => i.slot === 'weapon' || i.slot === 'melee').forEach((i) => { Object.keys(sv.equipment).forEach((k) => { if (sv.equipment[k] === i.id) sv.equipment[k] = null; }); gq.equipment.removeItem(i.id); });
+    gq.state.supplies = { ...(gq.state.supplies || {}), ammo9: ammo, ammo556: ammo };
+    const pistol = mk('pistol', 9, 'common'); gq.equipment.equip(sv.id, pistol.id);
+    const knife = mk('melee', 60, 'legendary'); gq.equipment.equip(sv.id, knife.id);
+    const rifle = mk('rifle', 40, 'legendary');
+    const weakKnife = mk('melee', 5, 'poor');
+    gq.equipment.quickEquip(sv.id);
+    assert(sv.equipment.weapon === rifle.id && sv.equipment.melee === knife.id, `快速換裝：遠程換成較強的步槍、近戰保留較強的刀，互不影響（彈藥 ${ammo}）`);
+    void weakKnife;
+  }
+}
+
+// ---- 151. v12.2.1 超渡素質在保底～100% 之間重新分配 ----
+{
+  const { washQuality: WQ } = await import('../src/systems/RebirthSystem.js');
+  let atF = 0; let min = 100; let max = 0; const N = 20000;
+  for (let i = 0; i < N; i += 1) { const q = WQ(6); if (q === 6) atF += 1; min = Math.min(min, q); max = Math.max(max, q); }
+  assert(min >= 6 && max <= 100 && atF / N < 0.1, `超渡素質不低於保底、也不會大量停在保底（停在保底 ${(atF / N * 100).toFixed(1)}%）`);
+  assert(WQ(0, () => 0) === 0 && WQ(10, () => 0) === 10 && WQ(10, () => 0.9999999) === 100, '保底與上限正確');
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
