@@ -1705,7 +1705,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(r1.ok && Math.round(r1.purity) === 30, '淨化度累積');
   await B.shared.poll();
   assert(Math.round(B.infected.purity(s, t0)) === 30, '其他玩家（包含之前離線的）同步看到淨化度');
-  assert(Math.abs(B.infected.purity(s, t0 + 600000) - (30 - INFECTED.decayPerHour / 6)) < 0.01 || B.infected.siteDay(t0 + 600000) !== B.infected.siteDay(t0), '未清除時淨化度緩慢回復感染');
+  assert(Math.abs(B.infected.purity(s, t0 + 600000) - (30 - INFECTED.decayPerHour / 6)) < 0.01, '未清除時淨化度緩慢回復感染');
+  {
+    const h3 = t0 + 3 * 3600000; // 經過好幾個遊戲日（每天 12:00）
+    assert(Math.abs(B.infected.purity(s, h3) - (30 - INFECTED.decayPerHour * 3)) < 0.01, `v13：淨化度不會每天 12:00 歸零，只會緩慢回復（${B.infected.purity(s, h3).toFixed(1)}%）`);
+  }
   // 單一隊伍很難清除
   const one = A.infected.battle(A.infected.get(s.id, t0), A.state.survivors, [], t0);
   assert(!one.result.victory && one.gain < 40, `單人隊伍無法一次清除（淨化 +${one.gain.toFixed(1)}%）`);
