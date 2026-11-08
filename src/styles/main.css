@@ -1645,3 +1645,24 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .card.rc-broadcast small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .card.rc-full { line-height: 1.4; }
 }
+/* v12.2.1 黑市清單式排版 */
+.bm-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 10px; }
+@media (max-width: 1100px) { .bm-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 899px) { .bm-list { grid-template-columns: minmax(0, 1fr); } }
+.bm-row { display: flex; align-items: center; gap: 8px; background: var(--card2, #1f241a); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; min-height: 38px; min-width: 0; }
+.bm-row.bm-mine { border-color: #66bb6a; background: #1f2e1a; }
+.bm-row.sold-out { opacity: .55; }
+.bm-ic { flex: none; width: 20px; text-align: center; font-size: 16px; }
+.bm-nm { flex: 1; min-width: 0; line-height: 1.25; }
+.bm-nm b { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bm-nm small { display: block; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bm-act { flex: none; display: flex; gap: 4px; align-items: center; }
+.bm-tag { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.bm-tag.mine { color: #81c784; }
+.bm-gear { min-width: 0; }
+.bm-gear > summary { list-style: none; cursor: pointer; }
+.bm-gear > summary::-webkit-details-marker { display: none; }
+.bm-gear[open] > summary .bm-row { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.bm-gear > .item-card, .bm-gear > .card { margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
+.bm-gear.bm-mine .bm-row { border-color: #66bb6a; background: #1f2e1a; }
+.bm-gear.sold-out .bm-row { opacity: .55; }
