@@ -1666,3 +1666,6 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .bm-gear > .item-card, .bm-gear > .card { margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
 .bm-gear.bm-mine .bm-row { border-color: #66bb6a; background: #1f2e1a; }
 .bm-gear.sold-out .bm-row { opacity: .55; }
+/* v12.2.1 地圖左上角集結資訊：淡藍色呼吸光 */
+.feed-chip.rally { border-color: #81d4fa; background: #0d2f45e6; color: #e1f5fe; animation: rally-glow 2.2s ease-in-out infinite; }
+@keyframes rally-glow { 0%, 100% { box-shadow: 0 0 3px #81d4fa55; } 50% { box-shadow: 0 0 12px #81d4facc, 0 0 2px #b3e5fc; } }
