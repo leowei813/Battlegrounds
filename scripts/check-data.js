@@ -5814,6 +5814,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(outWhenSiege === 0 && lead.status === 'idle', `補算屍潮之前，已經回到家的隊伍先回到避難所（補算時外出隊伍 ${outWhenSiege}）`);
 }
 
+// ---- 150. 快速換裝：遠程與近戰各自比較（不互相影響） ----
+{
+  for (const ammo of [0, 67]) {
+    const gq = Game.newGame({ playerName: `QE150${ammo}`, classId: 'warrior', lat: 25, lon: 121 });
+    const sv = gq.survivors.leader(); sv.level = 40;
+    const mk = (type, level, rarity) => { const it = gq.equipment.generate({ level, type, rarity }); gq.equipment.addItem(it); return it; };
+    gq.equipment.items.filter((i) => i.slot === 'weapon' || i.slot === 'melee').forEach((i) => { Object.keys(sv.equipment).forEach((k) => { if (sv.equipment[k] === i.id) sv.equipment[k] = null; }); gq.equipment.removeItem(i.id); });
+    gq.state.supplies = { ...(gq.state.supplies || {}), ammo9: ammo, ammo556: ammo };
+    const pistol = mk('pistol', 9, 'common'); gq.equipment.equip(sv.id, pistol.id);
+    const knife = mk('melee', 60, 'legendary'); gq.equipment.equip(sv.id, knife.id);
+    const rifle = mk('rifle', 40, 'legendary');
+    const weakKnife = mk('melee', 5, 'poor');
+    gq.equipment.quickEquip(sv.id);
+    assert(sv.equipment.weapon === rifle.id && sv.equipment.melee === knife.id, `快速換裝：遠程換成較強的步槍、近戰保留較強的刀，互不影響（彈藥 ${ammo}）`);
+    void weakKnife;
+  }
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
