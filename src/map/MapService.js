@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ALL_ENEMIES } from '../config/enemies.js';
-import { WORLD_BOUNDS } from '../config/world.js';
+import { WORLD_BOUNDS, inWorld } from '../config/world.js';
 import { BASE_SIZES } from '../config/civilization.js';
 import { bus, EVT } from '../core/EventBus.js';
 import { escapeHtml } from '../utils/dom.js';
@@ -47,7 +47,7 @@ export class MapService {
     }
     // v13：固定世界地圖，只能在範圍附近移動
     const b = WORLD_BOUNDS;
-    const pad = 0.006;
+    const pad = 0.0025;
     this.map = L.map(this.container, {
       zoomControl: true, attributionControl: true, minZoom: 14,
       maxBounds: [[b.s - pad, b.w - pad], [b.n + pad, b.e + pad]], maxBoundsViscosity: 1,
@@ -56,15 +56,17 @@ export class MapService {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
       className: 'base-tiles',
+      // v13：只載入固定地圖範圍內的底圖
+      bounds: [[b.s, b.w], [b.n, b.e]],
     }).addTo(this.map);
     // 區域危險度底色
     this.zoneLayer = new ZoneLayer(savedZoneMode()).addTo(this.map);
     this.applyZoneMode(savedZoneMode());
-    // 範圍外變暗（不能前往），範圍邊框
+    // 範圍外完全遮住（不顯示、不載入），範圍邊框
     const far = [[b.s - 1, b.w - 1], [b.s - 1, b.e + 1], [b.n + 1, b.e + 1], [b.n + 1, b.w - 1]];
     const box = [[b.s, b.w], [b.s, b.e], [b.n, b.e], [b.n, b.w]];
     L.polygon([far, box], {
-      stroke: false, fillColor: '#000', fillOpacity: 0.6, interactive: false, className: 'world-mask',
+      stroke: false, fillColor: '#0b1418', fillOpacity: 1, interactive: false, className: 'world-mask',
     }).addTo(this.map);
     L.rectangle([[b.s, b.w], [b.n, b.e]], {
       color: '#ff5252', weight: 3, fill: false, interactive: false, className: 'world-edge',
@@ -262,7 +264,8 @@ export class MapService {
     this.layers.others.clearLayers();
     const COLORS = { hostile: '#e53935', friend: '#43a047', neutral: '#26c6da' };
     // v12：前哨站已移除；還沒更新的玩家的舊前哨站不顯示
-    players.forEach((p) => p.bases.filter((b) => b.primary).forEach((b) => {
+    // v13：只顯示固定地圖範圍內的據點（範圍外的玩家上線後會搬進範圍）
+    players.forEach((p) => p.bases.filter((b) => b.primary && inWorld(b.lat, b.lon)).forEach((b) => {
       const rel = relationOf(p.id);
       // 警戒範圍：敵對紅、友好綠、中立青
       L.circle([b.lat, b.lon], {
