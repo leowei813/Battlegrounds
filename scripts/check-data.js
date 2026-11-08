@@ -5792,6 +5792,25 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(bad === 0, `每日物資箱開出的彈藥都夠打兩場（開出 ${seen} 次，不足 ${bad} 次）`);
 }
 
+// ---- 149. v12.2.1 分頁從背景回來：先結算隊伍返程（含 19:30 自動回家），再補算屍潮 ----
+{
+  const gb = Game.newGame({ playerName: 'BG149', classId: 'warrior', lat: 25.0339, lon: 121.5645 });
+  gb.state.map.pois = fillPois([], 25.0339, 121.5645);
+  gb.shelter.establish(gb.state.map.pois.find((p) => gb.shelter.canEstablish(p).ok));
+  const lead = gb.survivors.leader();
+  const poi = gb.state.map.pois.find((p) => !gb.shelter.baseAtPoi(p.id) && gb.exploration.start(p.id, [lead.id], 5, false, Date.now() - 3600e3, {}).ok);
+  const exp = gb.state.expeditions[0];
+  assert(poi && exp, '派出一支隊伍');
+  // 這支隊伍在背景期間已經回到家（行程結束時間已過），但遊戲還沒結算
+  exp.endAt = Date.now() - 60e3;
+  gb.state.lastTickAt = Date.now() - 10 * 60e3;
+  let outWhenSiege = null;
+  const realUpdate = gb.siege.update.bind(gb.siege);
+  gb.siege.update = (dt) => { if (outWhenSiege == null) outWhenSiege = gb.state.expeditions.length; return realUpdate(dt); };
+  gb.siegeCatchUp(5);
+  assert(outWhenSiege === 0 && lead.status === 'idle', `補算屍潮之前，已經回到家的隊伍先回到避難所（補算時外出隊伍 ${outWhenSiege}）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

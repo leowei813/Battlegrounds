@@ -203,7 +203,7 @@ export class Game {
       last = t;
       const dt = Math.min(behind, SIEGE_CATCHUP_STEP);
       behind -= dt;
-      if (dt > 0) this.siege.update(dt);
+      if (dt > 0) this.siegeCatchUp(dt);
     };
     const loop = (t) => {
       pump(t);
@@ -214,6 +214,16 @@ export class Game {
     this.timers.push(setInterval(() => { if (document.hidden) pump(); }, 1000));
     // 回到前景時立即補算
     document.addEventListener('visibilitychange', () => { if (!document.hidden) pump(); });
+  }
+
+  /**
+   * 推進屍潮（秒）。分頁從背景回來時，先把遊戲時間補算到現在（19:30 自動回家、隊伍返程到家、
+   * 施工與研究），再補算屍潮——否則回到前景的第一瞬間會用「隊伍還在外面」的狀態一口氣補算整晚屍潮，
+   * 明明已經回到家的人沒有參與防守。
+   */
+  siegeCatchUp(dt) {
+    if (Date.now() - (this.state.lastTickAt || 0) > 1500) this.tick();
+    this.siege.update(dt);
   }
 
   /** 每秒更新 */
