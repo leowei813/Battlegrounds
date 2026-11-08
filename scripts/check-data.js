@@ -3129,7 +3129,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 出發時的 endAt 含回程時間；連續探索搜完就直接前往下一站，第二站很近又很小時可能在這段時間內也搜完，已在前往第三站
   const onQueue = next && ((next.poiId === pois[1].id && next.queue.length === 1) || (next.poiId === pois[2].id && next.queue.length === 0));
   assert(rep && onQueue, `完成後自動前往佇列中的下一個地點（${rep?.events.slice(-1)}）`);
-  assert(!rep || rep.xpBy?.length, '連續探索前往下一站的報告也顯示經驗');
+  // 這一站沒有拿到任何經驗（例如沒有戰鬥、搜索經驗為 0）時本來就不顯示
+  assert(!rep || rep.xpBy?.length || !(rep.xp > 0), `連續探索前往下一站的報告也顯示經驗（經驗 ${rep?.xp}）`);
   const { labLevelFor: llf } = await import('../src/config/research.js');
   assert(llf('s_queue', 1) === 4 && llf('s_queue', 3) === 10, '佇列科技依研究中心等級解鎖（最後一級需要 Lv10）');
 }
