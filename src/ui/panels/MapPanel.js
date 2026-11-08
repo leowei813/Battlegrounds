@@ -210,6 +210,7 @@ export class MapPanel {
             vehicles: true,
             distanceM: g.rally.distanceTo(d.target),
             confirmLabel: '參加',
+            footNote: d.home ? (ids, vids) => `🚶 前往集結點約 <b>${formatDuration(g.rally.gatherEstimate(d, ids, vids))}</b>${vids.length ? '（含載具）' : ''}` : null,
             onConfirm: (ids, _dur, _auto, vids) => {
               g.rally.join(id, ids, vids).then((r) => { this.ui.result(r); m.update(this.rallyBody(id)); });
               return { ok: true };

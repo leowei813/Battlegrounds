@@ -142,7 +142,7 @@ export function openTeamPicker(ui, opts) {
       ${vehicles}
       ${opts.routeOption ? '<small class="muted block">🛡️ 路線會自動繞開 NPC、敵對與中立玩家據點的警戒範圍；友好玩家的範圍可以直接通過。</small>' : ''}
       ${durs}
-      <div class="pick-foot"><div class="pk-sum">${footHtml(game, opts.trip, ids, vids, avoidHostile, power, squad)}</div>
+      <div class="pick-foot"><div class="pk-sum">${footHtml(game, opts.trip, ids, vids, avoidHostile, power, squad)}${ids.length && opts.footNote ? `<br>${opts.footNote(ids, vids)}` : ''}</div>
         ${opts.quickQueue ? (() => { const on = game.exploration.quickQueueOn(); return `<button class="pk-qq ${on ? 'on' : ''}" data-action="qqToggle" title="出發時自動把附近的探索點加入佇列（最多 ${game.exploration.queueLimit()} 個）">⚡ 快速佇列<small>${on ? `開・最多 ${game.exploration.queueLimit()} 個` : '關'}</small></button>`; })() : ''}
         <button class="btn btn-primary" data-action="confirm" ${ids.length || squadId ? '' : 'disabled'}>${squadId ? '加入小隊佇列' : opts.confirmLabel}</button></div>`;
   };

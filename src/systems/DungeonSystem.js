@@ -581,6 +581,14 @@ export class DungeonSystem {
       }
       const t = DungeonSystem.times(rec.day0);
       const sv = g.survivors.get(rec.svId);
+      // 報名的倖存者已經不在（驅逐、死亡）：截止前自動取消報名，空出名額也可以改派其他人
+      if (!sv && !rec.cancelled && now < t.close && !rec.dropping) {
+        rec.dropping = true;
+        this.cancel(rec.dg, now).then((r) => {
+          if (r?.ok) g.log(`🕳️ ${rec.svName} 已不在避難所，自動取消「${DUNGEONS[rec.dg].name}」的報名`, 'info');
+        }).finally(() => { rec.dropping = false; });
+        return;
+      }
       // 報名期間：倖存者的能力或戰力有變動（換裝備、升級…）就更新快照（最多每 15 秒寫入一次）
       if (now < t.lock && sv && now - (rec.checkedAt || 0) >= 1000) {
         rec.checkedAt = now;

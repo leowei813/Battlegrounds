@@ -5235,6 +5235,16 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const extra = mkP('DGX', 'medic');
   assert((await extra.g.dungeon.signup('lab', extra.sv.id, at + 50)).ok && (await extra.g.dungeon.cancel('lab', at + 60)).ok && !extra.g.dungeon.record('lab', at + 60), '截止前可以取消報名');
   assert(!(await a.g.dungeon.cancel('lab', T.close + 1)).ok, '截止後不能取消報名');
+  {
+    // v12.3.1：報名的倖存者被驅逐 → 截止前自動取消報名，可以改派其他人
+    assert((await extra.g.dungeon.signup('lab', extra.sv.id, at + 70)).ok, '重新報名');
+    extra.sv.isLeader = false;
+    extra.g.survivors.dismiss(extra.sv.id);
+    extra.g.dungeon.update(at + 80);
+    await new Promise((r) => setTimeout(r, 20));
+    const listed = (extra.g.dungeon.data('lab', DungeonSystem.dayKey(at)).list || []).some((e) => e.p === extra.g.dungeon.myId());
+    assert(!extra.g.dungeon.record('lab', at + 90) && !listed, '報名的倖存者被驅逐後，自動取消報名（名單也移除）');
+  }
   // 同時搶最後一個名額：只有一個人成功
   {
     const s2 = new MemoryObjects();
@@ -5839,6 +5849,19 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   for (let i = 0; i < N; i += 1) { const q = WQ(6); if (q === 6) atF += 1; min = Math.min(min, q); max = Math.max(max, q); }
   assert(min >= 6 && max <= 100 && atF / N < 0.1, `超渡素質不低於保底、也不會大量停在保底（停在保底 ${(atF / N * 100).toFixed(1)}%）`);
   assert(WQ(0, () => 0) === 0 && WQ(10, () => 0) === 10 && WQ(10, () => 0.9999999) === 100, '保底與上限正確');
+}
+
+// ---- 152. v12.3.1 參加集結的「前往集結點」預估依載具速度計算 ----
+{
+  const gv = Game.newGame({ playerName: 'RV152', classId: 'warrior', lat: 25, lon: 121 });
+  gv.state.map.pois = fillPois([], 25, 121);
+  gv.shelter.establish(gv.state.map.pois.find((p) => gv.shelter.canEstablish(p).ok));
+  const sh = gv.shelter.primary();
+  const d = { home: { lat: sh.lat + 0.02, lon: sh.lon } };
+  const walk = gv.rally.gatherEstimate(d, [gv.survivors.leader().id], []);
+  const car = gv.vehicles.create('car'); gv.vehicles.add(car);
+  const fast = car ? gv.rally.gatherEstimate(d, [gv.survivors.leader().id], [car.id]) : walk;
+  assert(walk > 0 && (!car || fast < walk), `前往集結點預估：步行 ${Math.round(walk / 1000)} 秒，載具 ${Math.round(fast / 1000)} 秒`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
