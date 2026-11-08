@@ -34,7 +34,7 @@ const TABS = [
   { id: 'shelter', icon: '🏠', name: '避難所' },
   { id: 'survivors', icon: '👥', name: '倖存者' },
   { id: 'market', icon: '🏪', name: '市場' },
-  { id: 'research', icon: '🔬', name: '研究', more: true },
+  { id: 'research', icon: '🔬', name: '研究' },
   { id: 'inventory', icon: '🛠️', name: '製作', more: true },
   { id: 'quests', icon: '📜', name: '任務', more: true },
   { id: 'settings', icon: '⚙️', name: '設定', more: true },
@@ -485,7 +485,7 @@ export class UIManager {
         return;
       }
       const n = counts[key] || 0;
-      const text = key === 'research' || (key === 'more' && !n) ? rs?.text : null;
+      const text = key === 'research' || (key === 'more' && !n && MORE_TABS.includes('research')) ? rs?.text : null;
       el.textContent = text || (n ? String(n) : '');
       el.classList.toggle('on', !!text || n > 0);
       el.classList.toggle('badge-info', !!text && rs.kind === 'busy');

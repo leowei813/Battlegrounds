@@ -1620,3 +1620,6 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .hud-res { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px 4px; overflow: visible; width: 100%; }
   .hud-res .res { justify-content: center; font-size: 12px; padding: 1px 4px; min-width: 0; }
 }
+/* v12.2 手機版底部選單 6 格（地圖、避難所、倖存者、市場、研究、更多） */
+@media (max-width: 899px) { .nav-btn { min-width: 0; padding-left: 2px; padding-right: 2px; } .nav-label { white-space: nowrap; } }
+@media (max-width: 360px) { .nav-label { font-size: 10px; } .nav-icon { font-size: 19px; } }
