@@ -164,7 +164,7 @@ export class QuestSystem {
       if (kind === 'supply') {
         const k = weightedPick(weights);
         const sp = SUPPLIES[k];
-        let amount = Math.max(1, Math.round((sp.cat === 'ammo' ? 12 : sp.cat === 'med' ? 1.5 : 5) * (6 - sp.tier) / 3 * randFloat(0.6, 1.4)));
+        let amount = Math.max(1, Math.round((sp.cat === 'ammo' ? 12 : sp.cat === 'med' ? 1.5 : 5) * (6 - sp.tier) / 3 * randFloat(0.6, 1.4) * (DAILY_CHEST.supplyMul || 1)));
         // 彈藥至少夠用這種彈藥最耗彈的武器打兩場戰鬥
         if (sp.cat === 'ammo') amount = Math.max(amount, QuestSystem.ammoFloor(k));
         supplies[k] = (supplies[k] || 0) + amount;

@@ -63,10 +63,12 @@ export const DAILY_COUNT = 4;
 
 /**
  * 每日物資箱：當天全部每日任務都領取後可開啟一次。
- * 開出 3～5 項隨機物品；材料越高階、裝備品級越高，出現機率越低。
+ * 開出 4～6 項隨機物品；材料越高階、裝備品級越高，出現機率越低。
  */
 export const DAILY_CHEST = {
-  rolls: [3, 5],
+  rolls: [4, 6],
+  /** 材料數量倍率（v12.2） */
+  supplyMul: 1.2,
   kinds: { supply: 70, gear: 24, blueprint: 6 },
   /** 裝備品級權重（越高越稀有） */
   gearRarity: {
