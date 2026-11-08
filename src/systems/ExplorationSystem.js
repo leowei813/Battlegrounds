@@ -934,6 +934,8 @@ export class ExplorationSystem {
             : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
             : exp.kind === 'infect' ? this.game.infected.resolveAttack(exp)
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp)));
+        // 召回（手動召回、自動回家、集結取消走回家）：標記為召回，不是探索失敗
+        if (exp.recalled && !report.success && !exp.defeated) report.recalled = true;
         report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
         this.tagZone(report, exp);
         this.attachXp(report, exp);
@@ -989,7 +991,7 @@ export class ExplorationSystem {
       // 撤退的報告已經記錄過，不重複加入
       st.reports = [...reports.filter((r) => !r.retreated).reverse(), ...(st.reports || [])].slice(0, 20);
       if (!silent) {
-        reports.forEach((r) => this.game.toast(`${r.success ? '✅' : '⚠️'} ${r.poiName} 探索${r.success ? '完成' : '受挫'}`, r.success ? 'success' : 'danger'));
+        reports.forEach((r) => this.game.toast(r.success ? `✅ ${r.poiName} 探索完成` : r.recalled ? `🏠 ${r.poiName} 隊伍已召回` : `⚠️ ${r.poiName} 探索受挫`, r.success ? 'success' : r.recalled ? 'info' : 'danger'));
       }
       this.game.bus.emit('expedition:done', reports);
     }

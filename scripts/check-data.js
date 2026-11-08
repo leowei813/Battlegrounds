@@ -842,7 +842,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const ex = gs.exploration.start(huge.id, ['leader'], 60);
   assert(ex.ok && ex.exp.durationMin === gs.exploration.searchMinutes(huge), '派遣探索不再選擇時長，由地點決定');
   gs.exploration.recall(ex.exp.id);
-  gs.exploration.update(Date.now() + 5000, { silent: true });
+  {
+    const toasts = [];
+    const tb = gs.toast; gs.toast = (m) => toasts.push(m);
+    const reps = gs.exploration.update(Date.now() + 5000);
+    gs.toast = tb;
+    const rc = reps[0];
+    assert(rc && rc.recalled && !rc.success && toasts.some((m) => m.includes('隊伍已召回')) && !toasts.some((m) => m.includes('受挫')), `召回的隊伍提示「隊伍已召回」，不是「受挫」（${toasts.join(' / ')}）`);
+  }
 
   // 個人背包與倉庫
   gs.state.resources.food = 500;
