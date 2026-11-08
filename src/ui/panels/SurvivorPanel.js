@@ -134,7 +134,7 @@ export class SurvivorPanel {
       `${btn('✅ 接納', 'accept', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full, title: full ? g.survivors.fullReason() : '' })}${btn('拒絕', 'reject', { id: c.id }, { cls: 'btn-sm btn-ghost' })}${stay(c.leaveAt)}`)).join('');
     const offer = (st.recruitOffer || []).map((c) => this.candidateCard(c,
       `${btn(`✅ 雇用 💰${g.survivors.hireCost(c).coins}`, 'pick', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full, title: full ? g.survivors.fullReason() : '' })}${stay(st.recruitOfferUntil)}`)).join('');
-    const fullNote = full ? `<div class="card warn">🛏️ 人數已滿：${escapeHtml(g.survivors.fullReason())}。候選人會停留 1 小時，期間擴充宿舍或空出位置就能雇用。</div>` : '';
+    const fullNote = full ? `<div class="card warn rc-full">🛏️ 人數已滿：${escapeHtml(g.survivors.fullReason())}。候選人會停留 1 小時，期間擴充宿舍或空出位置就能雇用。</div>` : '';
     const cost = g.survivors.currentRecruitCost();
     const board = (st.recruitBoard?.list || []).map((c) => this.candidateCard(c,
       btn(`✅ 雇用 💰${g.survivors.hireCost(c).coins}`, 'hire', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full }))).join('');
@@ -152,7 +152,7 @@ export class SurvivorPanel {
     return `<div class="sv-pane-head odds-anchor">${btn('‹ 返回', 'svBack', {}, { cls: 'btn-sm sv-back' })}<h3>📻 招募倖存者</h3><button class="odds-q ${this.showOdds ? 'on' : ''}" data-action="oddsToggle" title="招募品級機率" aria-label="招募品級機率說明">?</button>${oddsPop}</div>
       ${fullNote}
       ${offer ? `<h4>📻 招募候選人（三選一）</h4><div class="grid cd-list">${offer}</div><div class="btn-row">${btn('放棄此次招募（不退費）', 'abandon', {}, { cls: 'btn-ghost btn-sm' })}</div>` : `
-      <div class="card row-between">
+      <div class="card row-between rc-broadcast">
         <div><b>📻 廣播招募</b><small class="muted block">支付廣播費用後出現 3 位隨機職業與品級的倖存者，會停留 1 小時；選擇後還要支付雇用費，也可以放棄（廣播費用不退還）。</small><div class="costs">${costHtml(st, cost)}</div></div>
         ${btn('招募', 'recruit', {}, { cls: 'btn-primary' })}
       </div>`}

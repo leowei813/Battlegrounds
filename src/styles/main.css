@@ -1623,3 +1623,25 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 /* v12.2 手機版底部選單 6 格（地圖、避難所、倖存者、市場、研究、更多） */
 @media (max-width: 899px) { .nav-btn { min-width: 0; padding-left: 2px; padding-right: 2px; } .nav-label { white-space: nowrap; } }
 @media (max-width: 360px) { .nav-label { font-size: 10px; } .nav-icon { font-size: 19px; } }
+/* v12.2.1 手機版招募頁上方（返回、標題、人數已滿、廣播招募）縮小 */
+@media (max-width: 899px) {
+  .sv-pane-head { gap: 8px; margin-bottom: 6px; }
+  .sv-pane-head .sv-back { font-size: 13px; padding: 4px 10px; min-height: 0; }
+  .sv-pane-head h3 { font-size: 16px; margin: 0; }
+  .sv-pane-head .odds-q { width: 24px; height: 24px; font-size: 13px; }
+  .card.rc-full { font-size: 12px; padding: 6px 10px; margin-bottom: 6px; }
+  .card.rc-broadcast { padding: 8px 10px; gap: 8px; align-items: center; }
+  .card.rc-broadcast b { font-size: 14px; }
+  .card.rc-broadcast small { font-size: 11px; line-height: 1.4; }
+  .card.rc-broadcast .costs { margin-top: 2px; }
+  .card.rc-broadcast .costs > * { font-size: 12px; }
+  .card.rc-broadcast .btn { font-size: 13px; padding: 6px 12px; min-height: 0; flex: none; }
+  .sv-pane h4, .recruit-pane h4 { font-size: 13px; margin: 10px 0 6px; }
+}
+@media (max-width: 899px) {
+  .sv-pane-head > h3 { font-size: 14px !important; }
+  .card.rc-broadcast { flex-wrap: nowrap !important; }
+  .card.rc-broadcast > div { flex: 1 1 auto; min-width: 0; }
+  .card.rc-broadcast small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card.rc-full { line-height: 1.4; }
+}
