@@ -71,15 +71,37 @@ export class RallySystem {
     const mine = new Set(this.trips().map((e) => e.rallyId));
     return this.game.shared.all('rally').map((o) => ({ id: o.id, ...o.data }))
       .filter((d) => d.status === 'gathering' && d.owner !== me && !mine.has(d.id) && now < d.departAt
-        && t.relation(d.owner) === 'friend' && !(d.teams || []).some((x) => x.player === me));
+        && t.relation(d.owner) === 'friend' && !(d.teams || []).some((x) => x.player === me) && !this.targetGone(d.target, now));
   }
 
   /** 目標（NPC 據點或重度感染據點） */
   target(t) {
     const g = this.game;
+    if (this.targetGone(t)) return null;
     if (t.kind === 'npc') return g.npcs.get(t.id) || g.npcs.byIdent?.(t.ident) || null;
     if (t.kind === 'inf') return g.infected.get(t.id) || g.infected.byId?.(t.id) || null;
     return null;
+  }
+
+  /**
+   * 目標是否已經被攻陷／消滅（看共用資料，自己的地圖還沒更新時也能判斷）。
+   * 用於：不能對已攻陷的目標發起或參加集結；集結途中目標被別人攻陷時取消集結。
+   */
+  targetGone(t, now = Date.now()) {
+    const g = this.game;
+    if (!t) return true;
+    if (t.kind === 'npc') {
+      if (g.npcs.get(t.id)?.gone) return true;
+      if (!t.ident) return false;
+      const [i, j, slot, gen, dc] = String(t.ident).split(':');
+      const d = g.shared?.get?.('npc', `${i}:${j}:${slot}`);
+      return !!(d && String(d.gen) === gen && (d.dc || 0) > (Number(dc) || 0) && d.destroyed && now < d.destroyed.respawnAt);
+    }
+    if (t.kind === 'inf') {
+      const m = /^inf_(-?\d+)_(-?\d+)$/.exec(String(t.id));
+      return !!(m && g.infected.cleared({ cell: `${m[1]}:${m[2]}` }, now));
+    }
+    return false;
   }
 
   /** 讓探索系統把集結目標當成目的地 */
@@ -199,7 +221,7 @@ export class RallySystem {
     if (g.territory.relation(d0.owner) !== 'friend') return { ok: false, reason: '只能參加友好玩家的集結' };
     if ((d0.teams || []).length >= d0.maxTeams) return { ok: false, reason: '集結隊伍已滿' };
     if (Date.now() >= d0.departAt) return { ok: false, reason: '集結倒數已經結束，不能再參加' };
-    if (!this.target(d0.target) && d0.target.kind === 'npc' && !d0.target.ident) return { ok: false, reason: '目標已經不在了' };
+    if (this.targetGone(d0.target) || (!this.target(d0.target) && d0.target.kind === 'npc' && !d0.target.ident)) return { ok: false, reason: '目標已經被攻陷或消滅了' };
     const dep = this.depart(rallyId, d0.target, memberIds, vehicleIds, d0.home || null);
     if (!dep.ok) return dep;
     const me = this.myId();
@@ -434,6 +456,13 @@ export class RallySystem {
     // 剛加入時共用資料可能還是舊的（名單裡還沒有自己）：給一段緩衝時間，避免誤判成被移出而回家
     const notListed = d.status === 'gathering' && !(d.teams || []).some((x) => x.player === this.myId());
     if (notListed && now - (exp.rallyJoinedAt || 0) < RALLY_JOIN_GRACE_MS) return;
+    // 集結途中目標已被攻陷（例如另一個集結先打下來）：取消，隊伍直接回家
+    // （開打時間之後不檢查：可能就是這個集結自己打下來的，要等結果）
+    if ((d.status === 'gathering' || (d.status === 'departed' && now < (d.fightAt || 0))) && this.targetGone(d.target, now)) {
+      g.log(`🚩 集結目標「${d.target?.name}」已經被攻陷，集結取消，隊員回到避難所`, 'info');
+      this.walkHome(exp, now, '目標已被攻陷，集結取消');
+      return;
+    }
     if (d.status === 'cancelled' || notListed) {
       g.log(`🚩 集結「${d.target?.name}」已取消，隊員回到避難所`, 'info');
       this.walkHome(exp, now);

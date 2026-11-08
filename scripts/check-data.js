@@ -1970,6 +1970,31 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     void key;
     await A.rally.leave(s3.id);
   }
+  // 目標已被攻陷：不能再發起；集結途中目標被另一個集結攻陷時，隊伍取消並回家
+  {
+    A.survivors.setHp(lead, 99999);
+    B.survivors.leader().severe = false;
+    const again = await A.rally.start(target, 5, [lead.id]);
+    assert(!again.ok, `已被攻陷的目標不能再發起集結（${again.reason}）`);
+    const s5 = await A.rally.start(t2, 10, [lead.id]);
+    await B.shared.poll();
+    const j5 = await B.rally.join(s5.id, [B.survivors.leader().id]);
+    assert(s5.ok && j5.ok, `集結 5 開始（${s5.reason || j5.reason || ''}）`);
+    const nB = B.npcs.byIdent(n2.ident);
+    B.npcs.destroy(nB || n2);
+    await B.shared.flush?.();
+    await A.shared.poll();
+    assert(A.rally.targetGone(t2), '別人攻陷後，從共用資料就能知道目標已不在');
+    await A.rally.step(A.rally.trips()[0], Date.now() + 1000);
+    await B.rally.step(B.rally.trips()[0], Date.now() + 1000);
+    const ea5 = A.state.expeditions.find((e) => e.rallyId === s5.id);
+    const eb5 = B.state.expeditions.find((e) => e.rallyId === s5.id);
+    assert((!ea5 || ea5.recalled) && (!eb5 || eb5.recalled), '集結途中目標被攻陷：發起人與參加者的隊伍都取消回家');
+    const C0 = A.rally.invites().some((d) => d.id === s5.id);
+    assert(!C0, '目標已被攻陷的集結不會出現在邀請裡');
+    A.state.expeditions = A.state.expeditions.filter((e) => e.rallyId !== s5.id);
+    B.state.expeditions = B.state.expeditions.filter((e) => e.rallyId !== s5.id);
+  }
 }
 
 // ---- 25g. v9.0.1：帶不走的物資留在建築裡，重複探索不會越變越多 ----
