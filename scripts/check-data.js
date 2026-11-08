@@ -5832,6 +5832,15 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   }
 }
 
+// ---- 151. v12.2.1 超渡素質在保底～100% 之間重新分配 ----
+{
+  const { washQuality: WQ } = await import('../src/systems/RebirthSystem.js');
+  let atF = 0; let min = 100; let max = 0; const N = 20000;
+  for (let i = 0; i < N; i += 1) { const q = WQ(6); if (q === 6) atF += 1; min = Math.min(min, q); max = Math.max(max, q); }
+  assert(min >= 6 && max <= 100 && atF / N < 0.1, `超渡素質不低於保底、也不會大量停在保底（停在保底 ${(atF / N * 100).toFixed(1)}%）`);
+  assert(WQ(0, () => 0) === 0 && WQ(10, () => 0) === 10 && WQ(10, () => 0.9999999) === 100, '保底與上限正確');
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');

@@ -1,11 +1,20 @@
 import { REBIRTH, LOCK_ITEM, twDay } from '../config/rebirth.js';
-import { QUALITY_KEYS, QUALITY_NAMES, rollQuality } from '../config/survivors.js';
+import { QUALITY_KEYS, QUALITY_NAMES } from '../config/survivors.js';
 import { chance } from '../utils/math.js';
 
 /**
  * 🧬 脫胎換骨還你漂漂重生器：花金幣重新洗鍊倖存者素質；可用「就是要鎖你」鎖住素質。
  * 洗鍊結果先放在 pending，玩家選「快樂重生」才套用，「還你原形」或關閉視窗則維持原本（費用不退）。
  */
+/**
+ * 超渡素質（v12.2.1）：在「保底～100%」之間重新隨機（與招募相同的偏低分佈），
+ * 不再把低於保底的直接拉到保底（避免很多項都停在同一個數字）。
+ */
+export function washQuality(floor, rnd = Math.random) {
+  const fl = Math.max(0, Math.min(100, floor || 0));
+  return Math.min(100, fl + Math.floor((100 - fl + 1) * rnd() ** 1.6));
+}
+
 export class RebirthSystem {
   constructor(game) {
     this.game = game;
@@ -81,7 +90,7 @@ export class RebirthSystem {
     sv.wash = { day, n: this.todayCount(sv) + 1 };
     const before = { ...this.qualityOf(sv) };
     const fl = this.floor();
-    const after = Object.fromEntries(QUALITY_KEYS.map((k) => [k, c.locks.includes(k) ? before[k] : Math.max(fl, rollQuality(rnd))]));
+    const after = Object.fromEntries(QUALITY_KEYS.map((k) => [k, c.locks.includes(k) ? before[k] : washQuality(fl, rnd)]));
     this.pending[sv.id] = { quality: after, at: Date.now() };
     g.state.stats.washes = (g.state.stats.washes || 0) + 1;
     g.changed?.();
