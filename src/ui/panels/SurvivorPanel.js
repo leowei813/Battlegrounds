@@ -153,7 +153,7 @@ export class SurvivorPanel {
       ${fullNote}
       ${offer ? `<h4>📻 招募候選人（三選一）</h4><div class="grid cd-list">${offer}</div><div class="btn-row">${btn('放棄此次招募（不退費）', 'abandon', {}, { cls: 'btn-ghost btn-sm' })}</div>` : `
       <div class="card row-between rc-broadcast">
-        <div><b>📻 廣播招募</b><small class="muted block">支付廣播費用後出現 3 位隨機職業與品級的倖存者，會停留 1 小時；選擇後還要支付雇用費，也可以放棄（廣播費用不退還）。</small><div class="costs">${costHtml(st, cost)}</div></div>
+        <div><b>📻 廣播招募</b><small class="muted block">招募後，停留一小時，雇傭需另外付費</small><div class="costs">${costHtml(st, cost)}</div></div>
         ${btn('招募', 'recruit', {}, { cls: 'btn-primary' })}
       </div>`}
       ${pool ? `<h4>🙋 等待加入（探索中遇到，停留 1 小時）</h4><div class="grid cd-list">${pool}</div>` : ''}
