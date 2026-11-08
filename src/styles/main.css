@@ -1601,3 +1601,17 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .map-tools .btn.alert-btn.on { box-shadow: 0 0 0 3px #e5393544, 0 0 10px #e53935aa; }
   .map-tools .btn-icon:has(.ic-lbl) { margin-bottom: 5px; }
 }
+/* v12.2 手機版最上方資訊列（丙）：資訊不變，日期與徽章一行、圍牆條整行、資源 3 欄兩排 */
+@media (max-width: 600px) {
+  #hud { padding: 4px 8px 5px; gap: 3px; }
+  .hud-left { flex-wrap: wrap; gap: 3px 6px; }
+  .hud-left .clock { flex: 0 1 auto; gap: 4px; }
+  .hud-left .clock .phase-icon { font-size: 16px; }
+  .hud-left .clock b { font-size: 12.5px; white-space: nowrap; }
+  .hud-left .hud-badges { flex: 1 1 auto; flex-wrap: nowrap; gap: 3px; }
+  .hud-left .hud-badges > button { font-size: 11px; padding: 0 6px; line-height: 18px; min-height: 0; }
+  .hud-left .wallhp { flex: 1 0 100%; font-size: 11px; }
+  .hud-left .wallhp .bar { flex: 1; width: auto; height: 11px; }
+  .hud-res { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px 4px; overflow: visible; width: 100%; }
+  .hud-res .res { justify-content: center; font-size: 12px; padding: 1px 4px; min-width: 0; }
+}
