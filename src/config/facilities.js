@@ -103,9 +103,9 @@ export const FACILITIES = {
   },
   cellar: {
     name: '地窖', icon: '🕳️', startLevel: 0,
-    desc: '藏起一部分食物、木材、燃料、金錢，以及每種零件與布料。數量在地窖容量以內的部分不會被掠奪或損失（NPC、玩家、屍潮都搶不走）。',
+    desc: '藏起一部分食物、木材、燃料、金錢，以及每種零件與布料：數量在地窖容量以內的部分不會被掠奪或損失（NPC、玩家、屍潮都搶不走）。另外每級提高食物、木材、燃料的倉庫上限；屍潮突破圍牆時，等級最高的幾位駐守者會撤進地窖，不會受傷。',
     cost: (lv) => mat('cellar', ['struct'], { wood: 90, metal: 30, cloth: 15 }, lv),
-    effectText: (lv) => `食物、木材、燃料各藏 ${cellarCap(lv)}、金錢 ${cellarCoins(lv)}、零件與布料每種藏 ${cellarMatCap(lv)}`,
+    effectText: (lv) => `倉庫上限 +${Math.round(cellarStoragePct(lv) * 100)}%・屍潮突破時 ${cellarShelter(lv)} 位駐守者撤進地窖・食物、木材、燃料各藏 ${cellarCap(lv)}、金錢 ${cellarCoins(lv)}、零件與布料每種藏 ${cellarMatCap(lv)}`,
   },
   clinic: {
     name: '診療室', icon: '🩺', startLevel: 0,
@@ -149,6 +149,10 @@ export const storageCap = (lv) => 600 + lv * 700 + lv * lv * 120 + (lv > 6 ? 150
 export const itemStoreSlots = (lv) => 30 + Math.max(0, lv - 1) * 13;
 export const housingCap = (lv) => 3 + lv * 2;
 /** 地窖容量：每種基礎物資（食物、木材、燃料）可藏的數量；金錢另計 */
+/** 地窖提高倉庫上限（食物、木材、燃料）：每級 +2% */
+export const cellarStoragePct = (lv) => (lv > 0 ? 0.02 * lv : 0);
+/** 屍潮突破時可撤進地窖的駐守者人數：Lv1 1 人，每 2 級多 1 人（Lv15 8 人） */
+export const cellarShelter = (lv) => (lv > 0 ? 1 + Math.floor((lv - 1) / 2) : 0);
 export const cellarCap = (lv) => (lv > 0 ? 60 * lv + 15 * lv * lv : 0);
 export const cellarCoins = (lv) => (lv > 0 ? 50 * lv + 10 * lv * lv : 0);
 /** 地窖容量：每一種零件與布料可藏的數量（屍潮突破時不會損失） */

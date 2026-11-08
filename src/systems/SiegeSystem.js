@@ -10,7 +10,7 @@ import {
 } from '../config/supplies.js';
 import { ITEM_MODELS } from '../config/equipment.js';
 import { xpToNext } from '../config/survivors.js';
-import { FACILITIES } from '../config/facilities.js';
+import { FACILITIES, cellarShelter } from '../config/facilities.js';
 import { TIME_PHASES, ZOMBIE_HOURS_FRACTION } from '../config/timePhases.js';
 import {
   chance, pick, randFloat, weightedPick, clamp,
@@ -872,7 +872,10 @@ export class BaseSiege {
     damaged.forEach((d) => this.game.log(`🏚️ ${base.name}：${d}`, 'danger'));
     const matList = Object.entries(materials).map(([k, v]) => `${SUPPLIES[k].icon}${SUPPLIES[k].name}−${v}`);
     if (matList.length) this.game.log(`🧰 「${base.name}」的材料被奪走或損壞：${matList.join('、')}`, 'danger');
-    injuries.forEach((x) => this.game.log(`🩹 ${x.name}在防線被突破時${x.severe ? '受了重傷，需要醫療站治療' : '受了輕傷'}`, 'danger'));
+    injuries.forEach((x) => {
+      if (x.cellar) this.game.log(`🕳️ ${x.name}在防線被突破時撤進地窖，沒有受傷`, 'info');
+      else if (x.severe || x.light) this.game.log(`🩹 ${x.name}在防線被突破時${x.severe ? '受了重傷，需要醫療站治療' : '受了輕傷'}`, 'danger');
+    });
     this.game.toast(`💥 「${base.name}」防線在第 ${this.wave}/${this.maxWaves()} 波被突破！損失 ${pct}% 資源${dmgText}，請強化圍牆與防禦塔`, 'danger');
     this.game.bus.emit('siege:breach', { baseId: base.id, lost, damaged });
     this.game.bus.emit('siege:result', entry);
@@ -900,7 +903,12 @@ export class BaseSiege {
   injureGuards() {
     const P = SIEGE_PENALTY;
     const g = this.game;
-    return this.guards().map(({ sv }) => {
+    // 地窖：等級最高的幾位駐守者撤進地窖，不會受傷
+    const list = this.guards().map(({ sv }) => sv);
+    const n = cellarShelter(g.shelter.maxLevel('cellar'));
+    const safe = new Set([...list].sort((a, b) => (b.level || 0) - (a.level || 0)).slice(0, n).map((sv) => sv.id));
+    return list.map((sv) => {
+      if (safe.has(sv.id)) return { name: sv.name, ok: true, cellar: true };
       const r = Math.random();
       if (r < P.severeChance) {
         g.survivors.becomeSevere(sv, '防線被突破時受傷', Date.now());

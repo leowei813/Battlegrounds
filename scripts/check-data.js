@@ -6005,6 +6005,27 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(!gk.survivors.setKeepMin('xx').ok, '不能設定不存在的品級');
 }
 
+// ---- v13.2：地窖提高倉庫上限、屍潮突破時駐守者撤進地窖 ----
+{
+  const { cellarShelter, cellarStoragePct } = await import('../src/config/facilities.js');
+  assert([1, 5, 10, 15].map(cellarShelter).join() === '1,3,5,8' && cellarShelter(0) === 0, '地窖可躲人數：Lv1 1 人、Lv5 3 人、Lv10 5 人、Lv15 8 人');
+  assert(Math.abs(cellarStoragePct(10) - 0.2) < 1e-9 && cellarStoragePct(0) === 0, '地窖每級倉庫上限 +2%');
+  const gq = Game.newGame({ playerName: 'Q', classId: 'warrior', lat: 25, lon: 121 });
+  gq.state.map.pois = fillPois([], 25, 121);
+  gq.shelter.establish(gq.state.map.pois.find((p) => gq.shelter.canEstablish(p).ok));
+  const bq = gq.shelter.primary();
+  const cap0 = gq.resources.storageCap();
+  bq.facilities.cellar.level = 10;
+  const cap1 = gq.resources.storageCap();
+  assert(Math.abs(cap1 / cap0 - 1.2) < 0.01, `地窖 Lv10 倉庫上限 +20%（${cap0} → ${cap1}）`);
+  // 駐守者：等級高的優先撤進地窖
+  const gs = [0, 1, 2, 3, 4, 5, 6].map((i) => { const c = gq.survivors.makeCandidate(3); c.level = 10 + i; c.job = 'guard'; c.status = 'idle'; gq.state.survivors.push(c); return c; });
+  gq.state.survivors.forEach((x) => { if (!gs.includes(x)) x.job = 'idle'; });
+  const inj = gq.siege.of(bq.id).injureGuards();
+  const top = [...gs].sort((a, b) => b.level - a.level).slice(0, 5).map((x) => x.name);
+  assert(inj.filter((x) => x.cellar).map((x) => x.name).sort().join() === top.sort().join() && inj.filter((x) => x.cellar).every((x) => !x.severe && !x.light), `屍潮突破時等級最高的 5 位駐守者撤進地窖不受傷（Lv10 地窖）`);
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);
