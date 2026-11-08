@@ -1,3 +1,4 @@
+import { WORLD_CENTER } from '../config/world.js';
 import { BASE_SIZES } from '../config/civilization.js';
 import { bus } from '../core/EventBus.js';
 import { sha256 } from '../utils/sha256.js';
@@ -317,7 +318,7 @@ export class WorldSync {
   async sync() {
     const g = this.game;
     if (!this.provider || g.locked) return;
-    const center = g.shelter.primary() || g.state.map.center;
+    const center = WORLD_CENTER; // v13：固定世界地圖，所有玩家都在範圍內
     const { id, token } = this.identity();
     this.myId = id;
     this.lastTryAt = Date.now();

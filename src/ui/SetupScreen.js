@@ -3,18 +3,11 @@ import { GAME_TITLE } from '../config/constants.js';
 import { COPYRIGHT } from '../config/legal.js';
 import { APP_VERSION, CHANGELOG } from '../config/version.js';
 import { versionHtml } from './ChangelogView.js';
+import { randomInWorld } from '../config/world.js';
 
-const PRESETS = [
-  { name: '台北 101', lat: 25.0339, lon: 121.5645 },
-  { name: '台中車站', lat: 24.1372, lon: 120.6869 },
-  { name: '高雄駁二', lat: 22.6197, lon: 120.2817 },
-  { name: '東京 新宿', lat: 35.6896, lon: 139.7006 },
-  { name: '紐約 時代廣場', lat: 40.758, lon: -73.9855 },
-  { name: '倫敦 西敏', lat: 51.4995, lon: -0.1248 },
-];
 
 /**
- * 建立角色：輸入名字、選擇領袖職業、決定起始座標（定位或手動）。帳號註冊後或重置進度後顯示。
+ * 建立角色：輸入名字、選擇領袖職業。v13 起所有玩家在同一張固定地圖，起點在地圖範圍內隨機決定。帳號註冊後或重置進度後顯示。
  */
 export class SetupScreen {
   /**
@@ -32,7 +25,6 @@ export class SetupScreen {
       this.root.innerHTML = this.template();
       this.root.classList.add('show');
       const $ = (s) => this.root.querySelector(s);
-      const status = $('#setup-status');
       let classId = 'warrior';
 
       this.root.querySelectorAll('.class-opt').forEach((el) => {
@@ -43,41 +35,11 @@ export class SetupScreen {
         });
       });
 
-      $('#btn-geo').addEventListener('click', () => {
-        if (!navigator.geolocation) {
-          status.textContent = '此瀏覽器不支援定位，請手動輸入座標。';
-          return;
-        }
-        status.textContent = '📡 定位中…';
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            $('#in-lat').value = pos.coords.latitude.toFixed(6);
-            $('#in-lon').value = pos.coords.longitude.toFixed(6);
-            status.textContent = `✅ 已取得位置（精度 ${Math.round(pos.coords.accuracy)} 公尺）`;
-          },
-          (err) => { status.textContent = `❌ 定位失敗：${err.message}。請手動輸入或選擇預設城市。`; },
-          { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
-        );
-      });
-
-      this.root.querySelectorAll('[data-preset]').forEach((el) => {
-        el.addEventListener('click', () => {
-          const p = PRESETS[+el.dataset.preset];
-          $('#in-lat').value = p.lat;
-          $('#in-lon').value = p.lon;
-          status.textContent = `已選擇 ${p.name}`;
-        });
-      });
-
       $('#setup-form').addEventListener('submit', (e) => {
         e.preventDefault();
         const name = $('#in-name').value.trim() || '倖存者';
-        const lat = parseFloat($('#in-lat').value);
-        const lon = parseFloat($('#in-lon').value);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 85 || Math.abs(lon) > 180) {
-          status.textContent = '❌ 請提供有效的座標（可使用定位或預設城市）';
-          return;
-        }
+        // 起點：固定地圖範圍內的隨機位置（之後在地圖上選一棟建築作為避難所）
+        const { lat, lon } = randomInWorld();
         this.hide();
         resolve({ type: 'new', playerName: name.slice(0, 16), classId, lat, lon });
       });
@@ -96,7 +58,6 @@ export class SetupScreen {
           <span>${c.icon}</span><b>${c.name}</b><small>${c.skills[0].name}：${c.skills[0].desc}</small>
         </button>`)
       .join('');
-    const presets = PRESETS.map((p, i) => `<button type="button" class="chip" data-preset="${i}">${p.name}</button>`).join('');
     return `
     <div class="setup-card">
       <h1 class="logo">${GAME_TITLE}<small>ZOMBIE OUTBREAK · IDLE SURVIVAL</small></h1>
@@ -108,13 +69,7 @@ export class SetupScreen {
         <label>倖存者名稱<input id="in-name" maxlength="16" placeholder="輸入你的名字" autocomplete="off"></label>
         <div class="label">選擇你的職業</div>
         <div class="class-grid">${classes}</div>
-        <div class="label">起始位置（真實地圖）</div>
-        <button type="button" id="btn-geo" class="btn btn-primary wide">📍 使用目前位置</button>
-        <div class="coord-row">
-          <label>緯度<input id="in-lat" inputmode="decimal" placeholder="25.0339"></label>
-          <label>經度<input id="in-lon" inputmode="decimal" placeholder="121.5645"></label>
-        </div>
-        <div class="chips">${presets}</div>
+        <p class="setup-world">📍 所有倖存者都在同一座城市求生，開始後地圖會從範圍內的隨機位置開始，點選一棟建築作為你的避難所。</p>
         <p id="setup-status" class="status"></p>
         <button type="submit" class="btn btn-danger wide big">☣️ 開始求生</button>
       </form>

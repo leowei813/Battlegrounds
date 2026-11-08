@@ -10,6 +10,7 @@ import {
   chance, pick, randInt, uid, weightedPick, haversine, offsetLatLon, randFloat,
 } from '../utils/math.js';
 import { seeded, cellOf, cellBox, cellsAround } from '../multiplayer/worldGrid.js';
+import { WORLD_CENTER, WORLD_HALF_DIAG_M, inWorld } from '../config/world.js';
 
 /**
  * 夜晚地圖殭屍群：依「格子＋夜晚編號」決定（所有玩家看到相同的殭屍群、精英與 Boss），
@@ -88,9 +89,10 @@ export class ZombieSpawnSystem {
   /** 決定性產生某一晚避難所附近的殭屍群 */
   sharedGroups(night) {
     const map = this.game.state.map;
-    const c = this.game.shelter.primary() || map.center;
-    if (!c) return [];
+    // v13：整張固定世界地圖（所有玩家相同）
+    const c = WORLD_CENTER;
     const Z = SHARED_ZOMBIES;
+    const R = WORLD_HALF_DIAG_M / 1000 + Z.cellKm;
     // 只在有建築的格子（避免出現在海上、山區）；最近的建築作為掉落物的參考
     const near = new Map();
     map.pois.forEach((p) => {
@@ -98,11 +100,11 @@ export class ZombieSpawnSystem {
       if (!near.has(k)) near.set(k, p);
     });
     const out = [];
-    cellsAround(c.lat, c.lon, Z.cellKm, Z.radiusKm).forEach(({ i, j, key }) => {
+    cellsAround(c.lat, c.lon, Z.cellKm, R).forEach(({ i, j, key }) => {
       const poi = near.get(key);
       if (!poi) return;
       const box = cellBox(i, j, Z.cellKm);
-      if (haversine(c.lat, c.lon, box.lat, box.lon) > Z.radiusKm * 1000) return;
+      if (haversine(c.lat, c.lon, box.lat, box.lon) > R * 1000) return;
       seeded(`zg:${night}:${key}`, () => {
         const zone = zoneAt(box.lat, box.lon);
         const d = Math.max(0, zone.danger);
@@ -118,6 +120,7 @@ export class ZombieSpawnSystem {
           if (chance(stalker)) enemyId = 'nightStalker';
           const boss = zone.danger >= 1 && chance(0.03 + d * 0.01);
           if (boss) enemyId = pick(Object.keys(BOSSES).sort());
+          if (!inWorld(lat, lon)) continue;
           const count = boss ? 1 : Math.max(1, Math.round(randInt(1, 2 + d + 1) * this.encounterMul(lat, lon)));
           const cap = 3 + 3 * (Math.max(-1, zone.danger) + 1) + 2;
           const level = Math.max(1, Math.min(cap, Math.round((2 + d) * 1.5) + randInt(0, 2) + d * 2));

@@ -1,5 +1,6 @@
 import { POI_TYPES } from '../config/poiTypes.js';
 import { zoneIndexAt } from '../config/zones.js';
+import { WORLD_CENTER, WORLD_HALF_DIAG_M, inWorld } from '../config/world.js';
 
 /**
  * v10 隨機地圖：地點不再來自真實地圖的建築，而是由「固定格子」決定。
@@ -84,4 +85,9 @@ export function generatePois(lat0, lon0, radius) {
     }
   }
   return out;
+}
+
+/** v13：整張固定世界地圖的地點（所有玩家相同） */
+export function generateWorldPois() {
+  return generatePois(WORLD_CENTER.lat, WORLD_CENTER.lon, WORLD_HALF_DIAG_M + 50).filter((p) => inWorld(p.lat, p.lon));
 }

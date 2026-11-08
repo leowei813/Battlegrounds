@@ -1,3 +1,4 @@
+import { inWorld, WORLD_CENTER } from '../config/world.js';
 import { FACILITIES } from '../config/facilities.js';
 import { SAVE_KEY, SAVE_VERSION } from '../config/constants.js';
 import { STAT_KEYS, newSeeds } from './GameState.js';
@@ -551,6 +552,11 @@ export class SaveManager {
         delete v.reservedFor;
       }
     });
+    if (v < 32 && data.map) {
+      // v13：固定世界地圖。地圖中心在範圍外時改到範圍中心（範圍外的避難所在遊戲開始時整座搬進範圍內）
+      const c = data.map.center;
+      if (!c || !inWorld(c.lat, c.lon)) data.map.center = { ...WORLD_CENTER };
+    }
     data.version = SAVE_VERSION;
     return data;
   }

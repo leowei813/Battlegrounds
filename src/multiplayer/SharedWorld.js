@@ -4,6 +4,7 @@
  * 因此兩人同時購買同一項商品時只有一人成功，不會重複結算。
  * 沒有伺服器（單機、測試）時使用本機記憶體，行為相同。
  */
+import { WORLD_CENTER } from '../config/world.js';
 
 const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
 /** 物件在伺服器保留多久沒更新就清除 */
@@ -111,9 +112,9 @@ export class SharedWorld {
     this.watched.set(kind, { km });
   }
 
+  /** v13：所有玩家共用同一張固定地圖，同步範圍以地圖中心為準 */
   center() {
-    const g = this.game;
-    return g.shelter.primary() || g.state.map?.center || { lat: 0, lon: 0 };
+    return WORLD_CENTER;
   }
 
   /** 讀取範圍內某種類的物件並更新快取（範圍外的舊快取會移除） */

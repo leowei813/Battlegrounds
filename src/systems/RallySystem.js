@@ -98,8 +98,8 @@ export class RallySystem {
       return !!(d && String(d.gen) === gen && (d.dc || 0) > (Number(dc) || 0) && d.destroyed && now < d.destroyed.respawnAt);
     }
     if (t.kind === 'inf') {
-      const m = /^inf_(-?\d+)_(-?\d+)$/.exec(String(t.id));
-      return !!(m && g.infected.cleared({ cell: `${m[1]}:${m[2]}` }, now));
+      const s = g.infected.siteById(t.id);
+      return !!(s && g.infected.cleared(s, now));
     }
     return false;
   }

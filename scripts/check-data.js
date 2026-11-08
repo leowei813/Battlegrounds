@@ -865,9 +865,6 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const cap0 = Math.floor(gs.survivors.bagCap(lead) - gs.survivors.loadoutWeight(lead));
   assert(lead.bag.wood === cap0 && lost === 10000 - cap0, `倉庫放不下的探索物資由隊員背包攜帶（${lead.bag.wood}/${cap0}）`);
 
-  // v12：前哨站已移除，只掃描避難所周圍
-  const areas = gs.scanAreas(25.03, 121.56);
-  assert(areas.length === 1, '只掃描避難所周圍（前哨站已移除）');
 }
 
 // ---- 13. v6.1：起始無產出、主角無品級、刪除進度移除公開資料 ----
