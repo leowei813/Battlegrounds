@@ -5269,7 +5269,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     assert(gq.npcs.list.length > 0 && !near.length && NPCC, `NPC 據點不會出現在副本入口 ${DGC.DG_CLEAR_M} 公尺內`);
   }
   assert(DungeonSystem.dayKey(day0) === '20261112' && new Date(T.start).getUTCHours() === 10 && T.end - T.start === 3 * 3600 * 1000, '副本時程：台灣時間 18:00 開打、20 層共 3 小時');
-  assert(DungeonSystem.phase(T.open - 1) === 'before' && DungeonSystem.phase(T.open) === 'signup' && DungeonSystem.phase(T.close) === 'closed' && DungeonSystem.phase(T.lock) === 'locked' && DungeonSystem.phase(T.depart) === 'gather' && DungeonSystem.phase(T.start) === 'run' && DungeonSystem.phase(T.end) === 'after', '副本各階段：07:00 報名、17:40 截止、17:50 鎖定、17:55 集結、18:00 開打');
+  assert(DungeonSystem.phase(T.open - 1) === 'after' && DungeonSystem.phase(T.open) === 'signup' && DungeonSystem.phase(T.close) === 'closed' && DungeonSystem.phase(T.lock) === 'locked' && DungeonSystem.phase(T.depart) === 'gather' && DungeonSystem.phase(T.start) === 'run' && DungeonSystem.phase(T.end) === 'after', '副本各階段：00:00 換日後報名、17:40 截止、17:50 鎖定、17:55 集結、18:00 開打');
   // 分團：依報名先後平均分配，每團 3～8 人
   const fakeList = (n) => ({ list: Array.from({ length: n }, (_, i) => ({ p: `p${i}`, s: `s${i}`, c: 'warrior', at: 1000 - i, u: { maxHp: 100 } })) });
   const sizes = (n) => DungeonSystem.groupsOf(fakeList(n)).groups.map((x) => x.length).join('+');

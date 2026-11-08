@@ -90,7 +90,7 @@ export class MapPanel {
     const list = Object.entries(DUNGEONS).map(([id, d]) => {
       const data = g.dungeon.data(id, day);
       const n = (data?.list || []).length;
-      let label = ph === 'before' ? '07:00 開放報名' : ph === 'signup' ? `報名 ${n}` : ph === 'run' ? (n >= 3 ? '攻略中' : '今日休息') : ph === 'after' ? '今日已結束' : n >= 3 ? '即將開打' : `報名 ${n}`;
+      let label = ph === 'before' ? '00:00 開放報名' : ph === 'signup' ? `報名 ${n}` : ph === 'run' ? (n >= 3 ? '攻略中' : '今日休息') : ph === 'after' ? '今日已結束' : n >= 3 ? '即將開打' : `報名 ${n}`;
       const rec = g.dungeon.record(id, now);
       if (rec && !rec.cancelled && ph === 'run') {
         const mine = g.dungeon.myRun(rec);

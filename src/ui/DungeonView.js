@@ -18,7 +18,7 @@ export const dgIcon = () => `<span class="dg-ic-inline">${DG_PIN_SVG}</span>`;
 /** 地圖圖示：地裂獸口（地面裂開的紅色裂口，裡面一對發光的眼睛） */
 export const DG_PIN_SVG = `<svg viewBox="0 0 56 46" width="100%" height="100%" aria-hidden="true"><defs><radialGradient id="dgh" cx="50%" cy="55%" r="60%"><stop offset="0" stop-color="#ff1744"/><stop offset=".35" stop-color="#4a0010"/><stop offset="1" stop-color="#000"/></radialGradient></defs><path d="M4 26 L14 14 L20 19 L28 8 L35 17 L42 12 L52 26 L44 38 L33 33 L26 41 L17 34 L8 38 Z" fill="url(#dgh)" stroke="#ff5252" stroke-width="1.6"/><circle cx="22" cy="25" r="2.6" fill="#ffeb3b"/><circle cx="33" cy="25" r="2.6" fill="#ffeb3b"/><path d="M20 31 q8 4 16 0" stroke="#ff8a80" stroke-width="1.4" fill="none"/></svg>`;
 
-/** 今天（或結算後到隔天 07:00 前）要顯示在地圖左上角的報名紀錄 */
+/** 今天（結算後到隔天 00:00 前）要顯示在地圖左上角的報名紀錄 */
 export function hudRecords(g, now = Date.now()) {
   return Object.values(g.dungeon.state.sign).filter((r) => !r.cancelled && now >= r.day0 && now < r.day0 + DAY + DG_TIME.open)
     .sort((a, b) => DUNGEON_KEYS.indexOf(a.dg) - DUNGEON_KEYS.indexOf(b.dg));
@@ -128,7 +128,7 @@ export function hudHtml(g, now = Date.now()) {
 function timeline(now) {
   const t = DungeonSystem.times(DungeonSystem.dayStart(now));
   const row = (at, label, text) => `<b class="${now >= at ? 'past' : ''}">${label}</b><span>${text}${now >= at ? ' ✓' : ''}</span>`;
-  return `<div class="dg-tl">${row(t.open, '07:00', '開放報名')}${row(t.close, '17:40', `報名截止${now < t.close && now >= t.open ? `（剩 ${formatDuration(t.close - now)}）` : ''}`)}${row(t.lock, '17:50', '鎖定倖存者：外出中自動回家、重傷自動用藥治療')}${row(t.depart, '17:55', '出發集結')}${row(t.start, '18:00', `開始攻略，${DG_FLOORS} 層、約 3 小時`)}</div>`;
+  return `<div class="dg-tl">${row(t.open, '00:00', '開放報名')}${row(t.close, '17:40', `報名截止${now < t.close && now >= t.open ? `（剩 ${formatDuration(t.close - now)}）` : ''}`)}${row(t.lock, '17:50', '鎖定倖存者：外出中自動回家、重傷自動用藥治療')}${row(t.depart, '17:55', '出發集結')}${row(t.start, '18:00', `開始攻略，${DG_FLOORS} 層、約 3 小時`)}</div>`;
 }
 
 const ROLE = ['warrior', 'medic', 'engineer', 'scout', 'farmer'];
@@ -370,7 +370,7 @@ export function dungeonReportHtml(g, r, open, fresh, NEW, hhmm) {
   const badge = r.status === 'clear' ? `<span class="tag t-win">通關 ${DG_FLOORS}/${DG_FLOORS}</span>` : r.status === 'fail' ? '<span class="tag t-fail">失敗</span>' : `<span class="tag t-cancel">${r.status === 'cancel' ? '今日取消' : '未出擊'}</span>`;
   if (r.status === 'cancel' || r.status === 'out') {
     return `<div class="card report dg-rep ${fresh ? 'unread' : ''}"><div class="row-between"><b>${fresh ? NEW : ''}${icon} ${dgIcon()}${escapeHtml(d.name)}</b><small class="muted">${hhmm(r.at)}</small></div>
-      <div class="gains">${badge}</div><small class="muted">${escapeHtml(r.why || '')}。倖存者已回到避難所，沒有扣除任何東西；明天 07:00 可以重新報名。</small></div>`;
+      <div class="gains">${badge}</div><small class="muted">${escapeHtml(r.why || '')}。倖存者已回到避難所，沒有扣除任何東西；00:00 換日後可以重新報名。</small></div>`;
   }
   const run = open ? g.dungeon.reportRun(r) : null;
   const core = Object.entries(r.cores || {}).map(([k, n]) => `<span class="c core">${DG_CORES[k]?.icon} ${DG_CORES[k]?.name} ×${n}</span>`).join('');
