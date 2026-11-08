@@ -14,7 +14,7 @@ import { gridCenter } from '../config/world.js';
  *  - 守軍是 Boss、精英與大量殭屍；一支隊伍很難單獨清除，淨化度會累積（未清除時緩慢回復感染）。
  *  - 每場戰鬥打到全員倒下或淨化 100%。
  *  - 每場依推進的淨化度給少量獎勵；淨化 100% 時消滅據點：依最後一場的參戰人數發放大獎勵（1 人 6～8 種，每多 1 人上下限 +4，最低精良品級）。
- *  - 被消滅後 3 天（遊戲日）在原地重新出現；未被消滅時淨化度每天 12:00 歸零。
+ *  - 被消滅後 3 天（現實時間）在原地重新出現；未被消滅時淨化度每天 12:00 歸零。
  */
 export const INFECTED = {
   /** 每格約 2 平方公里 */
@@ -25,7 +25,7 @@ export const INFECTED = {
   decayPerHour: 3,
   /** 淨化度每天重置的時間（世界時間）；未被消滅時每天 12:00 淨化度歸零 */
   refreshHour: 12,
-  /** v13：被消滅後幾天（遊戲日）在原地重新出現 */
+  /** v13：被消滅後幾天（現實天數）在原地重新出現 */
   respawnDays: 3,
   /**
    * v13：固定位置（格線代號見 config/world.js）。E4 沿用原本的據點（位置、名稱、強度不變）。
@@ -146,7 +146,7 @@ export class InfectedSystem {
   /** 被消滅後重新出現的時間（沒被消滅回傳 0） */
   respawnAt(s) {
     const d = this.shared(s);
-    return d?.killedAt ? d.killedAt + INFECTED.respawnDays * DAY_REAL_MS : 0;
+    return d?.killedAt ? d.killedAt + INFECTED.respawnDays * 86400000 : 0;
   }
 
   /** 讓探索系統把據點當成目的地 */
@@ -171,7 +171,7 @@ export class InfectedSystem {
   purity(s, now = Date.now()) {
     const d = this.shared(s);
     if (!d || d.day !== this.siteDay(now)) return 0;
-    if (d.killedAt && now >= d.killedAt + INFECTED.respawnDays * DAY_REAL_MS) return 0; // 重生後重新計算
+    if (d.killedAt && now >= d.killedAt + INFECTED.respawnDays * 86400000) return 0; // 重生後重新計算
     return InfectedSystem.decayed(d, now);
   }
 
@@ -248,7 +248,7 @@ export class InfectedSystem {
   async addPurity(s, gain, at = Date.now()) {
     const day = this.siteDay(at);
     const r = await this.game.shared.update('inf', s.cell, (d) => {
-      const respawn = d?.killedAt ? d.killedAt + INFECTED.respawnDays * DAY_REAL_MS : 0;
+      const respawn = d?.killedAt ? d.killedAt + INFECTED.respawnDays * 86400000 : 0;
       if (respawn && at < respawn) return { fail: '已經被消滅了' };
       // 新的一天（12:00）或重生後：淨化度從 0 開始
       const data = d && d.day === day && !respawn ? d : { day, pur: 0, at };

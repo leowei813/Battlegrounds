@@ -5,7 +5,10 @@
  * 2. 跑一段無頭模擬，確認各系統可正常運作
  */
 import { Game } from '../src/core/Game.js';
-import { fillPois } from '../src/map/PoiGenerator.js';
+import { fillPois as fillPoisAt } from '../src/map/PoiGenerator.js';
+import { WORLD_CENTER } from '../src/config/world.js';
+// v13：固定世界地圖，測試用的地點一律產生在地圖範圍中心附近（NPC、屍群只出現在範圍內）
+const fillPois = (pois, _lat, _lon) => fillPoisAt(pois, WORLD_CENTER.lat, WORLD_CENTER.lon);
 import { RESEARCH, researchCost as researchCostOf } from '../src/config/research.js';
 import { DEFENSES } from '../src/config/defenses.js';
 import { POI_TYPES } from '../src/config/poiTypes.js';
@@ -1712,8 +1715,25 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   await A.shared.poll();
   await B.shared.poll();
   assert(!A.infected.get(s.id, t0) && !B.infected.get(s.id, t0), '消滅後所有玩家的地圖上都消失');
-  const next = A.infected.nextRefresh(t0);
-  assert(A.infected.list(next + 1000).some((x) => x.id === s.id), '下一個中午 12:00 重新出現');
+  // v13：消滅後 3 天（遊戲日）在原地重新出現，淨化度從 0 開始
+  {
+    const DRM = 3600000; // 遊戲 1 天
+    const back = t0 + INFECTED.respawnDays * 86400000; // v13：現實 3 天
+    assert(!A.infected.list(back - 60000).some((x) => x.id === s.id) && !A.infected.list(t0 + DRM * 1.5).some((x) => x.id === s.id), '消滅後隔天中午不會重新出現（要等現實 3 天）');
+    const re = A.infected.list(back + 1000).find((x) => x.id === s.id);
+    assert(re && re.lat === s.lat && re.lon === s.lon && re.purity === 0, `消滅 3 天後在原地重新出現，淨化度歸零（${re?.purity}）`);
+    assert(!(await A.infected.addPurity(s, 5, back - 60000)).ok && (await A.infected.addPurity(s, 5, back + 1000)).ok, '重生前不能淨化，重生後可以重新淨化');
+  }
+  // v13：固定 5 座（E4 沿用原本位置，其他在指定格子）
+  {
+    const { gridCenter, inWorld } = await import('../src/config/world.js');
+    const all = A.infected.sites();
+    assert(all.length === 5 && all.every((x) => inWorld(x.lat, x.lon)), `重度感染據點固定 5 座，都在地圖範圍內（${all.map((x) => x.code).join('、')}）`);
+    const e4 = all.find((x) => x.code === 'E4');
+    assert(e4 && e4.id === 'inf_1970_8670', 'E4 沿用原本的重度感染據點（編號、位置不變）');
+    const b2 = all.find((x) => x.code === 'B2');
+    assert(b2 && haversine(b2.lat, b2.lon, gridCenter('B2').lat, gridCenter('B2').lon) < 1, 'B2 的重度感染據點在 B2 格中心');
+  }
   // 消滅時的獎勵會補進那一場的探索報告（不會顯示「無」）
   {
     const s2 = la.find((x) => x.id !== s.id && A.infected.get(x.id, t0));
@@ -1737,14 +1757,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   void n3;
   const fr = A.infected.fightRewards(s, 30);
   assert(fr.coins === 450 && Object.values(fr.mats).reduce((a, v) => a + v, 0) >= 6 && fr.items.every((it) => ['rare', 'epic', 'legendary'].includes(it.rarity)), `每場依淨化度給獎勵：+30% 得到 💰${fr.coins} 與 ${Object.keys(fr.mats).length} 種材料`);
-  // 不會與玩家據點重疊：在據點位置上的重度感染據點會移到格子內其他位置
-  const s0 = A.infected.list()[0];
-  const C2 = mk('C2');
-  C2.world.others = [{ id: 'X', bases: [{ lat: s0.lat, lon: s0.lon, alert: 90 }], trips: [] }];
-  const moved = C2.infected.list().find((x) => x.id === s0.id);
-  const allZones = C2.infected.playerZones();
-  assert(!moved || (haversine(moved.lat, moved.lon, s0.lat, s0.lon) > 90 + 120), '重度感染據點會避開其他玩家的據點與警戒範圍');
-  assert(C2.infected.list().every((x) => allZones.every((z) => haversine(z.lat, z.lon, x.lat, x.lon) > z.r)), '所有重度感染據點都不在玩家據點範圍內');
+  // v13：位置固定，新的據點不能蓋在重度感染據點附近
+  {
+    const s0 = A.infected.sites()[0];
+    A.testInfBlock = true;
+    assert(!!A.infected.blocking({ lat: s0.lat + 0.0005, lon: s0.lon }, 80), '新的據點不能蓋在重度感染據點附近');
+    A.testInfBlock = false;
+  }
   // 偵查等級可得知更多情報
   assert(!A.infected.intelView(s).boss, '偵查 0 級不知道首領');
   A.state.research.levels = { ...(A.state.research.levels || {}), s_recon: 6 };
@@ -3709,7 +3728,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     assert(g79.npcs.state.cellNext[cell] === t0 + 36 * 3600000, '消滅 NPC 據點後，該格 36 小時後才重生');
     g79.npcs.fillCells(Date.now(), { silent: true });
   }
-  assert(g79.npcs.list.length > 0 && g79.npcs.list.every((n) => haversine(n.lat, n.lon, b79.lat, b79.lon) <= PSR + 1), `NPC 據點只出現在避難所的可視範圍（${PSR} 公尺）內（${g79.npcs.list.length} 個）`);
+  {
+    const { inWorld } = await import('../src/config/world.js');
+    assert(g79.npcs.list.length > 0 && g79.npcs.list.every((n) => inWorld(n.lat, n.lon)), `v13：NPC 據點只出現在固定地圖範圍內（${g79.npcs.list.length} 個）`);
+    void b79; void PSR;
+  }
   // 擊退掠奪隊：賞金、裝備、經驗
   const all = Array.from({ length: 6 }, () => g79.combat.createEnemy('raider', 20));
   all.push(g79.combat.createEnemy('raiderChief', 20));
@@ -4339,9 +4362,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     // v10：位置固定，不會因附近玩家據點載入而移動；更新前就重疊的玩家據點：這一格改為沒有感染據點
     const s1 = gi.infected.list().find((x) => x.id === s0.id);
     assert(s1 && s1.lat === s0.lat && s1.lon === s0.lon, '重度感染據點位置固定');
-    gi.world = { others: [{ id: 'P99', bases: [{ lat: s0.lat, lon: s0.lon, alert: 150 }] }] };
-    assert(!gi.infected.list().some((x) => x.id === s0.id), '更新前就和玩家據點重疊的格子沒有感染據點');
-    gi.world = { others: [] };
+
     // 新據點不能蓋在感染據點範圍內
     const nearPoi = { id: 'near99', type: 'residential', name: 'x', lat: s0.lat, lon: s0.lon };
     const ce = gi.shelter.canEstablish(nearPoi);
@@ -5900,6 +5921,43 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
 assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto 一致（並忽略前後空白）');
+
+// ---- v13：固定方形世界地圖、指定深淵區、範圍外避難所搬進範圍 ----
+{
+  const W = await import('../src/config/world.js');
+  const { generateWorldPois } = await import('../src/map/WorldGen.js');
+  const Z = await import('../src/config/zones.js');
+  const wp = generateWorldPois();
+  assert(wp.length > 1500 && wp.every((p) => W.inWorld(p.lat, p.lon)), `整張地圖的建築都在範圍內（${wp.length} 棟）`);
+  assert(generateWorldPois().map((p) => p.id).join() === wp.map((p) => p.id).join(), '所有玩家的地圖建築相同');
+  for (let k = 0; k < 50; k += 1) {
+    const r = W.randomInWorld();
+    if (!W.inWorld(r.lat, r.lon)) { assert(false, '隨機起點在範圍內'); break; }
+  }
+  Z.ABYSS_SPOTS.forEach((a) => {
+    assert(Z.zoneIndexAt(a.lat, a.lon) === 5 && Z.zoneAt(a.lat, a.lon).id === 'abyss', `指定的深淵區：${a.name}`);
+    const near = Z.zoneIndexAt(a.lat + (a.r + 60) / 111320, a.lon);
+    assert(near >= 4, `深淵區外圍一圈為致死區以上（${a.name}：${near}）`);
+  });
+  // 範圍外的避難所：整座搬進範圍內，設施保留
+  const gm = Game.newGame({ playerName: 'M13', classId: 'warrior', lat: 24.1, lon: 120.6 });
+  gm.state.map.pois = fillPoisAt([], 24.1, 120.6);
+  gm.shelter.establish(gm.state.map.pois.find((p) => gm.shelter.canEstablish(p).ok));
+  const shm = gm.shelter.primary();
+  shm.facilities.farm.level = 7;
+  assert(!W.inWorld(shm.lat, shm.lon), '測試：避難所在範圍外');
+  gm.genMap();
+  const moved = gm.shelter.moveIntoWorld();
+  assert(moved && W.inWorld(shm.lat, shm.lon) && shm.facilities.farm.level === 7 && gm.shelter.primary() === shm, `範圍外的避難所整座搬進範圍內，設施保留（${moved?.name}）`);
+  assert(!gm.shelter.moveIntoWorld(), '已經在範圍內就不再搬');
+  // 夜晚殭屍群只在範圍內
+  setHour(gm, 22);
+  gm.zombies.refresh();
+  assert(gm.state.map.zombieGroups.length > 0 && gm.state.map.zombieGroups.every((z) => W.inWorld(z.lat, z.lon)), `夜晚殭屍群只出現在範圍內（${gm.state.map.zombieGroups.length} 群）`);
+  // 舊存檔：地圖中心在範圍外時改到範圍中心
+  const mig = SaveManager.migrate({ version: 31, player: { name: 'x' }, map: { center: { lat: 35, lon: 139 }, pois: [] } });
+  assert(mig && W.inWorld(mig.map.center.lat, mig.map.center.lon), '舊存檔的地圖中心移到固定地圖範圍內');
+}
 
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
