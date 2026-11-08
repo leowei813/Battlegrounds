@@ -1587,4 +1587,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 }
 /* v12.2 招募候選人卡片：品級淡色底（與家裡倖存者小卡相同） */
 .cd-card.cd-card, .cd-mini { background: linear-gradient(135deg, color-mix(in srgb, var(--rc) 16%, #1c2018) 0%, color-mix(in srgb, var(--rc) 7%, #1c2018) 100%); }
+.cd-card.cd-card { border: 1px solid color-mix(in srgb, var(--rc) 55%, transparent); border-left: 6px solid var(--rc); }
 @media (max-width: 899px) { .cd-mini { border-left-width: 5px; } }
+/* v12.2 手機版消息視窗（探索報告、避難所紀錄、事件紀錄）整體縮小 */
+@media (max-width: 899px) { .msg-body { zoom: 0.8; } }

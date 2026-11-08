@@ -109,7 +109,7 @@ export function openMessages(ui) {
       <button class="btn ${tab === 'base' ? 'active' : ''}" data-action="msgTab" data-t="base">🏠 避難所紀錄${badge(c.base)}</button>
       <button class="btn ${tab === 'events' ? 'active' : ''}" data-action="msgTab" data-t="events">📜 事件紀錄${badge(c.events)}</button></div>
       ${c[tab] ? `<div class="btn-row">${btn('✓ 這頁全部標為已讀', 'markRead', {}, { cls: 'btn-xs btn-ghost' })}</div>` : ''}`;
-    return `${tabs}${tab === 'reports' ? reportsHtml(g, openId, since.reports, openBattle) : tab === 'events' ? eventsHtml(ui, since.events, openBattle) : baseHtml(ui, since.base, openBattle)}`;
+    return `<div class="msg-body">${tabs}${tab === 'reports' ? reportsHtml(g, openId, since.reports, openBattle) : tab === 'events' ? eventsHtml(ui, since.events, openBattle) : baseHtml(ui, since.base, openBattle)}</div>`;
   };
   ui.modal.open({
     title: '📜 消息',
