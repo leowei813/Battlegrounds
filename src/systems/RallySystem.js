@@ -182,6 +182,7 @@ export class RallySystem {
       return r;
     }
     this.setDepartAt(dep.exp, data.departAt);
+    g.world?.syncSoon?.();
     g.log(`🚩 發起集結：目標「${target.name}」，${delayMin} 分鐘後出發（最多 ${data.maxTeams} 支隊伍）`, 'info');
     return { ok: true, id, msg: `已發起集結，好友會收到通知（${delayMin} 分鐘後出發）` };
   }
@@ -219,7 +220,31 @@ export class RallySystem {
     }
     this.setDepartAt(dep.exp, r.data?.departAt || d0.departAt);
     g.log(`🚩 參加「${d0.ownerName}」的集結：目標「${d0.target.name}」`, 'info');
+    g.world?.syncSoon?.();
     return { ok: true, msg: `已加入「${d0.ownerName}」的集結` };
+  }
+
+  /**
+   * 發起人提前出發（v12.2）：倒數立刻結束、不能再參加；部隊等最後一位參加的玩家抵達集結點後出發。
+   */
+  async departNow(rallyId) {
+    const g = this.game;
+    const me = this.myId();
+    const now = Date.now();
+    const r = await g.shared.update('rally', rallyId, (d) => {
+      if (!d) return { fail: '找不到集結' };
+      if (d.owner !== me) return { fail: '只有發起人可以提前出發' };
+      if (d.status !== 'gathering') return { fail: '已經出發了' };
+      if (!d.home) return { fail: '這個集結不能提前出發' };
+      d.departAt = Math.min(d.departAt, now);
+      d.early = true;
+      return { data: d };
+    });
+    if (!r.ok) return r;
+    const sc = RallySystem.schedule(r.data);
+    g.log(`🚩 集結「${r.data.target?.name}」提前出發${sc.go > now ? `，等所有隊伍抵達集結點（約 ${formatDuration(sc.go - now)}）` : ''}`, 'info');
+    this.lastAt = 0;
+    return { ok: true, msg: sc.go > now ? `已提前出發，等「${sc.waitFor?.name || '其他隊伍'}」抵達集結點` : '已提前出發，部隊出發' };
   }
 
   /** 取消（發起人）或退出（參加者）：只能在出發前 */
@@ -229,6 +254,7 @@ export class RallySystem {
     const r = await g.shared.update('rally', rallyId, (d) => {
       if (!d) return { fail: '找不到集結' };
       if (d.status !== 'gathering') return { fail: '已經出發了，不能取消' };
+      if (d.early) return { fail: d.owner === me ? '已經提前出發，不能取消' : '部隊已經準備出發，不能退出' };
       if (d.owner === me) d.status = 'cancelled';
       else d.teams = (d.teams || []).filter((x) => x.player !== me);
       return { data: d };
@@ -248,6 +274,8 @@ export class RallySystem {
     const d = this.get(exp.rallyId);
     if (!d || exp.recalled || exp.rallyResult) return false;
     const me = this.myId();
+    // 提前出發後視同已出發：不能單獨脫隊
+    if (d.status === 'gathering' && d.early) return false;
     if (d.status === 'gathering') {
       this.leave(exp.rallyId).catch(() => {});
       if (g.state.expeditions.includes(exp) && !exp.recalled) this.walkHome(exp, at, `${AUTO_HOME_LABEL} 自動回家：退出集結`);
@@ -367,11 +395,25 @@ export class RallySystem {
     return { tag: '集結', line1: '⚔️ 集結交戰中', line2: '⏱ 等待結果' };
   }
 
+  /** 附近有進行中（或剛結束）的集結：世界同步改為較快的頻率，讓大家的畫面盡快一致 */
+  active(now = Date.now()) {
+    return (this.game.shared?.all?.('rally') || []).some((o) => {
+      const d = o.data || {};
+      return ['gathering', 'departed', 'resolving'].includes(d.status) || (d.status === 'done' && now - (d.fightAt || 0) < 10 * 60000);
+    });
+  }
+
   /** 每 2 秒：出發、結算、套用結果、好友通知 */
   update(now = Date.now()) {
     if (now - this.lastAt < 2000) return;
     this.lastAt = now;
     const g = this.game;
+    // 快要開打或等待結算中的集結：每 3 秒重新讀取，戰鬥結果與返程能同步顯示（不用等下一次世界同步）
+    const due = (g.shared?.all?.('rally') || []).some((o) => ['departed', 'resolving'].includes(o.data?.status) && now >= (o.data.fightAt || 0) - 2000);
+    if (due && now - (this.fastAt || 0) >= 3000 && g.shared?.list) {
+      this.fastAt = now;
+      g.shared.list('rally', RALLY_KM).catch(() => {});
+    }
     this.invites(now).forEach((d) => {
       if (this.st.seen[d.id]) return;
       this.st.seen[d.id] = now;
@@ -607,7 +649,7 @@ export class RallySystem {
     return this.trips().map((e) => ({ exp: e, d: this.get(e.rallyId) })).filter((x) => x.d).map(({ exp, d }) => ({
       id: d.id, exp, target: d.target, mine: d.owner === this.myId(), status: d.status, teams: (d.teams || []).length, maxTeams: d.maxTeams,
       left: d.status === 'gathering' ? Math.max(0, (d.home ? RallySystem.schedule(d).go : d.departAt) - now) : d.status === 'departed' ? Math.max(0, (d.fightAt || now) - now) : 0,
-      ownerName: d.ownerName,
+      ownerName: d.ownerName, early: !!d.early,
     }));
   }
 

@@ -237,7 +237,7 @@ export class WorldSync {
   urgent() {
     const g = this.game;
     return (g.assist?.trips().length || 0) > 0 || g.threats().length > 0 || (g.assist?.friendSieges().length || 0) > 0
-      || (g.assist?.friendRaids().length || 0) > 0;
+      || (g.assist?.friendRaids().length || 0) > 0 || !!g.rally?.active?.();
   }
 
   /** 盡快同步一次（例如剛出發協防） */
@@ -303,14 +303,9 @@ export class WorldSync {
       p.trips = (p.trips || []).filter((t) => {
         if (!t.rally) return true;
         const d = g.rally?.get?.(t.rally);
-        // v12.1（有集結點的集結）：交戰前由集結圖示統一顯示，打完才顯示各隊從目標返程
-        if (d?.home && d.status !== 'cancelled') {
-          if (d.status !== 'done' || !d.fightAt || now < d.fightAt) return false;
-          t.startAt = d.fightAt - (t.travelMs || 0);
-          t.searchMs = 0;
-          t.endAt = d.fightAt + (t.travelMs || 0);
-          return t.endAt > now;
-        }
+        // v12.1（有集結點的集結）：保留原始資料，畫面上每一幀用 rallyTripView 決定顯示與否
+        // （以前在這裡直接移除，交戰結束後要等下一次同步才會出現返程隊伍）
+        if (d?.home && d.status !== 'cancelled') return true;
         if (!d?.fightAt || (d.status !== 'done' && d.status !== 'departed')) return true;
         t.searchMs = Math.max(0, d.fightAt - (t.startAt + (t.travelMs || 0)));
         t.endAt = d.fightAt + (t.travelMs || 0);
@@ -355,4 +350,17 @@ export class WorldSync {
     }
     bus.emit(WORLD_EVT, this.others);
   }
+}
+
+/**
+ * 其他玩家的集結隊伍在畫面上的樣子（v12.2，每一幀計算）：
+ * 有集結點的集結在交戰前不顯示（由集結戰旗統一顯示），交戰後從目標返程；回到家後不再顯示。
+ * @returns {object|null} 要畫的行程（null＝不顯示）
+ */
+export function rallyTripView(t, d, now = Date.now()) {
+  if (!t?.rally || !d?.home || d.status === 'cancelled') return t;
+  if (d.status !== 'done' || !d.fightAt || now < d.fightAt) return null;
+  const travel = t.travelMs || 0;
+  const view = { ...t, startAt: d.fightAt - travel, searchMs: 0, endAt: d.fightAt + travel };
+  return view.endAt > now ? view : null;
 }

@@ -1534,3 +1534,92 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .nav-btn .badge.rally-b.on { display: inline-flex; }
 .nav-btn .badge.map-rally { right: auto; left: calc(50% - 34px); }
 .gear-cell small b.gear-lv { color: #ffe082; white-space: normal; font-size: inherit; }
+.btn.btn-rally { background: #4527a0; border-color: #ffd54f; color: #ffe082; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
+.rally-ask { margin-top: 10px; padding: 10px 12px; border: 1px solid #ffd54f; border-radius: 10px; background: #24124a66; }
+.rally-ask p { margin: 6px 0; font-size: 13px; }
+
+/* v12.2 手機版地圖左上角縮小（字與間距） */
+@media (max-width: 899px) {
+  .map-topleft { gap: 3px; top: 8px; }
+  .map-topleft .siege-chip { font-size: 10.5px; padding: 1px 7px; border-radius: 9px; line-height: 1.3; }
+  .map-topleft .feed-chip { font-size: 10.5px; padding: 1px 7px; border-radius: 9px; line-height: 1.3; }
+  .map-topleft .feed-chip.split { padding: 0; }
+  .map-topleft .feed-chip.split .feed-txt { padding: 1px 7px; }
+  .map-topleft .feed-chip.split .feed-loc { flex-basis: 22px; font-size: 10.5px; }
+  .map-topleft > .dg-hud { padding: 3px 8px; border-radius: 9px; width: 210px; }
+  .map-topleft > .dg-hud .t { font-size: 11.5px; gap: 4px; }
+  .map-topleft > .dg-hud .t .fl { font-size: 11px; }
+  .map-topleft > .dg-hud .dg-ic { width: 18px; height: 15px; }
+  .map-topleft > .dg-hud .r { margin-top: 1px; gap: 4px; font-size: 11px; }
+  .map-topleft > .dg-hud .sum { font-size: 10.5px; }
+}
+/* v12.2 快速拆解：預計回收收合 */
+.qd-bar { padding: 8px 12px; }
+.qd-sum { font: inherit; font-size: 12px; color: #81d4fa; background: #0b2f45; border: 1px solid #4fc3f766; border-radius: 10px; padding: 2px 9px; cursor: pointer; }
+.qd-gain { max-height: 116px; overflow-y: auto; margin-top: 6px; }
+.qd-gain .sr-chip { font-size: 11px; padding: 1px 6px; }
+
+/* v12.2 手機版候選人小卡（一列兩張，點開看完整資訊） */
+.cd-mini { display: none; }
+@media (max-width: 899px) {
+  .grid.cd-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .grid.cd-list > .cd-card { display: none; }
+  .cd-mini { display: flex; flex-direction: column; gap: 4px; min-width: 0; background: linear-gradient(160deg, #1d2730, #161d22); border: 1px solid #3a4a5a; border-left: 3px solid var(--rc); border-radius: 10px; padding: 6px 7px; font-size: 11px; cursor: pointer; }
+  .cm-h { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .cm-ic { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--rc); display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .cm-n { min-width: 0; flex: 1; line-height: 1.25; }
+  .cm-n b { display: block; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cm-n small { display: block; color: #aab; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cm-tg { border: 1px solid var(--rc); color: var(--rc); border-radius: 4px; padding: 0 3px; font-size: 9px; }
+  .cm-ring { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--ring); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 800; }
+  .cm-g { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 6px; }
+  .cm-s { display: flex; align-items: baseline; gap: 3px; min-width: 0; }
+  .cm-s i { font-style: normal; font-size: 10px; }
+  .cm-s b { font-size: 11px; }
+  .cm-s em { font-style: normal; font-size: 9px; margin-left: auto; color: #ef5350; }
+  .cm-s em.mid { color: #ffb300; } .cm-s em.hi { color: #66bb6a; } .cm-s em.max { color: #f2b134; }
+  .cm-sk { color: #81d4fa; font-size: 10px; }
+  .cm-f { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .cm-f .btn { flex: 1 1 auto; padding: 3px 4px; font-size: 11px; min-height: 0; }
+  .cm-f .tag { flex: 1 0 100%; text-align: center; font-size: 9.5px; padding: 0; background: none; border: 0; color: #999; }
+  .cd-modal .cd-card { display: flex; }
+  .cd-modal .cd-mini { display: none; }
+}
+/* v12.2 招募候選人卡片：品級淡色底（與家裡倖存者小卡相同） */
+.cd-card.cd-card, .cd-mini { background: linear-gradient(135deg, color-mix(in srgb, var(--rc) 16%, #1c2018) 0%, color-mix(in srgb, var(--rc) 7%, #1c2018) 100%); }
+.cd-card.cd-card { border: 1px solid color-mix(in srgb, var(--rc) 55%, transparent); border-left: 6px solid var(--rc); }
+@media (max-width: 899px) { .cd-mini { border-left-width: 5px; } }
+/* v12.2 手機版消息視窗（探索報告、避難所紀錄、事件紀錄）整體縮小 */
+@media (max-width: 899px) {
+  .msg-body { zoom: 0.8; }
+  .msg-body > .seg { gap: 4px; margin-bottom: 6px; }
+  .msg-body > .seg .btn { font-size: 12px; padding: 5px 8px; min-height: 0; white-space: nowrap; }
+  .msg-body .msg-dot { font-size: 10px; }
+}
+/* v12.2 手機版地圖右側按鈕列縮小 */
+@media (max-width: 899px) {
+  .map-tools { right: 6px; top: 8px; gap: 6px; }
+  .map-tools .btn-icon { width: 34px; height: 34px; font-size: 16px; }
+  .map-tools .btn-icon small.unread { min-width: 15px; height: 15px; line-height: 15px; font-size: 9.5px; top: -3px; right: -3px; padding: 0 3px; }
+  .map-tools .btn-icon .ic-lbl { font-size: 9px; line-height: 12px; bottom: -6px; padding: 0 3px; }
+  .map-tools .alert-btn .alert-lbl, .map-tools .home-btn .home-lbl { right: 40px; font-size: 10px; padding: 0 6px; }
+  .map-tools .btn.alert-btn.on { box-shadow: 0 0 0 3px #e5393544, 0 0 10px #e53935aa; }
+  .map-tools .btn-icon:has(.ic-lbl) { margin-bottom: 5px; }
+}
+/* v12.2 手機版最上方資訊列（丙）：資訊不變，日期與徽章一行、圍牆條整行、資源 3 欄兩排 */
+@media (max-width: 600px) {
+  #hud { padding: 4px 8px 5px; gap: 3px; }
+  .hud-left { flex-wrap: wrap; gap: 3px 6px; }
+  .hud-left .clock { flex: 0 1 auto; gap: 4px; }
+  .hud-left .clock .phase-icon { font-size: 16px; }
+  .hud-left .clock b { font-size: 12.5px; white-space: nowrap; }
+  .hud-left .hud-badges { flex: 1 1 auto; flex-wrap: nowrap; gap: 3px; }
+  .hud-left .hud-badges > button { font-size: 11px; padding: 0 6px; line-height: 18px; min-height: 0; }
+  .hud-left .wallhp { flex: 1 0 100%; font-size: 11px; }
+  .hud-left .wallhp .bar { flex: 1; width: auto; height: 11px; }
+  .hud-res { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px 4px; overflow: visible; width: 100%; }
+  .hud-res .res { justify-content: center; font-size: 12px; padding: 1px 4px; min-width: 0; }
+}
+/* v12.2 手機版底部選單 6 格（地圖、避難所、倖存者、市場、研究、更多） */
+@media (max-width: 899px) { .nav-btn { min-width: 0; padding-left: 2px; padding-right: 2px; } .nav-label { white-space: nowrap; } }
+@media (max-width: 360px) { .nav-label { font-size: 10px; } .nav-icon { font-size: 19px; } }

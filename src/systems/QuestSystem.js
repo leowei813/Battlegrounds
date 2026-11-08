@@ -2,7 +2,7 @@ import {
   MAIN_QUESTS, DAILY_POOL, DAILY_COUNT, ACHIEVEMENTS, DAILY_CHEST,
 } from '../config/quests.js';
 import { RARITIES, ITEM_TYPES } from '../config/equipment.js';
-import { SUPPLIES, SUPPLY_KEYS, medWeight } from '../config/supplies.js';
+import { SUPPLIES, SUPPLY_KEYS, medWeight, AMMO_FOR } from '../config/supplies.js';
 import {
   withSeed, weightedPick, randInt, pick, randFloat,
 } from '../utils/math.js';
@@ -138,6 +138,12 @@ export class QuestSystem {
     }));
   }
 
+  /** 每日物資箱開出彈藥的最低數量：使用這種彈藥、最耗彈的武器打兩場戰鬥的量 */
+  static ammoFloor(key) {
+    const per = Math.max(0, ...Object.values(AMMO_FOR).filter((x) => x.ammo === key).map((x) => x.perFight));
+    return per * 2;
+  }
+
   /** 開啟每日物資箱（使用存檔種子：重新讀檔結果不變） */
   openChest() {
     if (!this.chestReady()) return { ok: false, reason: this.allDailiesClaimed() ? '今天已經開過了' : '請先完成並領取今天全部的每日任務' };
@@ -158,7 +164,9 @@ export class QuestSystem {
       if (kind === 'supply') {
         const k = weightedPick(weights);
         const sp = SUPPLIES[k];
-        const amount = Math.max(1, Math.round((sp.cat === 'ammo' ? 12 : sp.cat === 'med' ? 1.5 : 5) * (6 - sp.tier) / 3 * randFloat(0.6, 1.4)));
+        let amount = Math.max(1, Math.round((sp.cat === 'ammo' ? 12 : sp.cat === 'med' ? 1.5 : 5) * (6 - sp.tier) / 3 * randFloat(0.6, 1.4) * (DAILY_CHEST.supplyMul || 1)));
+        // 彈藥至少夠用這種彈藥最耗彈的武器打兩場戰鬥
+        if (sp.cat === 'ammo') amount = Math.max(amount, QuestSystem.ammoFloor(k));
         supplies[k] = (supplies[k] || 0) + amount;
       } else if (kind === 'gear') {
         items.push(g.equipment.generate({ level, type: pick(Object.keys(ITEM_TYPES)), rarity: weightedPick(DAILY_CHEST.gearRarity) }));

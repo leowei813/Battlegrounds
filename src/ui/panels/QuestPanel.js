@@ -1,4 +1,4 @@
-import { ACHIEVEMENTS, MAIN_QUESTS } from '../../config/quests.js';
+import { ACHIEVEMENTS, MAIN_QUESTS, DAILY_CHEST } from '../../config/quests.js';
 import { btn, progressBar } from '../components.js';
 import { formatNumber } from '../../utils/math.js';
 import { escapeHtml } from '../../utils/dom.js';
@@ -42,7 +42,7 @@ export class QuestPanel {
     const claimedN = q.dailyDefs().filter((d) => d.claimed).length;
     const opened = g.state.quests.chestDate === g.state.quests.dailyDate;
     const chest = `<div class="card row-between chest-card ${q.chestReady() ? 'ready' : ''}"><div><b>🎁 每日物資箱</b>
-      <small class="muted block">領取當天全部每日任務（${claimedN}/${q.dailyDefs().length}）後可開啟一次：隨機 3～5 項零件、布料、藥品、彈藥、裝備或設計圖，越高階、品級越高越難開到。</small></div>
+      <small class="muted block">領取當天全部每日任務（${claimedN}/${q.dailyDefs().length}）後可開啟一次：隨機 ${DAILY_CHEST.rolls[0]}～${DAILY_CHEST.rolls[1]} 項零件、布料、藥品、彈藥、裝備或設計圖，越高階、品級越高越難開到。</small></div>
       ${opened ? '<span class="tag">今天已開啟</span>' : btn('開啟', 'openChest', {}, { cls: 'btn-sm btn-primary', disabled: !q.chestReady() })}</div>`;
     return `<div class="panel-inner">
       <h2>📜 任務</h2>

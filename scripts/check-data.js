@@ -842,7 +842,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const ex = gs.exploration.start(huge.id, ['leader'], 60);
   assert(ex.ok && ex.exp.durationMin === gs.exploration.searchMinutes(huge), '派遣探索不再選擇時長，由地點決定');
   gs.exploration.recall(ex.exp.id);
-  gs.exploration.update(Date.now() + 5000, { silent: true });
+  {
+    const toasts = [];
+    const tb = gs.toast; gs.toast = (m) => toasts.push(m);
+    const reps = gs.exploration.update(Date.now() + 5000);
+    gs.toast = tb;
+    const rc = reps[0];
+    assert(rc && rc.recalled && !rc.success && toasts.some((m) => m.includes('隊伍已召回')) && !toasts.some((m) => m.includes('受挫')), `召回的隊伍提示「隊伍已召回」，不是「受挫」（${toasts.join(' / ')}）`);
+  }
 
   // 個人背包與倉庫
   gs.state.resources.food = 500;
@@ -1903,6 +1910,38 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     assert(eb2 && eb2.recalled && eb2.endAt > Date.now(), '集結取消時，正在前往集結點的參加者從目前位置走回家');
     B.exploration.update(eb2.endAt + 1, { silent: true });
     assert(!B.rally.trips().length && B.survivors.leader().status === 'idle', '參加者走回避難所後隊員回到家');
+  }
+  // v12.2：發起人提前出發，等最後一位抵達集結點才出發；之後不能再參加、不能取消或退出
+  {
+    A.survivors.setHp(lead, 99999);
+    B.survivors.leader().severe = false;
+    const s4 = await A.rally.start(t2, 20, [lead.id]);
+    await B.shared.poll();
+    const j4 = await B.rally.join(s4.id, [B.survivors.leader().id]);
+    await A.shared.poll();
+    assert(!(await B.rally.departNow(s4.id)).ok, '只有發起人可以提前出發');
+    const e4 = await A.rally.departNow(s4.id);
+    await A.shared.poll();
+    const d4 = A.rally.get(s4.id);
+    const tb4 = d4.teams.find((t) => t.player !== d4.owner);
+    const sc4 = RallySys.schedule(d4);
+    assert(j4.ok && e4.ok && d4.early && d4.departAt <= Date.now() && sc4.go === tb4.arriveAt && sc4.waitFor?.player === tb4.player, `提前出發：倒數結束，等參加者抵達集結點（${e4.msg}）`);
+    assert(!(await A.rally.leave(s4.id)).ok && !(await B.rally.leave(s4.id)).ok, '提前出發後不能取消或退出');
+    const C4 = mk('C4');
+    C4.state.relations.players.A = { status: 'friend', name: 'A' };
+    A.state.relations.players.C4 = { status: 'friend', name: 'C4' };
+    await C4.shared.poll();
+    assert(!(await C4.rally.join(s4.id, [C4.survivors.leader().id])).ok, '提前出發後不能再參加');
+    await A.rally.step(A.rally.trips()[0], tb4.arriveAt - 1000);
+    await A.shared.poll();
+    assert(A.rally.get(s4.id).status === 'gathering', '最後一位還沒抵達前不出發');
+    await A.rally.step(A.rally.trips()[0], tb4.arriveAt + 1);
+    await A.shared.poll();
+    assert(A.rally.get(s4.id).status === 'departed' && A.rally.get(s4.id).departedAt === tb4.arriveAt, '最後一位抵達後部隊出發');
+    A.state.expeditions = A.state.expeditions.filter((e) => e.rallyId !== s4.id);
+    B.state.expeditions = B.state.expeditions.filter((e) => e.rallyId !== s4.id);
+    A.survivors.leader().status = 'idle';
+    B.survivors.leader().status = 'idle';
   }
   // 倒數結束後不能再參加
   {
@@ -5056,7 +5095,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const p4 = mkp();
   gw.rally.get = () => ({ id: 'r2', status: 'done', home: { lat: 25, lon: 121 }, fightAt: now - 60e3 });
   WS5.prototype.fixRallyTrips.call({ game: gw }, [p4], now);
-  assert(!p3.trips.length && p4.trips.length === 1 && tripProgress(p4.trips[0], now).phase === 'returning', '其他玩家看到的集結：行軍時只有集結圖示，打完各隊從目標返程');
+  const { rallyTripView: RTV } = await import('../src/multiplayer/WorldSync.js');
+  const dMarch = { id: 'r2', status: 'departed', home: { lat: 25, lon: 121 }, fightAt: now + 60e3 };
+  const dDone = { id: 'r2', status: 'done', home: { lat: 25, lon: 121 }, fightAt: now - 60e3 };
+  assert(p3.trips.length === 1 && RTV(p3.trips[0], dMarch, now) === null, '其他玩家看到的集結：行軍時不顯示各隊（只有集結戰旗），資料保留');
+  const v4 = RTV(p4.trips[0], dDone, now);
+  assert(v4 && tripProgress(v4, now).phase === 'returning', '打完各隊從目標返程');
+  assert(RTV(p3.trips[0], dDone, now) && tripProgress(RTV(p3.trips[0], dDone, now), now).phase === 'returning', '同一份資料在交戰結束後立刻顯示返程（不用等下一次同步）');
+  assert(RTV(p4.trips[0], dDone, now + 700e3) === null, '回到家後不再顯示');
 }
 
 // ---- 126. 白天高危區也有風險：遭遇率、殭屍等級、生命與攻擊依區域提高（一般區不變） ----
@@ -5711,6 +5757,39 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const n146 = g146.npcs.list[0];
   const want = g146.npcs.garrison(n146, { assault: true }).reduce((x, e) => x + UP(e), 0);
   assert(n146 && g146.npcs.displayPower(n146) === want && want > g146.npcs.power(n146), `NPC 建議戰力改用同一套公式（${Math.round(g146.npcs.power(n146))} → ${want}）`);
+}
+
+// ---- 147. v12.2 高等裝備製作耗材加重、拆解固定回收三成 ----
+{
+  const { craftRecipe: CR, craftTierMul: CTM } = await import('../src/systems/EquipmentSystem.js');
+  const { ITEM_MODELS: IM } = await import('../src/config/equipment.js');
+  const total = (o) => Object.entries(o).filter(([k]) => k !== 'wood').reduce((a, [, v]) => a + v, 0);
+  assert(CTM(5) === 1 && CTM(6) === 1.25 && CTM(10) === 2.25, 'T1～T5 耗材不變、T6 起逐級加重（T10 ×2.25）');
+  const helm = Object.values(IM).find((m) => m.name === '鈦合金頭盔');
+  assert(helm && total(CR(helm)) >= 45, `T10 鈦合金頭盔耗材加重（${total(CR(helm))}）`);
+  const g147 = Game.newGame({ playerName: 'E147', classId: 'warrior', lat: 25, lon: 121 });
+  const hid = Object.keys(IM).find((k) => IM[k] === helm);
+  const it = g147.equipment.generate({ level: 50, model: hid, rarity: 'common' });
+  const back = g147.equipment.dismantleValue(it);
+  const rec = CR(helm);
+  assert(Object.entries(back).filter(([k]) => k !== 'parts').every(([k, v]) => v <= rec[k] && v <= Math.max(1, Math.round(rec[k] * 0.3))), `拆解高等裝備只回收約三成材料（${total(back)}/${total(rec)}）`);
+}
+
+// ---- 148. v12.2 每日物資箱的彈藥至少夠打兩場戰鬥 ----
+{
+  const { QuestSystem: QS } = await import('../src/systems/QuestSystem.js');
+  const { AMMO_FOR: AF, SUPPLIES: SP } = await import('../src/config/supplies.js');
+  const ammoKeys = Object.keys(SP).filter((k) => SP[k].cat === 'ammo');
+  assert(ammoKeys.every((k) => QS.ammoFloor(k) >= 2 * Math.max(0, ...Object.values(AF).filter((x) => x.ammo === k).map((x) => x.perFight))), `彈藥保底＝最耗彈武器兩場（${ammoKeys.map((k) => `${SP[k].name}${QS.ammoFloor(k)}`).join('、')}）`);
+  let bad = 0; let seen = 0;
+  for (let i = 0; i < 40; i += 1) {
+    const gq = Game.newGame({ playerName: `Q${i}`, classId: 'warrior', lat: 25, lon: 121 });
+    gq.state.rng = { seed: 1000 + i, n: 0 };
+    const before = { ...(gq.state.supplies || {}) };
+    gq.quests.openChestNow();
+    ammoKeys.forEach((k) => { const got = (gq.state.supplies?.[k] || 0) - (before[k] || 0); if (got > 0) { seen += 1; if (got < QS.ammoFloor(k)) bad += 1; } });
+  }
+  assert(bad === 0, `每日物資箱開出的彈藥都夠打兩場（開出 ${seen} 次，不足 ${bad} 次）`);
 }
 
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----

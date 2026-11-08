@@ -79,7 +79,7 @@ function topGains(resources = {}, items = [], max = 4) {
 export function shareReportText(r, note = '', link = '') {
   const zone = ZONES.find((z) => z.id === r.zone);
   const zoneText = zone ? `${zone.danger >= 2 ? '☠️' : zone.danger >= 1 ? '⚠️' : '🟢'}${zone.name}` : '';
-  const result = [r.success ? '✅成功' : r.retreated ? '🏳️撤退' : '⚠️受挫', zoneText, r.kills ? `擊殺${r.kills}` : ''].filter(Boolean).join('・');
+  const result = [r.success ? '✅成功' : r.retreated ? '🏳️撤退' : r.recalled ? '🏠召回' : '⚠️受挫', zoneText, r.kills ? `擊殺${r.kills}` : ''].filter(Boolean).join('・');
   return compose(['🧭探索報告', r.poiName || '未知地點', result, topGains(r.resources, r.items) || (r.emptied ? '🕸️已被搜空' : '')], note, link);
 }
 
