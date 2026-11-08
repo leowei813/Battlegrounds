@@ -3823,7 +3823,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   e3.carried = { gained: { wood: Math.ceil(e3.cargo * CHAIN_RETURN_LOAD) + 1 }, items: [], blueprints: [], vehicles: [] };
   ex.update(e3.startAt + e3.travelMs + e3.searchMs + 1);
   // 背包一開始就很重時，搜索途中可能已經停止回家（甚至已經到家）；重點是沒有前往下一站
-  assert(!ex.list.some((e) => e.poiId === near[2].id) && (!ex.list.includes(e3) || e3.travelEvents.some((t) => t.includes('返回避難所卸貨')) || e3.cp?.stopped), '負重達 90% 時返回避難所（不前往下一站）');
+  // 只看這支隊伍（e3）：其他先前留下的隊伍可能剛好前往同一個地點
+  assert(!(ex.list.includes(e3) && e3.poiId === near[2].id) && (!ex.list.includes(e3) || e3.travelEvents.some((t) => t.includes('返回避難所卸貨')) || e3.cp?.stopped), `負重達 90% 時返回避難所（不前往下一站）（${ex.list.map((e) => `${e === e3 ? 'e3' : 'x'}:${e.poiId === near[2].id ? 'n2' : e.poiId === near[0].id ? 'n0' : '?'}:${e.recalled ? 'R' : ''}${e.defeated ? 'D' : ''}:${(e.travelEvents || []).slice(-2).join('|')}`).join(' ; ')}）`);
   if (ex.list.includes(e3)) ex.update(e3.endAt + 1);
   // 關閉開關：每個地點探索完都先回家
   heal();
@@ -5271,7 +5272,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 鎖定：外出中的小隊召回；鎖定後不能出發
   const b = ps[1];
   const poi = b.g.state.map.pois.find((p) => !b.g.shelter.baseAtPoi(p.id) && b.g.exploration.validate(p.id, [b.sv.id]).ok);
-  const trip = b.g.exploration.start(poi.id, [b.sv.id], 5, false, T.lock - 60000);
+  // 鎖定前 5 秒出發：確保鎖定時還在去程（太早出發的小地點可能已經在返程，返程中不能召回）
+  const trip = b.g.exploration.start(poi.id, [b.sv.id], 5, false, T.lock - 5000);
   assert(trip.ok, `報名的倖存者鎖定前可以外出（${trip.reason || ''}）`);
   for (const p of ps) { await p.g.shared.list('dg', 5); p.g.dungeon.update(T.lock + 1000); }
   assert(trip.exp.recalled, '17:50 鎖定時外出中的小隊自動召回');
