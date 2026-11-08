@@ -5235,6 +5235,16 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const extra = mkP('DGX', 'medic');
   assert((await extra.g.dungeon.signup('lab', extra.sv.id, at + 50)).ok && (await extra.g.dungeon.cancel('lab', at + 60)).ok && !extra.g.dungeon.record('lab', at + 60), '截止前可以取消報名');
   assert(!(await a.g.dungeon.cancel('lab', T.close + 1)).ok, '截止後不能取消報名');
+  {
+    // v12.3.1：報名的倖存者被驅逐 → 截止前自動取消報名，可以改派其他人
+    assert((await extra.g.dungeon.signup('lab', extra.sv.id, at + 70)).ok, '重新報名');
+    extra.sv.isLeader = false;
+    extra.g.survivors.dismiss(extra.sv.id);
+    extra.g.dungeon.update(at + 80);
+    await new Promise((r) => setTimeout(r, 20));
+    const listed = (extra.g.dungeon.data('lab', DungeonSystem.dayKey(at)).list || []).some((e) => e.p === extra.g.dungeon.myId());
+    assert(!extra.g.dungeon.record('lab', at + 90) && !listed, '報名的倖存者被驅逐後，自動取消報名（名單也移除）');
+  }
   // 同時搶最後一個名額：只有一個人成功
   {
     const s2 = new MemoryObjects();
