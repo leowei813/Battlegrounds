@@ -653,11 +653,16 @@ export class RallySystem {
     }));
   }
 
-  /** 參加前估算：從自己的避難所走到集結點的時間（直線距離，協防趕路速度） */
-  gatherEstimate(d) {
+  /**
+   * 參加前估算：從自己的避難所走到集結點的時間（直線距離，協防趕路速度）。
+   * 給了隊員與載具時，依隊伍的移動速度計算（載具座位足夠時以載具速度移動）。
+   */
+  gatherEstimate(d, memberIds = null, vehicleIds = []) {
     const sh = this.game.shelter.primary();
     if (!sh || !d?.home) return 0;
-    return Math.round((haversine(sh.lat, sh.lon, d.home.lat, d.home.lon) / 1000) * 1.2 * ASSIST_TRAVEL_MUL * 60000);
+    const dist = haversine(sh.lat, sh.lon, d.home.lat, d.home.lon);
+    const rate = memberIds?.length ? this.game.exploration.walkRate({ memberIds, vehicleIds: vehicleIds || [] }) : (1.2 / 1000) * 60000;
+    return Math.round(dist * rate * ASSIST_TRAVEL_MUL);
   }
 
   /** 與目標的距離（公尺） */

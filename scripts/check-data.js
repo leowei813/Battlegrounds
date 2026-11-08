@@ -5841,6 +5841,19 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(WQ(0, () => 0) === 0 && WQ(10, () => 0) === 10 && WQ(10, () => 0.9999999) === 100, '保底與上限正確');
 }
 
+// ---- 152. v12.3.1 參加集結的「前往集結點」預估依載具速度計算 ----
+{
+  const gv = Game.newGame({ playerName: 'RV152', classId: 'warrior', lat: 25, lon: 121 });
+  gv.state.map.pois = fillPois([], 25, 121);
+  gv.shelter.establish(gv.state.map.pois.find((p) => gv.shelter.canEstablish(p).ok));
+  const sh = gv.shelter.primary();
+  const d = { home: { lat: sh.lat + 0.02, lon: sh.lon } };
+  const walk = gv.rally.gatherEstimate(d, [gv.survivors.leader().id], []);
+  const car = gv.vehicles.create('car'); gv.vehicles.add(car);
+  const fast = car ? gv.rally.gatherEstimate(d, [gv.survivors.leader().id], [car.id]) : walk;
+  assert(walk > 0 && (!car || fast < walk), `前往集結點預估：步行 ${Math.round(walk / 1000)} 秒，載具 ${Math.round(fast / 1000)} 秒`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
