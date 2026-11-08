@@ -1590,7 +1590,12 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .cd-card.cd-card { border: 1px solid color-mix(in srgb, var(--rc) 55%, transparent); border-left: 6px solid var(--rc); }
 @media (max-width: 899px) { .cd-mini { border-left-width: 5px; } }
 /* v12.2 手機版消息視窗（探索報告、避難所紀錄、事件紀錄）整體縮小 */
-@media (max-width: 899px) { .msg-body { zoom: 0.8; } }
+@media (max-width: 899px) {
+  .msg-body { zoom: 0.8; }
+  .msg-body > .seg { gap: 4px; margin-bottom: 6px; }
+  .msg-body > .seg .btn { font-size: 12px; padding: 5px 8px; min-height: 0; white-space: nowrap; }
+  .msg-body .msg-dot { font-size: 10px; }
+}
 /* v12.2 手機版地圖右側按鈕列縮小 */
 @media (max-width: 899px) {
   .map-tools { right: 6px; top: 8px; gap: 6px; }
