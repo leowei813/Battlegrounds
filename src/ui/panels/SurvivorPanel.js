@@ -7,7 +7,7 @@ import { RESOURCE_KEYS } from '../../config/constants.js';
 import { SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, unitWeight } from '../../config/supplies.js';
 import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
-import { LOADOUT_MAX, AMMO_CAP_OPTIONS, MED_NONE } from '../../systems/SurvivorSystem.js';
+import { LOADOUT_MAX, AMMO_CAP_OPTIONS, MED_NONE, KEEP_ORDER } from '../../systems/SurvivorSystem.js';
 import {
   btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf, affixChips, towerTag, rallyFlag,
 } from '../components.js';
@@ -156,10 +156,21 @@ export class SurvivorPanel {
         <div><b>📻 廣播招募</b><small class="muted block">招募後，停留一小時，雇傭需另外付費</small><div class="costs">${costHtml(st, cost)}</div></div>
         ${btn('招募', 'recruit', {}, { cls: 'btn-primary' })}
       </div>`}
-      ${pool ? `<h4>🙋 等待加入（探索中遇到，停留 1 小時）</h4><div class="grid cd-list">${pool}</div>` : ''}
+      <h4>🙋 等待加入（探索中遇到，停留 1 小時）</h4>
+      ${this.keepMinHtml()}
+      ${pool ? `<div class="grid cd-list">${pool}</div>` : ''}
       <h4>🏕️ 附近的倖存者 <small class="muted">每小時更新（${formatDuration(Math.max(0, st.recruitBoard.refreshAt - Date.now()))}後）</small></h4>
       <div class="grid cd-list">${board || '<p class="muted">目前沒有人。</p>'}</div>
       <details class="civ-more" data-keep="cap" ${this.keepOpen?.cap ? 'open' : ''}><summary>人數上限與食物說明</summary><p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 3（${cap.leader}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），等級越高吃得越多（每高 1 級 +${Math.round(FOOD_LEVEL_STEP * 100)}%），目前食物淨收入 ${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時。</p></details>`;
+  }
+
+  /** 探索遇到的倖存者：只讓選定品級（含以上）留下，其他自動婉拒 */
+  keepMinHtml() {
+    const sv = this.game.survivors;
+    const cur = sv.keepMin();
+    const label = (r, i) => (i === 0 ? '全部留下' : i === KEEP_ORDER.length - 1 ? `只留${RARITIES[r].name}` : `${RARITIES[r].name}以上`);
+    const opts = KEEP_ORDER.map((r, i) => `<option value="${r}" ${r === cur ? 'selected' : ''}>${label(r, i)}</option>`).join('');
+    return `<div class="keep-row">⚙️ 探索遇到時留下<select class="keep-min" aria-label="探索遇到的倖存者留下品級">${opts}</select><small class="muted">其他自動婉拒</small></div>`;
   }
 
   /** 列表中每位倖存者的狀態分類 */
@@ -441,6 +452,11 @@ export class SurvivorPanel {
       if (this.ui.tab !== 'survivors') return;
       if (e.target.classList?.contains('lo-med')) {
         this.ui.result(this.game.survivors.setSupply(this.selId, 'med', e.target.value));
+        this.game.changed();
+        this.ui.refresh(true);
+      }
+      if (e.target.classList?.contains('keep-min')) {
+        this.game.survivors.setKeepMin(e.target.value);
         this.game.changed();
         this.ui.refresh(true);
       }

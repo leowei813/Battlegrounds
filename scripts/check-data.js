@@ -5997,6 +5997,14 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(!gn.survivors.renameLegacy().length, '已經是新名字就不再更換');
 }
 
+// ---- v13.1：探索遇到的倖存者依品級（含以上）留下，其他自動婉拒 ----
+{
+  const gk = Game.newGame({ playerName: 'K', classId: 'warrior', lat: 25.03, lon: 121.57 });
+  assert(gk.survivors.keepMin() === 'poor' && gk.survivors.keeps({ rarity: 'poor' }), '預設全部留下');
+  assert(gk.survivors.setKeepMin('rare').ok && !gk.survivors.keeps({ rarity: 'uncommon' }) && gk.survivors.keeps({ rarity: 'rare' }) && gk.survivors.keeps({ rarity: 'legendary' }), '設定精良以上：精良含以上留下，優良以下婉拒');
+  assert(!gk.survivors.setKeepMin('xx').ok, '不能設定不存在的品級');
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

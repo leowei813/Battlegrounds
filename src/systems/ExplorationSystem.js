@@ -1264,9 +1264,15 @@ export class ExplorationSystem {
       const lvBonus = Math.max(0, Math.min(3, ctx.zone.danger || 0));
       const cand = this.game.survivors.makeCandidate(Math.min(Math.max(1, level - 1), this.game.survivors.candidateLevel() + lvBonus));
       const pool = this.game.state.recruitPool;
-      cand.leaveAt = Math.max(Date.now(), at) + RECRUIT_STAY_MS;
-      if (pool.length < 5) pool.push(cand);
-      cp.events.push(`🙋 ${tag}遇到倖存者 ${cand.name}，對方願意加入（會在避難所附近等 1 小時，請到倖存者頁面確認）`);
+      const rname = RARITIES[cand.rarity]?.name || '';
+      if (!this.game.survivors.keeps(cand)) {
+        // 品級低於設定：自動婉拒，不進入等待名單
+        cp.events.push(`🙋 ${tag}遇到倖存者 ${cand.name}（${rname}），不符合停留品級，已婉拒`);
+      } else {
+        cand.leaveAt = Math.max(Date.now(), at) + RECRUIT_STAY_MS;
+        if (pool.length < 5) pool.push(cand);
+        cp.events.push(`🙋 ${tag}遇到倖存者 ${cand.name}（${rname}），對方願意加入（會在避難所附近等 1 小時，請到倖存者頁面確認）`);
+      }
     } else if (ev === 'special') {
       const sp = pick(SPECIAL_EVENTS);
       cp.events.push(`✨ ${tag}${sp.text}`);
