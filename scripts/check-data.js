@@ -5775,6 +5775,23 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(Object.entries(back).filter(([k]) => k !== 'parts').every(([k, v]) => v <= rec[k] && v <= Math.max(1, Math.round(rec[k] * 0.3))), `拆解高等裝備只回收約三成材料（${total(back)}/${total(rec)}）`);
 }
 
+// ---- 148. v12.2 每日物資箱的彈藥至少夠打兩場戰鬥 ----
+{
+  const { QuestSystem: QS } = await import('../src/systems/QuestSystem.js');
+  const { AMMO_FOR: AF, SUPPLIES: SP } = await import('../src/config/supplies.js');
+  const ammoKeys = Object.keys(SP).filter((k) => SP[k].cat === 'ammo');
+  assert(ammoKeys.every((k) => QS.ammoFloor(k) >= 2 * Math.max(0, ...Object.values(AF).filter((x) => x.ammo === k).map((x) => x.perFight))), `彈藥保底＝最耗彈武器兩場（${ammoKeys.map((k) => `${SP[k].name}${QS.ammoFloor(k)}`).join('、')}）`);
+  let bad = 0; let seen = 0;
+  for (let i = 0; i < 40; i += 1) {
+    const gq = Game.newGame({ playerName: `Q${i}`, classId: 'warrior', lat: 25, lon: 121 });
+    gq.state.rng = { seed: 1000 + i, n: 0 };
+    const before = { ...(gq.state.supplies || {}) };
+    gq.quests.openChestNow();
+    ammoKeys.forEach((k) => { const got = (gq.state.supplies?.[k] || 0) - (before[k] || 0); if (got > 0) { seen += 1; if (got < QS.ammoFloor(k)) bad += 1; } });
+  }
+  assert(bad === 0, `每日物資箱開出的彈藥都夠打兩場（開出 ${seen} 次，不足 ${bad} 次）`);
+}
+
 // ---- 5. 通行碼雜湊（純 JS SHA-256 與 Node crypto 結果一致）----
 let ref = 'jdqs-gate:密碼 test';
 for (let i = 0; i < ACCESS_ITERATIONS; i += 1) ref = crypto.createHash('sha256').update(ref).digest('hex');
