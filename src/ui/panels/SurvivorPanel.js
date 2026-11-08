@@ -70,7 +70,9 @@ export class SurvivorPanel {
     const s = g.survivors.stats(c);
     const avg = g.survivors.avgQuality(c);
     const ring = avg >= 100 ? '#f2b134' : avg >= 70 ? '#66bb6a' : avg >= 40 ? '#ffb300' : '#ef5350';
-    return `<div class="card recruit sv-card cd-card r-${c.rarity}" style="--rc:${r.color};--cc:${cls.color}">
+    this.cdActions = this.cdActions || {};
+    this.cdActions[c.id] = actions;
+    return `${this.candidateMini(c, s, avg, ring, actions)}<div class="card recruit sv-card cd-card r-${c.rarity}" style="--rc:${r.color};--cc:${cls.color}">
       <div class="cd-head"><span class="sv-icon">${cls.icon}</span>
         <div class="sv-title"><b>${escapeHtml(c.name)}</b><small>${rarityTag(c.rarity)} ${cls.name} Lv${c.level}・成長 ×${g.survivors.growthMul(c)}</small></div>
         <div class="cd-avg" title="平均素質"><span class="cd-ring" style="--p:${avg};--ring:${ring}"><span>${avg}%</span></span><small>平均素質</small></div></div>
@@ -78,6 +80,47 @@ export class SurvivorPanel {
       <div class="cd-skill">✨ 可解放技能 ${g.survivors.skillSlots(c)}/${cls.skills.length}・${cls.skills[0].name}：${cls.skills[0].desc}</div>
       <div class="cd-foot"><small class="muted" title="素質 0～100%：越高能力與升級成長越好（招募後不會改變）">ⓘ 素質越高，能力與成長越好</small><div class="btn-row">${actions}</div></div>
     </div>`;
+  }
+
+  /**
+   * 手機版的候選人小卡（v12.2）：一列兩張，約為完整卡片的 1/4；點卡片打開完整資訊。
+   * 網頁版不顯示（CSS 控制）。
+   */
+  candidateMini(c, s, avg, ring, actions) {
+    const g = this.game;
+    const cls = CLASSES[c.classId];
+    const r = RARITIES[c.rarity] || RARITIES.common;
+    const val = { hp: s.hp, atk: s.atk, def: s.def, crit: `${(s.crit * 100).toFixed(1)}%`, dodge: `${(s.dodge * 100).toFixed(1)}%`, atkSpeed: s.atkSpeed };
+    const icon = { hp: '❤️', atk: '⚔️', def: '🛡️', crit: '💥', dodge: '💨', atkSpeed: '⚡' };
+    const lv = (q) => (q >= 100 ? 'max' : q >= 70 ? 'hi' : q >= 40 ? 'mid' : 'lo');
+    const order = ['hp', 'crit', 'atk', 'dodge', 'def', 'atkSpeed'].filter((k) => QUALITY_KEYS.includes(k));
+    const rows = order.map((k) => { const q = g.survivors.qualityOf(c, k); return `<span class="cm-s"><i>${icon[k]}</i><b>${val[k]}</b><em class="${lv(q)}">${q}%</em></span>`; }).join('');
+    return `<div class="cd-mini" style="--rc:${r.color}" data-action="cdOpen" data-id="${c.id}">
+      <div class="cm-h"><span class="cm-ic">${cls.icon}</span><span class="cm-n"><b>${escapeHtml(c.name)}</b><small><span class="cm-tg">${r.name}</span> ${cls.name} Lv${c.level}</small></span><span class="cm-ring" style="--ring:${ring}">${avg}%</span></div>
+      <div class="cm-g">${rows}</div>
+      <div class="cm-sk">✨ 技能 ${g.survivors.skillSlots(c)}/${cls.skills.length}</div>
+      <div class="cm-f">${actions}</div>
+    </div>`;
+  }
+
+  /** 手機版：點小卡打開完整的候選人資訊 */
+  openCandidate(id) {
+    const st = this.game.state;
+    const c = [...(st.recruitPool || []), ...(st.recruitOffer || []), ...(st.recruitBoard?.list || [])].find((x) => x.id === id);
+    if (!c) return;
+    const body = () => {
+      const html = this.candidateCard(c, this.cdActions?.[id] || '');
+      return `<div class="cd-modal">${html}</div>`;
+    };
+    this.ui.modal.open({
+      title: `${CLASSES[c.classId].icon} ${c.name}`,
+      body: body(),
+      onAction: (action, data, m) => {
+        m.close();
+        this.onAction(action, data);
+        this.ui.refresh(true);
+      },
+    });
   }
 
   /** 招募頁（列表下方的「招募倖存者」） */
@@ -108,14 +151,14 @@ export class SurvivorPanel {
         ${nextOdds ? `<div class="odds dim">${nextOdds}</div>` : ''}</div>` : '';
     return `<div class="sv-pane-head odds-anchor">${btn('‹ 返回', 'svBack', {}, { cls: 'btn-sm sv-back' })}<h3>📻 招募倖存者</h3><button class="odds-q ${this.showOdds ? 'on' : ''}" data-action="oddsToggle" title="招募品級機率" aria-label="招募品級機率說明">?</button>${oddsPop}</div>
       ${fullNote}
-      ${offer ? `<h4>📻 招募候選人（三選一）</h4><div class="grid">${offer}</div><div class="btn-row">${btn('放棄此次招募（不退費）', 'abandon', {}, { cls: 'btn-ghost btn-sm' })}</div>` : `
+      ${offer ? `<h4>📻 招募候選人（三選一）</h4><div class="grid cd-list">${offer}</div><div class="btn-row">${btn('放棄此次招募（不退費）', 'abandon', {}, { cls: 'btn-ghost btn-sm' })}</div>` : `
       <div class="card row-between">
         <div><b>📻 廣播招募</b><small class="muted block">支付廣播費用後出現 3 位隨機職業與品級的倖存者，會停留 1 小時；選擇後還要支付雇用費，也可以放棄（廣播費用不退還）。</small><div class="costs">${costHtml(st, cost)}</div></div>
         ${btn('招募', 'recruit', {}, { cls: 'btn-primary' })}
       </div>`}
-      ${pool ? `<h4>🙋 等待加入（探索中遇到，停留 1 小時）</h4><div class="grid">${pool}</div>` : ''}
+      ${pool ? `<h4>🙋 等待加入（探索中遇到，停留 1 小時）</h4><div class="grid cd-list">${pool}</div>` : ''}
       <h4>🏕️ 附近的倖存者 <small class="muted">每小時更新（${formatDuration(Math.max(0, st.recruitBoard.refreshAt - Date.now()))}後）</small></h4>
-      <div class="grid">${board || '<p class="muted">目前沒有人。</p>'}</div>
+      <div class="grid cd-list">${board || '<p class="muted">目前沒有人。</p>'}</div>
       <details class="civ-more" data-keep="cap" ${this.keepOpen?.cap ? 'open' : ''}><summary>人數上限與食物說明</summary><p class="muted">人數上限 = 基本 ${cap.base} + 領袖等級 ÷ 3（${cap.leader}），最多 ${cap.max} 人，且不能超過🛏️宿舍可住人數（${cap.dormLv ? `Lv${cap.dormLv}：${cap.dorm} 人` : `尚未建造：最多 ${cap.dorm} 人`}）。生命只會在據點內休息時回復，速度取決於🩺診療室等級。每人每小時吃 ${FOOD_PER_SURVIVOR_HOUR} 食物（離線時 ${FOOD_PER_SURVIVOR_HOUR_OFFLINE}），等級越高吃得越多（每高 1 級 +${Math.round(FOOD_LEVEL_STEP * 100)}%），目前食物淨收入 ${net.food >= 0 ? '+' : ''}${net.food.toFixed(1)}/時。</p></details>`;
   }
 
@@ -264,6 +307,7 @@ export class SurvivorPanel {
     const g = this.game;
     const id = this.selId;
     const sel = (k) => this.ui.panelEl?.querySelector(k);
+    if (action === 'cdOpen') { this.openCandidate(data.id); return; }
     if (action === 'selSv') {
       if (Date.now() - (this.dragEndAt || 0) < 400 || el?.closest?.('.sv-drag') || data.drag) return;
       this.selId = data.id;
