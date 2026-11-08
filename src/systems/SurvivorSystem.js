@@ -32,6 +32,9 @@ export const POST_BATTLE_HEAL_BELOW = 0.7;
 /** 藥品欄設定為「不攜帶」 */
 export const MED_NONE = 'none';
 
+/** 探索遇到的倖存者可設定的留下品級（由低到高） */
+export const KEEP_ORDER = ['poor', 'common', 'uncommon', 'rare', 'epic', 'legendary'];
+
 export class SurvivorSystem {
   constructor(game) {
     this.game = game;
@@ -609,6 +612,48 @@ export class SurvivorSystem {
   }
 
   /** 讀檔時：自己的倖存者若有同名（舊版名單較少），後加入的改名（領袖不改名） */
+  /** 探索遇到的倖存者：留下的最低品級（預設全部留下） */
+  keepMin() {
+    const k = this.game.state.recruitKeepMin;
+    return KEEP_ORDER.includes(k) ? k : 'poor';
+  }
+
+  setKeepMin(k) {
+    if (!KEEP_ORDER.includes(k)) return { ok: false, reason: '沒有這個品級' };
+    this.game.state.recruitKeepMin = k;
+    return { ok: true };
+  }
+
+  /** 這位候選人會不會留下（品級達到設定，含以上） */
+  keeps(cand) {
+    const r = KEEP_ORDER.indexOf(cand?.rarity);
+    return r < 0 || r >= KEEP_ORDER.indexOf(this.keepMin());
+  }
+
+  /** 名字是否屬於新名單（v12 起；含名單用完時加上「二世」等的名字） */
+  static isNewName(name) {
+    const n = String(name || '');
+    if (SURVIVOR_NAMES.includes(n)) return true;
+    const m = /^(.+?)(?:[二三四五六七八九]|\d+)世$/.exec(n);
+    return !!(m && SURVIVOR_NAMES.includes(m[1]));
+  }
+
+  /**
+   * v13.1：舊名單（v12 以前）招募的倖存者換成新名單的名字（領袖保留玩家自己取的名字）。
+   * 只改名字，能力不變；在事件紀錄留下對照。
+   */
+  renameLegacy() {
+    const renamed = [];
+    this.list.forEach((sv) => {
+      if (sv.isLeader || sv.id === 'leader' || SurvivorSystem.isNewName(sv.name)) return;
+      const old = sv.name;
+      sv.name = this.randomName();
+      renamed.push(`${old} → ${sv.name}`);
+    });
+    if (renamed.length) this.game.log(`📛 倖存者換成新名單的名字：${renamed.join('、')}`, 'info');
+    return renamed;
+  }
+
   dedupeNames() {
     const seen = new Set();
     const renamed = [];

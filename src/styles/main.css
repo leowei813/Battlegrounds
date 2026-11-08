@@ -1670,3 +1670,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .feed-chip.rally { border-color: #81d4fa; background: #0d2f45e6; color: #e1f5fe; animation: rally-glow 2.2s ease-in-out infinite; }
 @keyframes rally-glow { 0%, 100% { box-shadow: 0 0 3px #81d4fa55; } 50% { box-shadow: 0 0 12px #81d4facc, 0 0 2px #b3e5fc; } }
 .setup-world { margin: 10px 0 4px; background: #1b5e2033; border: 1px dashed #66bb6a; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: #c8e6c9; line-height: 1.6; }
+/* 探索遇到的倖存者：留下品級（一行） */
+.keep-row { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; margin: 2px 0 8px; font-size: 13px; white-space: nowrap; }
+.keep-row small { overflow: hidden; text-overflow: ellipsis; }
+.keep-min { background: #0b1418; color: #eceff1; border: 1px solid #546e7a; border-radius: 8px; padding: 3px 6px; font: inherit; font-size: 13px; }

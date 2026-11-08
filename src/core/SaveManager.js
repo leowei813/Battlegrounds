@@ -557,6 +557,8 @@ export class SaveManager {
       const c = data.map.center;
       if (!c || !inWorld(c.lat, c.lon)) data.map.center = { ...WORLD_CENTER };
     }
+    // v13.1：舊名單招募的倖存者在下次開遊戲時換成新名單的名字
+    if (v < 33) data.renameLegacy = true;
     data.version = SAVE_VERSION;
     return data;
   }
