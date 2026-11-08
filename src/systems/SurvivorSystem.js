@@ -609,6 +609,30 @@ export class SurvivorSystem {
   }
 
   /** 讀檔時：自己的倖存者若有同名（舊版名單較少），後加入的改名（領袖不改名） */
+  /** 名字是否屬於新名單（v12 起；含名單用完時加上「二世」等的名字） */
+  static isNewName(name) {
+    const n = String(name || '');
+    if (SURVIVOR_NAMES.includes(n)) return true;
+    const m = /^(.+?)(?:[二三四五六七八九]|\d+)世$/.exec(n);
+    return !!(m && SURVIVOR_NAMES.includes(m[1]));
+  }
+
+  /**
+   * v13.1：舊名單（v12 以前）招募的倖存者換成新名單的名字（領袖保留玩家自己取的名字）。
+   * 只改名字，能力不變；在事件紀錄留下對照。
+   */
+  renameLegacy() {
+    const renamed = [];
+    this.list.forEach((sv) => {
+      if (sv.isLeader || sv.id === 'leader' || SurvivorSystem.isNewName(sv.name)) return;
+      const old = sv.name;
+      sv.name = this.randomName();
+      renamed.push(`${old} → ${sv.name}`);
+    });
+    if (renamed.length) this.game.log(`📛 倖存者換成新名單的名字：${renamed.join('、')}`, 'info');
+    return renamed;
+  }
+
   dedupeNames() {
     const seen = new Set();
     const renamed = [];

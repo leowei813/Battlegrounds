@@ -166,6 +166,11 @@ export class Game {
     this.shelter.moveIntoWorld();
     // v12：自己的倖存者不同名（舊版名單只有 30 個，可能有重複）
     this.survivors.dedupeNames();
+    // v13.1：舊名單的倖存者換成新名單的名字（只做一次）
+    if (this.state.renameLegacy) {
+      this.survivors.renameLegacy();
+      delete this.state.renameLegacy;
+    }
     // 電磁塔、電網每個據點限 1 座：舊存檔多出的拆除並退還材料
     this.shelter.enforceDefenseLimits();
     // 標記地點已移除：清除舊存檔的標記（不再保留遠處的標記建築）

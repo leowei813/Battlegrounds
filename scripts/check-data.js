@@ -5972,6 +5972,31 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(mig && W.inWorld(mig.map.center.lat, mig.map.center.lon), '舊存檔的地圖中心移到固定地圖範圍內');
 }
 
+// ---- v13.1：舊名單的倖存者換成新名單的名字 ----
+{
+  const { SURVIVOR_NAMES: SN } = await import('../src/config/survivors.js');
+  const { SurvivorSystem: SS } = await import('../src/systems/SurvivorSystem.js');
+  const gn = Game.newGame({ playerName: '老大', classId: 'warrior', lat: 25.03, lon: 121.57 });
+  const a = gn.survivors.makeCandidate(5);
+  const b = gn.survivors.makeCandidate(5);
+  const c = gn.survivors.makeCandidate(5);
+  a.name = '舊名字甲';
+  b.name = '舊名字乙';
+  c.name = SN[3];
+  [a, b, c].forEach((x) => gn.state.survivors.push(x));
+  const lvA = a.level;
+  const mig = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gn.state)), version: 32 });
+  assert(mig.renameLegacy === true, '舊存檔標記要換成新名單名字');
+  gn.state.renameLegacy = true;
+  gn.survivors.renameLegacy();
+  const names = gn.state.survivors.map((x) => x.name);
+  assert(SS.isNewName(a.name) && SS.isNewName(b.name) && c.name === SN[3] && a.level === lvA, `舊名單的倖存者換成新名字，新名單的不變（${a.name}、${b.name}）`);
+  assert(gn.survivors.leader().name === '老大', '領袖保留玩家自己取的名字');
+  assert(new Set(names).size === names.length, '換名後不會重複');
+  assert(gn.state.log.some((l) => l.msg.includes('舊名字甲 →')), '事件紀錄留下舊名與新名對照');
+  assert(!gn.survivors.renameLegacy().length, '已經是新名字就不再更換');
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);
