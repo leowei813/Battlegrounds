@@ -134,7 +134,7 @@ export class SurvivorPanel {
       `${btn('✅ 接納', 'accept', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full, title: full ? g.survivors.fullReason() : '' })}${btn('拒絕', 'reject', { id: c.id }, { cls: 'btn-sm btn-ghost' })}${stay(c.leaveAt)}`)).join('');
     const offer = (st.recruitOffer || []).map((c) => this.candidateCard(c,
       `${btn(`✅ 雇用 💰${g.survivors.hireCost(c).coins}`, 'pick', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full, title: full ? g.survivors.fullReason() : '' })}${stay(st.recruitOfferUntil)}`)).join('');
-    const fullNote = full ? `<div class="card warn rc-full">🛏️ 人數已滿：${escapeHtml(g.survivors.fullReason())}。候選人會停留 1 小時，期間擴充宿舍或空出位置就能雇用。</div>` : '';
+    const fullNote = full ? `<div class="card warn rc-full">🛏️ 人數已滿：${escapeHtml(g.survivors.fullReason())}。候選人會停留 1 小時。</div>` : '';
     const cost = g.survivors.currentRecruitCost();
     const board = (st.recruitBoard?.list || []).map((c) => this.candidateCard(c,
       btn(`✅ 雇用 💰${g.survivors.hireCost(c).coins}`, 'hire', { id: c.id }, { cls: 'btn-sm btn-primary', disabled: full }))).join('');
