@@ -441,10 +441,14 @@ export class InventoryPanel {
     const ids = [...this.qdSel];
     const gain = eq.dismantlePreview(ids);
     const chips = Object.entries(gain).map(([k, v]) => `<span class="sr-chip">${metaOf(k).icon} ${metaOf(k).name} +${v}</span>`).join('');
+    // v12.2：預計回收預設收合成一行（種類與總數），點一下展開材料清單
+    const kinds = Object.keys(gain).length;
+    const total = Object.values(gain).reduce((x, v) => x + v, 0);
+    const sum = kinds ? `<button class="qd-sum" data-action="qdGain">預計回收 ${kinds} 種・共 ${total} 個 ${this.qdOpen ? '▴' : '▾'}</button>` : '<small class="muted">點選要拆解的裝備</small>';
     return `<div class="qd-bar">
-      <div class="row-between"><b>🔨 已選 ${ids.length} 件</b><small class="muted">預計回收</small></div>
-      <div class="sr-items">${chips || '<small class="muted">點選要拆解的裝備</small>'}</div>
-      <div class="row-between" style="margin-top:8px">${btn('清除選取', 'qdClear', {}, { cls: 'btn-sm btn-ghost', disabled: !ids.length })}${btn(`🔨 確認拆解 ${ids.length} 件`, 'qdConfirm', {}, { cls: 'btn-sm btn-danger', disabled: !ids.length })}</div>
+      <div class="row-between"><b>🔨 已選 ${ids.length} 件</b>${sum}</div>
+      ${kinds && this.qdOpen ? `<div class="sr-items qd-gain">${chips}</div>` : ''}
+      <div class="row-between" style="margin-top:6px">${btn('清除選取', 'qdClear', {}, { cls: 'btn-sm btn-ghost', disabled: !ids.length })}${btn(`🔨 確認拆解 ${ids.length} 件`, 'qdConfirm', {}, { cls: 'btn-sm btn-danger', disabled: !ids.length })}</div>
     </div>`;
   }
 
@@ -536,6 +540,7 @@ export class InventoryPanel {
         list.forEach((i) => (all ? this.qdSel.delete(i.id) : this.qdSel.add(i.id)));
         break;
       }
+      case 'qdGain': this.qdOpen = !this.qdOpen; break;
       case 'qdClear': this.qdSel.clear(); break;
       case 'qdConfirm': this.qdConfirm(); break;
       case 'dropSupply': this.ui.result(g.equipment.discardSupply(data.key, this.dropQty)); break;
