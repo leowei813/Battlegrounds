@@ -5935,12 +5935,12 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(wp.length > 1500 && wp.every((p) => W.inWorld(p.lat, p.lon)), `整張地圖的建築都在範圍內（${wp.length} 棟）`);
   assert(generateWorldPois().map((p) => p.id).join() === wp.map((p) => p.id).join(), '所有玩家的地圖建築相同');
   {
-    // 依固定地圖重新校正：各類資源的建築比例符合規劃（食物 24、木材 18、燃料 9、零件布料 18、藥品 13、裝備彈藥 18）
+    // 依固定地圖重新校正：各類資源的建築比例符合規劃（食物 26、木材 18、燃料 7、零件布料 18、藥品 13、裝備彈藥 18）
     const cnt = {};
     wp.forEach((p) => { cnt[p.type] = (cnt[p.type] || 0) + 1; });
     const pct = (...ks) => (ks.reduce((a, k) => a + (cnt[k] || 0), 0) / wp.length) * 100;
     const got = { food: pct('residential', 'shop', 'supermarket'), wood: pct('forest'), fuel: pct('gasStation'), part: pct('factory', 'garage', 'recycling'), med: pct('pharmacy', 'hospital'), gear: pct('warehouse', 'school', 'police', 'military') };
-    const want = { food: 24, wood: 18, fuel: 9, part: 18, med: 13, gear: 18 };
+    const want = { food: 26, wood: 18, fuel: 7, part: 18, med: 13, gear: 18 };
     assert(Object.keys(want).every((k) => Math.abs(got[k] - want[k]) <= 2.5), `固定地圖的資源建築比例符合規劃（${Object.entries(got).map(([k, v]) => `${k} ${v.toFixed(1)}%`).join('、')}）`);
   }
   for (let k = 0; k < 50; k += 1) {
