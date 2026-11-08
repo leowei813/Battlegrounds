@@ -13,6 +13,10 @@ export const RALLY_JOIN_GRACE_MS = 30000;
 export const RALLY_KM = 20;
 /** 結算鎖定逾時（結算中的人斷線時，其他參加者可以接手） */
 const LOCK_MS = 60000;
+/** 集結戰鬥詳細最多保留的紀錄筆數（放在共用資料裡，分給每位參加者） */
+const RALLY_LOG = 80;
+/** 集結共用資料的大小上限（伺服器每筆 16000 位元組，保留一些空間） */
+const RALLY_BYTES = 14000;
 /** 攻陷 NPC 據點時能搶到的金錢比例（與單獨攻打相同） */
 const NPC_COIN_LOOT = 0.35;
 
@@ -467,6 +471,7 @@ export class RallySystem {
         exp.rallyResult = d.result?.teams?.[this.myId()] || { units: [], coins: 0, items: [], mats: {} };
         exp.rallySummary = d.result?.summary || '';
         exp.rallyDetail = Array.isArray(d.result?.detail) ? d.result.detail.slice(0, 12) : [];
+        if (d.result?.battle) exp.rallyBattle = d.result.battle;
         exp.rallyVictory = !!d.result?.victory;
         exp.endAt = Math.max(now, (d.fightAt || now) + (exp.travelMs || 0));
         // v12.1：打完從目標直接走回自己的避難所（地圖上顯示一般的返程）
@@ -498,8 +503,21 @@ export class RallySystem {
       if (!x || x.status !== 'resolving' || x.lockBy !== me) return { fail: 'lost' };
       x.status = 'done';
       x.result = out;
+      RallySystem.fitBattle(x);
       return { data: x };
     });
+  }
+
+  /**
+   * 共用資料每筆有大小上限（16000 位元組）：戰鬥詳細太長時先縮短逐筆紀錄，還是太大就不附戰鬥詳細。
+   */
+  static fitBattle(x, max = RALLY_BYTES) {
+    const b = x.result?.battle;
+    if (!b) return x;
+    const size = () => new TextEncoder().encode(JSON.stringify(x)).length;
+    while (size() > max && b.log?.length > 10) b.log = [...b.log.slice(0, Math.ceil(b.log.length / 2) - 10), ...b.log.slice(-10)];
+    if (size() > max) delete x.result.battle;
+    return x;
   }
 
   /** 集結戰鬥：所有隊伍的隊員一起上場 */
@@ -551,7 +569,8 @@ export class RallySystem {
       const as = g.combat.wallAssault(attackers, df.wall, df.dps);
       const fallen = new Set(attackers.filter((a) => !as.alive.includes(a)).map((a) => a.u.id));
       const fighters = units.filter((u) => !fallen.has(u.id));
-      result = as.breached && fighters.length ? g.combat.simulate([], g.npcs.garrison(n, { assault: true }), { allies: fighters, record: false }) : null;
+      result = as.breached && fighters.length ? g.combat.simulate([], g.npcs.garrison(n, { assault: true }), { allies: fighters, record: false, capture: RALLY_LOG, title: `🚩 集結攻打「${n.name}」` }) : null;
+      if (result?.entry) res.battle = result.entry;
       const down = new Set([...fallen, ...(result ? result.team.filter((x) => x.down).map((x) => x.id) : fighters.map((u) => u.id))]);
       units.forEach((u) => {
         const r = result?.team.find((x) => x.id === u.id);
@@ -581,8 +600,9 @@ export class RallySystem {
       }
     } else {
       const s = tg;
-      const b = g.infected.battle(s, [], units, now);
+      const b = g.infected.battle(s, [], units, now, { capture: RALLY_LOG, title: `🚩 集結淨化「${s.name}」` });
       result = b.result;
+      if (result.entry) res.battle = result.entry;
       units.forEach((u) => {
         const r = result.team.find((x) => x.id === u.id);
         res.teams[u.ally.player].units.push({ i: u.ally.i, hp: Math.round(r?.hp ?? 0), down: !!r?.down, dealt: Math.round(r?.dealt || 0), kills: r?.kills || 0, maxHp: u.maxHp, meds: r?.medsUsed || 0 });
@@ -623,6 +643,8 @@ export class RallySystem {
       report.events.push(`　・${sv.name}：${u.wall ? '攻牆時被防禦火力擊倒' : `造成 ${u.dealt} 傷害、擊倒 ${u.kills || 0}`}・剩餘生命 ${Math.max(0, u.hp)}${u.maxHp ? `/${Math.round(u.maxHp)}` : ''}${u.down ? '（倒下・重傷）' : ''}`);
     });
     if (exp.rallySummary) report.events.push(exp.rallySummary);
+    // 戰鬥詳細（逐筆傷害與每人統計）：每位參加的玩家都會收到一份
+    if (exp.rallyBattle) g.combat.adopt(exp.rallyBattle, report);
     (r.units || []).forEach((u) => {
       const sv = g.survivors.get(exp.memberIds[u.i]);
       if (!sv) return;

@@ -223,12 +223,12 @@ export class InfectedSystem {
    * 一場戰鬥（自己的倖存者＋其他玩家的隊員 allies）。
    * @returns {{result:object, gain:number, before:number}}
    */
-  battle(s, members, allies = [], at = Date.now()) {
+  battle(s, members, allies = [], at = Date.now(), extra = {}) {
     const g = this.game;
     const before = this.purity(s, at);
     const { list, total } = this.roster(s, before);
     const hp0 = list.reduce((sum, e) => sum + e.maxHp, 0);
-    const result = g.combat.simulate(members, list, { allies, title: `☣️ 淨化「${s.name}」` });
+    const result = g.combat.simulate(members, list, { allies, title: `☣️ 淨化「${s.name}」`, ...extra });
     const hp1 = result.enemies.reduce((sum, e) => sum + e.hp, 0);
     const gain = result.victory ? 100 - before : Math.max(0, ((hp0 - hp1) / total) * 100);
     return { result, gain, before };

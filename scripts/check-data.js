@@ -1883,6 +1883,16 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   {
     const ra = repsA.find((r) => r.poiName.includes('集結'));
     assert(ra && ra.events.some((e) => e.includes('攻擊圍牆')) && ra.events.some((e) => e.includes('👥')) && ra.events.some((e) => e.includes(lead.name) && e.includes('傷害')), `沒有計算戰鬥的參加者（離線後上線）也拿到完整集結戰報（${ra?.events.slice(0, 5).join(' / ')}）`);
+    {
+      const big = { result: { detail: [], battle: { team: [], foes: [], log: Array.from({ length: 200 }, (_, i) => ({ t: i, msg: `測試紀錄第 ${i} 筆，造成大量傷害`, type: 'hit' })) } } };
+      RallySys.fitBattle(big);
+      const bytes = new TextEncoder().encode(JSON.stringify(big)).length;
+      assert(bytes <= 14000 && big.result.battle && big.result.battle.log.length >= 10, `集結戰鬥詳細太長時會縮短，不會超過共用資料上限（${bytes} 位元組・${big.result.battle?.log.length} 筆）`);
+    }
+    const rb = reps.find((r) => r.poiName.includes('集結'));
+    const bta = A.combat.battle(ra?.battleIds?.[0]);
+    const btb = B.combat.battle(rb?.battleIds?.[0]);
+    assert(bta && btb && bta.log.length > 0 && bta.team.length === btb.team.length && bta.team.length >= 2, `集結的每位參加者都收到戰鬥詳細（逐筆紀錄與每人統計）（${bta?.team.length}/${btb?.team.length} 人・${bta?.log.length} 筆）`);
   }
   assert(d2.result.victory, `強大的集結隊伍攻陷弱小的 NPC（${d2.result.summary}）`);
   {
