@@ -51,11 +51,33 @@ export function zoneValue(lat, lon) {
   return valueNoise(lat, lon, COARSE) * 0.7 + valueNoise(lat + 31.7, lon - 17.3, FINE) * 0.3;
 }
 
+/**
+ * v13：固定地圖上指定的深淵區（圓形）。圓內為深淵區，往外每 RING_M 公尺降一級（致死 → 危險 → 警戒），
+ * 與原本的區域取較危險的一級。
+ */
+export const ABYSS_SPOTS = [
+  { name: '右上（A7～B8）', lat: 25.04082, lon: 121.58104, r: 280 },
+  { name: '下方（G5）', lat: 25.02236, lon: 121.57159, r: 170 },
+];
+const RING_M = 120;
+
+function abyssIndex(lat, lon) {
+  let best = -1;
+  const kLon = Math.cos((lat * Math.PI) / 180);
+  ABYSS_SPOTS.forEach((a) => {
+    const d = Math.hypot((lat - a.lat) * 111320, (lon - a.lon) * 111320 * kLon);
+    const idx = d <= a.r ? 5 : 5 - Math.ceil((d - a.r) / RING_M);
+    if (idx > best) best = idx;
+  });
+  return best;
+}
+
 /** 座標所在區域的索引（0 = 安全區 … 5 = 深淵區） */
 export function zoneIndexAt(lat, lon) {
   const v = zoneValue(lat, lon);
   const i = THRESHOLDS.findIndex((t) => v < t);
-  return i === -1 ? ZONES.length - 1 : i;
+  const base = i === -1 ? ZONES.length - 1 : i;
+  return Math.max(base, Math.min(ZONES.length - 1, abyssIndex(lat, lon)));
 }
 
 /** @returns {typeof ZONES[number]} */

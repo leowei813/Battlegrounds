@@ -1,29 +1,30 @@
 import { POI_TYPES } from '../config/poiTypes.js';
 import { zoneIndexAt } from '../config/zones.js';
+import { WORLD_CENTER, WORLD_HALF_DIAG_M, inWorld } from '../config/world.js';
 
 /**
  * v10 隨機地圖：地點不再來自真實地圖的建築，而是由「固定格子」決定。
  * 世界切成約 48 公尺的格子，每一格有沒有地點、是什麼建築、在格子內的位置，都只由格子座標決定，
  * 因此所有玩家在同一個位置看到的地點完全相同（不需要網路，也不需要另外存檔）。
  *
- * 比例（整體平均）：食物 24%、木材 18%、燃料 9%、零件布料 18%、藥品 13%、裝備彈藥 18%。
- * 區域限定：藥局只在警戒區以下、醫院只在警戒區以上、軍事基地只在深淵區（約佔深淵區 15%）。
+ * 比例（整體平均）：食物 26%、木材 18%、燃料 7%、零件布料 18%、藥品 13%、裝備彈藥 18%。
+ * 區域限定：藥局只在警戒區以下、醫院只在警戒區以上、軍事基地只在深淵區（約佔全部地點 0.6%）。
  */
 export const WORLD_GEN = {
   cellM: 48,
-  /** 有地點的格子比例：避難所周圍（1.2 公里）約 1,400 個地點 */
+  /** 有地點的格子比例：固定世界地圖約 2,250 個地點 */
   fill: 0.73,
-  /** 軍事基地在深淵區內的比例 */
-  militaryInAbyss: 0.15,
+  /** 軍事基地在深淵區內的比例（v13：固定地圖的深淵區較多，調整後軍事基地仍約佔全部地點 0.6%） */
+  militaryInAbyss: 0.05,
 };
 
 /**
- * 各建築的權重：已依各區域的面積校正，扣掉區域限定後整體平均符合目標比例
- * （住宅 14、商店 6、超市 4、樹林 18、加油站 9、工廠 7、修車廠 5、回收站 6、藥局 10、醫院 3、倉庫 6.5、學校 6.5、警察局 4.4）。
+ * 各建築的權重：v13 依固定世界地圖（含指定深淵區）各區域的面積重新校正，扣掉區域限定後整體平均符合目標比例
+ * （住宅 15.2、商店 6.5、超市 4.3、樹林 18、加油站 7、工廠 7、修車廠 5、回收站 6、藥局 10、醫院 3、倉庫 6.5、學校 6.5、警察局 4.4）。
  */
 const WEIGHTS = {
-  residential: 13.1, shop: 5.61, supermarket: 3.74, forest: 16.84, gasStation: 8.42, factory: 6.55, garage: 4.68,
-  recycling: 5.61, pharmacy: 14.16, hospital: 5.01, warehouse: 6.08, school: 6.08, police: 4.12,
+  residential: 12.61, shop: 5.4, supermarket: 3.6, forest: 14.96, gasStation: 5.82, factory: 5.82, garage: 4.15,
+  recycling: 4.99, pharmacy: 25.32, hospital: 2.89, warehouse: 5.4, school: 5.4, police: 3.66,
 };
 /** 可出現的區域（0 安全、1 一般、2 警戒、3 危險、4 致死、5 深淵） */
 const ALLOW = { pharmacy: [0, 1, 2], hospital: [2, 3, 4, 5] };
@@ -84,4 +85,9 @@ export function generatePois(lat0, lon0, radius) {
     }
   }
   return out;
+}
+
+/** v13：整張固定世界地圖的地點（所有玩家相同） */
+export function generateWorldPois() {
+  return generatePois(WORLD_CENTER.lat, WORLD_CENTER.lon, WORLD_HALF_DIAG_M + 50).filter((p) => inWorld(p.lat, p.lon));
 }

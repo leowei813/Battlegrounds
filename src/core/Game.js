@@ -1,5 +1,5 @@
 import {
-  TICK_MS, AUTOSAVE_MS, OFFLINE_CAP_MS, MAX_LOG, RESOURCE_KEYS, POI_SCAN_RADIUS, OUTPOST_SCAN_RADIUS,
+  TICK_MS, AUTOSAVE_MS, OFFLINE_CAP_MS, MAX_LOG, RESOURCE_KEYS,
 } from '../config/constants.js';
 import { bus, EVT } from './EventBus.js';
 import { createInitialState } from './GameState.js';
@@ -21,7 +21,8 @@ import { TerritorySystem } from '../systems/TerritorySystem.js';
 import { GpsSystem } from '../systems/GpsSystem.js';
 import { grant } from '../systems/costUtils.js';
 import { isSupply } from '../config/supplies.js';
-import { generatePois } from '../map/WorldGen.js';
+import { generateWorldPois } from '../map/WorldGen.js';
+import { WORLD_CENTER } from '../config/world.js';
 import { PoiShareSystem } from '../systems/PoiShareSystem.js';
 import { DungeonSystem } from '../systems/DungeonSystem.js';
 import { AutoHomeSystem } from '../systems/AutoHomeSystem.js';
@@ -161,6 +162,8 @@ export class Game {
     this.equipment.items.forEach((it) => { it.power = this.equipment.itemPower(it); });
     // v10：地圖地點由固定格子產生（舊存檔的真實建築地圖在這裡換成新地圖）
     this.genMap();
+    // v13：固定世界地圖，範圍外的避難所整座搬進範圍內
+    this.shelter.moveIntoWorld();
     // v12：自己的倖存者不同名（舊版名單只有 30 個，可能有重複）
     this.survivors.dedupeNames();
     // 電磁塔、電網每個據點限 1 座：舊存檔多出的拆除並退還材料
@@ -329,35 +332,24 @@ export class Game {
    * @param {(done:number,total:number)=>void} [onProgress] 分區查詢進度
    */
   /**
-   * 掃描範圍：避難所（或起始點）周圍 POI_SCAN_RADIUS，每座前哨站周圍 OUTPOST_SCAN_RADIUS（較小）。
-   * @returns {{lat:number, lon:number, radius:number}[]}
-   */
-  scanAreas(lat, lon) {
-    return [
-      { lat, lon, radius: POI_SCAN_RADIUS },
-      ...this.shelter.outposts().map((b) => ({ lat: b.lat, lon: b.lon, radius: OUTPOST_SCAN_RADIUS })),
-    ];
-  }
-
-  /**
    * v10：依固定格子產生地圖地點（避難所＋前哨站周圍，所有玩家相同；不需要網路）。
    * 保留每個地點的搜刮紀錄，以及據點、探索目的地、佇列與 NPC 所在的地點（即使不在範圍內）。
    * @returns {boolean} 地點清單是否有變動
    */
   genMap(lat = null, lon = null) {
     const map = this.state.map;
-    const c = this.shelter.primary() || (lat != null ? { lat, lon } : map.center);
-    if (!c) return false;
+    const c = this.shelter.primary() || (lat != null ? { lat, lon } : map.center) || WORLD_CENTER;
     const old = new Map((map.pois || []).map((p) => [p.id, p]));
     const seen = new Set();
     const pois = [];
-    this.scanAreas(c.lat, c.lon).forEach((a) => generatePois(a.lat, a.lon, a.radius).forEach((p) => {
+    // v13：固定世界地圖，整張地圖的地點所有玩家都看得到（不再依據點周圍的可視範圍）
+    generateWorldPois().forEach((p) => {
       if (seen.has(p.id)) return;
       seen.add(p.id);
       const o = old.get(p.id);
       if (o) ['lootedDay', 'lootedBy', 'lastVisit', 'depletion'].forEach((k) => { if (o[k] != null) p[k] = o[k]; });
       pois.push(p);
-    }));
+    });
     // 據點、探索目的地與佇列、NPC 據點所在的舊地點：不在範圍內也保留，避免消失
     const keep = new Set([...this.protectedPoiIds(), ...this.state.expeditions.flatMap((e) => e.queue || [])]);
     keep.forEach((id) => {

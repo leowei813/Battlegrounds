@@ -1,5 +1,9 @@
 import L from 'leaflet';
 import { ZONES, zoneIndexAt } from '../config/zones.js';
+import { inWorld } from '../config/world.js';
+
+/** 地圖範圍外（不計算、不繪製） */
+const OUT = 255;
 
 /** 每個取樣方塊的像素大小（低解析度取樣後放大；邊界線依同樣的方塊描繪） */
 const BLOCK = 6;
@@ -71,7 +75,8 @@ export const ZoneLayer = L.Layer.extend({
     for (let y = 0; y < h; y += 1) {
       for (let x = 0; x < w; x += 1) {
         const ll = map.containerPointToLatLng([x * BLOCK, y * BLOCK]);
-        grid[y * w + x] = zoneIndexAt(ll.lat, ll.lng);
+        // v13：只計算固定地圖範圍內
+        grid[y * w + x] = inWorld(ll.lat, ll.lng) ? zoneIndexAt(ll.lat, ll.lng) : OUT;
       }
     }
 
@@ -82,8 +87,8 @@ export const ZoneLayer = L.Layer.extend({
     const img = lctx.createImageData(w, h);
     const colors = ZONES.map((z, i) => [...rgb(z.color), Math.round(m.alpha[i] * 255)]);
     for (let i = 0; i < grid.length; i += 1) {
-      const c = colors[grid[i]];
-      img.data.set(c, i * 4);
+      if (grid[i] === OUT) continue;
+      img.data.set(colors[grid[i]], i * 4);
     }
     lctx.putImageData(img, 0, 0);
     ctx.imageSmoothingEnabled = true;
@@ -104,11 +109,11 @@ export const ZoneLayer = L.Layer.extend({
         const py = y * BLOCK - BLOCK / 2;
         if (x + 1 < w) {
           const b = grid[y * w + x + 1];
-          if (a !== b) add(Math.max(a, b), px + BLOCK, py, px + BLOCK, py + BLOCK);
+          if (a !== b && a !== OUT && b !== OUT) add(Math.max(a, b), px + BLOCK, py, px + BLOCK, py + BLOCK);
         }
         if (y + 1 < h) {
           const b = grid[(y + 1) * w + x];
-          if (a !== b) add(Math.max(a, b), px, py + BLOCK, px + BLOCK, py + BLOCK);
+          if (a !== b && a !== OUT && b !== OUT) add(Math.max(a, b), px, py + BLOCK, px + BLOCK, py + BLOCK);
         }
       }
     }

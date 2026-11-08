@@ -238,7 +238,7 @@ export class MapPanel {
       <p>守軍：${v.roster || unknown}</p>
       ${v.decay != null ? `<p class="muted">未清除時每小時回復 ${v.decay}% 感染</p>` : ''}
       ${v.power != null ? `<p class="muted">⚔️ 守軍總戰力約 ${v.power}（建議多人集結）</p>` : ''}
-      <p class="muted">每場戰鬥打到全員倒下或淨化 100%，淨化度會累積（所有倖存者共用）。淨化 100% 時消滅據點。</p>
+      <p class="muted">每場戰鬥打到全員倒下或淨化 100%，淨化度會累積（所有倖存者共用）。淨化 100% 時消滅據點，消滅後（現實時間）${INFECTED.respawnDays} 天在原地重新出現；未被消滅時淨化度不會歸零，只會緩慢回復感染。</p>
       <div class="sp-hint">✨ <b>特殊物品</b>：消滅時必得 🔒「${LOCK_ITEM.name}」×${LOCK_ITEM.infectBase}，參戰 ${LOCK_ITEM.infectBonusAt} 人以上 ×${LOCK_ITEM.infectBase + 1}（集結時每支隊伍各得一份）</div>
       <div class="btn-row">${btn('☣️ 派隊淨化', 'attackInf', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${btn(`${rallyFlag(16)} 發起集結`, 'rallyInf', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' })}</div>`;
   }
@@ -591,7 +591,7 @@ export class MapPanel {
       rows.push(`<button class="feed-chip rally" data-action="feedRally" data-id="${r.id}">${rallyFlag(16)} ${r.mine ? '發起' : '參加'}集結「${escapeHtml(r.target.name)}」・${r.teams}/${r.maxTeams} 隊・${r.status === 'gathering' && r.early ? '提前出發・等隊伍到齊・約' : rallyText[r.status] || ''}${r.left ? ` ${formatDuration(r.left)}` : ''}</button>`);
     });
     g.rally.invites(now).forEach((d) => {
-      rows.push(`<button class="feed-chip friend" data-action="feedRally" data-id="${d.id}">${rallyFlag(16)} 好友「${escapeHtml(d.ownerName)}」集結「${escapeHtml(d.target.name)}」・${(d.teams || []).length}/${d.maxTeams} 隊・${formatDuration(d.departAt - now)}後出發・點擊參加</button>`);
+      rows.push(`<button class="feed-chip rally" data-action="feedRally" data-id="${d.id}">${rallyFlag(16)} 好友「${escapeHtml(d.ownerName)}」集結「${escapeHtml(d.target.name)}」・${(d.teams || []).length}/${d.maxTeams} 隊・${formatDuration(d.departAt - now)}後出發・點擊參加</button>`);
     });
     // 探索佇列：類型、距離、剩餘時間
     const sh = g.shelter.primary();

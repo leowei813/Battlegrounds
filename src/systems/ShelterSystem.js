@@ -13,6 +13,9 @@ import {
 import { createBase } from '../core/GameState.js';
 import { SUPPLIES } from '../config/supplies.js';
 import { canAfford, payCost, scaleCost } from './costUtils.js';
+import { inWorld } from '../config/world.js';
+import { DUNGEONS, DG_CLEAR_M } from '../config/dungeons.js';
+import { haversine } from '../utils/math.js';
 
 /** 屍潮範圍在地圖上的最小比例（完整大小約半徑 225 公尺） */
 export const SIEGE_RANGE = { min: 0.4, fullM: 225 };
@@ -236,6 +239,34 @@ export class ShelterSystem {
     }
     this.game.bus.emit('shelter:changed');
     return { ok: true, base, msg: kind === 'shelter' ? `避難所設於 ${poi.name}` : `已在 ${poi.name} 建立前哨站` };
+  }
+
+  /**
+   * v13：避難所在固定地圖範圍外時，整座搬到範圍內的空地（設施、防禦、倉庫全部保留，不扣資源）。
+   * 優先選同規模的建築，避開其他玩家的據點、重度感染據點與地下感染區入口。
+   * @returns {object|null} 新地點
+   */
+  moveIntoWorld(rnd = Math.random) {
+    const sh = this.primary();
+    if (!sh || inWorld(sh.lat, sh.lon)) return null;
+    const g = this.game;
+    const others = (g.world?.others || []).flatMap((p) => p.bases || []);
+    const alert = BASE_SIZES[sh.size]?.alert || 80;
+    const free = (g.state.map.pois || []).filter((p) => inWorld(p.lat, p.lon, 100)
+      && !g.infected?.blocking(p, alert)
+      && !others.some((b) => haversine(b.lat, b.lon, p.lat, p.lon) < 250)
+      && !Object.values(DUNGEONS).some((dg) => haversine(dg.lat, dg.lon, p.lat, p.lon) < DG_CLEAR_M + alert));
+    const same = free.filter((p) => baseSizeOf(p) === sh.size);
+    const list = same.length ? same : free;
+    if (!list.length) return null;
+    const poi = list[Math.floor(rnd() * list.length)];
+    const from = sh.name;
+    Object.assign(sh, { poiId: poi.id, name: poi.name, lat: poi.lat, lon: poi.lon });
+    g.state.map.center = { lat: poi.lat, lon: poi.lon };
+    this.game.civilization?.invalidate?.();
+    g.log(`🗺️ 世界地圖改為固定範圍：避難所從「${from}」整座搬到「${poi.name}」，設施與物資全部保留`, 'info');
+    g.bus.emit('shelter:changed');
+    return poi;
   }
 
   /** 舊 API 相容 */

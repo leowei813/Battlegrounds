@@ -4,7 +4,7 @@ import { AssistSystem } from './AssistSystem.js';
 import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL } from '../config/npcs.js';
 import { xpToNext } from '../config/survivors.js';
 import {
-  RESOURCE_KEYS, RAID_TRAVEL, POI_SCAN_RADIUS, OUTPOST_SCAN_RADIUS,
+  RESOURCE_KEYS, RAID_TRAVEL,
 } from '../config/constants.js';
 import { ShelterSystem } from './ShelterSystem.js';
 import { unitWeight } from '../config/supplies.js';
@@ -18,6 +18,7 @@ import {
   pick, randFloat, randInt, haversine, chance, uid,
 } from '../utils/math.js';
 import { seeded, cellOf as gridCell, cellBox } from '../multiplayer/worldGrid.js';
+import { inWorld } from '../config/world.js';
 
 /**
  * 共用 NPC：位置、名稱、基礎等級由「格子＋世代」決定（所有玩家相同）；
@@ -304,9 +305,8 @@ export class NpcSystem {
     // 玩家據點附近（警戒範圍，或至少 300 公尺）不會有 NPC：所有玩家據點都一樣
     const zones = this.playerZones().map((z) => ({ ...z, r: Math.max(z.r, NPC_CONFIG.minFromShelterM) }));
     const inAlert = (p) => zones.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r);
-    // 只出現在玩家的可視範圍內（避難所 POI_SCAN_RADIUS、前哨站 OUTPOST_SCAN_RADIUS；所有玩家都算，彼此看到的相同）
-    const views = this.viewZones();
-    const inView = (p) => views.some((z) => haversine(z.lat, z.lon, p.lat, p.lon) <= z.r);
+    // v13：只出現在固定世界地圖範圍內（所有玩家看到的相同）
+    const inView = (p) => inWorld(p.lat, p.lon, 60);
     // 哪些格子有 NPC：只看固定格子產生的地點（v10，所有玩家相同）；舊地圖沒有時才用全部建築
     const pois = this.game.state.map.pois;
     const real = pois.filter((p) => String(p.id).startsWith('w_'));
@@ -404,16 +404,6 @@ export class NpcSystem {
   }
 
   /** 玩家據點的警戒範圍（NPC 不會出現在裡面） */
-  /** 所有玩家的可視範圍：避難所（主要據點）1200 公尺、前哨站 500 公尺 */
-  viewZones() {
-    const g = this.game;
-    const primary = g.shelter.primary();
-    return [
-      ...g.state.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: b === primary ? POI_SCAN_RADIUS : OUTPOST_SCAN_RADIUS })),
-      ...(g.world?.others || []).flatMap((p) => p.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: b.primary ? POI_SCAN_RADIUS : OUTPOST_SCAN_RADIUS }))),
-    ];
-  }
-
   playerZones() {
     const g = this.game;
     return [

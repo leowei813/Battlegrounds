@@ -6,14 +6,15 @@ import { DAY_REAL_MS } from '../config/constants.js';
 import {
   randInt, randFloat, pick, chance, uid, haversine,
 } from '../utils/math.js';
-import { seeded, cellOf, cellBox, cellsAround } from '../multiplayer/worldGrid.js';
+import { seeded, cellBox } from '../multiplayer/worldGrid.js';
+import { gridCenter } from '../config/world.js';
 
 /**
- * 重度感染據點：每 2 平方公里一座，所有玩家共用（位置、強度、淨化度相同）。
+ * 重度感染據點：v13 起固定 5 座（位置見 INFECTED.sites），所有玩家共用（位置、強度、淨化度相同）。
  *  - 守軍是 Boss、精英與大量殭屍；一支隊伍很難單獨清除，淨化度會累積（未清除時緩慢回復感染）。
  *  - 每場戰鬥打到全員倒下或淨化 100%。
  *  - 每場依推進的淨化度給少量獎勵；淨化 100% 時消滅據點：依最後一場的參戰人數發放大獎勵（1 人 6～8 種，每多 1 人上下限 +4，最低精良品級）。
- *  - 被消滅後在下一個中午 12:00（世界時間）重新出現。
+ *  - 被消滅後 3 天（現實時間）在原地重新出現；未被消滅時淨化度不會歸零，只會隨時間緩慢回復感染。
  */
 export const INFECTED = {
   /** 每格約 2 平方公里 */
@@ -22,8 +23,21 @@ export const INFECTED = {
   km: 3.5,
   /** 未清除時每小時回復的感染（淨化度 %） */
   decayPerHour: 3,
-  /** 每天重生的時間（世界時間） */
+  /** 舊版每天重置的時間（世界時間）；v13 起淨化度不再歸零，只會緩慢回復感染 */
   refreshHour: 12,
+  /** v13：被消滅後幾天（現實天數）在原地重新出現 */
+  respawnDays: 3,
+  /**
+   * v13：固定位置（格線代號見 config/world.js）。E4 沿用原本的據點（位置、名稱、強度不變）。
+   * key 同時是共用資料的編號。
+   */
+  sites: [
+    { code: 'E4', key: '1970:8670', cell: [1970, 8670] },
+    { code: 'B2', key: 'fx:B2' },
+    { code: 'E7', key: 'fx:E7' },
+    { code: 'B6', key: 'fx:B6' },
+    { code: 'F2', key: 'fx:F2' },
+  ],
   /** 守軍組成 */
   roster: { boss: 2, elite: 12, normal: 48 },
   /** 守軍強度倍率（v10.9：生命 ×2、攻擊 ×1.5，強隊約需 2～5 場或多人累積才能消滅） */
@@ -59,43 +73,39 @@ export class InfectedSystem {
     return now + (left / 24) * DAY_REAL_MS;
   }
 
-  /** 玩家據點（自己與附近其他玩家）：重度感染據點不會出現在據點與警戒範圍上 */
-  playerZones() {
-    const g = this.game;
-    const r = (alert) => (alert || 80) + INFECTED.clearM;
-    return [
-      ...g.state.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: r(g.territory.alertRadius(b)) })),
-      ...(g.world?.others || []).flatMap((p) => (p.bases || []).map((b) => ({ lat: b.lat, lon: b.lon, r: r(b.alert) }))),
-    ];
+  /** 某個固定據點的位置：E4 沿用舊格子算出的位置，其他在格線中心 */
+  spotOf(def) {
+    if (def.cell) {
+      const [i, j] = def.cell;
+      const box = cellBox(i, j, INFECTED.cellKm);
+      return seeded(`inf:${def.key}`, () => ({
+        lat: box.lat0 + box.dLat * randFloat(0.15, 0.85),
+        lon: box.lon0 + box.dLon * randFloat(0.15, 0.85),
+      }));
+    }
+    return gridCenter(def.code);
   }
 
-  /** 某一格據點的固定位置（v10：只由格子決定，所有玩家看到的位置相同，不會因附近有誰的據點而移動） */
-  spotOf(i, j, key) {
-    const box = cellBox(i, j, INFECTED.cellKm);
-    return seeded(`inf:${key}`, () => ({
-      lat: box.lat0 + box.dLat * randFloat(0.15, 0.85),
-      lon: box.lon0 + box.dLon * randFloat(0.15, 0.85),
-    }));
-  }
-
-  /**
-   * 某一格的據點（固定強度、固定位置）。新的玩家據點不能蓋在感染據點範圍內；
-   * 更新前就已經重疊的玩家據點不會被移走，這一格改為沒有感染據點。
-   */
-  siteAt(i, j, key, zones = this.playerZones()) {
-    const spot = this.spotOf(i, j, key);
-    if (zones.some((z) => haversine(z.lat, z.lon, spot.lat, spot.lon) <= z.r)) return null;
-    return seeded(`inf:${key}`, () => {
+  /** 固定據點的資料（名稱、等級、首領依種子決定，所有玩家相同） */
+  siteOf(def) {
+    const spot = this.spotOf(def);
+    return seeded(`inf:${def.key}`, () => {
       randFloat(0, 1);
       randFloat(0, 1);
       const { lat, lon } = spot;
       const zone = zoneAt(lat, lon);
       const d = Math.max(0, zone.danger);
       return {
-        id: `inf_${key.replace(':', '_')}`, cell: key, lat, lon,
+        id: `inf_${def.key.replace(':', '_')}`, cell: def.key, code: def.code, lat, lon,
         name: pick(NAMES), level: randInt(18, 24) + d * 3, bossId: pick(Object.keys(BOSSES).sort()),
       };
     });
+  }
+
+  /** 全部固定據點（含已被消滅、等待重生的） */
+  sites() {
+    if (!this.siteCache) this.siteCache = INFECTED.sites.map((def) => this.siteOf(def));
+    return this.siteCache;
   }
 
   /**
@@ -106,25 +116,13 @@ export class InfectedSystem {
   blocking(poi, alertM = 80) {
     if (!poi || !Number.isFinite(poi.lat)) return null;
     const r = alertM + INFECTED.clearM;
-    for (const { i, j, key } of cellsAround(poi.lat, poi.lon, INFECTED.cellKm, 2.5)) {
-      const s = this.siteAt(i, j, key, []);
-      if (s && haversine(poi.lat, poi.lon, s.lat, s.lon) <= r) return s;
-    }
-    return null;
+    return this.sites().find((s) => haversine(poi.lat, poi.lon, s.lat, s.lon) <= r) || null;
   }
 
-  /** 避難所附近的重度感染據點（被消滅等待重生的不顯示） */
+  /** 地圖上的重度感染據點（被消滅等待重生的不顯示） */
   list(now = Date.now()) {
-    const g = this.game;
-    const c = g.shelter.primary() || g.state.map?.center;
-    if (!c || !g.state.map?.pois?.length) return [];
-    const cells = new Set(g.state.map.pois.map((p) => cellOf(p.lat, p.lon, INFECTED.cellKm).key));
     const day = this.siteDay(now);
-    const zones = this.playerZones();
-    return cellsAround(c.lat, c.lon, INFECTED.cellKm, INFECTED.km)
-      .filter(({ key }) => cells.has(key))
-      .map(({ i, j, key }) => this.siteAt(i, j, key, zones))
-      .filter((s) => s && haversine(c.lat, c.lon, s.lat, s.lon) <= INFECTED.km * 1000)
+    return this.sites()
       .map((s) => ({ ...s, day, purity: this.purity(s, now), cleared: this.cleared(s, now) }))
       .filter((s) => !s.cleared);
   }
@@ -133,14 +131,22 @@ export class InfectedSystem {
     return this.list(now).find((s) => s.id === id) || null;
   }
 
-  /** 依編號找回據點（不在自己附近時也能重建，例如集結時） */
+  /** 依編號找回據點（被消滅等待重生時回傳 null） */
   byId(id, now = Date.now()) {
-    const m = /^inf_(-?\d+)_(-?\d+)$/.exec(String(id));
-    if (!m) return null;
-    const key = `${m[1]}:${m[2]}`;
-    const s = this.siteAt(Number(m[1]), Number(m[2]), key);
+    const s = this.sites().find((x) => x.id === id);
     if (!s || this.cleared(s, now)) return null;
     return { ...s, day: this.siteDay(now), purity: this.purity(s, now), cleared: false };
+  }
+
+  /** 依編號找固定據點（不論是否被消滅） */
+  siteById(id) {
+    return this.sites().find((x) => x.id === id) || null;
+  }
+
+  /** 被消滅後重新出現的時間（沒被消滅回傳 0） */
+  respawnAt(s) {
+    const d = this.shared(s);
+    return d?.killedAt ? d.killedAt + INFECTED.respawnDays * 86400000 : 0;
   }
 
   /** 讓探索系統把據點當成目的地 */
@@ -155,17 +161,23 @@ export class InfectedSystem {
     return this.game.shared?.get('inf', s.cell) || null;
   }
 
-  /** 今天是否已被消滅 */
+  /** 是否已被消滅、還在等待重生（v13：消滅後 3 天在原地重新出現） */
   cleared(s, now = Date.now()) {
-    const d = this.shared(s);
-    return !!d && d.killedDay === this.siteDay(now);
+    const t = this.respawnAt(s);
+    return t > 0 && now < t;
   }
 
   /** 目前淨化度（%）：未清除時隨時間緩慢回復感染 */
   purity(s, now = Date.now()) {
     const d = this.shared(s);
-    if (!d || d.day !== this.siteDay(now)) return 0;
+    if (!d || InfectedSystem.stale(d)) return 0;
+    if (d.killedAt && now >= d.killedAt + INFECTED.respawnDays * 86400000) return 0; // 重生後重新計算
     return InfectedSystem.decayed(d, now);
+  }
+
+  /** 舊版（每天重置）留下的消滅紀錄：沒有消滅時間，視為新的據點 */
+  static stale(d) {
+    return d.killedDay != null && !d.killedAt;
   }
 
   static decayed(d, now) {
@@ -223,12 +235,12 @@ export class InfectedSystem {
    * 一場戰鬥（自己的倖存者＋其他玩家的隊員 allies）。
    * @returns {{result:object, gain:number, before:number}}
    */
-  battle(s, members, allies = [], at = Date.now()) {
+  battle(s, members, allies = [], at = Date.now(), extra = {}) {
     const g = this.game;
     const before = this.purity(s, at);
     const { list, total } = this.roster(s, before);
     const hp0 = list.reduce((sum, e) => sum + e.maxHp, 0);
-    const result = g.combat.simulate(members, list, { allies, title: `☣️ 淨化「${s.name}」` });
+    const result = g.combat.simulate(members, list, { allies, title: `☣️ 淨化「${s.name}」`, ...extra });
     const hp1 = result.enemies.reduce((sum, e) => sum + e.hp, 0);
     const gain = result.victory ? 100 - before : Math.max(0, ((hp0 - hp1) / total) * 100);
     return { result, gain, before };
@@ -241,8 +253,10 @@ export class InfectedSystem {
   async addPurity(s, gain, at = Date.now()) {
     const day = this.siteDay(at);
     const r = await this.game.shared.update('inf', s.cell, (d) => {
-      const data = d && d.day === day ? d : { day, pur: 0, at };
-      if (data.killedDay === day) return { fail: '已經被消滅了' };
+      const respawn = d?.killedAt ? d.killedAt + INFECTED.respawnDays * 86400000 : 0;
+      if (respawn && at < respawn) return { fail: '已經被消滅了' };
+      // v13：淨化度不再每天歸零，只會隨時間緩慢回復感染；重生後從 0 開始
+      const data = d && !respawn && !InfectedSystem.stale(d) ? d : { day, pur: 0, at };
       const cur = InfectedSystem.decayed(data, at);
       data.pur = Math.min(100, cur + gain);
       data.at = at;
@@ -250,6 +264,7 @@ export class InfectedSystem {
       if (data.pur >= 99.95) {
         data.pur = 100;
         data.killedDay = day;
+        data.killedAt = at;
         killed = true;
       }
       return { data, result: { purity: data.pur, killed } };

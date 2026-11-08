@@ -4,7 +4,7 @@ import { ASSIST_TRAVEL_MUL } from './AssistSystem.js';
 const REVISIT = { minFrac: 0.2, pickupMin: 0.3 };
 
 /** 自動探索換點次數上限 */
-import { COIN_GAIN_MUL, RAID_TRAVEL, POI_SCAN_RADIUS } from '../config/constants.js';
+import { COIN_GAIN_MUL, RAID_TRAVEL } from '../config/constants.js';
 import { RECRUIT_STAY_MS } from '../config/survivors.js';
 import {
   MAX_TEAM_SIZE, MAX_EXPEDITIONS, OFFLINE_CAP_MS, RESOURCES,

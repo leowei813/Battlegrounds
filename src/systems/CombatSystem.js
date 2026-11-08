@@ -270,10 +270,13 @@ export class CombatSystem {
     push(t, victory ? '🏆 戰鬥勝利！' : '💀 戰鬥失敗，隊伍撤退…', victory ? 'win' : 'lose');
     // 記錄這場戰鬥的詳細資料（逐筆傷害、暴擊與每人傷害統計），在「消息 → 戰鬥紀錄」查看
     if (opts.record !== false && survivors.length) this.record(opts.title, victory, t, log, team, foes, opts.ref || this.scope, opts.merge || null);
+    // 集結：戰鬥詳細不存進自己的紀錄，而是放進結果分給每位參加的玩家
+    const entry = opts.capture ? this.entry(opts.title, victory, t, log, team, foes, opts.capture) : null;
 
     return {
       victory,
       recovered,
+      ...(entry ? { entry } : {}),
       duration: +t.toFixed(1),
       log,
       kills,
@@ -380,8 +383,8 @@ export class CombatSystem {
   }
 
   /** 保存戰鬥詳細（每場最多 120 筆紀錄）；ref 是這場戰鬥所屬的探索隊或防守紀錄 */
-  record(title, victory, duration, log, team, foes, ref = null, merge = null) {
-    const st = this.game.state;
+  /** 戰鬥詳細的資料（maxLog：最多保留幾筆紀錄） */
+  entry(title, victory, duration, log, team, foes, maxLog = 120) {
     const unit = (u) => ({
       name: u.name, side: u.side, dealt: Math.round(u.dealt || 0), taken: Math.round(u.taken || 0), crits: u.crits || 0, hits: u.hits || 0,
       kills: u.kills || 0, down: u.hp <= 0, weapon: u.weapon || '', meds: u.medsUsed || 0,
@@ -390,8 +393,25 @@ export class CombatSystem {
     const entry = {
       id: uid('bt'), at: Date.now(), title: String(title || '戰鬥').slice(0, 40), victory, duration: +duration.toFixed(1),
       team: team.map(unit), foes: foes.map(unit),
-      log: (log.length > 120 ? [...log.slice(0, 100), { t: -1, msg: `…（中間省略 ${log.length - 120} 筆）`, type: 'info' }, ...log.slice(-20)] : log),
+      log: (log.length > maxLog ? [...log.slice(0, maxLog - 20), { t: -1, msg: `…（中間省略 ${log.length - maxLog} 筆）`, type: 'info' }, ...log.slice(-20)] : log),
     };
+    return entry;
+  }
+
+  /** 把別處產生的戰鬥詳細（例如集結）加進自己的戰鬥紀錄，記在 ref 底下 */
+  adopt(entry, ref) {
+    if (!entry || !ref) return null;
+    const st = this.game.state;
+    const e = { ...entry, id: uid('bt') };
+    st.battles = [e, ...(st.battles || [])];
+    ref.battleIds = [...(ref.battleIds || []), e.id].slice(-BATTLES_PER_REF);
+    this.pruneBattles(ref.battleIds);
+    return e.id;
+  }
+
+  record(title, victory, duration, log, team, foes, ref = null, merge = null) {
+    const st = this.game.state;
+    const entry = this.entry(title, victory, duration, log, team, foes);
     // 同一波屍潮在圍牆缺口的多次交戰：合併成同一場（避免一晚出現幾十場）
     const prevId = merge && ref?.battleIds?.length ? ref.battleIds[ref.battleIds.length - 1] : null;
     const prev = prevId ? this.battle(prevId) : null;
