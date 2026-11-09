@@ -3486,6 +3486,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const od = JSON.parse(JSON.stringify(gc6.state));
   od.version = 21;
   od.bases[0].facilities.farm.level = 12;
+  od.bases[0].size = 'small'; // 舊版的小型據點
   const supBefore = JSON.stringify(od.supplies);
   const md = SaveManager.migrate(od);
   assert(md.bases[0].facilities.farm.level === 8 && JSON.stringify(md.supplies) !== supBefore, '舊存檔超過上限的設施降到上限並退還材料');

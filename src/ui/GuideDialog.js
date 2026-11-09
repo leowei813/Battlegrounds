@@ -48,7 +48,7 @@ const TABS = [
     id: 'shelter',
     name: '避難所',
     html: `<ol>
-      <li>所有避難所的設施都能升到最高等級；建築規模只影響探索、屍潮強度與警戒範圍。</li>
+      <li>避難所沒有大小之分：設施都能升到最高等級、防禦欄位都一樣多，屍潮強度與警戒範圍一律比照巨型；建築規模只影響探索。</li>
       <li>宿舍決定可住人數（最多 12 人）；地窖可以藏起部分資源，並提高倉庫上限，屍潮突破時等級最高的駐守者會躲進地窖。</li>
       <li>工作台可製作裝備、子彈；診療室可製作藥品。</li>
     </ol>`,
@@ -74,7 +74,7 @@ export function openGuide(ui, { tab = 'new', onClose } = {}) {
   let cur = tab;
   const body = () => {
     const t = TABS.find((x) => x.id === cur) || TABS[0];
-    const reloc = g.state.freeRelocate ? `<div class="guide-reloc">🏠 地圖已重新規劃：你有<b>一次免費</b>重新選擇避難所的機會（只能選左側安全區），設施、資源、防禦建築全部保留。避難所現在沒有大小之分：設施都能升到最高等級、防禦欄位都一樣多。
+    const reloc = g.state.freeRelocate ? `<div class="guide-reloc">🏠 地圖已重新規劃：你有<b>一次免費</b>重新選擇避難所的機會（只能選左側安全區），設施、資源、防禦建築全部保留。避難所現在沒有大小之分：設施都能升到最高等級、防禦欄位都一樣多，屍潮強度與警戒範圍一律比照巨型。
       <div class="btn-row"><button class="btn btn-primary" data-action="relocGo">前往選擇位置</button><button class="btn btn-ghost" data-action="relocLater">稍後再說</button><button class="btn btn-ghost" data-action="relocSkip">留在原地</button></div></div>` : '';
     return `<div class="guide"><div class="chips guide-tabs">${TABS.map((x) => `<button class="chip ${x.id === cur ? 'active' : ''}" data-action="guideTab" data-t="${x.id}">${x.name}</button>`).join('')}</div>
       <div class="guide-body">${t.html}</div>${reloc}</div>`;

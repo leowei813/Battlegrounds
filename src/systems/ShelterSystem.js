@@ -215,6 +215,7 @@ export class ShelterSystem {
     payCost(this.game.state, this.establishCost());
     const kind = this.nextKind();
     const base = createBase(poi, kind);
+    if (kind === 'shelter') base.size = 'huge'; // v14：避難所一律比照巨型
     // 搬遷：保留原本避難所的設施等級
     const reloc = kind === 'shelter' ? this.game.state.relocation : null;
     if (reloc?.facilities) {
@@ -589,6 +590,8 @@ export class ShelterSystem {
     const max = Math.max(...Object.values(BASE_SIZES).map((x) => x.slots));
     this.bases.forEach((b) => {
       if (b.kind === 'outpost' || !Array.isArray(b.defenses)) return;
+      // v14：避難所沒有大小之分，屍潮強度與警戒範圍一律比照巨型
+      b.size = 'huge';
       for (let i = b.defenses.length; i < max; i += 1) b.defenses.push({ slot: i, type: null, level: 0, garrisonId: null });
     });
   }
