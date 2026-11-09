@@ -456,13 +456,16 @@ export const SiegeMapLayer = L.Layer.extend({
       if (!p) return;
       this.ownTeams.push({ kind: 'own', expId: exp.id, pos: p.pos });
       const m = this.map.latLngToContainerPoint([p.pos.lat, p.pos.lon]);
-      // 路線（繞開警戒範圍時為折線）
-      this.tracePath(ctx, p);
-      ctx.strokeStyle = 'rgba(255,213,79,0.9)';
-      ctx.lineWidth = 3;
-      ctx.setLineDash(p.phase === 'returning' ? [6, 4] : []);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      // 路線（繞開警戒範圍時為折線）；駐防隊抵達後不畫。透明度和地圖上的前往路線一致（30%）
+      const guarding = exp.kind === 'cpGuard' && p.phase === 'searching' && !exp.recalled && !exp.defeated;
+      if (!guarding) {
+        this.tracePath(ctx, p);
+        ctx.strokeStyle = 'rgba(255,213,79,0.3)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash(p.phase === 'returning' ? [6, 4] : []);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       if (m.x < -60 || m.y < -60 || m.x > size.x + 60 || m.y > size.y + 60) return;
 
       // 移動中的遇襲範圍（夜間有殭屍群時才顯示）
