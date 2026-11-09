@@ -6325,6 +6325,8 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const stayEnd0 = ge.startAt + ge.travelMs + ge.searchMs;
     B.cp.extendGuards(stayEnd0 - 1000);
     assert(ge.startAt + ge.travelMs + ge.searchMs > stayEnd0 && !ge.recalled, '駐防快到期時自動延長（直到撤回或被打下）');
+    B.autoHome.run(Date.now(), { silent: true });
+    assert(!ge.recalled && B.state.expeditions.includes(ge), '19:30 自動回家不會叫回駐防隊');
     const rel0 = B.state.relations.players.A;
     B.state.relations.players.A = { status: 'neutral' };
     B.cp.extendGuards(Date.now());
