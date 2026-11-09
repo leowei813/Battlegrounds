@@ -14,6 +14,8 @@ import { balanceMultipliers } from './MaterialBalance.js';
 import { baseSupplyWeight } from './LootStock.js';
 
 /** 駐防隊在控制點最多停留的時間（之後自動回家） */
+/** 離線期間的每日收益最多補發幾次（遊戲一天＝現實 1 小時，24 次約現實 1 天） */
+export const CP_OFFLINE_INCOME_MAX = 24;
 const GUARD_STAY_MS = 7 * 24 * 3600000;
 /** 運輸隊的移動速度（公尺／秒） */
 const CONVOY_SPEED = 1.4;
@@ -471,6 +473,36 @@ export class ControlPointSystem {
     if (this.st.convoys.length) g.log(`🚚 控制點運輸隊出發：${this.st.convoys.length} 支，正把收益送回避難所`, 'info');
   }
 
+  /**
+   * v15.5：離線期間錯過的每日 06:00 收益一次補發（最多 CP_OFFLINE_INCOME_MAX 次，直接入庫），
+   * 以上線時仍佔領或駐防的控制點計算。要等讀到共用的控制點資料後才補發（避免誤判沒有控制點）。
+   * @returns {{times:number, goods:object}|null}
+   */
+  catchUpIncome(now = Date.now()) {
+    const g = this.game;
+    if (this.st.incomeDay == null || !g.shelter.primary()) return null;
+    if (g.shared?.online && !g.shared.backend && !g.shared.listedAt?.[CP_KIND]) return null;
+    // 補發「昨天以前」錯過的部分；今天的 06:00 照常由運輸隊送回（在線時跨過 06:00 也一樣）
+    const today = g.time.day(now);
+    const missed = today - 1 - this.st.incomeDay;
+    if (missed <= 0) return null;
+    this.st.incomeDay = today - 1;
+    const times = Math.min(CP_OFFLINE_INCOME_MAX, missed);
+    const sources = this.incomeSources();
+    if (!sources.length) return null;
+    const goods = {};
+    for (let i = 0; i < times; i += 1) {
+      sources.forEach((cp) => Object.entries(this.rollIncome(cp)).forEach(([k, v]) => { goods[k] = (goods[k] || 0) + v; }));
+    }
+    const got = g.grant(goods);
+    const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || { food: '食物', wood: '木材', fuel: '燃料' }[k] || k} ×${v}`).join('、');
+    g.log(`🚚 離線期間的控制點收益（${times} 次${missed > times ? `，最多補 ${CP_OFFLINE_INCOME_MAX} 次` : ''}）：${text}`, 'loot');
+    const res = { times, missed, goods: got, text, cps: sources.length };
+    this.lastCatchUp = res;
+    g.bus.emit('cp:offlineIncome', res);
+    return res;
+  }
+
   /** 運輸隊抵達：收益入庫 */
   deliverConvoys(now = Date.now()) {
     const g = this.game;
@@ -746,6 +778,7 @@ export class ControlPointSystem {
     this.hqAmbushes(now);
     this.recallLostExplores(now);
     this.game.npcs?.recallLostTrips?.(now);
+    this.catchUpIncome(now);
     this.startConvoys(now);
     this.deliverConvoys(now);
   }

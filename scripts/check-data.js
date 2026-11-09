@@ -6297,6 +6297,27 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const f0 = A.state.resources.food;
   A.cp.deliverConvoys(cv.endAt + 1);
   assert(A.state.resources.food > f0 && !A.cp.st.convoys.length, '運輸隊抵達避難所後收益入庫');
+  {
+    // v15.5：離線期間錯過的每日收益：上線時補發（最多 24 次），今天的照常由運輸隊送回
+    const CPS = await import('../src/systems/ControlPointSystem.js');
+    const now5 = Date.now();
+    const today = A.time.day(now5);
+    A.cp.st.incomeDay = today - 1;
+    assert(!A.cp.catchUpIncome(now5), '在線時跨過 06:00：不補發（照常由運輸隊送回）');
+    A.cp.st.incomeDay = today - 5;
+    const f1 = A.state.resources.food;
+    let ev = null;
+    A.bus.once('cp:offlineIncome', (r) => { ev = r; });
+    const c1 = A.cp.catchUpIncome(now5);
+    const per = A.cp.incomeSources().reduce((sum, c) => sum + CPC.CP_INCOME[c.zone].food, 0);
+    assert(c1 && c1.times === 4 && A.cp.st.incomeDay === today - 1 && ev === c1, `離線錯過 4 天：補發 4 次（${c1?.text || ''}）`);
+    assert(A.state.resources.food - f1 >= per * 4 * 0.99 && Object.keys(c1.goods).length > 3, '補發的收益直接入庫（資源＋零件）');
+    assert(!A.cp.catchUpIncome(now5), '同一次上線不會重複補發');
+    A.cp.st.incomeDay = today - 100;
+    const c2 = A.cp.catchUpIncome(now5);
+    assert(c2.times === CPS.CP_OFFLINE_INCOME_MAX && c2.missed === 99, `離線很久：最多補 ${CPS.CP_OFFLINE_INCOME_MAX} 次`);
+    A.cp.st.incomeDay = today;
+  }
   // v15.4.1：駐防沒有期限（快到期時自動延長），佔領者與好友解除關係時駐防隊撤回
   {
     await B.shared.poll();
