@@ -658,12 +658,12 @@ export class ControlPointSystem {
       const m = this.data(cp.id)?.march;
       if (!m || now >= m.arriveAt) return;
       const to = this.markerSpot(cp.id);
-      out.push({ id: `mc:${cp.id}`, kind: 'march', f: m.f, from: m.from, to, ...at(m, to), left: m.arriveAt - now, label: `控制點 #${cp.no}` });
+      out.push({ id: `mc:${cp.id}`, kind: 'march', f: m.f, from: m.from, to, ...at(m, to), startAt: m.at, arriveAt: m.arriveAt, left: m.arriveAt - now, label: `控制點 #${cp.no}` });
     });
     this.game.state.expeditions.forEach((e) => {
       const a = e.hqAmbush;
       if (!a || a.done || now >= a.hitAt || e.recalled) return;
-      out.push({ id: `ma:${e.id}`, kind: 'march', f: a.f, from: a.from, to: a.to, ...at(a, a.to), left: a.hitAt - now, label: g0name(this.game, e) });
+      out.push({ id: `ma:${e.id}`, kind: 'march', f: a.f, from: a.from, to: a.to, ...at(a, a.to), startAt: a.at, arriveAt: a.hitAt, left: a.hitAt - now, label: g0name(this.game, e) });
     });
     return out;
   }

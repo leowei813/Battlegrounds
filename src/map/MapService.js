@@ -290,11 +290,8 @@ export class MapService {
       this.layers.convoys.clearLayers();
       this.convoyMarks = new Map();
       list.forEach((c) => {
-        // v15.4：移動中的 NPC 部隊（進攻控制點、襲擊探索點）：勢力顏色的虛線與旗子
-        const march = c.kind === 'march';
-        const col = march ? (this.cpConfig?.FACTIONS?.[c.f]?.color || '#ef5350') : '#ffd54f';
-        L.polyline([[c.from.lat, c.from.lon], [c.to.lat, c.to.lon]], { color: col, weight: march ? 2 : 1.5, dashArray: march ? '6 6' : '2 6', opacity: march ? 0.6 : 0.7, interactive: false }).addTo(this.layers.convoys);
-        const mk = L.marker([c.lat, c.lon], { icon: this.icon(march ? `<div class="convoy-pin march" style="--c:${col}">🏴<i></i></div>` : '<div class="convoy-pin">📦<i></i></div>', 'shelter-icon', 24), zIndexOffset: 870 })
+        L.polyline([[c.from.lat, c.from.lon], [c.to.lat, c.to.lon]], { color: '#ffd54f', weight: 1.5, dashArray: '2 6', opacity: 0.7, interactive: false }).addTo(this.layers.convoys);
+        const mk = L.marker([c.lat, c.lon], { icon: this.icon('<div class="convoy-pin">📦<i></i></div>', 'shelter-icon', 24), zIndexOffset: 870 })
           .on('click', () => bus.emit('ui:openConvoy', { id: c.id }))
           .addTo(this.layers.convoys);
         this.convoyMarks.set(c.id, mk);
