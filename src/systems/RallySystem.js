@@ -51,6 +51,19 @@ export class RallySystem {
     return this.game.shelter.maxLevel('broadcast');
   }
 
+  /** v15.6：同時可以發起幾個集結（廣播塔 Lv1～4：1 個、Lv5～9：2 個、Lv10 以上：3 個） */
+  maxConcurrent(lv = this.level()) {
+    if (lv < 1) return 0;
+    return lv >= 10 ? 3 : lv >= 5 ? 2 : 1;
+  }
+
+  /** 自己發起、還在進行中的集結 */
+  myActive() {
+    const me = this.myId();
+    const ids = [...new Set(this.trips().map((e) => e.rallyId))];
+    return ids.map((id) => ({ id, ...(this.get(id) || {}) })).filter((d) => d.owner === me && ['gathering', 'departed', 'resolving'].includes(d.status));
+  }
+
   maxTeams(lv = this.level()) {
     return lv > 0 ? lv + 1 : 0;
   }
@@ -120,9 +133,11 @@ export class RallySystem {
     const g = this.game;
     if (!g.shelter.hasShelter()) return { ok: false, reason: '需要先有避難所' };
     if (this.level() < 1) return { ok: false, reason: '需要建造📡廣播塔' };
-    if (this.trips().some((e) => this.get(e.rallyId)?.owner === this.myId() && ['gathering', 'departed', 'resolving'].includes(this.get(e.rallyId)?.status))) {
-      return { ok: false, reason: '已經有進行中的集結' };
-    }
+    // v15.6：可以同時發起多個集結，上限依廣播塔等級
+    const mine = this.myActive();
+    const cap = this.maxConcurrent();
+    if (mine.length >= cap) return { ok: false, reason: `同時進行中的集結已達上限（${cap} 個；廣播塔 Lv5 起 2 個、Lv10 起 3 個）` };
+    if (target && mine.some((d) => d.target?.kind === target.kind && d.target?.id === target.id)) return { ok: false, reason: '已經對這個目標發起集結了' };
     if (target && !['npc', 'inf', 'cp'].includes(target.kind)) return { ok: false, reason: '只能對 NPC 據點、控制點發起集結' };
     if (target?.kind === 'cp') { const c = g.cp.canAttack(target.id); if (!c.ok) return c; }
     if (target?.kind === 'npc' && g.npcs.get(target.id)?.hq) return { ok: false, reason: '大本營不能攻打' };

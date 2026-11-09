@@ -131,7 +131,7 @@ export function cleanPlayer(p) {
       members: finite(t.members) ? Math.min(10, Math.max(1, t.members)) : 1, target: String(t.target || '').slice(0, 40),
       id: String(t.id || '').slice(0, 40), level: finite(t.level) ? Math.min(60, Math.max(1, Math.round(t.level))) : 1,
       defeated: !!t.defeated,
-      ...(t.kind === 'assist' || t.kind === 'explore' ? { kind: t.kind } : {}),
+      ...(['assist', 'explore', 'cpGuard', 'cp'].includes(t.kind) ? { kind: t.kind } : {}),
       ...(t.rally ? { rally: String(t.rally).slice(0, 60) } : {}),
     }));
   return {
@@ -290,7 +290,7 @@ export class WorldSync {
           travelMs: ex.travelMs, searchMs: ex.searchMs, members: ex.memberIds.length, target: poi.name,
           ...(ex.path?.length > 2 ? { path: ex.path.slice(0, 20) } : {}),
           ...(ex.kind === 'assist' && !ex.defeated ? { kind: 'assist' } : {}),
-          ...(ex.kind === 'explore' ? { kind: 'explore' } : {}),
+          ...(['explore', 'cpGuard', 'cp'].includes(ex.kind) ? { kind: ex.kind } : {}),
           // 集結：其他玩家依集結的實際交戰時間計算返程（對方離線、還沒結算時也能正確顯示）
           ...(ex.kind === 'rally' && ex.rallyId ? { rally: String(ex.rallyId).slice(0, 60) } : {}),
         };

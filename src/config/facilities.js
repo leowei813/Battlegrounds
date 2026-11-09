@@ -97,7 +97,7 @@ export const FACILITIES = {
   },
   broadcast: {
     name: '廣播塔', icon: '📡', startLevel: 0,
-    desc: '可以對 NPC 據點或重度感染據點發起集結，好友會收到通知並派隊參加。Lv1 可集結 2 支隊伍（含自己），每升一級 +1。',
+    desc: '可以對 NPC 據點或重度感染據點發起集結，好友會收到通知並派隊參加。Lv1 可集結 2 支隊伍（含自己），每升一級 +1；同時可以發起的集結：Lv1 起 1 個、Lv5 起 2 個、Lv10 起 3 個。',
     cost: (lv) => mat('broadcast', ['elec', 'struct'], { wood: 90, metal: 80, cloth: 20 }, lv),
     effectText: (lv) => (lv > 0 ? `集結最多 ${lv + 1} 支隊伍` : '尚未建造'),
   },

@@ -1825,7 +1825,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     assert(ex0 && dd && dd.home && dd.status === 'gathering' && dd.departAt > Date.now() + 60000 && dd.teams[0].arriveAt <= Date.now(), '發起集結：發起人的避難所就是集結點，倒數結束才出發');
     assert(A.rally.statusOf(ex0).tag === '集結' && A.rally.statusOf(ex0).line1.includes('集結點'), `發起人的隊伍顯示「集結」（${A.rally.statusOf(ex0).line1}）`);
   }
-  assert(!(await A.rally.start(target, 5, [])).ok, '同時只能發起一個集結');
+  {
+    // v15.6：同時可以發起多個集結（上限依廣播塔等級）；同一個目標不能重複發起
+    const r2 = await A.rally.start(target, 5, []);
+    assert(!r2.ok && /上限/.test(r2.reason || ''), `廣播塔 Lv1：同時只能發起 1 個集結（${r2.reason || ''}）`);
+    assert(A.rally.maxConcurrent(1) === 1 && A.rally.maxConcurrent(5) === 2 && A.rally.maxConcurrent(10) === 3, '同時可發起的集結：Lv1 1 個、Lv5 2 個、Lv10 3 個');
+    A.shelter.primary().facilities.broadcast.level = 5;
+    const r3 = A.rally.canStart(target);
+    assert(!r3.ok && /這個目標/.test(r3.reason || ''), '同一個目標不能重複發起集結');
+    const other = { kind: 'npc', id: 'npc_other', name: '另一個據點', lat: n.lat, lon: n.lon };
+    assert(A.rally.canStart(other).ok, '廣播塔 Lv5：可以對另一個目標再發起一個集結');
+    A.shelter.primary().facilities.broadcast.level = 1;
+  }
   await B.shared.poll();
   B.rally.lastAt = 0;
   B.rally.update(Date.now());
@@ -6248,6 +6259,26 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   await A.shared.poll();
   assert((A.cp.data(cp.id)?.guards || []).some((h) => h.p === 'B'), '駐防隊寫入控制點，攻打方會遇到');
   {
+    // v15.6：科技「據點駐防」：自己派出的駐防隊生命與攻擊提升（每級 5%）
+    B.state.research.levels.d_cpguard = 4;
+    B.research.invalidate();
+    const base0 = B.rally.units([bl.id])[0];
+    const gx = { id: 'gx2', kind: 'cpGuard', cpId: cp.id, poiId: `cpguard:${cp.id}`, memberIds: [bl.id], startAt: Date.now() - 100000, travelMs: 1000, searchMs: 3600000, endAt: Date.now() + 3600000, from: { lat: 25, lon: 121 } };
+    B.state.expeditions.push(gx);
+    await B.cp.syncGuards(Date.now());
+    const u = (B.cp.data(cp.id)?.guards || []).find((h) => h.e === 'gx2')?.units?.[0];
+    assert(u && Math.abs(u.maxHp - base0.maxHp * 1.2) <= 1 && Math.abs(u.atk - base0.atk * 1.2) <= 1, `據點駐防 Lv4：駐防隊生命與攻擊 +20%（${base0.maxHp}→${u?.maxHp}）`);
+    await B.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, guards: (x.guards || []).filter((h) => h.e !== 'gx2') } }));
+    B.state.expeditions = B.state.expeditions.filter((e) => e !== gx);
+    B.state.research.levels.d_cpguard = 0;
+    B.research.invalidate();
+  }
+  {
+    const { WorldSync: WSg } = await import('../src/multiplayer/WorldSync.js');
+    const pb = WSg.prototype.presence.call({ game: B });
+    assert(pb.trips.some((t) => t.id === gd.exp.id && t.kind === 'cpGuard'), '駐防隊同步給其他玩家時標示為駐防（不會顯示成搜索中）');
+  }
+  {
     // v15.4：勢力進攻控制點改為派兵行軍（移動時間比照攻打避難所），佔領者與駐防者收到紅色提醒（同一人只一則）
     const t0 = Date.now();
     const { RAID_TRAVEL: RT2 } = await import('../src/config/constants.js');
@@ -6297,6 +6328,13 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     await A.cp.resolveMarches(Date.now());
     A.combat.simulate = sim0;
     assert(!A.cp.factionOf(cp.id) && A.cp.owners(cp.id).some((o) => o.p === 'A') && !A.cp.data(cp.id)?.march, '部隊被擊退：控制點維持原本的佔領者');
+    // v15.6：交戰結果：佔領者與駐防者都收到戰報（同一人只一則、不重複）
+    A.cp.reportFights(); A.cp.reportFights();
+    const fa = A.state.log.filter((l) => /擊退了「/.test(l.msg) && l.msg.includes(`#${cp.no}`));
+    assert(fa.length === 1 && /你佔領的/.test(fa[0].msg), `佔領者收到一則交戰戰報（${fa[0]?.msg || ''}）`);
+    await B.shared.poll();
+    B.cp.reportFights();
+    assert(B.state.log.some((l) => /你駐防的控制點/.test(l.msg) && /擊退了「/.test(l.msg)), '駐防者也收到交戰戰報');
     await A.shared.update(CPC.CP_KIND, cp.id, () => ({ data: { ...snap, march: null } }));
     await A.shared.update(CPC.CP_KIND, tgt2.id, () => ({ data: { owners: [], guards: [], faction: null } }));
     await B.shared.poll();
@@ -6491,6 +6529,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const presR = WS.prototype.presence.call({ game: gr });
     const cl = CPl2({ ...presR, id: 'R', trips: [{ ...before }] });
     assert(cl?.trips?.[0]?.kind === 'explore', '同步資料保留探索隊的種類');
+    assert(CPl2({ ...presR, id: 'R', trips: [{ ...before, kind: 'cpGuard' }] })?.trips?.[0]?.kind === 'cpGuard' && CPl2({ ...presR, id: 'R', trips: [{ ...before, kind: 'cp' }] })?.trips?.[0]?.kind === 'cp', '同步資料保留駐防、攻打控制點的種類（其他玩家看到駐防中、戰鬥中）');
     const { createSurvivor: mkSv3 } = await import('../src/core/GameState.js');
     const sv3 = mkSv3('同步', 'scout', 5, 'common');
     gr.state.survivors.push(sv3);
@@ -6563,6 +6602,41 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
         nb.trip = null;
         await gq.shared.update(CPC.CP_KIND, cpx.id, () => ({ data: { owners: [], guards: [], faction: nb.faction } }));
       }
+    }
+    // v15.5.2：據點被別人（例如集結）攻陷後：即使它的探索隊還在外面，也立刻從地圖移除
+    if (bases[0]) {
+      const b0 = bases[0];
+      const key = `npc:${b0.sid}`;
+      const saved = gq.shared.cache.get(key);
+      b0.trip = { kind: 'explore', poiId: gq.state.map.pois[0].id, startAt: Date.now() - 1000, endAt: Date.now() + 600000, travelMs: 300000, searchMs: 60000, from: { lat: b0.lat, lon: b0.lon }, to: { lat: b0.lat, lon: b0.lon } };
+      gq.shared.cache.set(key, { kind: 'npc', id: b0.sid, ver: (saved?.ver || 0) + 1, data: { ...(saved?.data || {}), gen: b0.gen, ident: b0.ident, dc: (b0.dc || 0) + 1, destroyed: { at: Date.now(), respawnAt: Date.now() + 36 * 3600000 } } });
+      gq.shared.listedAt.npc = gq.shared.listedAt.npc || Date.now();
+      gq.npcs.fillCells(Date.now(), { silent: true });
+      assert(!gq.npcs.list.includes(b0), '據點被攻陷後，即使探索隊還在外面也立刻從地圖移除');
+      if (saved) gq.shared.cache.set(key, saved); else gq.shared.cache.delete(key);
+      b0.trip = null;
+      gq.npcs.state.list.push(b0);
+    }
+    // v15.5.2：打下一座勢力據點後，勢力的控制點增減讓排序改變，不會把「被打下」套到另一座據點
+    {
+      const saveCache = new Map(gq.shared.cache);
+      const setCp = (id, f) => gq.shared.cache.set(`${CPC.CP_KIND}:${id}`, { kind: CPC.CP_KIND, id, ver: 1, data: { owners: [], guards: [], faction: f } });
+      const east = [...CPC.CONTROL_POINTS].sort((a, b) => b.lon - a.lon);
+      CPC.CONTROL_POINTS.forEach((c) => setCp(c.id, null));
+      east.slice(0, 6).forEach((c) => setCp(c.id, 'black'));
+      const s0 = gq.npcs.factionSlot('black', 0);
+      const s1 = gq.npcs.factionSlot('black', 1);
+      assert(s0 && s1 && s0.cp !== s1.cp, '6 個控制點的勢力有 2 座據點');
+      // 打下第 2 座（s1）
+      gq.shared.cache.set(`npc:${s1.sid}`, { kind: 'npc', id: s1.sid, ver: 5, data: { gen: s1.gen, ident: s1.ident, dc: s1.dc + 1, destroyed: { at: Date.now(), respawnAt: Date.now() + 36 * 3600000 } } });
+      assert(!gq.npcs.factionSlot('black', 1) && gq.npcs.factionSlot('black', 0)?.cp === s0.cp, '被打下的據點消失，另一座還在');
+      // 勢力多拿下一個更西邊的控制點：排序改變
+      setCp(east[6].id, 'black');
+      const t0 = gq.npcs.factionSlot('black', 0);
+      const t1 = gq.npcs.factionSlot('black', 1);
+      const shown = [t0, t1].filter(Boolean).map((n) => n.cp);
+      assert(shown.includes(s0.cp) && !shown.includes(s1.cp), `排序改變後：原本那座還在、被打下的那座不會出現（${shown.join('、')}）`);
+      gq.shared.cache = saveCache;
     }
     // v15.4：深淵區控制點守軍約與 Lv35 勢力 NPC 據點同強度
     if (bases[0]) {

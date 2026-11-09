@@ -199,16 +199,18 @@ export class NpcSystem {
     // 沒有任何據點時，改由大本營出兵（大本營不能攻打、不會探索）
     if (!count) return slot === 0 ? this.factionHqNpc(f) : null;
     if (slot >= count) return null;
-    const sid = `fx:${f}:${slot}`;
-    const gen = 0;
-    const d = this.sharedOf(sid, gen);
-    const dc = d?.dc || 0;
-    if (d?.destroyed && now < d.destroyed.respawnAt) return null;
     // 最靠近前線（最西邊）的控制點優先
     const list = cps.map((id) => cpById(id)).sort((a, b) => a.lon - b.lon);
     const cp = list[slot];
     if (!cp) return null;
-    const ident = `${sid}:${gen}:${dc}:${cp.id}:p2`; // p2：v15.2 位置改為完整在控制點內（舊位置的據點換新）
+    // v15.5.2：共用資料（被摧毀、重生時間）綁定在控制點上，不是第幾座：
+    // 勢力的控制點增減讓排序改變時，才不會把「被打下」的紀錄套到另一座據點
+    const sid = `fx:${f}:${cp.id}`;
+    const gen = 0;
+    const d = this.sharedOf(sid, gen);
+    const dc = d?.dc || 0;
+    if (d?.destroyed && now < d.destroyed.respawnAt) return null;
+    const ident = `${sid}:${gen}:${dc}:p3`;
     const npc = seeded(`npc:${ident}`, () => {
       const { lat, lon } = this.factionSpot(cp, randFloat(0, Math.PI * 2));
       return {
@@ -415,7 +417,10 @@ export class NpcSystem {
     const keep = new Set(want.map((s) => s.ident));
     const before = this.list.length;
     // 不再存在的共用 NPC 移除（正在掠奪途中的隊伍保留到結束）
-    this.state.list = this.list.filter((n) => !n.sid || keep.has(n.ident) || (n.trip && n.trip.endAt > now && !n.gone));
+    // 已被摧毀（共用資料的 dc 變大）的據點：立刻移除；只有正在掠奪途中的隊伍保留到結束（探索隊一起消失）
+    const destroyed = (n) => { const sd = n.sid && this.game.shared?.get('npc', n.sid); return !!sd && (sd.dc || 0) > (n.dc || 0); };
+    this.state.list = this.list.filter((n) => !n.sid || (keep.has(n.ident) && !destroyed(n))
+      || (n.trip && n.trip.endAt > now && !n.gone && (!destroyed(n) || n.trip.kind === 'raid')));
     // 已經在地圖上的 NPC 也套用不重複的名字（v12 改名後舊存檔的 NPC 一起更新）
     const nameOf = new Map(want.map((s) => [s.ident, s.name]));
     this.list.forEach((n) => { if (n.sid && nameOf.has(n.ident)) n.name = nameOf.get(n.ident); });
