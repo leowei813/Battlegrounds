@@ -6197,10 +6197,23 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(ra.win && gq.cp.factionOf(tgt) === 'blue' && gq.cp.factionCps('blue').length === before + 1, '勢力打下控制點後佔領');
   assert(gq.cp.garrisonCount(tgt) < CPC.cpById(tgt).garrison.count && gq.cp.garrisonCount(tgt) > 0, '打下後留下一半守軍');
   gq.npcs.fillCells(Date.now(), { silent: true });
-  const bases = gq.npcs.list.filter((n) => n.faction);
+  const bases = gq.npcs.list.filter((n) => n.faction && !n.hq);
   const expect = CPC.FACTION_KEYS.reduce((a, f) => a + Math.min(4, Math.floor(gq.cp.factionCps(f).length / 3)), 0);
   assert(bases.length === expect && bases.every((n) => n.level >= 35 && n.name.includes('・')), `NPC 據點依勢力的控制點數建立、Lv35 起（${bases.length}/${expect} 座：${bases.map((n) => n.name).join('、')}）`);
   assert(!gq.npcs.list.some((n) => n.sid && !n.faction), '新地圖不再有散布式的舊 NPC 據點');
+  // 沒有 NPC 據點的勢力由大本營出兵（Lv40 起、不能攻打、不探索）
+  const noBase = CPC.FACTION_KEYS.filter((f) => Math.floor(gq.cp.factionCps(f).length / 3) === 0);
+  const hqs = gq.npcs.list.filter((n) => n.hq);
+  const hqOk = CPC.FACTION_KEYS.every((f) => noBase.includes(f) === hqs.some((n) => n.faction === f));
+  assert(hqOk && hqs.every((n) => n.level >= 40 && n.name.endsWith('大本營')), `沒有 NPC 據點的勢力才由大本營出兵、Lv40 起（${hqs.map((n) => `${n.name} Lv${n.level}`).join('、') || '無'}）`);
+  const hq0 = gq.npcs.factionHqNpc('red');
+  assert(hq0.hq && hq0.baseLevel === 40 && Math.abs(hq0.lat - CPC.factionHq('red').lat) < 1e-9, '大本營出兵的位置在大本營');
+  if (hqs[0]) {
+    assert(!gq.exploration.start(hqs[0].id, [gq.survivors.leader().id], 5, false, Date.now(), { kind: 'raid' }).ok && !gq.rally.canStart({ kind: 'npc', id: hqs[0].id }).ok, '大本營不能攻打、不能發起集結');
+    const trip0 = hqs[0].trip;
+    gq.npcs.launchExplore(hqs[0], Date.now());
+    assert(hqs[0].trip === trip0, '大本營不會派隊探索');
+  }
   assert(gq.cp.countOf('X') === 1, '玩家資訊顯示佔領的控制點數');
 }
 

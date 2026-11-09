@@ -22,7 +22,7 @@ import {
 } from '../components.js';
 import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { INFECTED } from '../../systems/InfectedSystem.js';
-import { cpById, cpAt, CP_INCOME, FACTIONS } from '../../config/controlPoints.js';
+import { cpById, cpAt, CP_INCOME, FACTIONS, FACTION_SLOW_AT, FACTION_BASE } from '../../config/controlPoints.js';
 import { RALLY_DELAYS, RallySystem } from '../../systems/RallySystem.js';
 import { AUTO_HOME_LABEL } from '../../systems/AutoHomeSystem.js';
 import { PLASTIC_SPOTS } from '../../systems/LootStock.js';
@@ -399,6 +399,27 @@ export class MapPanel {
     const c = g.rally.canStart({ kind: 'npc', id: n.id });
     return btn(`${rallyFlag(16)} 發起集結`, 'rallyNpc', {}, { cls: 'btn-primary', disabled: !c.ok || !n.sid, title: c.reason || (n.sid ? '' : '這個據點不能集結') });
   })()}</div>`;
+  }
+
+  /** 三大勢力大本營資訊（不能攻打） */
+  openHq(f) {
+    const g = this.game;
+    const F = FACTIONS[f];
+    if (!F) return;
+    const body = () => {
+      const cps = g.cp.factionCps(f);
+      const bases = g.npcs.list.filter((n) => n.faction === f && !n.hq);
+      const hq = g.npcs.list.find((n) => n.faction === f && n.hq);
+      const slow = cps.length >= FACTION_SLOW_AT ? '（控制點較多，隔天進攻一次）' : '';
+      return `<p><span class="tag" style="color:${F.color};border:1px solid ${F.color}">🏯 ${F.name}勢力大本營・不能攻打</span></p>
+        <div class="kv-list">
+          <div><b>控制點</b> ${cps.length} 個${cps.length ? `（${cps.map((id) => `#${cpById(id).no}`).join('、')}）` : ''}</div>
+          <div><b>NPC 據點</b> ${bases.length} 座</div>
+          <div><b>進攻控制點</b> 每天 ${String(F.hour).padStart(2, '0')}:00（遊戲時間）${slow}</div>
+          <div><b>攻打玩家</b> ${bases.length || Math.floor(cps.length / FACTION_BASE.perCps) ? '由 NPC 據點出兵' : `沒有 NPC 據點，由大本營出兵${hq ? `（Lv${hq.level}）` : ''}`}</div>
+        </div>`;
+    };
+    this.ui.modal.open({ title: `🏯 ${F.name}大本營`, body: body(), live: body });
   }
 
   openNpc(npcId) {

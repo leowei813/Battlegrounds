@@ -444,6 +444,7 @@ export class ExplorationSystem {
   } = {}) {
     const v = this.validate(poiId, memberIds);
     if (!v.ok) return v;
+    if (kind === 'raid' && this.game.npcs.get?.(poiId)?.hq) return { ok: false, reason: '大本營不能攻打' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
     durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' || kind === 'rally' || kind === 'cpGuard' ? 0 : kind === 'raid' || kind === 'pvp' || kind === 'infect' || kind === 'cp' ? 2 : this.searchMinutes(v.poi);
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile, from });

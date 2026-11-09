@@ -191,6 +191,7 @@ export class UIManager {
     bus.on('ui:openNpc', ({ npcId }) => this.panels.map.openNpc(npcId));
     bus.on('ui:openInfected', ({ id }) => this.panels.map.openInfected(id));
     bus.on('ui:openCp', ({ id }) => this.panels.map.openCp(id));
+    bus.on('ui:openHq', ({ f }) => this.panels.map.openHq(f));
     bus.on('ui:openConvoy', ({ id }) => this.panels.map.openConvoy(id));
     bus.on('ui:openDungeon', ({ id }) => openDungeon(this, id));
     bus.on('ui:openTeam', (team) => this.panels.map.openTeam(team));

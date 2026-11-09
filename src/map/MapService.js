@@ -214,6 +214,7 @@ export class MapService {
     this.npcKey = key;
     this.layers.npcs.clearLayers();
     list.forEach((n) => {
+      if (n.hq) return; // 大本營另外顯示（renderCps）
       // NPC 一律敵對：紅色警戒範圍
       L.circle([n.lat, n.lon], {
         radius: npcAlert(n), color: '#e53935', weight: 1, dashArray: '3 5', fillColor: '#e53935', fillOpacity: 0.05, interactive: false,
@@ -253,6 +254,17 @@ export class MapService {
         .bindTooltip(`🚩 控制點・${game.cp.summary(c.id).label}`, { direction: 'top', offset: [0, -size / 2] })
         .addTo(this.layers.cps);
     });
+    // 三大勢力大本營（不能攻打；沒有 NPC 據點時從這裡出兵），點擊顯示勢力資訊
+    if (game.state.map?.source === 'generated') {
+      const { FACTIONS: FX, FACTION_KEYS: FK, factionHq: hqOf } = this.cpConfig;
+      FK.forEach((f) => {
+        const p = hqOf(f);
+        L.marker([p.lat, p.lon], {
+          icon: L.divIcon({ className: '', iconSize: [96, 80], iconAnchor: [48, 28], html: `<div class="hq-pin" style="--c:${FX[f].color}"><b>🏯</b><span>${FX[f].name}大本營</span></div>` }),
+          zIndexOffset: 900,
+        }).on('click', () => bus.emit('ui:openHq', { f })).addTo(this.layers.cps);
+      });
+    }
     if (this.zoneLayer) {
       this.zoneLayer.factionColor = (i) => {
         const c = CONTROL_POINTS[i];

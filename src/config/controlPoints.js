@@ -126,8 +126,8 @@ export const FACTIONS = {
 export const FACTION_KEYS = Object.keys(FACTIONS);
 /** 大本營位置（經緯度） */
 export const factionHq = (f) => toLatLon(...FACTIONS[f].hq);
-/** NPC 據點：每擁有 3 個控制點建 1 座，最多 4 座，起始 Lv35 */
-export const FACTION_BASE = { perCps: 3, max: 4, level: 35 };
+/** NPC 據點：每擁有 3 個控制點建 1 座，最多 4 座，起始 Lv35；沒有據點時由大本營出兵（Lv40） */
+export const FACTION_BASE = { perCps: 3, max: 4, level: 35, hqLevel: 40 };
 /** 控制點越多進攻頻率越低：擁有這麼多以上時隔天才進攻一次 */
 export const FACTION_SLOW_AT = 8;
 

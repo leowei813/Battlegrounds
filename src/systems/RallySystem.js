@@ -125,6 +125,7 @@ export class RallySystem {
     }
     if (target && !['npc', 'inf', 'cp'].includes(target.kind)) return { ok: false, reason: '只能對 NPC 據點、控制點發起集結' };
     if (target?.kind === 'cp') { const c = g.cp.canAttack(target.id); if (!c.ok) return c; }
+    if (target?.kind === 'npc' && g.npcs.get(target.id)?.hq) return { ok: false, reason: '大本營不能攻打' };
     return { ok: true };
   }
 
