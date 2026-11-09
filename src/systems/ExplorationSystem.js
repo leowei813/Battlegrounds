@@ -967,6 +967,8 @@ export class ExplorationSystem {
 
   updateNow(now, { silent = false } = {}) {
     const reports = [];
+    // v15.5：結算前先檢查探索中的控制點是否已被佔領（離線回來時也一樣），被佔領的隊伍從那一刻起撤回
+    this.game.cp?.recallLostExplores?.(now);
     let guard = 0;
     // 連續探索：一次處理到目前時間為止的所有轉站（離線時可能連續好幾站）
     for (let k = 0; k < 20; k += 1) {

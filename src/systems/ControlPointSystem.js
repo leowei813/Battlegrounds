@@ -193,11 +193,15 @@ export class ControlPointSystem {
     g.state.expeditions.filter((e) => e.kind === 'explore' && !e.recalled && !e.defeated).forEach((e) => {
       const poi = g.exploration.poi(e.poiId);
       if (!poi || this.canExplore(poi).ok) return;
-      if (!g.exploration.canRecall(e, now)) return;
       const cp = cpAt(poi.lat, poi.lon);
+      // 離線期間被佔領：從被佔領的那一刻起撤回（之後找到的物資不算）
+      const d = cp ? this.data(cp.id) : null;
+      const lostAt = d?.takenAt || d?.lostAt || now;
+      const at = Math.max(e.startAt, Math.min(now, lostAt));
+      if (!g.exploration.canRecall(e, at)) return;
       e.queue = [];
       e.auto = false;
-      const r = g.exploration.recall(e.id, now);
+      const r = g.exploration.recall(e.id, at);
       if (!r.ok) return;
       e.travelEvents = [...(e.travelEvents || []), `🚩 控制點${cp ? ` #${cp.no}` : ''}被佔領，「${poi.name}」不能再探索，隊伍強制撤回`];
       n += 1;

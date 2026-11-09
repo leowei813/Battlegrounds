@@ -6405,6 +6405,22 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     gr.cp.statusOf = so0;
     EX.HQ_AMBUSH.chance = c0;
   }
+  // v15.5：離線期間控制點被佔領：回來結算時，從被佔領的那一刻起撤回（不會照常搜完帶回全部物資）
+  {
+    const { createSurvivor: mkSv2 } = await import('../src/core/GameState.js');
+    const sv = mkSv2('離線', 'scout', 10, 'common');
+    gr.state.survivors.push(sv);
+    const yp = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === Y && gr.cp.canExplore(p).ok && !gr.npcs.list.some((n) => haversine(n.lat, n.lon, p.lat, p.lon) < 200));
+    const ro = gr.exploration.start(yp.id, [sv.id], 5);
+    assert(ro.ok, `在佔領的控制點探索（${ro.reason || ''}）`);
+    const eo = ro.exp;
+    const takenAt = eo.startAt + eo.travelMs + Math.round(eo.searchMs / 3);
+    await gr.shared.update(CPC.CP_KIND, Y, () => ({ data: { owners: [], guards: [], faction: 'red', takenAt, lostAt: takenAt } }));
+    const reps = gr.exploration.update(eo.endAt + 3600000, { silent: true });
+    const rp = reps.find((r) => r.members?.includes('離線'));
+    assert(eo.recalled && rp && !rp.success, `離線期間控制點被佔領：結算時從被佔領的那一刻起撤回（${rp?.events?.slice(-2).join('／') || ''}）`);
+    gr.state.survivors = gr.state.survivors.filter((x) => x !== sv);
+  }
 }
 
 // ---- v14 第 3 批：三大勢力（起始控制點、相鄰進攻、優先無人駐守、打下留守、NPC 據點數量） ----
