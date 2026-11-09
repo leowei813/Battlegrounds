@@ -559,6 +559,8 @@ export class SaveManager {
     }
     // v13.1：舊名單招募的倖存者在下次開遊戲時換成新名單的名字
     if (v < 33) data.renameLegacy = true;
+    // v14：地下感染區資訊框改為預設展開（列出全部副本）；舊版收起的設定重設一次
+    if (v < 34 && data.settings) delete data.settings.dgHudOpen;
     data.version = SAVE_VERSION;
     return data;
   }

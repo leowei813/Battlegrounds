@@ -119,13 +119,13 @@ export function hudHtml(g, now = Date.now()) {
   const any = sts.find((x) => x.time);
   const right = any ? `⏱ ${any.time}` : ph === 'signup' ? '17:40 截止' : ph === 'closed' ? '17:50 鎖定' : ph === 'locked' || ph === 'gather' ? '18:00 開打' : ph === 'run' ? '攻略中' : '00:00 開放報名';
   const glow = sts.some((x) => x.cls === 't-boss') ? 'boss-glow' : sts.some((x) => x.cls === 't-win') ? 'win-glow' : '';
-  const first = recs[0]?.dg || DUNGEON_KEYS[0];
-  const head = `<div class="t"><span class="dg-ic">${DG_PIN_SVG}</span>地下感染區<span class="fl">${right}</span>${foldBtn(open)}</div>`;
+  // 點標題列收合／展開（不會直接打開某一個副本）
+  const head = `<div class="t" data-action="dgFold"><span class="dg-ic">${DG_PIN_SVG}</span>地下感染區<span class="fl">${right}</span>${foldBtn(open)}</div>`;
   if (!open) {
-    return `<div class="dg-hud multi ${glow}" data-action="${recs.length ? 'dgStatus' : 'dgOpen'}" data-dg="${first}">${head}<div class="r sum">已報名 ${recs.length}・共 ${total} 人報名</div></div>`;
+    return `<div class="dg-hud multi ${glow}" data-action="dgFold">${head}<div class="r sum">已報名 ${recs.length}・共 ${total} 人報名・點一下展開</div></div>`;
   }
   const html = rows.map((r) => `<div class="row ${r.rec ? 'mine' : ''}" data-action="${r.rec ? 'dgStatus' : 'dgOpen'}" data-dg="${r.dg}">${r.icon} ${escapeHtml(DUNGEONS[r.dg].short)}<span class="tag ${r.cls}">${r.tag}</span><span class="push">${r.right}</span></div>`).join('');
-  return `<div class="dg-hud multi ${glow}" data-action="${recs.length ? 'dgStatus' : 'dgOpen'}" data-dg="${first}">${head}${html}</div>`;
+  return `<div class="dg-hud multi ${glow}">${head}${html}</div>`;
 }
 
 /** 時程表 */
