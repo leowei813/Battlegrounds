@@ -18,7 +18,7 @@ export const AUTOSAVE_MS = 30 * 1000;
 export const DAY_REAL_MS = 90 * 60 * 1000;
 export const DAY_REAL_MS_OLD = 60 * 60 * 1000;
 /** 改為 90 分鐘一天的時刻（所有玩家相同；發版時設定在上線後幾分鐘） */
-export const DAY_SWITCH_AT = Date.UTC(2026, 10, 10, 4, 0, 0);
+export const DAY_SWITCH_AT = Date.UTC(2026, 10, 9, 16, 45, 0); // 台灣時間 11/10 00:45
 /** 遊戲開始時的時刻（早上 8 點） */
 export const START_HOUR = 8;
 
