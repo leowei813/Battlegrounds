@@ -707,6 +707,10 @@ export class RallySystem {
       } else res.summary = `☣️ 集結淨化「${s.name}」：淨化度 ${b.before.toFixed(1)}% → ${(p.purity ?? b.before + b.gain).toFixed(1)}%`;
     }
     void randInt;
+    // v15.6.1：集結戰鬥的經驗：擊倒敵人的經驗平均分給所有參戰隊員，打贏每人再 +5（和一般戰鬥相同）
+    const xpTotal = result?.xp || 0;
+    const xpEach = Math.round(xpTotal / Math.max(1, people)) + (res.victory ? 5 : 0);
+    Object.values(res.teams).forEach((t) => { t.xpEach = xpEach; });
     return res;
   }
 
@@ -729,13 +733,27 @@ export class RallySystem {
     if (exp.rallySummary) report.events.push(exp.rallySummary);
     // 戰鬥詳細（逐筆傷害與每人統計）：每位參加的玩家都會收到一份
     if (exp.rallyBattle) g.combat.adopt(exp.rallyBattle, report);
+    // 集結戰鬥的經驗（倒下的人沒有經驗，和一般戰鬥相同）；研究「經驗加成」也適用
+    const xpEach = Math.round((r.xpEach || 0) * (1 + g.research.bonus('xpPct')));
+    let xpGot = 0;
     (r.units || []).forEach((u) => {
       const sv = g.survivors.get(exp.memberIds[u.i]);
       if (!sv) return;
       if (u.meds > 0) g.combat.consumeMeds(sv, { medsUsed: Math.floor(u.meds) });
       if (u.down) g.survivors.becomeSevere(sv, '在集結戰鬥中', exp.endAt);
-      else g.survivors.setHp(sv, Math.max(1, u.hp));
+      else {
+        g.survivors.setHp(sv, Math.max(1, u.hp));
+        if (xpEach > 0) { g.survivors.gainXp(sv, xpEach); xpGot += xpEach; }
+      }
     });
+    if (xpGot) {
+      report.xp += xpGot;
+      report.events.push(`⭐ 集結戰鬥經驗：每人 +${xpEach}（倒下的隊員沒有經驗）`);
+    }
+    // v15.6.1：比照一般戰鬥：戰後生命低於 70% 的人從藥品欄吃藥補血，藥品欄再從隊伍背包補滿
+    const alive = members.filter((m) => !m.severe);
+    const notes = [...alive.map((m) => g.survivors.postBattleHeal(m)).filter(Boolean), ...g.survivors.refillMeds(alive)];
+    if (notes.length) report.events.push(`💊 ${notes.join('；')}`);
     (r.items || []).forEach((it) => {
       const item = { ...it, id: uid('it') };
       if (g.equipment.addItem(item, '集結')) report.items.push(item);

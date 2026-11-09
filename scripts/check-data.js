@@ -1929,6 +1929,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   }
   assert(d2.result.victory, `強大的集結隊伍攻陷弱小的 NPC（${d2.result.summary}）`);
   {
+    // v15.6.1：集結打贏有經驗（倒下的人沒有）
+    const xe = Object.values(d2.result.teams || {})[0]?.xpEach || 0;
+    const ra2 = repsA.find((r) => r.poiName.includes('集結'));
+    assert(xe > 0 && ra2 && ra2.xp > 0 && ra2.events.some((e) => /集結戰鬥經驗/.test(e)), `集結打贏：參戰隊員獲得經驗（每人 ${xe}，報告 +${ra2?.xp}）`);
+  }
+  {
+    // v15.6.1：集結結束後比照一般戰鬥：生命低於 70% 的人從藥品欄吃藥補血
+    const sv = A.survivors.leader();
+    const SUP = await import('../src/config/supplies.js');
+    const mk = Object.keys(SUP.SUPPLIES).find((k) => A.survivors.healAmount(sv, k) > 0);
+    const lo = A.survivors.loadout(sv);
+    lo.med = { key: mk, qty: 5 };
+    A.survivors.setHp(sv, A.survivors.maxHp(sv) * 0.3);
+    const fake = { id: 'rx', kind: 'rally', memberIds: [sv.id], endAt: Date.now(), rallyVictory: true, rallyTarget: { name: '測試' }, rallyResult: { units: [{ i: 0, hp: Math.round(A.survivors.maxHp(sv) * 0.3), down: false, dealt: 1, kills: 0 }], coins: 0, items: [], mats: {}, xpEach: 0 } };
+    const rpH = A.rally.report(fake);
+    assert(A.survivors.hpOf(sv) > A.survivors.maxHp(sv) * 0.3 && rpH.events.some((e) => /戰後使用/.test(e)), `集結結束後生命低於 70% 的人自動吃藥補血（${rpH.events.slice(-1)}）`);
+  }
+  {
     assert(A.state.player.coins > ca0 && B.state.player.coins > cb0, `勝利時依貢獻分配金錢，每支隊伍都有保底（${A.state.player.coins - ca0} / ${B.state.player.coins - cb0}）`);
     Object.assign(NA, naBak);
     await B.shared.poll();
