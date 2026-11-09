@@ -10,20 +10,21 @@ const OUT = 255;
 /** 每個取樣方塊的像素大小（低解析度取樣後放大；邊界線依同樣的方塊描繪） */
 const BLOCK = 6;
 
+/** v15：不可探索區域的黑色遮罩 */
+const FOG = [38, 42, 50, 185];
+
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 
 /**
  * 危險度圖層的顯示模式：
  *  - light（淡，預設）：淡色底色與細邊界線
- *  - off（關閉）
  */
 export const ZONE_MODES = {
   light: { name: '危險度', alpha: ZONES.map((z) => z.alpha), border: 1 },
   faction: { name: '勢力圖', faction: true, border: 2 },
-  off: { name: '關閉' },
 };
-/** v14：同一顆按鈕切換：危險度 → 勢力圖 → 關閉 */
-export const ZONE_MODE_ORDER = ['light', 'faction', 'off'];
+/** 同一顆按鈕切換：危險度 ⇄ 勢力圖（v15：移除「關閉」，避免看到不可探索區域的建築） */
+export const ZONE_MODE_ORDER = ['light', 'faction'];
 /** 勢力圖顏色（status 由 ControlPointSystem.statusOf 決定） */
 export const FACTION_COLORS = {
   mine: '#4fc3f7', other: '#9e9e9e', hostile: '#9e9e9e', neutral: '#9e9e9e', free: '#4fc3f7', npcHome: '#5d4037',
@@ -102,7 +103,21 @@ export const ZoneLayer = L.Layer.extend({
     lctx.putImageData(img, 0, 0);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(this.low, 0, 0, w * BLOCK, h * BLOCK);
+    this.drawFog(ctx, lctx, grid, w, h);
     this.cpEdges(ctx, grid, w, h, m.border, 0.75);
+  },
+
+  /** v15：不可探索的區域（未佔領的控制點、勢力領地）蓋上淺黑灰遮罩 */
+  drawFog(ctx, lctx, grid, w, h) {
+    if (!this.cpLocked) return;
+    const img = lctx.createImageData(w, h);
+    for (let i = 0; i < grid.length; i += 1) {
+      const k = grid[i];
+      if (k <= -10 || (k >= 0 && this.cpLocked(k))) img.data.set(FOG, i * 4);
+    }
+    lctx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(this.low, 0, 0, w * BLOCK, h * BLOCK);
   },
 
   /** 控制點邊界（點狀線）：grid 為每個方塊的控制點索引（-2＝地圖外） */
@@ -201,7 +216,10 @@ export const ZoneLayer = L.Layer.extend({
       ctx.stroke();
     });
 
-    // 4. v14：控制點邊界用佔領狀態／勢力顏色（和勢力圖相同），外圈淡白底讓線在地圖上看得清楚
+    // 4. v15：不可探索的區域（未佔領的控制點、勢力領地）變成淺黑灰
+    this.drawFog(ctx, lctx, cps, w, h);
+
+    // 5. v14：控制點邊界用佔領狀態／勢力顏色（和勢力圖相同），外圈淡白底讓線在地圖上看得清楚
     const colorOf = this.factionColor || (() => FACTION_COLORS.neutral);
     const tone = new Map();
     const toneOf = (k) => {
