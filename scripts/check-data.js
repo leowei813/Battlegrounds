@@ -6564,6 +6564,41 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
         await gq.shared.update(CPC.CP_KIND, cpx.id, () => ({ data: { owners: [], guards: [], faction: nb.faction } }));
       }
     }
+    // v15.5.2：據點被別人（例如集結）攻陷後：即使它的探索隊還在外面，也立刻從地圖移除
+    if (bases[0]) {
+      const b0 = bases[0];
+      const key = `npc:${b0.sid}`;
+      const saved = gq.shared.cache.get(key);
+      b0.trip = { kind: 'explore', poiId: gq.state.map.pois[0].id, startAt: Date.now() - 1000, endAt: Date.now() + 600000, travelMs: 300000, searchMs: 60000, from: { lat: b0.lat, lon: b0.lon }, to: { lat: b0.lat, lon: b0.lon } };
+      gq.shared.cache.set(key, { kind: 'npc', id: b0.sid, ver: (saved?.ver || 0) + 1, data: { ...(saved?.data || {}), gen: b0.gen, ident: b0.ident, dc: (b0.dc || 0) + 1, destroyed: { at: Date.now(), respawnAt: Date.now() + 36 * 3600000 } } });
+      gq.shared.listedAt.npc = gq.shared.listedAt.npc || Date.now();
+      gq.npcs.fillCells(Date.now(), { silent: true });
+      assert(!gq.npcs.list.includes(b0), '據點被攻陷後，即使探索隊還在外面也立刻從地圖移除');
+      if (saved) gq.shared.cache.set(key, saved); else gq.shared.cache.delete(key);
+      b0.trip = null;
+      gq.npcs.state.list.push(b0);
+    }
+    // v15.5.2：打下一座勢力據點後，勢力的控制點增減讓排序改變，不會把「被打下」套到另一座據點
+    {
+      const saveCache = new Map(gq.shared.cache);
+      const setCp = (id, f) => gq.shared.cache.set(`${CPC.CP_KIND}:${id}`, { kind: CPC.CP_KIND, id, ver: 1, data: { owners: [], guards: [], faction: f } });
+      const east = [...CPC.CONTROL_POINTS].sort((a, b) => b.lon - a.lon);
+      CPC.CONTROL_POINTS.forEach((c) => setCp(c.id, null));
+      east.slice(0, 6).forEach((c) => setCp(c.id, 'black'));
+      const s0 = gq.npcs.factionSlot('black', 0);
+      const s1 = gq.npcs.factionSlot('black', 1);
+      assert(s0 && s1 && s0.cp !== s1.cp, '6 個控制點的勢力有 2 座據點');
+      // 打下第 2 座（s1）
+      gq.shared.cache.set(`npc:${s1.sid}`, { kind: 'npc', id: s1.sid, ver: 5, data: { gen: s1.gen, ident: s1.ident, dc: s1.dc + 1, destroyed: { at: Date.now(), respawnAt: Date.now() + 36 * 3600000 } } });
+      assert(!gq.npcs.factionSlot('black', 1) && gq.npcs.factionSlot('black', 0)?.cp === s0.cp, '被打下的據點消失，另一座還在');
+      // 勢力多拿下一個更西邊的控制點：排序改變
+      setCp(east[6].id, 'black');
+      const t0 = gq.npcs.factionSlot('black', 0);
+      const t1 = gq.npcs.factionSlot('black', 1);
+      const shown = [t0, t1].filter(Boolean).map((n) => n.cp);
+      assert(shown.includes(s0.cp) && !shown.includes(s1.cp), `排序改變後：原本那座還在、被打下的那座不會出現（${shown.join('、')}）`);
+      gq.shared.cache = saveCache;
+    }
     // v15.4：深淵區控制點守軍約與 Lv35 勢力 NPC 據點同強度
     if (bases[0]) {
       const lv0 = bases[0].level;
