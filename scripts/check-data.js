@@ -6260,9 +6260,31 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(path.length >= 2 && bad.length <= 1, `探索路線只走可探索的區域（穿過未佔領：${bad.length} 點）`);
   // v15.4：探索中目標所在的控制點被佔領：強制撤回
   r2.exp.queue = ['x'];
+  // 另一支小隊：目前的目標在安全區，但佇列中有 X 裡的地點
+  const fakeQ = { id: 'qq', kind: 'explore', memberIds: [], poiId: gr.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon)).id, queue: [target.id], startAt: Date.now(), endAt: Date.now() + 600000, travelMs: 1000, searchMs: 1000 };
+  gr.state.expeditions.push(fakeQ);
   await gr.shared.update(CPC.CP_KIND, X.id, () => ({ data: { owners: [], guards: [], faction: 'red' } }));
   gr.cp.recallLostExplores(r2.exp.startAt + 1000);
   assert(r2.exp.recalled && !r2.exp.queue.length, '探索中控制點被佔領：隊伍強制撤回、佇列取消');
+  assert(!fakeQ.queue.length && !fakeQ.recalled, '控制點被佔領：其他隊伍佇列中（自動探索預定）在那裡的地點也一併取消');
+  gr.state.expeditions = gr.state.expeditions.filter((e) => e !== fakeQ);
+  // v15.4：探索點在鄰接大本營的控制點：有機會被大本營的部隊襲擊
+  {
+    const EX = await import('../src/systems/ExplorationSystem.js');
+    const eastCp = CPC.CONTROL_POINTS.find((c) => CPC.FACTION_KEYS.some((f) => CPC.hqNeighbors(f).includes(c.id)));
+    const ep = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === eastCp.id);
+    const westP = gr.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon));
+    assert(EX.hqFactionOf(ep) && !EX.hqFactionOf(westP), '鄰接大本營的控制點才會被大本營襲擊');
+    const c0 = EX.HQ_AMBUSH.chance;
+    EX.HQ_AMBUSH.chance = 1;
+    const weak = gr.survivors.leader();
+    const cpx = { gained: { food: 10, wood: 8 } };
+    const rep = { events: [], kills: 0, xp: 0 };
+    gr.exploration.hqAmbush({ id: 'amb', memberIds: [weak.id], endAt: Date.now() }, ep, [weak], cpx, rep);
+    EX.HQ_AMBUSH.chance = c0;
+    assert(rep.events.some((e) => /大本營的部隊/.test(e)), `大本營襲擊探索隊（${rep.events.join('／')}）`);
+    assert(rep.events.some((e) => /被擊退/.test(e)) || (cpx.gained.food === 5 && cpx.gained.wood === 4), '襲擊戰敗：這一站找到的資源被搶走一半');
+  }
 }
 
 // ---- v14 第 3 批：三大勢力（起始控制點、相鄰進攻、優先無人駐守、打下留守、NPC 據點數量） ----

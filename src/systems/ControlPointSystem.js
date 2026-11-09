@@ -174,6 +174,17 @@ export class ControlPointSystem {
     const g = this.game;
     if (g.state.map?.source !== 'generated') return 0;
     let n = 0;
+    let dropped = 0;
+    // 佇列中（自動探索預定前往）的地點：在不能再探索的區域裡的一併取消
+    g.state.expeditions.filter((e) => e.kind === 'explore' && (e.queue || []).length).forEach((e) => {
+      const keep = e.queue.filter((id) => { const p = g.exploration.poi(id); return !p || this.canExplore(p).ok; });
+      if (keep.length !== e.queue.length) {
+        dropped += e.queue.length - keep.length;
+        e.travelEvents = [...(e.travelEvents || []), `🚩 佇列中有 ${e.queue.length - keep.length} 個地點所在的控制點被佔領，已取消`];
+        e.queue = keep;
+      }
+    });
+    if (dropped) g.log(`🚩 控制點被佔領：探索佇列中的 ${dropped} 個地點已取消`, 'danger');
     g.state.expeditions.filter((e) => e.kind === 'explore' && !e.recalled && !e.defeated).forEach((e) => {
       const poi = g.exploration.poi(e.poiId);
       if (!poi || this.canExplore(poi).ok) return;

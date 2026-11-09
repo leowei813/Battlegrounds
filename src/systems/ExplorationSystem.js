@@ -1,3 +1,4 @@
+import { cpAt as hqCpAt, hqNeighbors, FACTIONS, FACTION_KEYS, FACTION_BASE, factionHq } from '../config/controlPoints.js';
 import { ASSIST_TRAVEL_MUL } from './AssistSystem.js';
 
 /** 再次探索同一地點：剩餘搜索時間的下限比例、回去拿帶不走物資的時間（分鐘） */
@@ -53,6 +54,19 @@ const AMBUSH_CHANCE = 0.6;
  * 行程進度（純函式）：去程 → 搜索 → 返程。自己的探索隊與其他玩家的隊伍共用。
  * @param {{from?:{lat,lon}, to:{lat,lon}, startAt:number, endAt:number, travelMs?:number, searchMs?:number, distanceM?:number}} trip
  */
+/** v15.4：鄰接大本營的控制點，探索時被大本營襲擊 */
+export const HQ_AMBUSH = { chance: 0.25, lootLoss: 0.5 };
+
+/** 建築所在的控制點鄰接哪個勢力的大本營（最東側一排；都不是時回傳 null） */
+export function hqFactionOf(poi) {
+  const c = poi && hqCpAt(poi.lat, poi.lon);
+  if (!c) return null;
+  const list = FACTION_KEYS.filter((f) => hqNeighbors(f).includes(c.id));
+  if (!list.length) return null;
+  const d = (f) => { const h = factionHq(f); return Math.hypot(h.lat - c.lat, h.lon - c.lon); };
+  return list.sort((a, b) => d(a) - d(b))[0];
+}
+
 export function tripProgress(trip, now = Date.now()) {
   const { to } = trip;
   // 舊存檔沒有行程資料：視為一直在目標地點搜索
@@ -1410,6 +1424,8 @@ export class ExplorationSystem {
     }
     const complete = cp.done >= cp.total && !cp.stopped && !recalled;
     if (recalled) report.events.push(`↩️ 中途撤回（搜索 ${cp.done}/${cp.total}），帶回已經找到的物資`);
+    // v15.4：探索點在鄰接勢力大本營的控制點：有機會被大本營的部隊襲擊
+    if (!recalled) this.hqAmbush(exp, poi, members, cp, report);
     // 最後再檢查一次運載量（例如戰敗撤退時沒有經過負重判斷）；連續探索時扣掉前幾站已經背著的物資
     const carryCap = Math.max(0, (exp.cargo || this.game.vehicles.personCarry() * members.length) - carriedWeight(exp.carried));
     const weightNow = Object.entries(cp.gained).filter(([k]) => isLootKey(k)).reduce((sum, [k, v]) => sum + v * unitWeight(k), 0);
@@ -1539,6 +1555,37 @@ export class ExplorationSystem {
   }
 
   /** 結算一次探索（補算檢核點後帶回物資） */
+  /**
+   * v15.4：探索點所在的控制點鄰接三大勢力大本營（最東側一排）時，每趟有 HQ_AMBUSH.chance 機率被大本營的部隊襲擊。
+   * 敵人：隊伍人數 +1 名、大本營出兵等級的掠奪者。打贏照常探索並得到經驗；打輸這一站找到的資源被搶走一半，倒下的人重傷。
+   */
+  hqAmbush(exp, poi, members, cp, report) {
+    const g = this.game;
+    if (exp.hqAmbushed || g.state.map?.source !== 'generated' || !g.cp) return;
+    const f = hqFactionOf(poi);
+    if (!f) return;
+    exp.hqAmbushed = true;
+    if (!chance(HQ_AMBUSH.chance)) return;
+    const cb = g.combat;
+    const level = Math.max(FACTION_BASE.hqLevel, g.npcs?.list?.find((n) => n.hq && n.faction === f)?.level || 0);
+    const foes = Array.from({ length: members.length + 1 }, (_, i) => {
+      const e = cb.createEnemy(i === 0 ? 'raiderChief' : 'raider', level);
+      e.name = `${FACTIONS[f].name}${e.name}`;
+      return e;
+    });
+    const result = cb.within(exp, () => cb.simulate(members, foes, { title: `🏯 ${FACTIONS[f].name}大本營的部隊襲擊探索隊`, ref: exp }));
+    cb.applyOutcome(members, result, exp.endAt);
+    report.kills += result.kills.length;
+    report.xp += result.xpEach || 0;
+    if (result.victory) {
+      report.events.push(`🏯 ${FACTIONS[f].name}大本營的部隊（${foes.length} 人・Lv${level}）襲擊探索隊，被擊退了！每人經驗 +${result.xpEach || 0}`);
+      return;
+    }
+    Object.keys(cp.gained || {}).filter(isLootKey).forEach((k) => { cp.gained[k] *= HQ_AMBUSH.lootLoss; });
+    const down = result.team.filter((u) => u.down).length;
+    report.events.push(`🏯 ${FACTIONS[f].name}大本營的部隊（${foes.length} 人・Lv${level}）襲擊探索隊，我方戰敗：這一站找到的資源被搶走一半${down ? `，${down} 人重傷` : ''}`);
+  }
+
   resolve(exp) {
     this.runCheckpoints(exp, this.checkpointAt(exp, exp.cp?.total || this.checkpointCount(this.poi(exp.poiId) || {})));
     return this.finishExplore(exp);
