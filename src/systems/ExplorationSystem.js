@@ -309,11 +309,18 @@ export class ExplorationSystem {
     if (!exp || exp.kind !== 'explore' || exp.recalled || exp.defeated) return { ok: false, reason: '這支小隊無法加入佇列' };
     const poi = this.poi(poiId);
     if (!poi || !POI_TYPES[poi.type] || poi.npc || poi.pvp) return { ok: false, reason: '只能加入一般建築的探索' };
+    if (!this.explorable(poi)) return this.game.cp.canExplore(poi);
     exp.queue = exp.queue || [];
     if (exp.queue.length >= this.queueLimit()) return { ok: false, reason: `探索佇列已滿（${this.queueLimit()} 個，研究「行動規劃」可增加）` };
     if (exp.poiId === poiId || exp.queue.includes(poiId)) return { ok: false, reason: '這個地點已經在佇列中' };
     exp.queue.push(poiId);
     return { ok: true, msg: `已加入探索佇列（${exp.queue.length}/${this.queueLimit()}）：${poi.name}` };
+  }
+
+  /** v14：這棟建築目前能不能探索（控制點要自己或好友佔領、勢力領地不能探索；舊地圖一律可以） */
+  explorable(poi) {
+    if (this.game.state.map?.source !== 'generated' || !this.game.cp) return true;
+    return this.game.cp.canExplore(poi).ok;
   }
 
   /** 從佇列移除 */
@@ -343,7 +350,8 @@ export class ExplorationSystem {
     const zones = this.game.territory.zones().filter((z) => z.relation !== 'friend');
     const pool = this.game.state.map.pois.filter((p) => POI_TYPES[p.type] && !p.npc && !p.pvp && !taken.has(p.id)
       && !this.game.shelter.baseAtPoi(p.id) && this.hasStock(p, now)
-      && !zones.some((z) => haversine(p.lat, p.lon, z.lat, z.lon) <= z.r));
+      && !zones.some((z) => haversine(p.lat, p.lon, z.lat, z.lon) <= z.r)
+      && this.explorable(p));
     let last = this.poi(exp.queue[exp.queue.length - 1] || exp.poiId);
     // 只選與選定建築同一個區域（危險等級）的建築，不跨區
     const base = this.poi(exp.poiId) || last;

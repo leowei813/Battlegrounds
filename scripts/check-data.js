@@ -6127,6 +6127,21 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   await B.shared.poll(); await C.shared.poll();
   assert(A.cp.statusOf(cp.id) === 'mine' && B.cp.statusOf(cp.id) === 'mine' && C.cp.statusOf(cp.id) === 'other', '打下後：自己與好友是可探索，其他玩家不行');
   assert(A.cp.canExplore(inCp).ok && B.cp.canExplore(inCp).ok && !C.cp.canExplore(inCp).ok, '佔領後該區域：佔領者與好友可以探索，其他玩家不行');
+  {
+    // 自動探索佇列（快速佇列／加入佇列）不會選到不能探索的控制點區域
+    const ZN = await import('../src/config/zones.js');
+    const pp = C.state.map.pois.filter((p) => POI_TYPES[p.type] && !p.npc);
+    const locked = pp.filter((p) => !C.cp.canExplore(p).ok && !Z.inNpcHome(p.lat, p.lon));
+    const open = pp.filter((p) => C.cp.canExplore(p).ok && !C.shelter.baseAtPoi(p.id) && locked.some((q) => ZN.zoneAt(q.lat, q.lon).id === ZN.zoneAt(p.lat, p.lon).id));
+    open.sort((a, b) => Math.min(...locked.map((q) => haversine(a.lat, a.lon, q.lat, q.lon))) - Math.min(...locked.map((q) => haversine(b.lat, b.lon, q.lat, q.lon))));
+    const st0 = open[0] && C.exploration.start(open[0].id, [C.survivors.leader().id], 5);
+    assert(st0?.ok, `控制點旁的開放區域可以探索（${st0?.reason || ''}）`);
+    const qf = C.exploration.quickFill(st0.exp.id);
+    assert(qf.added.every((p) => C.cp.canExplore(p).ok), `快速佇列不會加入未佔領控制點的建築（加入 ${qf.added.length} 個）`);
+    assert(!C.exploration.enqueue(st0.exp.id, inCp.id).ok, '未佔領控制點的建築不能加入探索佇列');
+    C.exploration.recall(st0.exp.id);
+    C.state.expeditions = [];
+  }
   assert(!C.cp.canAttack(cp.id).ok, '非敵對的其他玩家不能攻打');
   C.state.relations.players = { A: { status: 'hostile' } };
   assert(C.cp.canAttack(cp.id).ok, '敵對玩家可以攻打');
