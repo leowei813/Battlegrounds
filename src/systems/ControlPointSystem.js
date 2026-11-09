@@ -3,9 +3,11 @@ import {
 } from '../config/controlPoints.js';
 import { inNpcHome } from '../config/zones.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
-import { DAY_REAL_MS } from '../config/constants.js';
+import { DAY_REAL_MS, RAID_TRAVEL } from '../config/constants.js';
+import { NPC_CONFIG } from '../config/npcs.js';
+import { HQ_AMBUSH, hqFactionOf } from './ExplorationSystem.js';
 import {
-  uid, haversine, randInt, weightedPick, formatDuration, unitPower,
+  uid, haversine, chance, randInt, weightedPick, formatDuration, unitPower,
 } from '../utils/math.js';
 import { AssistSystem } from './AssistSystem.js';
 import { balanceMultipliers } from './MaterialBalance.js';
@@ -27,6 +29,9 @@ const NEUTRAL_TYPES = ['walker', 'infected', 'berserker', 'mutant'];
  *  guards  [{ p, n, e, units, at }]  駐防隊（每名玩家最多 CP_GUARD_MAX 人）
  *  lost    守軍已損失的人數（每小時補回 CP_REFILL_PER_HOUR，即現實每 10 分鐘 1 人）；lostAt 損失時間
  */
+/** 地圖提示用：探索隊的目的地名稱 */
+const g0name = (g, e) => `「${g.exploration.poi(e.poiId)?.name || '探索點'}」`;
+
 export class ControlPointSystem {
   constructor(game) {
     this.game = game;
@@ -532,12 +537,135 @@ export class ControlPointSystem {
         if (!lock.ok) continue;
         const target = this.pickTarget(f, at);
         if (!target) continue;
+        // v15.4：部隊從勢力據點（沒有時從大本營）出發，移動時間比照攻打玩家避難所，讓玩家有時間反應
         // eslint-disable-next-line no-await-in-loop
-        await this.npcAttack(f, target, at);
+        await this.launchMarch(f, target, at);
       } finally {
         this.busy.delete(`turn:${f}`);
       }
     }
+  }
+
+  /** v15.4：NPC 部隊的移動時間（比照攻打玩家避難所：步行時間 ×RAID_TRAVEL.npcMul，至少 RAID_TRAVEL.minMin 分鐘） */
+  static marchMs(from, to) {
+    const dist = haversine(from.lat, from.lon, to.lat, to.lon);
+    return Math.round(Math.max((dist / 1000) * NPC_CONFIG.walkMinPerKm * RAID_TRAVEL.npcMul, RAID_TRAVEL.minMin) * 60000);
+  }
+
+  /** 勢力出兵的地點：離目標最近的自己的 NPC 據點，沒有時從大本營 */
+  marchFrom(f, to) {
+    const bases = (this.game.npcs?.list || []).filter((n) => n.faction === f && !n.hq);
+    const near = bases.sort((a, b) => haversine(a.lat, a.lon, to.lat, to.lon) - haversine(b.lat, b.lon, to.lat, to.lon))[0];
+    return near ? { lat: near.lat, lon: near.lon } : factionHq(f);
+  }
+
+  /** 勢力派兵前往控制點（寫進共用資料，抵達時才交戰） */
+  async launchMarch(f, id, at = Date.now()) {
+    const to = this.markerSpot(id);
+    const from = this.marchFrom(f, to);
+    const arriveAt = at + ControlPointSystem.marchMs(from, to);
+    const cp = cpById(id);
+    const r = await this.game.shared.update(CP_KIND, id, (x) => {
+      const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
+      if (data.march) return { fail: 'busy' };
+      return { data: { ...data, march: { f, from, at, arriveAt } } };
+    }, { lat: cp.lat, lon: cp.lon });
+    if (r.ok) this.game.log(`🏴 勢力「${FACTIONS[f].name}」派兵前往控制點 #${cp.no}（約 ${Math.max(1, Math.round((arriveAt - at) / 60000))} 分鐘後抵達）`, 'danger');
+    return r;
+  }
+
+  /** 抵達的進攻部隊：先取得結算權（清掉 march，避免多位玩家重複結算），再交戰 */
+  async resolveMarches(now = Date.now()) {
+    const g = this.game;
+    for (const cp of CONTROL_POINTS) {
+      const m = this.data(cp.id)?.march;
+      if (!m || now < m.arriveAt || this.busy.has(`march:${cp.id}`)) continue;
+      this.busy.add(`march:${cp.id}`);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const claim = await g.shared.update(CP_KIND, cp.id, (x) => (x?.march?.arriveAt === m.arriveAt ? { data: { ...x, march: null } } : { fail: 'done' }), { lat: cp.lat, lon: cp.lon });
+        // eslint-disable-next-line no-await-in-loop
+        if (claim.ok) await this.npcAttack(m.f, cp.id, m.arriveAt);
+      } finally {
+        this.busy.delete(`march:${cp.id}`);
+      }
+    }
+  }
+
+  /** 前往自己（或好友）控制點的進攻部隊：提醒一次 */
+  warnMarches(now = Date.now()) {
+    this.warned = this.warned || new Set();
+    CONTROL_POINTS.forEach((cp) => {
+      const m = this.data(cp.id)?.march;
+      if (!m || now >= m.arriveAt) return;
+      // 佔領者與駐防者都會收到；同一位玩家同時是佔領者與駐防者時只收到一則
+      const me = this.myId();
+      const owner = this.owners(cp.id).some((o) => o.p === me);
+      const guard = (this.data(cp.id)?.guards || []).some((h) => h.p === me);
+      if (!owner && !guard) return;
+      const key = `${cp.id}:${m.arriveAt}`;
+      if (this.warned.has(key)) return;
+      this.warned.add(key);
+      const min = Math.max(1, Math.round((m.arriveAt - now) / 60000));
+      const role = owner && guard ? '你佔領並駐防的' : owner ? '你佔領的' : '你駐防的';
+      const msg = `⚔️ 勢力「${FACTIONS[m.f]?.name || ''}」的部隊正前往${role}控制點 #${cp.no}（約 ${min} 分鐘後抵達）${owner && !guard ? '，可以派人駐防' : ''}`;
+      this.game.log(msg, 'danger');
+      this.game.toast?.(msg, 'danger');
+    });
+  }
+
+  /**
+   * v15.4：探索點在鄰接大本營的控制點：隊伍開始搜索時擲一次（HQ_AMBUSH.chance），被盯上時大本營派出部隊，
+   * 移動時間比照攻打玩家避難所；部隊抵達時隊伍還在那裡搜索才交戰（先撤回就能躲開）。
+   */
+  hqAmbushes(now = Date.now()) {
+    const g = this.game;
+    if (g.state.map?.source !== 'generated') return;
+    g.state.expeditions.filter((e) => e.kind === 'explore' && !e.recalled && !e.defeated).forEach((e) => {
+      const arrive = e.startAt + (e.travelMs || 0);
+      const searchEnd = arrive + (e.searchMs || 0);
+      const poi = g.exploration.poi(e.poiId);
+      if (!e.hqRoll && now >= arrive && now < searchEnd) {
+        e.hqRoll = true;
+        const f = hqFactionOf(poi);
+        if (f && chance(HQ_AMBUSH.chance)) {
+          const from = factionHq(f);
+          const hitAt = now + ControlPointSystem.marchMs(from, poi);
+          e.hqAmbush = { f, from, to: { lat: poi.lat, lon: poi.lon }, at: now, hitAt };
+          const min = Math.max(1, Math.round((hitAt - now) / 60000));
+          const msg = `🏯 ${FACTIONS[f].name}大本營派出部隊前往「${poi.name}」（約 ${min} 分鐘後抵達），可以先召回隊伍`;
+          e.travelEvents = [...(e.travelEvents || []), msg];
+          g.log(msg, 'danger');
+          g.toast?.(msg, 'danger');
+        }
+      }
+      const a = e.hqAmbush;
+      if (a && !a.done && now >= a.hitAt) {
+        a.done = true;
+        // 部隊抵達時隊伍已經搜完離開：撲空
+        if (a.hitAt >= searchEnd) return;
+        g.exploration.runCheckpoints(e, a.hitAt);
+        g.exploration.hqAmbushFight(e, poi, a);
+      }
+    });
+  }
+
+  /** 移動中的部隊（地圖顯示：控制點進攻部隊、襲擊探索點的大本營部隊） */
+  marchView(now = Date.now()) {
+    const out = [];
+    const at = (m, to) => { const p = Math.max(0, Math.min(1, (now - m.at) / Math.max(1, (m.arriveAt ?? m.hitAt) - m.at))); return { lat: m.from.lat + (to.lat - m.from.lat) * p, lon: m.from.lon + (to.lon - m.from.lon) * p }; };
+    CONTROL_POINTS.forEach((cp) => {
+      const m = this.data(cp.id)?.march;
+      if (!m || now >= m.arriveAt) return;
+      const to = this.markerSpot(cp.id);
+      out.push({ id: `mc:${cp.id}`, kind: 'march', f: m.f, from: m.from, to, ...at(m, to), left: m.arriveAt - now, label: `控制點 #${cp.no}` });
+    });
+    this.game.state.expeditions.forEach((e) => {
+      const a = e.hqAmbush;
+      if (!a || a.done || now >= a.hitAt || e.recalled) return;
+      out.push({ id: `ma:${e.id}`, kind: 'march', f: a.f, from: a.from, to: a.to, ...at(a, a.to), left: a.hitAt - now, label: g0name(this.game, e) });
+    });
+    return out;
   }
 
   async npcAttack(f, id, at = Date.now()) {
@@ -571,6 +699,9 @@ export class ControlPointSystem {
     this.syncGuards(now).catch(() => {});
     this.checkHostileOwners(now).catch(() => {});
     this.npcTurns(now).catch(() => {});
+    this.resolveMarches(now).catch(() => {});
+    this.warnMarches(now);
+    this.hqAmbushes(now);
     this.recallLostExplores(now);
     this.game.npcs?.recallLostTrips?.(now);
     this.startConvoys(now);

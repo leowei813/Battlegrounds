@@ -6198,6 +6198,32 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   await B.cp.syncGuards(gd.exp.startAt + gd.exp.travelMs + 1);
   await A.shared.poll();
   assert((A.cp.data(cp.id)?.guards || []).some((h) => h.p === 'B'), '駐防隊寫入控制點，攻打方會遇到');
+  {
+    // v15.4：勢力進攻控制點改為派兵行軍（移動時間比照攻打避難所），佔領者與駐防者收到紅色提醒（同一人只一則）
+    const t0 = Date.now();
+    const { RAID_TRAVEL: RT2 } = await import('../src/config/constants.js');
+    await A.cp.launchMarch('red', cp.id, t0);
+    const mch = A.cp.data(cp.id)?.march;
+    assert(mch && mch.arriveAt - t0 >= RT2.minMin * 60000 - 5, `勢力派兵前往控制點，移動時間比照攻打避難所（約 ${Math.round((mch?.arriveAt - t0) / 60000)} 分鐘）`);
+    await B.shared.poll();
+    const cntA0 = A.state.log.filter((l) => /部隊正前往/.test(l.msg)).length;
+    A.cp.warnMarches(t0 + 1000); A.cp.warnMarches(t0 + 2000);
+    B.cp.warnMarches(t0 + 1000);
+    const la = A.state.log.filter((l) => /部隊正前往/.test(l.msg));
+    assert(la.length - cntA0 === 1 && /你佔領的控制點/.test(la[0].msg), `佔領者收到一則紅色提醒（${la[0]?.msg || ''}）`);
+    assert(B.state.log.some((l) => /部隊正前往你駐防的控制點/.test(l.msg)), '駐防者也收到提醒');
+    // 同一人同時是佔領者與駐防者：只收到一則
+    await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, guards: [...(x.guards || []), { p: 'A', n: 'A', e: 'eA', units: [] }], march: { ...x.march, arriveAt: x.march.arriveAt + 1 } } }));
+    const cntA1 = A.state.log.filter((l) => /部隊正前往/.test(l.msg)).length;
+    A.cp.warnMarches(t0 + 3000);
+    const la2 = A.state.log.filter((l) => /部隊正前往/.test(l.msg));
+    assert(la2.length - cntA1 === 1 && /你佔領並駐防的/.test(la2[0].msg), `同時是佔領者與駐防者：只收到一則（${la2[0]?.msg || ''}）`);
+    assert(A.cp.marchView(t0 + 1000).some((m) => m.id === `mc:${cp.id}`), '地圖上顯示前往控制點的勢力部隊');
+    // 還沒抵達不交戰；抵達後由一位玩家結算
+    await A.cp.resolveMarches(t0 + 1000);
+    assert(A.cp.data(cp.id)?.march, '部隊還沒抵達：不交戰');
+    await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, march: null, guards: (x.guards || []).filter((h) => h.p !== 'A') } }));
+  }
   // 每日收益：佔領者與駐守者都能拿，同一人只一份
   assert(A.cp.incomeSources().length === 1 && B.cp.incomeSources().length === 1, '佔領者與駐守者都有收益');
   const inc = A.cp.rollIncome(cp);
@@ -6275,15 +6301,36 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const ep = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === eastCp.id);
     const westP = gr.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon));
     assert(EX.hqFactionOf(ep) && !EX.hqFactionOf(westP), '鄰接大本營的控制點才會被大本營襲擊');
+    // 大本營派出部隊：移動時間比照攻打玩家避難所；抵達時隊伍還在搜索才交戰，先撤回就能躲開
     const c0 = EX.HQ_AMBUSH.chance;
     EX.HQ_AMBUSH.chance = 1;
-    const weak = gr.survivors.leader();
-    const cpx = { gained: { food: 10, wood: 8 } };
-    const rep = { events: [], kills: 0, xp: 0 };
-    gr.exploration.hqAmbush({ id: 'amb', memberIds: [weak.id], endAt: Date.now() }, ep, [weak], cpx, rep);
+    const ce0 = gr.cp.canExplore;
+    const so0 = gr.cp.statusOf;
+    gr.cp.canExplore = () => ({ ok: true });
+    gr.cp.statusOf = () => 'mine';
+    const { createSurvivor: mkSv } = await import('../src/core/GameState.js');
+    const weak = mkSv('偵察', 'scout', 1, 'common');
+    gr.state.survivors.push(weak);
+    const ra = gr.exploration.start(ep.id, [weak.id], 5);
+    assert(ra.ok, `派隊到鄰接大本營的控制點探索（${ra.reason || ''}）`);
+    const e = ra.exp;
+    e.searchMs = 3600000; // 測試用：搜索很久，部隊抵達時還在
+    const arrive = e.startAt + e.travelMs + 1;
+    gr.cp.hqAmbushes(arrive);
+    const amb = e.hqAmbush;
+    const { RAID_TRAVEL: RT } = await import('../src/config/constants.js');
+    assert(amb && amb.hitAt - arrive >= RT.minMin * 60000 - 5, `大本營派出部隊、移動時間比照攻打避難所（約 ${Math.round((amb?.hitAt - arrive) / 60000)} 分鐘）`);
+    assert(gr.cp.marchView(arrive + 1000).some((m) => m.id === `ma:${e.id}`), '地圖上顯示前往探索點的大本營部隊');
+    e.cp = e.cp || { gained: {} };
+    e.cp.gained = { ...(e.cp.gained || {}), food: 10 };
+    gr.cp.hqAmbushes(amb.hitAt + 1);
+    assert(amb.done && (e.travelEvents || []).some((x) => /襲擊/.test(x)), `部隊抵達時隊伍還在：交戰（${(e.travelEvents || []).slice(-1)[0] || ''}）`);
+    gr.exploration.recall(e.id, amb.hitAt + 2);
+    gr.state.expeditions = gr.state.expeditions.filter((x) => x !== e);
+    gr.state.survivors = gr.state.survivors.filter((x) => x !== weak);
+    gr.cp.canExplore = ce0;
+    gr.cp.statusOf = so0;
     EX.HQ_AMBUSH.chance = c0;
-    assert(rep.events.some((e) => /大本營的部隊/.test(e)), `大本營襲擊探索隊（${rep.events.join('／')}）`);
-    assert(rep.events.some((e) => /被擊退/.test(e)) || (cpx.gained.food === 5 && cpx.gained.wood === 4), '襲擊戰敗：這一站找到的資源被搶走一半');
   }
 }
 
