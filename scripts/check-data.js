@@ -6257,6 +6257,11 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     }
   }
   assert(path.length >= 2 && bad.length <= 1, `探索路線只走可探索的區域（穿過未佔領：${bad.length} 點）`);
+  // v15.4：探索中目標所在的控制點被佔領：強制撤回
+  r2.exp.queue = ['x'];
+  await gr.shared.update(CPC.CP_KIND, X.id, () => ({ data: { owners: [], guards: [], faction: 'red' } }));
+  gr.cp.recallLostExplores(r2.exp.startAt + 1000);
+  assert(r2.exp.recalled && !r2.exp.queue.length, '探索中控制點被佔領：隊伍強制撤回、佇列取消');
 }
 
 // ---- v14 第 3 批：三大勢力（起始控制點、相鄰進攻、優先無人駐守、打下留守、NPC 據點數量） ----
@@ -6305,6 +6310,21 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     }).map((c) => `#${c.no}`);
     assert(!out.length, `勢力據點的警戒範圍不超出自己的控制點（超出：${out.join('、') || '無'}）`);
     assert(bases.every((n) => CPC.cpAt(n.lat, n.lon)?.id === n.cp), '勢力據點建在自己的控制點裡');
+    // v15.4：NPC 探索中目標所在的控制點被玩家佔領：強制撤回
+    {
+      const nb = bases.find((n) => { n.trip = null; gq.npcs.launchExplore(n, Date.now()); return !!n.trip; });
+      assert(!!nb, '有 NPC 據點能派出探索隊（測試用）');
+      if (nb) {
+        const end0 = nb.trip.endAt;
+        const tp = gq.state.map.pois.find((p) => p.id === nb.trip.poiId);
+        const cpx = CPC.cpAt(tp.lat, tp.lon);
+        await gq.shared.update(CPC.CP_KIND, cpx.id, () => ({ data: { owners: [{ p: 'X', n: 'X' }], guards: [], faction: null } }));
+        gq.npcs.recallLostTrips(nb.trip.startAt + 1000);
+        assert(nb.trip.recalled && nb.trip.endAt < end0, 'NPC 探索中控制點被佔領：強制撤回（提早回據點、沒有收穫）');
+        nb.trip = null;
+        await gq.shared.update(CPC.CP_KIND, cpx.id, () => ({ data: { owners: [], guards: [], faction: nb.faction } }));
+      }
+    }
     // v15.3：勢力控制點內有 NPC 據點時要先打掉據點
     if (bases[0]) {
       const c0 = gq.cp.canAttack(bases[0].cp, { reach: false });

@@ -167,6 +167,32 @@ export class ControlPointSystem {
     return cpNeighbors(id).some((n) => this.statusOf(n) === 'mine');
   }
 
+  /**
+   * v15.4：探索中，目標建築所在的控制點被別人佔領（不能再探索）時，強制撤回這些隊伍（佇列一併取消）。
+   */
+  recallLostExplores(now = Date.now()) {
+    const g = this.game;
+    if (g.state.map?.source !== 'generated') return 0;
+    let n = 0;
+    g.state.expeditions.filter((e) => e.kind === 'explore' && !e.recalled && !e.defeated).forEach((e) => {
+      const poi = g.exploration.poi(e.poiId);
+      if (!poi || this.canExplore(poi).ok) return;
+      if (!g.exploration.canRecall(e, now)) return;
+      const cp = cpAt(poi.lat, poi.lon);
+      e.queue = [];
+      e.auto = false;
+      const r = g.exploration.recall(e.id, now);
+      if (!r.ok) return;
+      e.travelEvents = [...(e.travelEvents || []), `🚩 控制點${cp ? ` #${cp.no}` : ''}被佔領，「${poi.name}」不能再探索，隊伍強制撤回`];
+      n += 1;
+    });
+    if (n) {
+      g.log(`🚩 探索區域的控制點被佔領：${n} 支隊伍強制撤回`, 'danger');
+      g.toast?.(`🚩 探索區域的控制點被佔領，${n} 支隊伍強制撤回`, 'danger');
+    }
+    return n;
+  }
+
   /** 讓探索系統把控制點當成目的地 */
   asPoi(id) {
     const m = /^cp(?:guard)?:(cp\d+)$/.exec(String(id));
@@ -534,6 +560,8 @@ export class ControlPointSystem {
     this.syncGuards(now).catch(() => {});
     this.checkHostileOwners(now).catch(() => {});
     this.npcTurns(now).catch(() => {});
+    this.recallLostExplores(now);
+    this.game.npcs?.recallLostTrips?.(now);
     this.startConvoys(now);
     this.deliverConvoys(now);
   }
