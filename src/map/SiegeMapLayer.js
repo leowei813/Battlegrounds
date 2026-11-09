@@ -212,6 +212,8 @@ export const SiegeMapLayer = L.Layer.extend({
       // v12.2：集結隊伍每一幀依共用的集結資料決定（交戰前不顯示、打完立刻顯示返程）
       const trip = raw.rally ? rallyTripView(raw, this.game.rally?.get?.(raw.rally), now) : raw;
       if (!trip || now > trip.endAt) return;
+      // v15.5：出發後目標控制點被佔領的探索隊（對方離線還沒撤回）：不顯示
+      if (this.game.cp?.hideOtherTrip?.(trip, now)) return;
       const p = tripProgress(trip, now);
       // 其他玩家的隊伍只看得到移動，看不到剩餘時間；被攔截撤回中的隊伍不能再攔截
       if (trip.kind === 'assist') {

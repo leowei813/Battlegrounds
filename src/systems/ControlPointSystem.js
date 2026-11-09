@@ -213,6 +213,23 @@ export class ControlPointSystem {
     return n;
   }
 
+  /**
+   * v15.5：其他玩家的探索隊：出發後目標所在的控制點換了佔領者（被打下、回到中立）時，地圖上不再顯示
+   * （對方離線時還沒辦法自己撤回；等對方上線同步後會撤回）。
+   * 舊版本沒有標示種類：目標是一般建築（不是集結、協防）的視為探索。
+   */
+  hideOtherTrip(trip, now = Date.now()) {
+    if (!trip || trip.rally || trip.kind === 'assist' || trip.defeated) return false;
+    if (trip.kind && trip.kind !== 'explore') return false;
+    if (this.game.state.map?.source !== 'generated') return false;
+    const cp = cpAt(trip.to?.lat, trip.to?.lon);
+    if (!cp) return false;
+    if (!trip.kind && !(this.game.state.map.pois || []).some((p) => Math.abs(p.lat - trip.to.lat) < 1e-5 && Math.abs(p.lon - trip.to.lon) < 1e-5)) return false;
+    const d = this.data(cp.id);
+    const changedAt = d?.takenAt || d?.lostAt;
+    return !!changedAt && changedAt > trip.startAt && now >= changedAt;
+  }
+
   /** 讓探索系統把控制點當成目的地 */
   asPoi(id) {
     const m = /^cp(?:guard)?:(cp\d+)$/.exec(String(id));

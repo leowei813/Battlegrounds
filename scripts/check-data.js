@@ -6421,6 +6421,35 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     assert(eo.recalled && rp && !rp.success, `離線期間控制點被佔領：結算時從被佔領的那一刻起撤回（${rp?.events?.slice(-2).join('／') || ''}）`);
     gr.state.survivors = gr.state.survivors.filter((x) => x !== sv);
   }
+  // v15.5：其他玩家的探索隊：出發後目標控制點被佔領（對方離線還沒撤回）時，我的地圖不再顯示
+  {
+    const { WorldSync: WS, cleanPlayer: CPl2 } = await import('../src/multiplayer/WorldSync.js');
+    const dY = gr.cp.data(Y);
+    const tk = dY.takenAt;
+    const yp2 = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === Y);
+    const base = { from: { lat: 25.03, lon: 121.56 }, to: { lat: yp2.lat, lon: yp2.lon }, travelMs: 60000, searchMs: 600000, members: 1, target: yp2.name, id: 't1' };
+    const before = { ...base, kind: 'explore', startAt: tk - 60000, endAt: tk + 3600000 };
+    assert(gr.cp.hideOtherTrip(before, tk + 1000), '出發後目標控制點被佔領的探索隊：不顯示');
+    assert(!gr.cp.hideOtherTrip(before, tk - 1000), '控制點被佔領之前：照常顯示');
+    assert(!gr.cp.hideOtherTrip({ ...before, startAt: tk + 1000 }, tk + 2000), '控制點被佔領之後才出發的隊伍不受影響');
+    assert(gr.cp.hideOtherTrip({ ...before, kind: undefined }, tk + 1000), '舊版本（沒有標示種類）前往建築的隊伍也視為探索、不顯示');
+    assert(!gr.cp.hideOtherTrip({ ...before, kind: 'assist' }, tk + 1000) && !gr.cp.hideOtherTrip({ ...before, rally: 'r1' }, tk + 1000), '協防、集結隊伍不受影響');
+    const freeP = gr.state.map.pois.find((p) => !CPC.cpAt(p.lat, p.lon));
+    assert(!gr.cp.hideOtherTrip({ ...before, to: { lat: freeP.lat, lon: freeP.lon } }, tk + 1000), '目標不在控制點裡（安全區、一般區）照常顯示');
+    // 同步資料：探索隊會標示種類，讀取時保留
+    const presR = WS.prototype.presence.call({ game: gr });
+    const cl = CPl2({ ...presR, id: 'R', trips: [{ ...before }] });
+    assert(cl?.trips?.[0]?.kind === 'explore', '同步資料保留探索隊的種類');
+    const { createSurvivor: mkSv3 } = await import('../src/core/GameState.js');
+    const sv3 = mkSv3('同步', 'scout', 5, 'common');
+    gr.state.survivors.push(sv3);
+    const sp = gr.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && !gr.shelter.baseAtPoi(p.id));
+    const rs = gr.exploration.start(sp.id, [sv3.id], 5);
+    const pr2 = WS.prototype.presence.call({ game: gr });
+    assert(rs.ok && pr2.trips.some((t) => t.id === rs.exp.id && t.kind === 'explore'), '自己的探索隊同步出去時標示為探索');
+    gr.state.expeditions = gr.state.expeditions.filter((e) => e !== rs.exp);
+    gr.state.survivors = gr.state.survivors.filter((x) => x !== sv3);
+  }
 }
 
 // ---- v14 第 3 批：三大勢力（起始控制點、相鄰進攻、優先無人駐守、打下留守、NPC 據點數量） ----
