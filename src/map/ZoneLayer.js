@@ -107,12 +107,15 @@ export const ZoneLayer = L.Layer.extend({
 
   /** 控制點邊界（點狀線）：grid 為每個方塊的控制點索引（-2＝地圖外） */
   cpEdges(ctx, grid, w, h, dot, alpha, color = '255,255,255') {
-    ctx.fillStyle = `rgba(${color},${alpha})`;
+    // color：固定 'r,g,b'，或依方塊回傳 'r,g,b' 的函式（危險度圖層：邊界用勢力顏色）
+    const fill = (k) => `rgba(${typeof color === 'function' ? color(k) : color},${alpha})`;
+    ctx.fillStyle = fill(null);
     for (let y = 0; y < h; y += 1) {
       for (let x = 0; x < w; x += 1) {
         const a = grid[y * w + x];
         if (a < 0 && a > -10) continue;
         if ((x + 1 < w && grid[y * w + x + 1] !== a && grid[y * w + x + 1] !== -2) || (y + 1 < h && grid[(y + 1) * w + x] !== a && grid[(y + 1) * w + x] !== -2)) {
+          if (typeof color === 'function') ctx.fillStyle = fill(a);
           ctx.fillRect(x * BLOCK + (BLOCK - dot) / 2 + 1, y * BLOCK + (BLOCK - dot) / 2 + 1, dot, dot);
         }
       }
@@ -145,7 +148,7 @@ export const ZoneLayer = L.Layer.extend({
         // v13：只計算固定地圖範圍內
         const inside = inWorld(ll.lat, ll.lng);
         grid[y * w + x] = inside ? zoneIndexAt(ll.lat, ll.lng) : OUT;
-        cps[y * w + x] = !inside ? -2 : inNpcHome(ll.lat, ll.lng) ? -3 : cpIndexAt(ll.lat, ll.lng);
+        cps[y * w + x] = !inside ? -2 : inNpcHome(ll.lat, ll.lng) ? homeOf(ll.lat) : cpIndexAt(ll.lat, ll.lng);
       }
     }
 
@@ -198,8 +201,14 @@ export const ZoneLayer = L.Layer.extend({
       ctx.stroke();
     });
 
-    // 4. v14：控制點邊界（和勢力圖同樣的點狀線，較淡）
-    this.cpEdges(ctx, cps, w, h, m.border + 3, 0.55, '255,255,255');
-    this.cpEdges(ctx, cps, w, h, m.border + 1, 0.85, '38,50,56');
+    // 4. v14：控制點邊界用佔領狀態／勢力顏色（和勢力圖相同），外圈淡白底讓線在地圖上看得清楚
+    const colorOf = this.factionColor || (() => FACTION_COLORS.neutral);
+    const tone = new Map();
+    const toneOf = (k) => {
+      if (!tone.has(k)) tone.set(k, rgb(k <= -10 ? FACTION_COLORS[FACTION_KEYS[-10 - k]] : colorOf(k)).join(','));
+      return tone.get(k);
+    };
+    this.cpEdges(ctx, cps, w, h, m.border + 3, 0.5, '255,255,255');
+    this.cpEdges(ctx, cps, w, h, m.border + 1, 0.95, toneOf);
   },
 });

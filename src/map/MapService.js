@@ -272,7 +272,7 @@ export class MapService {
         if (s === 'faction') return FACTION_COLORS[game.cp.factionOf(c.id)] || FACTION_COLORS.red;
         return FACTION_COLORS[s] || FACTION_COLORS.neutral;
       };
-      if (this.zoneLayer.mode === 'faction') this.zoneLayer.redraw();
+      if (this.zoneLayer.mode !== 'off') this.zoneLayer.redraw();
     }
   }
 
