@@ -6231,6 +6231,11 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const lead = gr.survivors.leader();
   const r1 = gr.exploration.start(target.id, [lead.id], 5);
   assert(!r1.ok && /沒有路/.test(r1.reason || ''), `佔領的控制點和可探索區不相通時，不能穿過未佔領的控制點過去（${r1.reason || ''}）`);
+  const Zc = CPC.cpNeighbors(X.id).find((n) => !CPC.CP_START.includes(n) && n !== X.id);
+  if (Zc) {
+    const ra = gr.cp.attack(Zc, [lead.id]);
+    assert(gr.cp.canAttack(Zc).ok && !ra.ok && /沒有路/.test(ra.reason || ''), `攻打控制點也不能穿過未佔領的控制點（${ra.reason || ''}）`);
+  }
   await own(Y);
   const r2 = gr.exploration.start(target.id, [lead.id], 5);
   assert(r2.ok, `佔領沿路的控制點後可以出發（${r2.reason || ''}）`);
