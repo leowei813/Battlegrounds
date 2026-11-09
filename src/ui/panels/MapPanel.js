@@ -15,7 +15,7 @@ import { BASE_SIZES, FACILITY_COUNT } from '../../config/civilization.js';
 import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
 import { POI_SHARE } from '../../systems/PoiShareSystem.js';
-import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
+import { EXP_PHASES, phaseIcon, tripProgress } from '../../systems/ExplorationSystem.js';
 import {
   btn, costHtml, metaOf, itemCard, progressBar,
   rallyFlag,
@@ -257,7 +257,10 @@ export class MapPanel {
     const zone = ZONES[cp.zone];
     const fac = g.cp.factionOf(id);
     const ownTxt = fac ? `🏴 ${FACTIONS[fac].name}勢力` : sm.owners.length ? sm.owners.map((o) => escapeHtml(o.n)).join('、') : '—';
-    const guardTxt = sm.guards.length ? sm.guards.map((h) => `${escapeHtml(h.n)} ${(h.units || []).length} 人`).join('・') : '沒有駐防';
+    // 同一位玩家分多次派出的駐防隊合計顯示
+    const byPlayer = new Map();
+    sm.guards.forEach((h) => { const cur = byPlayer.get(h.p) || { n: h.n, c: 0 }; cur.c += (h.units || []).length; byPlayer.set(h.p, cur); });
+    const guardTxt = byPlayer.size ? [...byPlayer.values()].map((x) => `${escapeHtml(x.n)} ${x.c} 人`).join('・') : '沒有駐防';
     const npc = sm.status === 'neutral' || sm.status === 'faction';
     const atk = g.cp.canAttack(id);
     const rally = g.rally.canStart({ kind: 'cp', id });
@@ -714,10 +717,11 @@ export class MapPanel {
     g.state.expeditions.filter((ex) => ex.kind !== 'rally').forEach((ex) => {
       // 隊伍標籤：狀態圖示＋隊員＋總剩餘時間（含佇列與回程）＋佇列數
       const it = g.exploration.itinerary(ex, now);
-      const icon = ex.defeated ? '🏳️' : ex.recalled ? '↩️' : EXP_PHASES[it.phase]?.icon || '🚶';
+      const icon = ex.defeated ? '🏳️' : ex.recalled ? '↩️' : phaseIcon(ex, it.phase);
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean);
       const who = names.length <= 2 ? names.join('、') : `${names[0]}等 ${names.length} 人`;
-      const time = it.phase === 'returning' ? `⏱ 返程 ${formatDuration(it.totalMs)}` : `⏱ 總計 ${formatDuration(it.totalMs)}`;
+      const guarding = ex.kind === 'cpGuard' && it.phase === 'searching' && !ex.recalled && !ex.defeated;
+      const time = guarding ? `駐防控制點 #${cpById(ex.cpId)?.no || ''}` : it.phase === 'returning' ? `⏱ 返程 ${formatDuration(it.totalMs)}` : `⏱ 總計 ${formatDuration(it.totalMs)}`;
       const queued = ex.kind === 'explore' && it.phase !== 'returning' ? `・佇列 ${(ex.queue || []).length}` : '';
       // 左側圖示：快速定位隊伍；文字：打開隊伍詳細
       rows.push(`<div class="feed-chip team split"><button class="feed-loc" data-action="feedLocate" data-id="${ex.id}" title="地圖移到隊伍位置">${icon}</button><button class="feed-txt" data-action="feedTeam" data-id="${ex.id}">${escapeHtml(who || '隊伍')}・${time}${queued}</button></div>`);
@@ -841,13 +845,17 @@ export class MapPanel {
       const qn = (ex.queue || []).length;
       const ph = it.phase === 'returning' ? '🏃 返程中' : it.phase === 'outbound' ? '🚶 前往中' : '🔍 搜索中';
       const cpDone = ex.cp ? `（檢核點 ${Math.min(ex.cp.total || 1, (ex.cp.done || 0) + (it.phase === 'searching' ? 1 : 0))}/${ex.cp.total || 1}）` : '';
-      const curRow = `<div class="it-step now"><span class="no">▶</span><span><b>${escapeHtml(poi?.name || '未知地點')}</b><small>${status || ph}${it.phase === 'returning' ? '' : cpDone}</small></span><span class="t">剩 <b>${formatDuration(it.phase === 'returning' ? it.totalMs : it.currentMs)}</b></span></div>`;
+      // 駐防中：沒有期限（直到撤回或被打下）
+      const guarding = ex.kind === 'cpGuard' && it.phase === 'searching' && !ex.recalled && !ex.defeated;
+      const curRow = guarding
+        ? `<div class="it-step now"><span class="no">▶</span><span><b>${escapeHtml(poi?.name || '控制點')}</b><small>🛡️ 駐防中・直到撤回或被打下</small></span><span class="t"></span></div>`
+        : `<div class="it-step now"><span class="no">▶</span><span><b>${escapeHtml(poi?.name || '未知地點')}</b><small>${status || ph}${it.phase === 'returning' ? '' : cpDone}</small></span><span class="t">剩 <b>${formatDuration(it.phase === 'returning' ? it.totalMs : it.currentMs)}</b></span></div>`;
       const stopRows = it.stops.map((x, i) => `<div class="it-step"><span class="no">${i + 1}</span><span><b>${escapeHtml(x.poi.name)}</b><small>🚶 移動 ${formatDuration(x.travelMs)}・🔍 搜索 ${formatDuration(x.searchMs)}</small></span><span class="t"><b>${formatDuration(x.totalMs)}</b>${btn('移除', 'dequeue', { i }, { cls: 'btn-xs btn-ghost' })}</span></div>`).join('');
       const holdRows = it.queueOnHold ? (ex.queue || []).map((pid, i) => `<div class="it-step"><span class="no">${i + 1}</span><span><b>${escapeHtml(g.exploration.poi(pid)?.name || '地點')}</b><small>回到避難所後接著前往</small></span><span class="t">${btn('移除', 'dequeue', { i }, { cls: 'btn-xs btn-ghost' })}</span></div>`).join('') : '';
       const homeRow = it.stops.length ? `<div class="it-step home"><span class="no">🏠</span><span><b>回到避難所</b><small>🏃 從最後一站回家</small></span><span class="t"><b>${formatDuration(it.backMs)}</b></span></div>` : '';
       return `
       <p class="muted">👥 ${names || `${ex.memberIds.length} 人`}</p>
-      <div class="it-sum"><span>⏱ 總計 <b>${formatDuration(it.totalMs)}</b></span><span>🏠 預計 <b>${hm}</b> 回到避難所</span>${ex.kind === 'explore' ? `<span>🧭 佇列 <b>${qn}/${g.exploration.queueLimit()}</b></span>` : ''}</div>
+      <div class="it-sum">${guarding ? '<span>🛡️ 駐防中，撤回後才回到避難所</span>' : `<span>⏱ 總計 <b>${formatDuration(it.totalMs)}</b></span><span>🏠 預計 <b>${hm}</b> 回到避難所</span>`}${ex.kind === 'explore' ? `<span>🧭 佇列 <b>${qn}/${g.exploration.queueLimit()}</b></span>` : ''}</div>
       ${curRow}${stopRows}${holdRows}${homeRow}
       ${it.stops.length ? '<small class="muted block">預估時間依隊員速度、載具與日夜計算；途中遇到戰鬥或背包裝滿提早回家時會有變動。</small>' : ''}
       ${this.ui.panels.explore.checkpointHtml(ex)}

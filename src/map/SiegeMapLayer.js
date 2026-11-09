@@ -2,13 +2,13 @@ import { FACTIONS } from '../config/controlPoints.js';
 import L from 'leaflet';
 import { WORLD } from '../systems/SiegeSystem.js';
 import { bus } from '../core/EventBus.js';
-import { EXP_PHASES, AMBUSH_RADIUS_M, tripProgress } from '../systems/ExplorationSystem.js';
+import { EXP_PHASES, phaseIcon, phaseName, AMBUSH_RADIUS_M, tripProgress } from '../systems/ExplorationSystem.js';
 import { RallySystem } from '../systems/RallySystem.js';
 import { rallyTripView } from '../multiplayer/WorldSync.js';
 import { formatDuration } from '../utils/math.js';
 
 /** 停在目的地時的狀態名稱（不是探索） */
-const STAY_NAMES = { assist: '🛡️ 協防中' };
+const STAY_NAMES = { assist: '🛡️ 協防中', cpGuard: '🛡️ 駐防中' };
 
 /** 屍潮世界座標 1 單位 = 1.5 公尺（出生圈半徑 150 → 約 225 公尺） */
 export const METERS_PER_UNIT = 1.5;
@@ -212,6 +212,8 @@ export const SiegeMapLayer = L.Layer.extend({
       // v12.2：集結隊伍每一幀依共用的集結資料決定（交戰前不顯示、打完立刻顯示返程）
       const trip = raw.rally ? rallyTripView(raw, this.game.rally?.get?.(raw.rally), now) : raw;
       if (!trip || now > trip.endAt) return;
+      // v15.5：出發後目標控制點被佔領的探索隊（對方離線還沒撤回）：不顯示
+      if (this.game.cp?.hideOtherTrip?.(trip, now)) return;
       const p = tripProgress(trip, now);
       // 其他玩家的隊伍只看得到移動，看不到剩餘時間；被攔截撤回中的隊伍不能再攔截
       if (trip.kind === 'assist') {
@@ -468,7 +470,7 @@ export const SiegeMapLayer = L.Layer.extend({
       }
 
       // 隊伍標記
-      const ph = EXP_PHASES[p.phase];
+      const ph = { icon: phaseIcon(exp, p.phase), name: phaseName(exp, p.phase) };
       const bob = p.phase === 'searching' ? 0 : Math.sin(now / 150) * 1.5;
       ctx.beginPath();
       ctx.arc(m.x, m.y + bob, 13, 0, Math.PI * 2);
@@ -490,7 +492,8 @@ export const SiegeMapLayer = L.Layer.extend({
       const stay = p.phase === 'searching' && STAY_NAMES[exp.kind];
       const phName = exp.defeated ? '🏳️ 撤回中' : exp.recalled ? '↩️ 召回中' : stay || `${ph.icon} ${ph.name}`;
       let line1 = exp.defeated || exp.recalled ? `${phName}・剩 ${km(Math.max(0, p.totalM - p.movedM))}` : p.totalM ? `${phName}・${km(p.movedM)} / ${km(p.totalM)}` : phName;
-      let line2 = `⏱ 剩 ${formatDuration(p.remainingMs)}`;
+      // 駐防中：沒有期限（直到撤回或被打下），不顯示剩餘時間
+      let line2 = stay && exp.kind === 'cpGuard' ? '直到撤回或被打下' : `⏱ 剩 ${formatDuration(p.remainingMs)}`;
       // 集結：出發前在避難所等待；交戰結果出來前顯示抵達時間（不顯示預留的回家時間）
       if (exp.kind === 'rally' && (exp.rallyResult || exp.recalled)) {
         const rs = this.game.rally.statusOf(exp, now);

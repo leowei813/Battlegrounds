@@ -14,6 +14,8 @@ import { balanceMultipliers } from './MaterialBalance.js';
 import { baseSupplyWeight } from './LootStock.js';
 
 /** 駐防隊在控制點最多停留的時間（之後自動回家） */
+/** 離線期間的每日收益最多補發幾次（遊戲一天＝現實 1 小時，24 次約現實 1 天） */
+export const CP_OFFLINE_INCOME_MAX = 24;
 const GUARD_STAY_MS = 7 * 24 * 3600000;
 /** 運輸隊的移動速度（公尺／秒） */
 const CONVOY_SPEED = 1.4;
@@ -193,11 +195,15 @@ export class ControlPointSystem {
     g.state.expeditions.filter((e) => e.kind === 'explore' && !e.recalled && !e.defeated).forEach((e) => {
       const poi = g.exploration.poi(e.poiId);
       if (!poi || this.canExplore(poi).ok) return;
-      if (!g.exploration.canRecall(e, now)) return;
       const cp = cpAt(poi.lat, poi.lon);
+      // 離線期間被佔領：從被佔領的那一刻起撤回（之後找到的物資不算）
+      const d = cp ? this.data(cp.id) : null;
+      const lostAt = d?.takenAt || d?.lostAt || now;
+      const at = Math.max(e.startAt, Math.min(now, lostAt));
+      if (!g.exploration.canRecall(e, at)) return;
       e.queue = [];
       e.auto = false;
-      const r = g.exploration.recall(e.id, now);
+      const r = g.exploration.recall(e.id, at);
       if (!r.ok) return;
       e.travelEvents = [...(e.travelEvents || []), `🚩 控制點${cp ? ` #${cp.no}` : ''}被佔領，「${poi.name}」不能再探索，隊伍強制撤回`];
       n += 1;
@@ -207,6 +213,23 @@ export class ControlPointSystem {
       g.toast?.(`🚩 探索區域的控制點被佔領，${n} 支隊伍強制撤回`, 'danger');
     }
     return n;
+  }
+
+  /**
+   * v15.5：其他玩家的探索隊：出發後目標所在的控制點換了佔領者（被打下、回到中立）時，地圖上不再顯示
+   * （對方離線時還沒辦法自己撤回；等對方上線同步後會撤回）。
+   * 舊版本沒有標示種類：目標是一般建築（不是集結、協防）的視為探索。
+   */
+  hideOtherTrip(trip, now = Date.now()) {
+    if (!trip || trip.rally || trip.kind === 'assist' || trip.defeated) return false;
+    if (trip.kind && trip.kind !== 'explore') return false;
+    if (this.game.state.map?.source !== 'generated') return false;
+    const cp = cpAt(trip.to?.lat, trip.to?.lon);
+    if (!cp) return false;
+    if (!trip.kind && !(this.game.state.map.pois || []).some((p) => Math.abs(p.lat - trip.to.lat) < 1e-5 && Math.abs(p.lon - trip.to.lon) < 1e-5)) return false;
+    const d = this.data(cp.id);
+    const changedAt = d?.takenAt || d?.lostAt;
+    return !!changedAt && changedAt > trip.startAt && now >= changedAt;
   }
 
   /** 讓探索系統把控制點當成目的地 */
@@ -253,6 +276,26 @@ export class ControlPointSystem {
     exp.searchMs = GUARD_STAY_MS;
     exp.endAt = exp.startAt + exp.travelMs * 2 + exp.searchMs;
     return { ok: true, exp, msg: `隊伍出發駐防控制點 #${cpById(id).no}，約 ${Math.max(1, Math.round(exp.travelMs / 60000))} 分鐘後抵達` };
+  }
+
+  /** v15.4.1：駐防沒有期限（直到撤回或被打下）：快到期時自動延長 */
+  extendGuards(now = Date.now()) {
+    const g = this.game;
+    // 控制點不再是自己或好友的（例如共同佔領的好友解除關係、被打下）：駐防隊撤回
+    g.state.expeditions.filter((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated && e.cpId && this.statusOf(e.cpId) !== 'mine').forEach((e) => {
+      if (!g.exploration.canRecall(e, now)) return;
+      const r = g.exploration.recall(e.id, now);
+      if (!r.ok) return;
+      const msg = `🛡️ 控制點 #${cpById(e.cpId)?.no || ''}已不是你或好友的控制點，駐防隊撤回`;
+      e.travelEvents = [...(e.travelEvents || []), msg];
+      g.log(msg, 'danger');
+    });
+    g.state.expeditions.filter((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated).forEach((e) => {
+      const stayEnd = e.startAt + (e.travelMs || 0) + (e.searchMs || 0);
+      if (stayEnd - now > GUARD_STAY_MS / 2) return;
+      e.searchMs = (e.searchMs || 0) + GUARD_STAY_MS;
+      e.endAt = e.startAt + (e.travelMs || 0) * 2 + e.searchMs;
+    });
   }
 
   /** 已抵達的駐防隊（寫入共用資料，讓攻打方能讀到守軍） */
@@ -428,6 +471,36 @@ export class ControlPointSystem {
       });
     });
     if (this.st.convoys.length) g.log(`🚚 控制點運輸隊出發：${this.st.convoys.length} 支，正把收益送回避難所`, 'info');
+  }
+
+  /**
+   * v15.5：離線期間錯過的每日 06:00 收益一次補發（最多 CP_OFFLINE_INCOME_MAX 次，直接入庫），
+   * 以上線時仍佔領或駐防的控制點計算。要等讀到共用的控制點資料後才補發（避免誤判沒有控制點）。
+   * @returns {{times:number, goods:object}|null}
+   */
+  catchUpIncome(now = Date.now()) {
+    const g = this.game;
+    if (this.st.incomeDay == null || !g.shelter.primary()) return null;
+    if (g.shared?.online && !g.shared.backend && !g.shared.listedAt?.[CP_KIND]) return null;
+    // 補發「昨天以前」錯過的部分；今天的 06:00 照常由運輸隊送回（在線時跨過 06:00 也一樣）
+    const today = g.time.day(now);
+    const missed = today - 1 - this.st.incomeDay;
+    if (missed <= 0) return null;
+    this.st.incomeDay = today - 1;
+    const times = Math.min(CP_OFFLINE_INCOME_MAX, missed);
+    const sources = this.incomeSources();
+    if (!sources.length) return null;
+    const goods = {};
+    for (let i = 0; i < times; i += 1) {
+      sources.forEach((cp) => Object.entries(this.rollIncome(cp)).forEach(([k, v]) => { goods[k] = (goods[k] || 0) + v; }));
+    }
+    const got = g.grant(goods);
+    const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || { food: '食物', wood: '木材', fuel: '燃料' }[k] || k} ×${v}`).join('、');
+    g.log(`🚚 離線期間的控制點收益（${times} 次${missed > times ? `，最多補 ${CP_OFFLINE_INCOME_MAX} 次` : ''}）：${text}`, 'loot');
+    const res = { times, missed, goods: got, text, cps: sources.length };
+    this.lastCatchUp = res;
+    g.bus.emit('cp:offlineIncome', res);
+    return res;
   }
 
   /** 運輸隊抵達：收益入庫 */
@@ -696,6 +769,7 @@ export class ControlPointSystem {
     if (now - (this.lastAt || 0) < 2000) return;
     this.lastAt = now;
     this.resolveAttacks(now).catch(() => {});
+    this.extendGuards(now);
     this.syncGuards(now).catch(() => {});
     this.checkHostileOwners(now).catch(() => {});
     this.npcTurns(now).catch(() => {});
@@ -704,6 +778,7 @@ export class ControlPointSystem {
     this.hqAmbushes(now);
     this.recallLostExplores(now);
     this.game.npcs?.recallLostTrips?.(now);
+    this.catchUpIncome(now);
     this.startConvoys(now);
     this.deliverConvoys(now);
   }

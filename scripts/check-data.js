@@ -3077,6 +3077,38 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(rep.events.some((e) => e.includes('協防隊員')) && sent?.helpers?.H, `突襲結算包含協防隊員並回報給對方（${rep.events.slice(-2).join(' / ')}）`);
   V.territory.handleEvents([{ from: 'C', fromName: 'C', type: 'attack', data: sent }]);
   assert(V.state.defenseLog[0].assists?.length > 0, `被突襲方的防守紀錄寫入協防（${JSON.stringify(V.state.defenseLog[0].assists)}）`);
+  // v15.4：好友的防禦範圍涵蓋這裡時，NPC 掠奪與玩家突襲也會加上防禦設施的火力
+  {
+    const COVER = 777;
+    const hc = { ...pres(H, 'H'), assist: null, cover: { r: 99999, dps: COVER, to: ['V'] } };
+    const hn = { ...pres(H, 'H'), assist: null, cover: null };
+    // NPC 掠奪：守城火力 = 自己的防禦 + 好友防禦設施
+    const capDps = (gx, fn) => { let cap = null; const orig = gx.combat.wallAssault.bind(gx.combat); gx.combat.wallAssault = (a, w, dps) => { cap = dps; return orig(a, w, dps); }; fn(); gx.combat.wallAssault = orig; return cap; };
+    // 自己的防禦火力在每次掠奪後可能因建築受損而改變：每次都扣掉當下自己的火力再比較
+    const ownDps = () => V.siege.of(V.shelter.primary().id).defenseDps({ raw: true }) * (1 + V.research.bonus('raidDefensePct'));
+    V.shelter.primary().wallHp = null;
+    V.world.others = [hn];
+    const o0 = ownDps();
+    const d0 = capDps(V, () => V.npcs.resolveIncoming(n, n.trip, Date.now())) - o0;
+    V.world.others = [hc];
+    assert(V.assist.incoming().some((h) => h.kind === 'cover' && h.dps === COVER), '好友的防禦範圍涵蓋這裡（cover）');
+    const o1 = ownDps();
+    const d1 = capDps(V, () => V.npcs.resolveIncoming(n, n.trip, Date.now())) - o1;
+    assert(Math.abs(d0) < 1 && Math.abs(d1 - COVER) < 1, `NPC 掠奪時加上好友防禦設施的火力（額外火力 ${Math.round(d0)} → ${Math.round(d1)}）`);
+    assert(V.state.defenseLog[0].assists?.some((x) => x.name === 'H') || /協防|H/.test(V.state.defenseLog[0].note || ''), `防守紀錄寫入好友防禦設施協防（${JSON.stringify(V.state.defenseLog[0].assists)}）`);
+    // 玩家突襲：攻擊方把對方好友的防禦設施火力算進守城
+    C.world.others = [pres(V, 'V'), hn];
+    const p0 = capDps(C, () => C.territory.resolvePvp({ poiId: 'pvp:V#0', memberIds: [C.survivors.leader().id], endAt: Date.now(), travelEvents: [], cargo: 40 }));
+    C.world.others = [pres(V, 'V'), hc];
+    let rp = null;
+    const p1 = capDps(C, () => { rp = C.territory.resolvePvp({ poiId: 'pvp:V#0', memberIds: [C.survivors.leader().id], endAt: Date.now(), travelEvents: [], cargo: 40 }); });
+    assert(p0 != null && Math.abs(p1 - p0 - COVER) < 1, `玩家突襲時加上對方好友防禦設施的火力（${Math.round(p0)} → ${Math.round(p1)}）`);
+    assert(rp.events.some((e) => /好友的防禦設施協助守城/.test(e)), '突襲戰報顯示對方好友的防禦設施協助');
+    // 沒有涵蓋到被攻打的人：不算
+    C.world.others = [pres(V, 'V'), { ...hc, cover: { r: 99999, dps: COVER, to: ['X'] } }];
+    const p2 = capDps(C, () => C.territory.resolvePvp({ poiId: 'pvp:V#0', memberIds: [C.survivors.leader().id], endAt: Date.now(), travelEvents: [], cargo: 40 }));
+    assert(Math.abs(p2 - p0) < 1, '好友的防禦範圍沒涵蓋被攻打的人時不加火力');
+  }
 }
 
 // ---- 59. v9：NPC 據點大幅增強 ----
@@ -6223,6 +6255,34 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     await A.cp.resolveMarches(t0 + 1000);
     assert(A.cp.data(cp.id)?.march, '部隊還沒抵達：不交戰');
     await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, march: null, guards: (x.guards || []).filter((h) => h.p !== 'A') } }));
+    // 完整流程：部隊抵達 → 交戰 → 打贏佔領（只結算一次）；打輸控制點維持原狀
+    const sim0 = A.combat.simulate;
+    const forceWin = (win) => { A.combat.simulate = (team, foes, o) => { const r = sim0.call(A.combat, team, foes, { ...o, record: false }); r.victory = win; if (win) r.foes.forEach((f) => { f.down = true; }); return r; }; };
+    const tgt2 = CPC.CONTROL_POINTS.find((c) => c.id !== cp.id && !A.cp.factionOf(c.id) && !A.cp.owners(c.id).length);
+    const past = Date.now() - 6 * 3600000;
+    await A.cp.launchMarch('red', tgt2.id, past);
+    // 抵達時間設成剛剛（守軍補回時間從抵達算起）
+    await A.shared.update(CPC.CP_KIND, tgt2.id, (x) => ({ data: { ...x, march: { ...x.march, arriveAt: Date.now() - 1000 } } }));
+    assert(A.cp.data(tgt2.id)?.march?.arriveAt <= Date.now(), '部隊已經抵達（測試用：很久以前出發）');
+    forceWin(true);
+    const logs0 = A.state.log.filter((l) => l.msg.includes(`佔領了控制點 #${tgt2.no}`)).length;
+    await A.cp.resolveMarches(Date.now());
+    await B.shared.poll();
+    await B.cp.resolveMarches(Date.now());
+    A.combat.simulate = sim0;
+    assert(A.cp.factionOf(tgt2.id) === 'red' && B.cp.factionOf(tgt2.id) === 'red' && !A.cp.data(tgt2.id)?.march, '部隊抵達後交戰：打贏由勢力佔領控制點、行軍資料清除');
+    assert(A.state.log.filter((l) => l.msg.includes(`佔領了控制點 #${tgt2.no}`)).length - logs0 === 1 && !B.state.log.some((l) => l.msg.includes(`佔領了控制點 #${tgt2.no}`)), '多位玩家同時在線：只結算一次');
+    assert(A.cp.garrisonCount(tgt2.id) < tgt2.garrison.count, '勢力打下後留守部分守軍（之後逐漸補回）');
+    // 打輸：玩家的控制點維持原狀
+    const snap = JSON.parse(JSON.stringify(A.cp.data(cp.id)));
+    await A.cp.launchMarch('red', cp.id, past);
+    forceWin(false);
+    await A.cp.resolveMarches(Date.now());
+    A.combat.simulate = sim0;
+    assert(!A.cp.factionOf(cp.id) && A.cp.owners(cp.id).some((o) => o.p === 'A') && !A.cp.data(cp.id)?.march, '部隊被擊退：控制點維持原本的佔領者');
+    await A.shared.update(CPC.CP_KIND, cp.id, () => ({ data: { ...snap, march: null } }));
+    await A.shared.update(CPC.CP_KIND, tgt2.id, () => ({ data: { owners: [], guards: [], faction: null } }));
+    await B.shared.poll();
   }
   // 每日收益：佔領者與駐守者都能拿，同一人只一份
   assert(A.cp.incomeSources().length === 1 && B.cp.incomeSources().length === 1, '佔領者與駐守者都有收益');
@@ -6237,6 +6297,40 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const f0 = A.state.resources.food;
   A.cp.deliverConvoys(cv.endAt + 1);
   assert(A.state.resources.food > f0 && !A.cp.st.convoys.length, '運輸隊抵達避難所後收益入庫');
+  {
+    // v15.5：離線期間錯過的每日收益：上線時補發（最多 24 次），今天的照常由運輸隊送回
+    const CPS = await import('../src/systems/ControlPointSystem.js');
+    const now5 = Date.now();
+    const today = A.time.day(now5);
+    A.cp.st.incomeDay = today - 1;
+    assert(!A.cp.catchUpIncome(now5), '在線時跨過 06:00：不補發（照常由運輸隊送回）');
+    A.cp.st.incomeDay = today - 5;
+    const f1 = A.state.resources.food;
+    let ev = null;
+    A.bus.once('cp:offlineIncome', (r) => { ev = r; });
+    const c1 = A.cp.catchUpIncome(now5);
+    const per = A.cp.incomeSources().reduce((sum, c) => sum + CPC.CP_INCOME[c.zone].food, 0);
+    assert(c1 && c1.times === 4 && A.cp.st.incomeDay === today - 1 && ev === c1, `離線錯過 4 天：補發 4 次（${c1?.text || ''}）`);
+    assert(A.state.resources.food - f1 >= per * 4 * 0.99 && Object.keys(c1.goods).length > 3, '補發的收益直接入庫（資源＋零件）');
+    assert(!A.cp.catchUpIncome(now5), '同一次上線不會重複補發');
+    A.cp.st.incomeDay = today - 100;
+    const c2 = A.cp.catchUpIncome(now5);
+    assert(c2.times === CPS.CP_OFFLINE_INCOME_MAX && c2.missed === 99, `離線很久：最多補 ${CPS.CP_OFFLINE_INCOME_MAX} 次`);
+    A.cp.st.incomeDay = today;
+  }
+  // v15.4.1：駐防沒有期限（快到期時自動延長），佔領者與好友解除關係時駐防隊撤回
+  {
+    await B.shared.poll();
+    const ge = gd.exp;
+    const stayEnd0 = ge.startAt + ge.travelMs + ge.searchMs;
+    B.cp.extendGuards(stayEnd0 - 1000);
+    assert(ge.startAt + ge.travelMs + ge.searchMs > stayEnd0 && !ge.recalled, '駐防快到期時自動延長（直到撤回或被打下）');
+    const rel0 = B.state.relations.players.A;
+    B.state.relations.players.A = { status: 'neutral' };
+    B.cp.extendGuards(Date.now());
+    assert(ge.recalled && B.state.log.some((l) => /駐防隊撤回/.test(l.msg)), '和佔領者解除好友關係：駐防隊撤回');
+    B.state.relations.players.A = rel0;
+  }
   // 共同佔領者變成敵對：回到中立
   await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, owners: [{ p: 'A', n: 'A' }, { p: 'C', n: 'C' }] } }));
   A.state.relations.players.C = { status: 'hostile' };
@@ -6331,6 +6425,51 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     gr.cp.canExplore = ce0;
     gr.cp.statusOf = so0;
     EX.HQ_AMBUSH.chance = c0;
+  }
+  // v15.5：離線期間控制點被佔領：回來結算時，從被佔領的那一刻起撤回（不會照常搜完帶回全部物資）
+  {
+    const { createSurvivor: mkSv2 } = await import('../src/core/GameState.js');
+    const sv = mkSv2('離線', 'scout', 10, 'common');
+    gr.state.survivors.push(sv);
+    const yp = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === Y && gr.cp.canExplore(p).ok && !gr.npcs.list.some((n) => haversine(n.lat, n.lon, p.lat, p.lon) < 200));
+    const ro = gr.exploration.start(yp.id, [sv.id], 5);
+    assert(ro.ok, `在佔領的控制點探索（${ro.reason || ''}）`);
+    const eo = ro.exp;
+    const takenAt = eo.startAt + eo.travelMs + Math.round(eo.searchMs / 3);
+    await gr.shared.update(CPC.CP_KIND, Y, () => ({ data: { owners: [], guards: [], faction: 'red', takenAt, lostAt: takenAt } }));
+    const reps = gr.exploration.update(eo.endAt + 3600000, { silent: true });
+    const rp = reps.find((r) => r.members?.includes('離線'));
+    assert(eo.recalled && rp && !rp.success, `離線期間控制點被佔領：結算時從被佔領的那一刻起撤回（${rp?.events?.slice(-2).join('／') || ''}）`);
+    gr.state.survivors = gr.state.survivors.filter((x) => x !== sv);
+  }
+  // v15.5：其他玩家的探索隊：出發後目標控制點被佔領（對方離線還沒撤回）時，我的地圖不再顯示
+  {
+    const { WorldSync: WS, cleanPlayer: CPl2 } = await import('../src/multiplayer/WorldSync.js');
+    const dY = gr.cp.data(Y);
+    const tk = dY.takenAt;
+    const yp2 = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === Y);
+    const base = { from: { lat: 25.03, lon: 121.56 }, to: { lat: yp2.lat, lon: yp2.lon }, travelMs: 60000, searchMs: 600000, members: 1, target: yp2.name, id: 't1' };
+    const before = { ...base, kind: 'explore', startAt: tk - 60000, endAt: tk + 3600000 };
+    assert(gr.cp.hideOtherTrip(before, tk + 1000), '出發後目標控制點被佔領的探索隊：不顯示');
+    assert(!gr.cp.hideOtherTrip(before, tk - 1000), '控制點被佔領之前：照常顯示');
+    assert(!gr.cp.hideOtherTrip({ ...before, startAt: tk + 1000 }, tk + 2000), '控制點被佔領之後才出發的隊伍不受影響');
+    assert(gr.cp.hideOtherTrip({ ...before, kind: undefined }, tk + 1000), '舊版本（沒有標示種類）前往建築的隊伍也視為探索、不顯示');
+    assert(!gr.cp.hideOtherTrip({ ...before, kind: 'assist' }, tk + 1000) && !gr.cp.hideOtherTrip({ ...before, rally: 'r1' }, tk + 1000), '協防、集結隊伍不受影響');
+    const freeP = gr.state.map.pois.find((p) => !CPC.cpAt(p.lat, p.lon));
+    assert(!gr.cp.hideOtherTrip({ ...before, to: { lat: freeP.lat, lon: freeP.lon } }, tk + 1000), '目標不在控制點裡（安全區、一般區）照常顯示');
+    // 同步資料：探索隊會標示種類，讀取時保留
+    const presR = WS.prototype.presence.call({ game: gr });
+    const cl = CPl2({ ...presR, id: 'R', trips: [{ ...before }] });
+    assert(cl?.trips?.[0]?.kind === 'explore', '同步資料保留探索隊的種類');
+    const { createSurvivor: mkSv3 } = await import('../src/core/GameState.js');
+    const sv3 = mkSv3('同步', 'scout', 5, 'common');
+    gr.state.survivors.push(sv3);
+    const sp = gr.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && !gr.shelter.baseAtPoi(p.id));
+    const rs = gr.exploration.start(sp.id, [sv3.id], 5);
+    const pr2 = WS.prototype.presence.call({ game: gr });
+    assert(rs.ok && pr2.trips.some((t) => t.id === rs.exp.id && t.kind === 'explore'), '自己的探索隊同步出去時標示為探索');
+    gr.state.expeditions = gr.state.expeditions.filter((e) => e !== rs.exp);
+    gr.state.survivors = gr.state.survivors.filter((x) => x !== sv3);
   }
 }
 

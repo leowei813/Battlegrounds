@@ -61,10 +61,7 @@ function offlineDoneHtml(report) {
 }
 
 function showOfflineReport(ui, report) {
-  return ui.modal.open({
-    onAction: (action, _d, m) => { if (action === 'gotoResearch') { m.close(); ui.switchTab('research'); } },
-    title: '🌙 離線收益',
-    body: `
+  const body = () => `
       <p>你離開了 <b>${formatDuration(report.elapsed)}</b>${report.capped ? '（已達 24 小時上限）' : ''}。倖存者們持續運作避難所：</p>
       <div class="gains big">${gainsHtml(report.gains)}</div>
       ${report.expeditions ? `<p>🧭 完成探索 ${report.expeditions} 次（詳見「探索」頁報告）</p>` : ''}
@@ -72,8 +69,21 @@ function showOfflineReport(ui, report) {
       ${report.deaths > 0 ? `<p class="warn">⚰️ 離線期間有 ${report.deaths} 名隊員因長期飢餓死亡。</p>` : ''}
       ${report.defense ? `<p>🛡️ 離線防守擊殺 ${report.defense.kills} 隻殭屍，獲得 💰${report.defense.coins}</p>` : '<p class="muted">研究「夜行者」可解鎖離線防守收益。</p>'}
       ${offlineDoneHtml(report)}
-      <div class="btn-row end">${report.labIdle ? '<button class="btn btn-ghost" data-action="gotoResearch">🔬 前往研究</button>' : ''}<button class="btn btn-primary" data-action="close">太好了！</button></div>`,
+      ${report.cpIncome ? `<p>🚚 控制點收益（離線期間 ${report.cpIncome.times} 次${report.cpIncome.missed > report.cpIncome.times ? `，最多補 ${report.cpIncome.times} 次` : ''}）：${report.cpIncome.text}</p>` : ''}
+      <div class="btn-row end">${report.labIdle ? '<button class="btn btn-ghost" data-action="gotoResearch">🔬 前往研究</button>' : ''}<button class="btn btn-primary" data-action="close">太好了！</button></div>`;
+  const m = ui.modal.open({
+    onAction: (action, _d, md) => { if (action === 'gotoResearch') { md.close(); ui.switchTab('research'); } },
+    title: '🌙 離線收益',
+    body: body(),
   });
+  // v15.5：控制點收益要等讀到共用資料後才補發：視窗還開著就補上這一行
+  const add = (res) => {
+    report.cpIncome = res;
+    if (ui.modal.current === m) m.update(body());
+  };
+  if (ui.game.cp?.lastCatchUp) add(ui.game.cp.lastCatchUp);
+  else ui.game.bus.once('cp:offlineIncome', add);
+  return m;
 }
 
 
