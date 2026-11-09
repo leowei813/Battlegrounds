@@ -96,13 +96,18 @@ export const ZoneLayer = L.Layer.extend({
     lctx.putImageData(img, 0, 0);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(this.low, 0, 0, w * BLOCK, h * BLOCK);
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    this.cpEdges(ctx, grid, w, h, m.border, 0.75);
+  },
+
+  /** 控制點邊界（點狀線）：grid 為每個方塊的控制點索引（-2＝地圖外） */
+  cpEdges(ctx, grid, w, h, dot, alpha, color = '255,255,255') {
+    ctx.fillStyle = `rgba(${color},${alpha})`;
     for (let y = 0; y < h; y += 1) {
       for (let x = 0; x < w; x += 1) {
         const a = grid[y * w + x];
         if (a < 0) continue;
         if ((x + 1 < w && grid[y * w + x + 1] !== a && grid[y * w + x + 1] !== -2) || (y + 1 < h && grid[(y + 1) * w + x] !== a && grid[(y + 1) * w + x] !== -2)) {
-          ctx.fillRect(x * BLOCK + BLOCK / 2, y * BLOCK + BLOCK / 2, m.border, m.border);
+          ctx.fillRect(x * BLOCK + (BLOCK - dot) / 2 + 1, y * BLOCK + (BLOCK - dot) / 2 + 1, dot, dot);
         }
       }
     }
@@ -127,11 +132,14 @@ export const ZoneLayer = L.Layer.extend({
     const w = Math.ceil(size.x / BLOCK) + 1;
     const h = Math.ceil(size.y / BLOCK) + 1;
     const grid = new Uint8Array(w * h);
+    const cps = new Int16Array(w * h);
     for (let y = 0; y < h; y += 1) {
       for (let x = 0; x < w; x += 1) {
         const ll = map.containerPointToLatLng([x * BLOCK, y * BLOCK]);
         // v13：只計算固定地圖範圍內
-        grid[y * w + x] = inWorld(ll.lat, ll.lng) ? zoneIndexAt(ll.lat, ll.lng) : OUT;
+        const inside = inWorld(ll.lat, ll.lng);
+        grid[y * w + x] = inside ? zoneIndexAt(ll.lat, ll.lng) : OUT;
+        cps[y * w + x] = !inside ? -2 : inNpcHome(ll.lat, ll.lng) ? -3 : cpIndexAt(ll.lat, ll.lng);
       }
     }
 
@@ -183,5 +191,9 @@ export const ZoneLayer = L.Layer.extend({
       }
       ctx.stroke();
     });
+
+    // 4. v14：控制點邊界（和勢力圖同樣的點狀線，較淡）
+    this.cpEdges(ctx, cps, w, h, m.border + 3, 0.55, '255,255,255');
+    this.cpEdges(ctx, cps, w, h, m.border + 1, 0.85, '38,50,56');
   },
 });
