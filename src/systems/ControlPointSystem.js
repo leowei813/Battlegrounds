@@ -25,7 +25,7 @@ const NEUTRAL_TYPES = ['walker', 'infected', 'berserker', 'mutant'];
  *  owners  [{ p, n }]   佔領者（集結打下的為所有參加者）
  *  faction  null|string  NPC 勢力（第 3 批）
  *  guards  [{ p, n, e, units, at }]  駐防隊（每名玩家最多 CP_GUARD_MAX 人）
- *  lost    守軍已損失的人數（每小時補回 CP_REFILL_PER_HOUR）；lostAt 損失時間
+ *  lost    守軍已損失的人數（每小時補回 CP_REFILL_PER_HOUR，即現實每 10 分鐘 1 人）；lostAt 損失時間
  */
 export class ControlPointSystem {
   constructor(game) {

@@ -1684,5 +1684,5 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .guide-body li { margin: 6px 0; line-height: 1.7; }
 .guide-reloc { margin-top: 12px; background: #1b5e2033; border: 1px dashed #66bb6a; border-radius: 10px; padding: 10px; line-height: 1.7; }
 .map-hint.reloc { background: #1b5e20e6; border-color: #66bb6a; }
-.cp-pin { display: flex; align-items: center; gap: 1px; background: #000c; border: 2px solid var(--c); border-radius: 10px; padding: 1px 5px; font-size: 13px; color: #fff; white-space: nowrap; box-shadow: 0 0 6px #000a; } .cp-pin b { font-size: 11px; }
+.cp-pin { display: flex; align-items: center; gap: 2px; background: #000c; border: 1.5px solid #ffffff55; border-radius: 10px; padding: 1px 5px; font-size: 13px; color: #fff; white-space: nowrap; box-shadow: 0 0 6px #000a; } .cp-pin b { font-size: 11px; }
 .convoy-pin { position: relative; font-size: 20px; filter: drop-shadow(0 0 4px #ffd54f); } .convoy-pin i { position: absolute; left: 22px; top: 2px; font-style: normal; font-size: 10.5px; background: #000b; color: #fff; border-radius: 6px; padding: 0 4px; white-space: nowrap; }

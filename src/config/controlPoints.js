@@ -49,8 +49,8 @@ const GARRISON = {
 export const CP_GARRISON_MUL = 3;
 /** 玩家側（西側警戒～致死區）的控制點守軍再減弱一半 */
 export const CP_PLAYER_SIDE_MUL = 0.5;
-/** 被打下後每小時補回的守軍人數 */
-export const CP_REFILL_PER_HOUR = 1;
+/** 被打下後每小時（現實時間）補回的守軍人數 */
+export const CP_REFILL_PER_HOUR = 6; // 現實每 10 分鐘補回 1 人
 /** 每名玩家每個控制點最多駐防人數 */
 export const CP_GUARD_MAX = 2;
 

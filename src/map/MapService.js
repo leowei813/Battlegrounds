@@ -240,7 +240,8 @@ export class MapService {
       const s = game.cp.statusOf(c.id);
       const col = s === 'faction' ? FACTION_COLORS[game.cp.factionOf(c.id)] : cols[s];
       L.marker([c.lat, c.lon], {
-        icon: this.icon(`<div class="cp-pin" style="--c:${col || '#bdbdbd'}">🚩<b>${c.no}</b></div>`, 'shelter-icon', 30),
+        // 旗子本身依佔領狀態上色（淡藍＝自己或好友、灰＝中立或其他玩家、勢力顏色）
+        icon: this.icon(`<div class="cp-pin" style="--c:${col || '#bdbdbd'}"><svg viewBox="0 0 20 22" width="16" height="18" aria-hidden="true"><rect x="2" y="1" width="2" height="20" rx="1" fill="#eceff1"/><path d="M4 2 H18 L14.5 7 L18 12 H4 Z" fill="${col || '#bdbdbd'}" stroke="#000" stroke-width="0.8"/></svg><b>${c.no}</b></div>`, 'shelter-icon', 30),
         zIndexOffset: 850,
       }).on('click', () => bus.emit('ui:openCp', { id: c.id }))
         .bindTooltip(`🚩 控制點 #${c.no}・${game.cp.summary(c.id).label}`, { direction: 'top', offset: [0, -14] })
