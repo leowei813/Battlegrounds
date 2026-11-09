@@ -107,7 +107,9 @@ export class MapPanel {
       }
       return { id, name: d.name, lat: d.lat, lon: d.lon, label: `${CLASSES[d.cls].icon} ${label}` };
     });
-    this.service.renderDungeons(list, DG_PIN_SVG);
+    // v15：地圖上不再顯示副本圖示，改由左側地下感染區選單報名
+    this.service.renderDungeons([], DG_PIN_SVG);
+    void list;
   }
 
   /** 發起集結：選擇出發倒數與自己的隊伍 */

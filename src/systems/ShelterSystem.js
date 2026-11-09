@@ -253,8 +253,10 @@ export class ShelterSystem {
    */
   moveIntoWorld(rnd = Math.random) {
     const sh = this.primary();
-    if (!sh || inWorld(sh.lat, sh.lon)) return null;
     const g = this.game;
+    // v15：新地圖的避難所只能在左側安全區：範圍外或不在安全區的都搬進安全區
+    const ok = inWorld(sh?.lat, sh?.lon) && (g.state.map?.source !== 'generated' || inPlayerSafe(sh.lat, sh.lon));
+    if (!sh || ok) return null;
     const others = (g.world?.others || []).flatMap((p) => p.bases || []);
     const alert = BASE_SIZES[sh.size]?.alert || 80;
     const free = (g.state.map.pois || []).filter((p) => inWorld(p.lat, p.lon, 100) && inPlayerSafe(p.lat, p.lon)
@@ -269,7 +271,7 @@ export class ShelterSystem {
     Object.assign(sh, { poiId: poi.id, name: poi.name, lat: poi.lat, lon: poi.lon });
     g.state.map.center = { lat: poi.lat, lon: poi.lon };
     this.game.civilization?.invalidate?.();
-    g.log(`🗺️ 世界地圖改為固定範圍：避難所從「${from}」整座搬到「${poi.name}」，設施與物資全部保留`, 'info');
+    g.log(`🗺️ 地圖重新規劃：避難所從「${from}」整座搬到左側安全區的「${poi.name}」，設施與物資全部保留`, 'info');
     g.bus.emit('shelter:changed');
     return poi;
   }

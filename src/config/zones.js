@@ -1,3 +1,5 @@
+import { WORLD_BOUNDS } from './world.js';
+
 /**
  * 區域危險度：整張世界地圖依座標劃分為 6 種區域（所有玩家看到的都一樣）。
  * 區域越危險，物資越豐富、裝備品級越高，但殭屍與屍潮也越強。
@@ -50,32 +52,36 @@ export function zoneValue(lat, lon) {
 }
 
 /**
- * v14：區域依東西位置劃分（所有玩家相同）：
- * 左側安全區（玩家據點區）→ 一般 → 警戒 → 危險 → 致死 → 中間深淵（最寬）→ 致死 → 危險 → 警戒 → 一般 → 右側安全區（三大勢力大本營）。
+ * v15：區域依東西位置劃分（所有玩家相同）：
+ * 左側安全區（玩家據點區）→ 一般 → 警戒 → 危險 → 致死 → 深淵（緊鄰勢力領地）→ 最右側三大勢力大本營領地。
  * 交界用雜訊做成不規則的形狀。
  */
-export const ZONE_BANDS = [[0.14, 0], [0.23, 1], [0.31, 2], [0.38, 3], [0.44, 4], [0.58, 5], [0.64, 4], [0.71, 3], [0.78, 2], [0.85, 1], [Infinity, 0]];
-const BOUNDS = { w: 121.5557, e: 121.5845 };
+export const ZONE_BANDS = [[0.12, 0], [0.24, 1], [0.38, 2], [0.52, 3], [0.67, 4], [0.9, 5]];
+/** 最右側三大勢力大本營領地的起點（東西位置） */
+export const NPC_HOME_X = 0.9;
+const BOUNDS = { w: WORLD_BOUNDS.w, e: WORLD_BOUNDS.e };
 /** 經度換算成地圖上的東西位置（0 = 最西、1 = 最東） */
 export const normX = (lon) => (lon - BOUNDS.w) / (BOUNDS.e - BOUNDS.w);
 /** 交界的不規則偏移（約 ±0.02） */
 const edgeNoise = (lat, lon) => (valueNoise(lat, lon, FINE) - 0.5) * 0.035 + (valueNoise(lat + 3.1, lon - 1.7, COARSE) - 0.5) * 0.02;
+const bandX = (lat, lon) => normX(lon) + edgeNoise(lat, lon);
 
-/** 座標所在區域的索引（0 = 安全區 … 5 = 深淵區） */
+/** 是否在三大勢力大本營領地（最右側：不能探索、沒有建築） */
+export const inNpcHome = (lat, lon) => bandX(lat, lon) >= NPC_HOME_X;
+
+/** 座標所在區域的索引（0 = 安全區 … 5 = 深淵區；勢力領地算安全區） */
 export function zoneIndexAt(lat, lon) {
-  const x = normX(lon) + edgeNoise(lat, lon);
+  const x = bandX(lat, lon);
+  if (x >= NPC_HOME_X) return 0;
   for (const [t, z] of ZONE_BANDS) if (x < t) return z;
-  return 0;
+  return 5;
 }
 
 /** 在地圖的哪一側：玩家側（西）或勢力側（東） */
-export const zoneSide = (lat, lon) => (normX(lon) < 0.51 ? 'player' : 'npc');
+export const zoneSide = (lat, lon) => (normX(lon) < 0.6 ? 'player' : 'npc');
 
 /** 是否在玩家據點區（左側安全區，可以建立避難所） */
-export const inPlayerSafe = (lat, lon) => zoneIndexAt(lat, lon) === 0 && zoneSide(lat, lon) === 'player';
-
-/** 是否在三大勢力大本營領地（右側一般區與安全區：不能探索） */
-export const inNpcHome = (lat, lon) => zoneSide(lat, lon) === 'npc' && zoneIndexAt(lat, lon) <= 1;
+export const inPlayerSafe = (lat, lon) => zoneIndexAt(lat, lon) === 0 && !inNpcHome(lat, lon);
 
 /** @returns {typeof ZONES[number]} */
 export const zoneAt = (lat, lon) => ZONES[zoneIndexAt(lat, lon)];

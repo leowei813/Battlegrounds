@@ -5957,7 +5957,24 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const { generateWorldPois } = await import('../src/map/WorldGen.js');
   const Z = await import('../src/config/zones.js');
   const wp = generateWorldPois();
-  assert(wp.length > 1500 && wp.every((p) => W.inWorld(p.lat, p.lon)), `整張地圖的建築都在範圍內（${wp.length} 棟）`);
+  assert(wp.length > 1000 && wp.every((p) => W.inWorld(p.lat, p.lon)), `整張地圖的建築都在範圍內（${wp.length} 棟）`);
+  assert(!wp.some((p) => Z.inNpcHome(p.lat, p.lon)), 'v15：最右側勢力領地沒有可探索的建築');
+  {
+    // v15：建築種類與規模依新地圖重新分配（整體比例、各區規模符合規劃）
+    const CV = await import('../src/config/civilization.js');
+    const T = { residential: 15.2, shop: 6.5, supermarket: 4.3, forest: 18, gasStation: 7, factory: 7, garage: 5, recycling: 6, pharmacy: 10, hospital: 3, warehouse: 6.5, school: 6.5, police: 4.4 };
+    const nm = wp.filter((p) => p.type !== 'military');
+    const off = Object.entries(T).filter(([k, v]) => Math.abs(nm.filter((p) => p.type === k).length / nm.length * 100 - v) > 1).map(([k]) => k);
+    assert(!off.length, `v15：地圖建築種類比例符合規劃（偏差超過 1%：${off.join('、') || '無'}）`);
+    const mil = wp.filter((p) => p.type === 'military').length / wp.length * 100;
+    assert(mil > 0.3 && mil < 1, `v15：軍事基地約佔全部地點 0.6%（${mil.toFixed(2)}%）`);
+    const K = ['small', 'medium', 'large', 'huge'];
+    const bad = CV.SIZE_BY_ZONE.map((tgt, z) => {
+      const zp = wp.filter((p) => Z.zoneIndexAt(p.lat, p.lon) === z);
+      return K.some((k, i) => Math.abs(zp.filter((p) => CV.baseSizeOf(p) === k).length / zp.length * 100 - tgt[i]) > 3) ? z : null;
+    }).filter((z) => z != null);
+    assert(!bad.length, `v15：各區建築規模比例符合規劃（偏差超過 3%：${bad.join('、') || '無'}）`);
+  }
   assert(generateWorldPois().map((p) => p.id).join() === wp.map((p) => p.id).join(), '所有玩家的地圖建築相同');
   {
     // 依固定地圖重新校正：各類資源的建築比例符合規劃（食物 26、木材 18、燃料 7、零件布料 18、藥品 13、裝備彈藥 18）
@@ -5972,13 +5989,14 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const r = W.randomInWorld();
     if (!W.inWorld(r.lat, r.lon)) { assert(false, '隨機起點在範圍內'); break; }
   }
-  // v14：中間深淵、往兩側擴散；左側安全區是玩家據點區，右側是勢力領地
+  // v15：左側安全區往右越來越危險，深淵區緊鄰最右側的勢力領地
   {
     const B = W.WORLD_BOUNDS;
     const mid = (B.n + B.s) / 2;
     const at = (x) => Z.zoneIndexAt(mid, B.w + (B.e - B.w) * x);
-    assert(at(0.5) === 5 && at(0.03) === 0 && at(0.97) === 0, `中間是深淵區、兩側是安全區（${at(0.03)}/${at(0.5)}/${at(0.97)}）`);
-    assert(Z.inPlayerSafe(mid, B.w + (B.e - B.w) * 0.03) && !Z.inPlayerSafe(mid, B.w + (B.e - B.w) * 0.97) && Z.inNpcHome(mid, B.w + (B.e - B.w) * 0.95), '左側安全區是玩家據點區、右側是勢力領地');
+    const seq = [0.03, 0.18, 0.31, 0.45, 0.6, 0.8].map(at);
+    assert(seq.join() === '0,1,2,3,4,5', `由左到右：安全→一般→警戒→危險→致死→深淵（${seq.join()}）`);
+    assert(Z.inPlayerSafe(mid, B.w + (B.e - B.w) * 0.03) && !Z.inPlayerSafe(mid, B.w + (B.e - B.w) * 0.97) && Z.inNpcHome(mid, B.w + (B.e - B.w) * 0.97) && !Z.inNpcHome(mid, B.w + (B.e - B.w) * 0.8), '左側安全區是玩家據點區、右側是勢力領地');
     const { baseSizeOf: bso } = await import('../src/config/civilization.js');
     const wp2 = generateWorldPois();
     const hugeLow = wp2.filter((p) => Z.zoneIndexAt(p.lat, p.lon) <= 3 && bso(p) === 'huge').length;
@@ -6083,7 +6101,17 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(r.ok && Z.inPlayerSafe(nb.lat, nb.lon) && nb.size === 'huge' && nb.facilities.farm.level === 14 && gf.state.resources.food === 777, '免費重選：整座搬到安全區，規模、設施、資源全部保留');
   assert(!gf.state.freeRelocate && !gf.shelter.canFreeMove(safe[2]).ok, '免費重選只能用一次');
   const { GUIDE_VERSION } = await import('../src/ui/GuideDialog.js');
-  assert(GUIDE_VERSION === 14, '遊戲說明版本 14');
+  assert(GUIDE_VERSION === 15, '遊戲說明版本 15');
+  // v15：地圖重劃後再給一次免費重選（沒用掉的不重複增加）；不在安全區的避難所自動搬進安全區
+  const used = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 34 });
+  assert(used.freeRelocate === true && used.guideSeen === 0, 'v15 改版：已用掉免費重選的玩家再給一次');
+  const kept = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 34, freeRelocate: true });
+  assert(kept.freeRelocate === true, 'v15 改版：還沒用掉的維持一次（不會變成兩次）');
+  const mv = gf.shelter.primary();
+  const normalPoi = gf.state.map.pois.find((p) => Z.zoneIndexAt(p.lat, p.lon) === 1);
+  Object.assign(mv, { lat: normalPoi.lat, lon: normalPoi.lon, poiId: normalPoi.id, name: normalPoi.name });
+  const moved = gf.shelter.moveIntoWorld();
+  assert(moved && Z.inPlayerSafe(mv.lat, mv.lon) && mv.facilities.farm.level === 14, 'v15：不在左側安全區的避難所整座搬進安全區（設施保留）');
 }
 
 // ---- v14 第 2 批：控制點（佔領後才能探索、好友可探索與駐防、06:00 運輸收益、敵對回到中立） ----
@@ -6112,7 +6140,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const cp = CPC.CONTROL_POINTS[0];
   const inCp = A.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === cp.id);
   const free = A.state.map.pois.find((p) => !CPC.cpAt(p.lat, p.lon) && Z.zoneSide(p.lat, p.lon) === 'player' && Z.zoneIndexAt(p.lat, p.lon) === 1);
-  const npcHome = A.state.map.pois.find((p) => Z.inNpcHome(p.lat, p.lon));
+  const npcHome = { lat: CPC.factionHq('black').lat, lon: CPC.factionHq('black').lon };
   assert(!A.cp.canExplore(inCp).ok && A.cp.canExplore(free).ok && !A.cp.canExplore(npcHome).ok, '中立控制點區域、勢力領地不能探索；左側一般區可以');
   const lead = A.survivors.leader();
   assert(!A.exploration.start(inCp.id, [lead.id], 5).ok, '派遣探索未佔領的控制點區域會被擋下');
@@ -6127,6 +6155,21 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   await B.shared.poll(); await C.shared.poll();
   assert(A.cp.statusOf(cp.id) === 'mine' && B.cp.statusOf(cp.id) === 'mine' && C.cp.statusOf(cp.id) === 'other', '打下後：自己與好友是可探索，其他玩家不行');
   assert(A.cp.canExplore(inCp).ok && B.cp.canExplore(inCp).ok && !C.cp.canExplore(inCp).ok, '佔領後該區域：佔領者與好友可以探索，其他玩家不行');
+  {
+    // 自動探索佇列（快速佇列／加入佇列）不會選到不能探索的控制點區域
+    const ZN = await import('../src/config/zones.js');
+    const pp = C.state.map.pois.filter((p) => POI_TYPES[p.type] && !p.npc);
+    const locked = pp.filter((p) => !C.cp.canExplore(p).ok && !Z.inNpcHome(p.lat, p.lon));
+    const open = pp.filter((p) => C.cp.canExplore(p).ok && !C.shelter.baseAtPoi(p.id) && locked.some((q) => ZN.zoneAt(q.lat, q.lon).id === ZN.zoneAt(p.lat, p.lon).id));
+    open.sort((a, b) => Math.min(...locked.map((q) => haversine(a.lat, a.lon, q.lat, q.lon))) - Math.min(...locked.map((q) => haversine(b.lat, b.lon, q.lat, q.lon))));
+    const st0 = open[0] && C.exploration.start(open[0].id, [C.survivors.leader().id], 5);
+    assert(st0?.ok, `控制點旁的開放區域可以探索（${st0?.reason || ''}）`);
+    const qf = C.exploration.quickFill(st0.exp.id);
+    assert(qf.added.every((p) => C.cp.canExplore(p).ok), `快速佇列不會加入未佔領控制點的建築（加入 ${qf.added.length} 個）`);
+    assert(!C.exploration.enqueue(st0.exp.id, inCp.id).ok, '未佔領控制點的建築不能加入探索佇列');
+    C.exploration.recall(st0.exp.id);
+    C.state.expeditions = [];
+  }
   assert(!C.cp.canAttack(cp.id).ok, '非敵對的其他玩家不能攻打');
   C.state.relations.players = { A: { status: 'hostile' } };
   assert(C.cp.canAttack(cp.id).ok, '敵對玩家可以攻打');
@@ -6158,7 +6201,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   A.cp.deliverConvoys(cv.endAt + 1);
   assert(A.state.resources.food > f0 && !A.cp.st.convoys.length, '運輸隊抵達避難所後收益入庫');
   // 共同佔領者變成敵對：回到中立
-  await A.shared.update('cp', cp.id, (x) => ({ data: { ...x, owners: [{ p: 'A', n: 'A' }, { p: 'C', n: 'C' }] } }));
+  await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, owners: [{ p: 'A', n: 'A' }, { p: 'C', n: 'C' }] } }));
   A.state.relations.players.C = { status: 'hostile' };
   await A.cp.checkHostileOwners(Date.now());
   assert(A.cp.statusOf(cp.id) === 'neutral', '共同佔領者變成敵對時，控制點回到中立');
@@ -6184,7 +6227,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   // 有駐防的排在後面：把 black 的候選之一標記為玩家佔領＋駐防
   const cands = [...new Set(own.black.flatMap((id) => CPC.cpNeighbors(id)))].filter((id) => !own.black.includes(id));
   const first = gq.cp.pickTarget('black');
-  await gq.shared.update('cp', first, () => ({ data: { owners: [{ p: 'X', n: 'X' }], guards: [{ p: 'X', n: 'X', e: 'e1', units: [{ i: 0, hp: 9e5, maxHp: 9e5, atk: 1, lv: 1 }] }], faction: null } }));
+  await gq.shared.update(CPC.CP_KIND, first, () => ({ data: { owners: [{ p: 'X', n: 'X' }], guards: [{ p: 'X', n: 'X', e: 'e1', units: [{ i: 0, hp: 9e5, maxHp: 9e5, atk: 1, lv: 1 }] }], faction: null } }));
   const second = gq.cp.pickTarget('black');
   assert(cands.length < 2 || second !== first, `優先攻擊無人駐守的控制點（${first} 有駐防 → 改打 ${second}）`);
   // 勢力打下後留守、擁有數增加；NPC 據點依控制點數量建立（每 3 個 1 座，最多 4 座）
