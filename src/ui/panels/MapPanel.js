@@ -22,6 +22,7 @@ import {
 } from '../components.js';
 import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { INFECTED } from '../../systems/InfectedSystem.js';
+import { cpById, cpAt, CP_INCOME } from '../../config/controlPoints.js';
 import { RALLY_DELAYS, RallySystem } from '../../systems/RallySystem.js';
 import { AUTO_HOME_LABEL } from '../../systems/AutoHomeSystem.js';
 import { PLASTIC_SPOTS } from '../../systems/LootStock.js';
@@ -58,6 +59,7 @@ export class MapPanel {
     this.service.renderOthers(players, (id) => this.game.territory.relation(id));
     // 重度感染據點會避開玩家據點：其他玩家的據點更新後重新計算位置
     this.service.renderInfected(this.game.infected.list(), INFECTED.pin);
+    this.service.renderCps(this.game);
     this.renderDungeons();
     this.lastOverlay = '';
     if (this.ui.tab === 'map') this.renderOverlay();
@@ -79,6 +81,7 @@ export class MapPanel {
     this.service.render(this.game.state);
     this.service.renderNpcs(this.game.npcs.list);
     this.service.renderInfected(this.game.infected.list(), INFECTED.pin);
+    this.service.renderCps(this.game);
     this.renderDungeons();
   }
 
@@ -243,6 +246,80 @@ export class MapPanel {
       <div class="btn-row">${btn('☣️ 派隊淨化', 'attackInf', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${btn(`${rallyFlag(16)} 發起集結`, 'rallyInf', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' })}</div>`;
   }
 
+  /** v14 控制點資訊：佔領狀態、駐防、收益；攻打、集結、駐防、撤回 */
+  cpBody(id) {
+    const g = this.game;
+    const sm = g.cp.summary(id);
+    const { cp } = sm;
+    const zone = ZONES[cp.zone];
+    const ownTxt = sm.owners.length ? sm.owners.map((o) => escapeHtml(o.n)).join('、') : '—';
+    const guardTxt = sm.guards.length ? sm.guards.map((h) => `${escapeHtml(h.n)} ${(h.units || []).length} 人`).join('・') : '沒有駐防';
+    const npc = sm.status === 'neutral' || sm.status === 'faction';
+    const atk = g.cp.canAttack(id);
+    const rally = g.rally.canStart({ kind: 'cp', id });
+    const gd = g.cp.canGuard(id, 1);
+    const mine = g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === id && !e.recalled && !e.defeated);
+    const inc = CP_INCOME[cp.zone];
+    const tagCol = sm.status === 'mine' ? '#4fc3f7' : sm.status === 'faction' ? '#ef5350' : '#9e9e9e';
+    const btns = [];
+    if (atk.ok) {
+      btns.push(btn('⚔️ 派隊攻打', 'cpAttack', {}, { cls: 'btn-danger' }));
+      btns.push(btn(`${rallyFlag(16)} 發起集結`, 'cpRally', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' }));
+    }
+    if (sm.status === 'mine') btns.push(btn('🛡️ 派人駐防', 'cpGuard', {}, { cls: 'btn-primary', disabled: !gd.ok, title: gd.reason || '' }));
+    if (mine.length) btns.push(btn('↩️ 撤回駐防', 'cpRecall', {}, { cls: 'btn-ghost' }));
+    return `<p><span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span> <span class="tag" style="color:${tagCol};border:1px solid ${tagCol}">${sm.label}</span></p>
+      <div class="kv-list">
+        <div><b>佔領者</b> ${ownTxt}</div>
+        ${npc ? `<div><b>守軍</b> ${sm.status === 'faction' ? 'NPC' : '感染者'} ${sm.garrison}/${cp.garrison.count} 人（Lv${cp.garrison.level}）・戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}</div>` : `<div><b>駐防</b> ${guardTxt}</div>`}
+        <div><b>每日收益</b> 06:00 運輸隊送回：食物 ${inc.food}、木材 ${inc.wood}、燃料 ${inc.fuel}＋隨機零件 ${inc.parts[0]}～${inc.parts[1]} 種（佔領者與駐守者都能拿，同一人只拿一份）</div>
+        ${sm.status === 'mine' ? `<div class="muted">下一次收益約 ${sm.nextIncome} 後出發・每名玩家最多駐防 2 人</div>` : ''}
+        ${!atk.ok && sm.status !== 'mine' ? `<div class="muted">${escapeHtml(atk.reason)}</div>` : ''}
+      </div>
+      <div class="btn-row">${btns.join('')}</div>`;
+  }
+
+  openCp(id) {
+    const g = this.game;
+    const cp = cpById(id);
+    if (!cp) return;
+    const sh = g.shelter.primary();
+    this.ui.modal.open({
+      title: `🚩 控制點 #${cp.no}`,
+      body: this.cpBody(id),
+      live: () => this.cpBody(id),
+      onAction: (action, _d, m) => {
+        if (action === 'cpRally') {
+          this.openRallySetup({ kind: 'cp', id, name: `控制點 #${cp.no}`, lat: cp.lat, lon: cp.lon });
+          return;
+        }
+        if (action === 'cpRecall') {
+          g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === id && !e.recalled).forEach((e) => g.exploration.recall(e.id));
+          this.ui.result({ ok: true, msg: '駐防隊撤回中' });
+          this.renderMap(true);
+          return;
+        }
+        const guard = action === 'cpGuard';
+        if (!guard && action !== 'cpAttack') return;
+        openTeamPicker(this.ui, {
+          title: guard ? `🛡️ 駐防：控制點 #${cp.no}` : `⚔️ 攻打：控制點 #${cp.no}`,
+          intro: guard ? `<p class="muted">駐防隊會留守到你撤回為止，抵擋 NPC 與敵對玩家的進攻；每名玩家最多 2 人。</p>`
+            : `<p class="muted">守軍戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}。打下後這個區域的建築就能探索。</p>`,
+          vehicles: true,
+          maxPick: guard ? Math.max(1, 2 - g.cp.myGuards(id)) : undefined,
+          distanceM: sh ? haversine(sh.lat, sh.lon, cp.lat, cp.lon) : 0,
+          trip: { poi: g.cp.asPoi(`cp:${id}`), searchMin: guard ? 0 : 2, searchLabel: guard ? '駐防' : '攻打' },
+          confirmLabel: guard ? '出發駐防' : '進攻！',
+          onConfirm: (ids, _dur, _auto, vids, opts) => {
+            const r = this.ui.result(guard ? g.cp.guard(id, ids, { vehicleIds: vids, ...opts }) : g.cp.attack(id, ids, { vehicleIds: vids, ...opts }));
+            if (r.ok) { m.close(); this.renderMap(true); }
+            return r;
+          },
+        });
+      },
+    });
+  }
+
   openInfected(id) {
     const g = this.game;
     const s = g.infected.get(id);
@@ -350,6 +427,7 @@ export class MapPanel {
 
   renderOverlay() {
     if (Date.now() - this.lastRender > 5000) this.renderMap(true);
+    this.service.renderCps(this.game);
     this.ui.mapRoot.dataset.phase = this.game.time.phaseId(); // 地圖依日夜變暗
     const st = this.game.state;
     const has = this.game.shelter.hasShelter();
@@ -363,7 +441,7 @@ export class MapPanel {
         ${btn(`💬<em class="ic-lbl">聊天</em>${this.game.chat.unread() ? `<small class="unread">${Math.min(99, this.game.chat.unread())}</small>` : ''}`, 'chat', {}, { cls: `btn-icon ${this.ui.chatView?.isOpen ? 'on' : ''}`, title: '全服聊天：所有玩家都看得到' })}
         ${btn(`🏠<small class="home-lbl ${this.game.autoHome.on() ? 'on' : ''}">${this.game.autoHome.on() ? `${AUTO_HOME_LABEL} 回家` : '關閉'}</small>`, 'autoHome', {}, { cls: `btn-icon home-btn ${this.game.autoHome.on() ? 'on' : ''}`, title: this.game.autoHome.on() ? `自動回家：遊戲時間 ${AUTO_HOME_LABEL} 所有外派隊伍自動回家（按一下關閉）` : '自動回家已關閉（按一下打開）' })}
         ${btn('🧾', 'legend', {}, { cls: 'btn-icon', title: '圖例' })}
-        ${btn('☣️', 'zoneMode', {}, { cls: `btn-icon ${this.service.zoneMode?.() === 'off' ? '' : 'on'}`, title: '危險度圖層：淡／關閉' })}
+        ${btn('☣️', 'zoneMode', {}, { cls: `btn-icon ${this.service.zoneMode?.() === 'off' ? '' : 'on'}`, title: '圖層：危險度 → 勢力圖 → 關閉' })}
       </div>
       <div class="map-topleft">${hudHtml(this.game)}${this.siegeBanner()}${this.feedHtml()}</div>
       ${this.scanning ? `<div class="scan-progress">📡 掃描建築中 ${this.scanProgress || ''}</div>` : ''}
@@ -673,7 +751,7 @@ export class MapPanel {
       this.renderOverlay();
     }
     if (action === 'zoneMode') {
-      this.ui.toastEl.show(`☣️ 危險度圖層：${this.service.cycleZoneMode()}`, 'info');
+      this.ui.toastEl.show(`☣️ 圖層：${this.service.cycleZoneMode()}`, 'info');
       this.renderOverlay();
     }
     if (action === 'worldSettings') this.ui.switchTab('settings');
@@ -843,7 +921,16 @@ export class MapPanel {
         ? `<small class="block neg">⚠️ 這裡設施最高 Lv${cp.cap}：${cp.changes.map((c) => `${FACILITIES[c.id].name} Lv${c.from}→Lv${c.to}`).join('、')}，降掉的等級退還 50% 建造材料</small>`
         : '<small class="block pos">✅ 搬遷保留的設施都不會降級</small>') : ''}`;
     } else {
-      { const ve = g.poiShare.view(poi); actions.push(btn(ve.empty ? '🕸️ 已搜空' : ve.left ? '🧭 繼續探索' : '🧭 派遣探索', 'explore', {}, { cls: 'btn-primary', disabled: ve.empty })); }
+      {
+        const ve = g.poiShare.view(poi);
+        // v14：控制點區域要自己或好友佔領才能探索
+        const ce = g.state.map.source === 'generated' ? g.cp.canExplore(poi) : { ok: true };
+        actions.push(btn(ve.empty ? '🕸️ 已搜空' : ve.left ? '🧭 繼續探索' : '🧭 派遣探索', 'explore', {}, { cls: 'btn-primary', disabled: ve.empty || !ce.ok, title: ce.reason || '' }));
+        if (!ce.ok) {
+          const c = cpAt(poi.lat, poi.lon);
+          establish += `<small class="block neg">🚩 ${escapeHtml(ce.reason)}</small>${c ? btn(`🚩 查看控制點 #${c.no}`, 'openCpOf', { id: c.id }, { cls: 'btn-sm btn-ghost' }) : ''}`;
+        }
+      }
       // v14：改版後一次免費重新選擇避難所（只能選左側安全區）
       if (g.state.freeRelocate) {
         const fm = g.shelter.canFreeMove(poi);
@@ -876,6 +963,7 @@ export class MapPanel {
       body: this.poiBody(poi),
       live: () => this.poiBody(poi),
       onAction: (action, data, m) => {
+        if (action === 'openCpOf') { this.openCp(data.id); return; }
         if (action === 'freeMove') {
           const r = this.ui.result(this.game.shelter.freeMove(poi));
           if (r.ok) {

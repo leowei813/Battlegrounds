@@ -105,7 +105,12 @@ export class ControlPointSystem {
     const list = Array.from({ length: n }, (_, i) => (d?.faction
       ? cb.createEnemy(i === 0 ? 'raiderChief' : 'raider', cp.garrison.level)
       : cb.createEnemy(NEUTRAL_TYPES[i % NEUTRAL_TYPES.length], cp.garrison.level, i === 0)));
-    list.forEach((e) => { e.maxHp = Math.round(e.maxHp * CP_GARRISON_MUL); e.hp = e.maxHp; e.atk = Math.round(e.atk * CP_GARRISON_MUL); });
+    // 感染者守軍校正成同等級掠奪者的強度，再乘上控制點倍率（強度表見 docs/v14-plan.md）
+    const ref = unitPower(cb.createEnemy('raider', cp.garrison.level));
+    list.forEach((e) => {
+      const k = (d?.faction ? 1 : ref / Math.max(1, unitPower(e))) * CP_GARRISON_MUL;
+      e.maxHp = Math.round(e.maxHp * k); e.hp = e.maxHp; e.atk = Math.round(e.atk * k);
+    });
     return list;
   }
 

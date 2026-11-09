@@ -136,7 +136,7 @@ export function openTeamPicker(ui, opts) {
       </button>`;
     }).join('');
     return `${opts.intro}
-      <div class="label">選擇隊員（最多 ${MAX_TEAM_SIZE} 人）・隊伍戰力 <b>${power}</b></div>
+      <div class="label">選擇隊員（最多 ${opts.maxPick || MAX_TEAM_SIZE} 人）・隊伍戰力 <b>${power}</b></div>
       <div class="pick-list">${rows || '<p class="muted">沒有可派出的倖存者</p>'}</div>
       ${squads.length ? `<div class="label">🧭 臨時小隊 <small class="muted">（加入該小隊的探索佇列；與勾選個別人員互斥）</small></div><div class="pick-list">${squadRows}</div>` : ''}
       ${vehicles}
@@ -154,7 +154,7 @@ export function openTeamPicker(ui, opts) {
       if (action === 'toggle') {
         if (squadId) return;
         if (selected.has(data.id)) selected.delete(data.id);
-        else if (selected.size < MAX_TEAM_SIZE) selected.add(data.id);
+        else if (selected.size < (opts.maxPick || MAX_TEAM_SIZE)) selected.add(data.id);
       } else if (action === 'squad') {
         if (selected.size) return;
         squadId = squadId === data.id ? null : data.id;

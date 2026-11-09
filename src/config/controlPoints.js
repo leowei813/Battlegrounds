@@ -46,7 +46,7 @@ const GARRISON = {
   npc: { 2: { level: 32, count: 10 }, 3: { level: 38, count: 12 }, 4: { level: 45, count: 14 }, 5: { level: 50, count: 16 } },
 };
 /** 守軍強度倍率（生命、攻擊） */
-export const CP_GARRISON_MUL = Math.sqrt(3);
+export const CP_GARRISON_MUL = 3;
 /** 被打下後每小時補回的守軍人數 */
 export const CP_REFILL_PER_HOUR = 1;
 /** 每名玩家每個控制點最多駐防人數 */

@@ -7,7 +7,8 @@ import { bus, EVT } from '../core/EventBus.js';
 import { escapeHtml } from '../utils/dom.js';
 import { SiegeMapLayer } from './SiegeMapLayer.js';
 import { PoiCanvasLayer } from './PoiCanvasLayer.js';
-import { ZoneLayer, ZONE_MODES, ZONE_MODE_ORDER } from './ZoneLayer.js';
+import { ZoneLayer, ZONE_MODES, ZONE_MODE_ORDER, FACTION_COLORS } from './ZoneLayer.js';
+import * as CP_CONFIG from '../config/controlPoints.js';
 
 const ZONE_MODE_KEY = 'jdqs.zoneMode';
 /** 危險度圖層模式（每台裝置各自記住） */
@@ -86,6 +87,8 @@ export class MapService {
     this.layers.others = L.layerGroup().addTo(this.map);
     this.layers.npcs = L.layerGroup().addTo(this.map);
     this.layers.infected = L.layerGroup().addTo(this.map);
+    this.layers.cps = L.layerGroup().addTo(this.map);
+    this.cpConfig = CP_CONFIG;
     this.layers.dungeons = L.layerGroup().addTo(this.map);
     this.layers.gps = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
@@ -180,7 +183,7 @@ export class MapService {
     }).addTo(this.layers.gps);
   }
 
-  /** 切換危險度圖層：淡 ↔ 關閉 */
+  /** 切換圖層：危險度 → 勢力圖 → 關閉 */
   cycleZoneMode() {
     const cur = this.zoneLayer?.mode || savedZoneMode();
     const next = ZONE_MODE_ORDER[(ZONE_MODE_ORDER.indexOf(cur) + 1) % ZONE_MODE_ORDER.length];
@@ -221,6 +224,36 @@ export class MapService {
 
 
   /** 重度感染據點（比巨型據點略大，標示淨化度） */
+  /** v14 控制點：旗幟標記（依佔領狀態上色），點擊打開控制點資訊；勢力圖底色一併更新 */
+  renderCps(game) {
+    if (!this.map || !this.layers.cps) return;
+    const { CONTROL_POINTS } = this.cpConfig || {};
+    if (!CONTROL_POINTS) return;
+    const cols = { mine: '#4fc3f7', other: '#9e9e9e', hostile: '#ef9a9a', neutral: '#bdbdbd', faction: '#ef5350' };
+    const st = CONTROL_POINTS.map((c) => `${c.id}:${game.cp.statusOf(c.id)}:${game.cp.data(c.id)?.faction || ''}`).join('|');
+    if (st === this.cpKey) return;
+    this.cpKey = st;
+    this.layers.cps.clearLayers();
+    CONTROL_POINTS.forEach((c) => {
+      const s = game.cp.statusOf(c.id);
+      L.marker([c.lat, c.lon], {
+        icon: this.icon(`<div class="cp-pin" style="--c:${cols[s] || '#bdbdbd'}">🚩<b>${c.no}</b></div>`, 'shelter-icon', 30),
+        zIndexOffset: 850,
+      }).on('click', () => bus.emit('ui:openCp', { id: c.id }))
+        .bindTooltip(`🚩 控制點 #${c.no}・${game.cp.summary(c.id).label}`, { direction: 'top', offset: [0, -14] })
+        .addTo(this.layers.cps);
+    });
+    if (this.zoneLayer) {
+      this.zoneLayer.factionColor = (i) => {
+        const c = CONTROL_POINTS[i];
+        const s = c ? game.cp.statusOf(c.id) : 'neutral';
+        if (s === 'faction') return FACTION_COLORS[game.cp.data(c.id)?.faction] || FACTION_COLORS.red;
+        return FACTION_COLORS[s] || FACTION_COLORS.neutral;
+      };
+      if (this.zoneLayer.mode === 'faction') this.zoneLayer.redraw();
+    }
+  }
+
   renderInfected(list = [], pin = 48) {
     if (!this.map) return;
     // 位置也列入比對：附近玩家據點載入或新建時，據點會換到不重疊的位置，要跟著重畫
