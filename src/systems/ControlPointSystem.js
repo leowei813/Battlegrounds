@@ -1,5 +1,5 @@
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR,
+  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR,
 } from '../config/controlPoints.js';
 import { inNpcHome } from '../config/zones.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
@@ -53,6 +53,18 @@ export class ControlPointSystem {
     return this.game.shared?.get('cp', id) || null;
   }
 
+  /** 佔領的勢力（沒有共用資料時：東側控制點屬於最近的大本營） */
+  factionOf(id) {
+    const d = this.data(id);
+    if (d) return d.faction || null;
+    return defaultFaction(cpById(id));
+  }
+
+  /** 勢力擁有的控制點 */
+  factionCps(f) {
+    return CONTROL_POINTS.filter((c) => this.factionOf(c.id) === f).map((c) => c.id);
+  }
+
   owners(id) {
     return (this.data(id)?.owners || []).filter((o) => o && o.p);
   }
@@ -64,9 +76,8 @@ export class ControlPointSystem {
 
   /** 控制點的狀態：mine（自己或好友佔領）、hostile（敵對玩家）、other（其他玩家）、faction、neutral */
   statusOf(id) {
-    const d = this.data(id);
     const own = this.owners(id);
-    if (d?.faction) return 'faction';
+    if (this.factionOf(id)) return 'faction';
     if (!own.length) return 'neutral';
     if (own.some((o) => this.isAlly(o.p))) return 'mine';
     if (own.every((o) => this.game.territory?.relation?.(o.p) === 'hostile')) return 'hostile';
@@ -102,13 +113,14 @@ export class ControlPointSystem {
     const d = this.data(id);
     const n = this.garrisonCount(id, now);
     const cb = this.game.combat;
-    const list = Array.from({ length: n }, (_, i) => (d?.faction
+    const fac = this.factionOf(id);
+    const list = Array.from({ length: n }, (_, i) => (fac
       ? cb.createEnemy(i === 0 ? 'raiderChief' : 'raider', cp.garrison.level)
       : cb.createEnemy(NEUTRAL_TYPES[i % NEUTRAL_TYPES.length], cp.garrison.level, i === 0)));
     // 感染者守軍校正成同等級掠奪者的強度，再乘上控制點倍率（強度表見 docs/v14-plan.md）
     const ref = unitPower(cb.createEnemy('raider', cp.garrison.level));
     list.forEach((e) => {
-      const k = (d?.faction ? 1 : ref / Math.max(1, unitPower(e))) * CP_GARRISON_MUL * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
+      const k = (fac ? 1 : ref / Math.max(1, unitPower(e))) * CP_GARRISON_MUL * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
       e.maxHp = Math.round(e.maxHp * k); e.hp = e.maxHp; e.atk = Math.round(e.atk * k);
     });
     return list;
@@ -116,7 +128,7 @@ export class ControlPointSystem {
 
   /** 防守方：玩家佔領的是駐防隊員，其他是 NPC／感染者守軍 */
   defenders(id, now = Date.now()) {
-    if (this.owners(id).length && !this.data(id)?.faction) {
+    if (this.owners(id).length && !this.factionOf(id)) {
       return (this.data(id)?.guards || []).flatMap((h) => (h.units || []).slice(0, CP_GUARD_MAX).map((u) => AssistSystem.unitOf({ id: h.p, name: h.n }, u)));
     }
     return this.npcGarrison(id, now);
@@ -267,7 +279,7 @@ export class ControlPointSystem {
     // 沒打下：守軍損失保留（NPC 守軍每小時補回；駐防隊員倒下的從名單移除）
     const downIds = new Set(result.foes.filter((f) => f.down).map((f) => f.ally?.player).filter(Boolean));
     await g.shared.update('cp', id, (x) => {
-      const data = x || { owners: [], guards: [] };
+      const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
       if (data.owners?.length && !data.faction) data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
       else { data.lost = Math.min(cp.garrison.count, (cp.garrison.count - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
       return { data };
@@ -396,6 +408,105 @@ export class ControlPointSystem {
     }
   }
 
+  // ================= 三大勢力的行動 =================
+
+  /** 勢力今天的進攻時間（遊戲時間 hour 點） */
+  turnTime(f, now = Date.now()) {
+    const t = this.game.time;
+    const h = t.totalHours(now);
+    const day0 = Math.floor(h / 24) * 24;
+    return now - ((h - day0 - FACTIONS[f].hour) / 24) * DAY_REAL_MS;
+  }
+
+  /**
+   * 勢力挑選進攻目標：只打和自己相鄰的控制點（沒有控制點時從大本營旁邊開始），
+   * 優先：無人駐守 → 守軍戰力最弱 → 離大本營最近。中立、其他勢力、玩家的控制點都可能被打。
+   */
+  pickTarget(f, now = Date.now()) {
+    const own = this.factionCps(f);
+    const near = new Set(own.length ? own.flatMap((id) => cpNeighbors(id)) : hqNeighbors(f));
+    own.forEach((id) => near.delete(id));
+    const hq = this.hqLatLon(f);
+    const list = [...near].map((id) => {
+      const cp = cpById(id);
+      const guarded = this.owners(id).length > 0 && !this.factionOf(id) && (this.data(id)?.guards || []).length > 0;
+      return { id, guarded, power: this.defensePower(id, now), dist: haversine(cp.lat, cp.lon, hq.lat, hq.lon) };
+    });
+    if (!list.length) return null;
+    list.sort((a, b) => (a.guarded - b.guarded) || (a.power - b.power) || (a.dist - b.dist));
+    return list[0].id;
+  }
+
+  hqLatLon(f) {
+    return factionHq(f);
+  }
+
+  /** 進攻部隊：目標控制點守軍規模 ×1.2、同等級的掠奪者 */
+  attackForce(f, id) {
+    const cp = cpById(id);
+    const cb = this.game.combat;
+    const n = Math.round(cp.garrison.count * 1.2);
+    return Array.from({ length: n }, (_, i) => {
+      const e = cb.createEnemy(i === 0 ? 'raiderChief' : 'raider', cp.garrison.level);
+      const k = CP_GARRISON_MUL * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
+      return {
+        id: `fx:${f}:${i}`, ally: { player: `npc:${f}`, i }, name: `${FACTIONS[f].name}${e.name}`,
+        maxHp: Math.round(e.maxHp * k), hp: Math.round(e.maxHp * k), atk: Math.round(e.atk * k), def: e.def || 0,
+        crit: e.crit || 0.05, critDmg: e.critDmg || 1.5, dodge: e.dodge || 0.02, atkSpeed: e.atkSpeed || 1, level: cp.garrison.level, skills: {}, lifeSteal: 0,
+      };
+    });
+  }
+
+  /** 每個勢力每天在自己的時間進攻一次（第一個處理的玩家結算並寫入共用資料，其他人直接讀結果） */
+  async npcTurns(now = Date.now()) {
+    const g = this.game;
+    if (!g.shared || g.state.map?.source !== 'generated') return;
+    const day = g.time.day(now);
+    for (const f of FACTION_KEYS) {
+      const at = this.turnTime(f, now);
+      if (now < at || this.busy.has(`turn:${f}`)) continue;
+      const own = this.factionCps(f);
+      if (own.length >= FACTION_SLOW_AT && day % 2) continue; // 控制點多的勢力隔天才進攻
+      if ((this.lastTurn || {})[f] === day) continue;
+      this.busy.add(`turn:${f}`);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const lock = await g.shared.update('cpturn', f, (x) => (x?.day === day ? { fail: 'done' } : { data: { day, at: now } }));
+        this.lastTurn = { ...(this.lastTurn || {}), [f]: day };
+        if (!lock.ok) continue;
+        const target = this.pickTarget(f, at);
+        if (!target) continue;
+        // eslint-disable-next-line no-await-in-loop
+        await this.npcAttack(f, target, at);
+      } finally {
+        this.busy.delete(`turn:${f}`);
+      }
+    }
+  }
+
+  async npcAttack(f, id, at = Date.now()) {
+    const g = this.game;
+    const cp = cpById(id);
+    const foes = this.defenders(id, at);
+    const attackers = this.attackForce(f, id);
+    const r = g.combat.simulate([], foes, { allies: attackers, record: false });
+    const win = !!r.victory || !foes.length;
+    const killed = r.foes.filter((x) => x.down).length;
+    const downIds = new Set(r.foes.filter((x) => x.down).map((x) => x.ally?.player).filter(Boolean));
+    const res = await g.shared.update('cp', id, (x) => {
+      const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
+      if (win) {
+        // 打下後留守：守軍約為進攻部隊的一半（之後每小時補回）
+        return { data: { owners: [], guards: [], faction: f, lost: Math.ceil(cp.garrison.count / 2), lostAt: at, takenAt: at, by: f } };
+      }
+      if (data.owners?.length && !data.faction) data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
+      else { data.lost = Math.min(cp.garrison.count, (cp.garrison.count - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
+      return { data };
+    }, { lat: cp.lat, lon: cp.lon });
+    if (res.ok && win) g.log(`🏴 勢力「${FACTIONS[f].name}」佔領了控制點 #${cp.no}`, 'danger');
+    return { win, ok: res.ok };
+  }
+
   /** 每 2 秒 */
   update(now = Date.now()) {
     if (now - (this.lastAt || 0) < 2000) return;
@@ -403,8 +514,14 @@ export class ControlPointSystem {
     this.resolveAttacks(now).catch(() => {});
     this.syncGuards(now).catch(() => {});
     this.checkHostileOwners(now).catch(() => {});
+    this.npcTurns(now).catch(() => {});
     this.startConvoys(now);
     this.deliverConvoys(now);
+  }
+
+  /** 某位玩家佔領的控制點數 */
+  countOf(pid) {
+    return CONTROL_POINTS.filter((c) => !this.factionOf(c.id) && this.owners(c.id).some((o) => o.p === pid)).length;
   }
 
   /** 控制點的說明文字（地圖、視窗共用） */
@@ -413,7 +530,8 @@ export class ControlPointSystem {
     const s = this.statusOf(id);
     const own = this.owners(id);
     const guards = this.data(id)?.guards || [];
-    const label = { mine: '你與好友可探索', hostile: '敵對玩家佔領', other: '其他玩家佔領', faction: '勢力佔領', neutral: '中立（感染者佔據）' }[s];
+    const fac = this.factionOf(id);
+    const label = { mine: '你與好友可探索', hostile: '敵對玩家佔領・不可探索', other: '其他玩家佔領・不可探索', faction: `${FACTIONS[fac]?.name || ''}勢力佔領・不可探索`, neutral: '中立（感染者佔據）・不可探索' }[s];
     return {
       cp, status: s, label, owners: own, guards, garrison: s === 'neutral' || s === 'faction' ? this.garrisonCount(id, now) : guards.reduce((a, h) => a + (h.units || []).length, 0),
       nextIncome: formatDuration(Math.max(0, this.incomeTime(now) + (now >= this.incomeTime(now) ? DAY_REAL_MS : 0) - now)),

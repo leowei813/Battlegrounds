@@ -232,14 +232,15 @@ export class MapService {
     const { CONTROL_POINTS } = this.cpConfig || {};
     if (!CONTROL_POINTS) return;
     const cols = { mine: '#4fc3f7', other: '#9e9e9e', hostile: '#ef9a9a', neutral: '#bdbdbd', faction: '#ef5350' };
-    const st = CONTROL_POINTS.map((c) => `${c.id}:${game.cp.statusOf(c.id)}:${game.cp.data(c.id)?.faction || ''}`).join('|');
+    const st = CONTROL_POINTS.map((c) => `${c.id}:${game.cp.statusOf(c.id)}:${game.cp.factionOf(c.id) || ''}`).join('|');
     if (st === this.cpKey) return;
     this.cpKey = st;
     this.layers.cps.clearLayers();
     CONTROL_POINTS.forEach((c) => {
       const s = game.cp.statusOf(c.id);
+      const col = s === 'faction' ? FACTION_COLORS[game.cp.factionOf(c.id)] : cols[s];
       L.marker([c.lat, c.lon], {
-        icon: this.icon(`<div class="cp-pin" style="--c:${cols[s] || '#bdbdbd'}">🚩<b>${c.no}</b></div>`, 'shelter-icon', 30),
+        icon: this.icon(`<div class="cp-pin" style="--c:${col || '#bdbdbd'}">🚩<b>${c.no}</b></div>`, 'shelter-icon', 30),
         zIndexOffset: 850,
       }).on('click', () => bus.emit('ui:openCp', { id: c.id }))
         .bindTooltip(`🚩 控制點 #${c.no}・${game.cp.summary(c.id).label}`, { direction: 'top', offset: [0, -14] })
@@ -249,7 +250,7 @@ export class MapService {
       this.zoneLayer.factionColor = (i) => {
         const c = CONTROL_POINTS[i];
         const s = c ? game.cp.statusOf(c.id) : 'neutral';
-        if (s === 'faction') return FACTION_COLORS[game.cp.data(c.id)?.faction] || FACTION_COLORS.red;
+        if (s === 'faction') return FACTION_COLORS[game.cp.factionOf(c.id)] || FACTION_COLORS.red;
         return FACTION_COLORS[s] || FACTION_COLORS.neutral;
       };
       if (this.zoneLayer.mode === 'faction') this.zoneLayer.redraw();

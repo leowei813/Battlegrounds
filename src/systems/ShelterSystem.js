@@ -198,7 +198,8 @@ export class ShelterSystem {
     if (!poi) return { ok: false, reason: '找不到地點' };
     if (this.baseAtPoi(poi.id)) return { ok: false, reason: '這裡已經是你的據點' };
     // 重度感染據點位置固定：據點（含警戒範圍）不能和它重疊
-    const inf = this.game.infected?.blocking(poi, BASE_SIZES[baseSizeOf(poi)]?.alert || 80);
+    // v14：避難所一律比照巨型的警戒範圍
+    const inf = this.game.infected?.blocking(poi, BASE_SIZES[this.primary() ? baseSizeOf(poi) : 'huge']?.alert || 80);
     if (inf) return { ok: false, reason: `這裡太靠近重度感染據點「${inf.name}」，無法建立據點` };
     // v14：避難所只能建在左側安全區（玩家據點區）
     if (this.game.state.map?.source === 'generated' && !inPlayerSafe(poi.lat, poi.lon)) return { ok: false, reason: '避難所只能建在地圖左側的安全區' };

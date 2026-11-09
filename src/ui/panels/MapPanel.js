@@ -541,7 +541,7 @@ export class MapPanel {
       return list.length ? `<div class="card siege-card"><b>⚔️ 「${escapeHtml(b.name)}」正被攻打</b>
         ${list.map((r) => `<small class="block">${r.kind === 'npc' ? '🏴‍☠️' : '👤'} ${escapeHtml(r.by)}・約 ${formatDuration(r.at - now)}後抵達</small>`).join('')}</div>` : '';
     }).join('') : '';
-    return `<p>${relTag} 🏛️ 文明度 <b>${p.civ}</b>・據點 ${p.bases.length} 個・外出隊伍 ${trips.length} 支</p>
+    return `<p>${relTag} 🏛️ 文明度 <b>${p.civ}</b>・控制點 ${this.game.cp.countOf(p.id)} 個・外出隊伍 ${trips.length} 支</p>
       ${raidHtml}${siegeHtml}${assistRow}
       <div class="btn-row">${diplo}</div>
       <div class="pick-list">${p.bases.map((b, i) => `<div class="pick-row"><span>${b.primary ? '⭐' : '🏴'} ${escapeHtml(b.name)}</span><small class="muted">警戒 ${b.alert}m・駐守 ${b.guards} 人</small>

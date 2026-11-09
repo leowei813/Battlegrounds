@@ -6160,6 +6160,45 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(A.cp.garrisonCount(cp.id) < cp.garrison.count, '回到中立後守軍慢慢補回');
 }
 
+// ---- v14 第 3 批：三大勢力（起始控制點、相鄰進攻、優先無人駐守、打下留守、NPC 據點數量） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const CPC = await import('../src/config/controlPoints.js');
+  const Z = await import('../src/config/zones.js');
+  const gq = Game.newGame({ playerName: 'Q3', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gq.genMap();
+  gq.shelter.establish(gq.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gq.shelter.canEstablish(p).ok));
+  gq.shared.backend = new MemoryObjects();
+  gq.world = { others: [], myId: 'Q3', identity: () => ({ id: 'Q3', token: 't' }) };
+  const own = Object.fromEntries(CPC.FACTION_KEYS.map((f) => [f, gq.cp.factionCps(f)]));
+  assert(CPC.FACTION_KEYS.every((f) => own[f].length >= 1) && own.red.every((id) => CPC.cpById(id).side === 'npc'), `三大勢力一開始各自擁有東側的控制點（${JSON.stringify(own)}）`);
+  CPC.FACTION_KEYS.forEach((f) => {
+    const t = gq.cp.pickTarget(f);
+    assert(t && own[f].some((id) => CPC.cpNeighbors(id).includes(t)) && !own[f].includes(t), `勢力「${CPC.FACTIONS[f].name}」只攻打相鄰的控制點（${t}）`);
+  });
+  // 有駐防的排在後面：把 black 的候選之一標記為玩家佔領＋駐防
+  const cands = [...new Set(own.black.flatMap((id) => CPC.cpNeighbors(id)))].filter((id) => !own.black.includes(id));
+  const first = gq.cp.pickTarget('black');
+  await gq.shared.update('cp', first, () => ({ data: { owners: [{ p: 'X', n: 'X' }], guards: [{ p: 'X', n: 'X', e: 'e1', units: [{ i: 0, hp: 9e5, maxHp: 9e5, atk: 1, lv: 1 }] }], faction: null } }));
+  const second = gq.cp.pickTarget('black');
+  assert(cands.length < 2 || second !== first, `優先攻擊無人駐守的控制點（${first} 有駐防 → 改打 ${second}）`);
+  // 勢力打下後留守、擁有數增加；NPC 據點依控制點數量建立（每 3 個 1 座，最多 4 座）
+  const before = gq.cp.factionCps('blue').length;
+  const tgt = gq.cp.pickTarget('blue');
+  const sim = gq.combat.simulate.bind(gq.combat);
+  gq.combat.simulate = (t, f, o) => { const r = sim(t, f, o); r.victory = true; return r; };
+  const ra = await gq.cp.npcAttack('blue', tgt);
+  gq.combat.simulate = sim;
+  assert(ra.win && gq.cp.factionOf(tgt) === 'blue' && gq.cp.factionCps('blue').length === before + 1, '勢力打下控制點後佔領');
+  assert(gq.cp.garrisonCount(tgt) < CPC.cpById(tgt).garrison.count && gq.cp.garrisonCount(tgt) > 0, '打下後留下一半守軍');
+  gq.npcs.fillCells(Date.now(), { silent: true });
+  const bases = gq.npcs.list.filter((n) => n.faction);
+  const expect = CPC.FACTION_KEYS.reduce((a, f) => a + Math.min(4, Math.floor(gq.cp.factionCps(f).length / 3)), 0);
+  assert(bases.length === expect && bases.every((n) => n.level >= 35 && n.name.includes('・')), `NPC 據點依勢力的控制點數建立、Lv35 起（${bases.length}/${expect} 座：${bases.map((n) => n.name).join('、')}）`);
+  assert(!gq.npcs.list.some((n) => n.sid && !n.faction), '新地圖不再有散布式的舊 NPC 據點');
+  assert(gq.cp.countOf('X') === 1, '玩家資訊顯示佔領的控制點數');
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

@@ -110,3 +110,34 @@ export function cpNeighbors(id) {
   }
   return [...(adjCache[id] || [])];
 }
+
+/**
+ * v14 三大勢力：大本營在地圖右側上、中、下（不能攻打、不出兵）。
+ * hour：每天進攻的遊戲時間；hq：大本營位置（地圖相對位置）。
+ */
+export const FACTIONS = {
+  red: { name: '赤月', color: '#ef5350', hour: 8, hq: [0.93, 0.17] },
+  black: { name: '黑曜', color: '#ffb300', hour: 12, hq: [0.93, 0.5] },
+  blue: { name: '冥府', color: '#7e57c2', hour: 16, hq: [0.93, 0.83] },
+};
+export const FACTION_KEYS = Object.keys(FACTIONS);
+/** 大本營位置（經緯度） */
+export const factionHq = (f) => toLatLon(...FACTIONS[f].hq);
+/** NPC 據點：每擁有 3 個控制點建 1 座，最多 4 座，起始 Lv35 */
+export const FACTION_BASE = { perCps: 3, max: 4, level: 35 };
+/** 控制點越多進攻頻率越低：擁有這麼多以上時隔天才進攻一次 */
+export const FACTION_SLOW_AT = 8;
+
+/** 一開始（沒有共用資料時）各勢力擁有的控制點：東側（勢力側）依南北位置分給最近的大本營 */
+export function defaultFaction(cp) {
+  if (!cp || cp.side !== 'npc') return null;
+  const { y } = toXY(cp.lat, cp.lon);
+  return y < 1 / 3 ? 'red' : y < 2 / 3 ? 'black' : 'blue';
+}
+
+/** 和大本營相鄰的控制點（最東側那一排）：勢力沒有控制點時可以從這裡開始進攻 */
+export function hqNeighbors(f) {
+  const east = CONTROL_POINTS.filter((c) => toXY(c.lat, c.lon).x > 0.7);
+  const hy = FACTIONS[f].hq[1];
+  return east.filter((c) => Math.abs(toXY(c.lat, c.lon).y - hy) < 0.34).map((c) => c.id);
+}

@@ -19,6 +19,7 @@ import {
 } from '../utils/math.js';
 import { seeded, cellOf as gridCell, cellBox } from '../multiplayer/worldGrid.js';
 import { inWorld } from '../config/world.js';
+import { FACTIONS, FACTION_KEYS, FACTION_BASE, cpById } from '../config/controlPoints.js';
 
 /**
  * 共用 NPC：位置、名稱、基礎等級由「格子＋世代」決定（所有玩家相同）；
@@ -140,6 +141,7 @@ export class NpcSystem {
 
   /** 共用格子中某一格的 NPC（被摧毀等待重生時回傳 null）；由種子決定，所有玩家相同 */
   slotNpc(cellKey, slot, now = Date.now()) {
+    if (String(cellKey).startsWith('fx:')) return this.factionSlot(cellKey.slice(3), slot, now);
     const [i, j] = cellKey.split(':').map(Number);
     const sid = `${cellKey}:${slot}`;
     // 密度：部分名額固定沒有 NPC（依種子決定，所有玩家相同）
@@ -183,6 +185,42 @@ export class NpcSystem {
     });
     // 被攻陷後重生的據點：至少 respawnMinLevel 級
     if (dc > 0) npc.baseLevel = Math.max(npc.baseLevel, this.minLevel(npc));
+    return npc;
+  }
+
+  /**
+   * v14：三大勢力的 NPC 據點：每擁有 3 個控制點建 1 座（最多 4 座），起始 Lv35，建在自己最靠前線的控制點附近。
+   * 被摧毀後 36 小時才重建（共用資料 destroyed）。
+   */
+  factionSlot(f, slot, now = Date.now()) {
+    const cps = this.game.cp?.factionCps(f) || [];
+    const count = Math.min(FACTION_BASE.max, Math.floor(cps.length / FACTION_BASE.perCps));
+    if (slot >= count || !FACTIONS[f]) return null;
+    const sid = `fx:${f}:${slot}`;
+    const gen = 0;
+    const d = this.sharedOf(sid, gen);
+    const dc = d?.dc || 0;
+    if (d?.destroyed && now < d.destroyed.respawnAt) return null;
+    // 最靠近前線（最西邊）的控制點優先
+    const list = cps.map((id) => cpById(id)).sort((a, b) => a.lon - b.lon);
+    const cp = list[slot];
+    if (!cp) return null;
+    const ident = `${sid}:${gen}:${dc}:${cp.id}`;
+    const npc = seeded(`npc:${ident}`, () => {
+      const ang = randFloat(0, Math.PI * 2);
+      const r = randFloat(80, 180);
+      const lat = cp.lat + (Math.sin(ang) * r) / 111320;
+      const lon = cp.lon + (Math.cos(ang) * r) / (111320 * Math.cos((cp.lat * Math.PI) / 180));
+      return {
+        sid, ident, gen, dc, cell: `fx:${f}`, lat, lon, bornAt: d?.destroyed?.respawnAt || SHARED_NPC.freezeAt, baseLevel: FACTION_BASE.level,
+        faction: f, cp: cp.id, name: pick(NPC_NAMES),
+        resources: {
+          food: randInt(60, 160), wood: randInt(60, 200), fuel: randInt(10, 60), scrap: randInt(10, 40), nail: randInt(10, 40), bandage: randInt(0, 4),
+        },
+        coins: randInt(40, 120),
+      };
+    });
+    npc.baseLevel = Math.max(npc.baseLevel, FACTION_BASE.level);
     return npc;
   }
 
@@ -311,11 +349,13 @@ export class NpcSystem {
     const pois = this.game.state.map.pois;
     const real = pois.filter((p) => String(p.id).startsWith('w_'));
     const cells = new Set();
-    (real.length ? real : pois).forEach((p) => cells.add(this.cellOf(p.lat, p.lon)));
+    // v14：新地圖只有三大勢力的 NPC 據點（建在自己的控制點附近）
+    if (this.game.state.map.source === 'generated' && this.game.cp) FACTION_KEYS.forEach((f) => cells.add(`fx:${f}`));
+    else (real.length ? real : pois).forEach((p) => cells.add(this.cellOf(p.lat, p.lon)));
     const want = [];
     cells.forEach((key) => {
       const inCell = [];
-      for (let slot = 0; slot < NPC_CONFIG.perCell; slot += 1) {
+      for (let slot = 0; slot < (String(key).startsWith('fx:') ? FACTION_BASE.max : NPC_CONFIG.perCell); slot += 1) {
         const s = this.slotNpc(key, slot, now);
         if (!s) continue;
         // 同一格裡靠太近的 NPC 只保留編號小的：只依格子本身判斷，與各玩家看到的範圍無關（所有玩家相同）
@@ -361,6 +401,8 @@ export class NpcSystem {
       if (used.has(NPC_NAMES[idx])) idx = Math.max(0, NPC_NAMES.findIndex((x) => !used.has(x)));
       s.name = NPC_NAMES[idx];
       used.add(s.name);
+      // v14：三大勢力的據點名稱前面加上勢力名
+      if (s.faction && FACTIONS[s.faction]) s.name = `${FACTIONS[s.faction].name}・${s.name}`;
     });
     return list;
   }
@@ -372,6 +414,7 @@ export class NpcSystem {
       id: `npc_${s.ident.replace(/:/g, '_')}`,
       sid: s.sid,
       ident: s.ident,
+      ...(s.faction ? { faction: s.faction, cp: s.cp } : {}),
       gen: s.gen,
       dc: s.dc,
       name: s.name,
