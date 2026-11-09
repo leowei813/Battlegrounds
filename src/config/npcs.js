@@ -51,6 +51,8 @@ export const NPC_ASSAULT = { hp: 22.5, atk: 11.25, count: 2, wall: 1.5, dps: 1.2
 export const NPC_REWARD_MUL = 4;
 /** 集結攻陷時的分配：保底比例（平均分給每支隊伍），其餘依造成的傷害分配 */
 export const RALLY_SHARE_FLOOR = 0.2;
+/** 集結戰鬥的經驗：打贏時沒倒下的隊員額外獲得「自己升級所需經驗」的 winPct；倒下的懲罰改為升級所需經驗的 downPct（一般為 10%） */
+export const RALLY_XP = { winPct: 0.03, downPct: 0.03 };
 
 /**
  * NPC 勢力名稱（v12 中二風格）：前綴 × 後綴組合，共 640 種；同一張地圖上不會重複（見 NpcSystem.uniqueNames）。

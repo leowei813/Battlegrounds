@@ -85,7 +85,7 @@ export function sanitizePresence(body) {
       ...(t.defeated ? { defeated: true } : {}),
       ...(t.kind === 'trade' ? { kind: 'trade', targetId: str(t.targetId, 40), stall: sanitizeStall(t.stall) } : {}),
       ...(t.kind === 'deliver' ? { kind: 'deliver' } : {}),
-      ...(t.kind === 'assist' ? { kind: 'assist' } : {}),
+      ...(['assist', 'explore', 'cpGuard', 'cp'].includes(t.kind) ? { kind: t.kind } : {}),
       ...(t.rally ? { rally: str(t.rally, 60) } : {}),
     };
   }).filter(Boolean);

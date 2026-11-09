@@ -1935,6 +1935,32 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     assert(xe > 0 && ra2 && ra2.xp > 0 && ra2.events.some((e) => /集結戰鬥經驗/.test(e)), `集結打贏：參戰隊員獲得經驗（每人 ${xe}，報告 +${ra2?.xp}）`);
   }
   {
+    // v15.7：集結打贏另外獲得升級所需經驗的 RALLY_XP.winPct；倒下只扣 RALLY_XP.downPct
+    const { RALLY_XP } = await import('../src/config/npcs.js');
+    const { xpToNext } = await import('../src/config/survivors.js');
+    const s1 = A.survivors.leader();
+    const lv0 = s1.level; const xp00 = s1.xp;
+    s1.severe = false; s1.level = 30; s1.xp = 0; A.survivors.setHp(s1, A.survivors.maxHp(s1));
+    const need = xpToNext(30);
+    const fk = (id, win, down) => ({ id, kind: 'rally', memberIds: [s1.id], endAt: Date.now(), rallyVictory: win, rallyTarget: { name: '測試' }, rallyResult: { units: [{ i: 0, hp: down ? 0 : 50, down, dealt: 1, kills: 0 }], coins: 0, items: [], mats: {}, xpEach: 0 } });
+    const rpX = A.rally.report(fk('rxp1', true, false));
+    const got = s1.xp;
+    assert(got >= Math.round(need * RALLY_XP.winPct) && rpX.events.some((e) => /集結勝利經驗/.test(e)), `集結打贏：沒倒下的隊員另外獲得升級所需經驗的 ${RALLY_XP.winPct * 100}%（+${got}）`);
+    A.rally.report(fk('rxp2', false, false));
+    assert(s1.xp === got, '集結打輸沒有勝利經驗');
+    s1.xp = Math.round(need * 0.5); const xb = s1.xp;
+    A.rally.report(fk('rxp3', true, true));
+    assert(xb - s1.xp === Math.round(need * RALLY_XP.downPct), `集結倒下只扣升級所需經驗的 ${RALLY_XP.downPct * 100}%（-${xb - s1.xp}）`);
+    s1.severe = false; s1.level = lv0; s1.xp = xp00; A.survivors.setHp(s1, A.survivors.maxHp(s1));
+  }
+  {
+    // v15.7：舊版遊戲送出的控制點行程沒有 kind：依停留時間判斷駐防或攻打
+    const { cleanPlayer } = await import('../src/multiplayer/WorldSync.js');
+    const base = { from: { lat: 25, lon: 121 }, to: { lat: 25.01, lon: 121.01 }, startAt: 1, travelMs: 1000, target: '🚩 控制點 #3' };
+    const pl = cleanPlayer({ id: 'x', name: 'x', bases: [{ lat: 25, lon: 121, name: 'b' }], trips: [{ ...base, searchMs: 7 * 24 * 3600000, endAt: 7 * 24 * 3600000 + 3000 }, { ...base, searchMs: 60000, endAt: 70000 }, { ...base, target: '超市', searchMs: 9e8, endAt: 9e8 + 3000 }] });
+    assert(pl.trips[0].kind === 'cpGuard' && pl.trips[1].kind === 'cp' && !pl.trips[2].kind, `舊版玩家的駐防隊顯示為駐防中（${pl.trips.map((t) => t.kind).join(',')}）`);
+  }
+  {
     // v15.6.1：集結結束後比照一般戰鬥：生命低於 70% 的人從藥品欄吃藥補血
     const sv = A.survivors.leader();
     const SUP = await import('../src/config/supplies.js');

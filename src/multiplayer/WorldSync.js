@@ -132,6 +132,8 @@ export function cleanPlayer(p) {
       id: String(t.id || '').slice(0, 40), level: finite(t.level) ? Math.min(60, Math.max(1, Math.round(t.level))) : 1,
       defeated: !!t.defeated,
       ...(['assist', 'explore', 'cpGuard', 'cp'].includes(t.kind) ? { kind: t.kind } : {}),
+      // v15.7：舊版遊戲送出的行程沒有 kind：前往控制點、停留超過 1 天的是駐防隊（駐防一次 7 天），其他是攻打控制點
+      ...(!t.kind && /^🚩 控制點 #/.test(String(t.target || '')) ? { kind: finite(t.searchMs) && t.searchMs > 24 * 3600000 ? 'cpGuard' : 'cp' } : {}),
       ...(t.rally ? { rally: String(t.rally).slice(0, 60) } : {}),
     }));
   return {
