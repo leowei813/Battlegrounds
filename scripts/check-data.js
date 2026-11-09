@@ -3229,7 +3229,26 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const r2 = gq2.equipment.quickEquip(lead.id);
   const lo = gq2.survivors.loadout(lead);
   assert(lead.equipment.weapon === gun.id && lo.ammo?.key === 'ammo556' && lo.ammo.qty === 50 && gq2.state.supplies.ammo9 === 30 && !gq2.equipment.ammoWarn(gun, lead), `快速換裝：彈藥欄改裝新武器的彈藥，原本的彈藥放回倉庫（${r2.msg}）`);
-  void pistol;
+  // v15.7：卸下槍械：彈藥欄的子彈放回倉庫；倉庫滿了放進背包
+  gq2.equipment.addItem(pistol, 't');
+  const a0 = gq2.state.supplies.ammo556 || 0;
+  const ru = gq2.equipment.unequip(lead.id, 'weapon');
+  assert(ru.ok && !gq2.survivors.loadout(lead).ammo && (gq2.state.supplies.ammo556 || 0) === a0 + 50 && /放回倉庫/.test(ru.msg || ''), `卸下槍械：子彈直接放回倉庫（${ru.msg}）`);
+  // 換槍（不同子彈）：舊子彈放回倉庫；倉庫放不下時放進背包
+  gq2.equipment.equip(lead.id, gun.id);
+  gq2.survivors.loadSlot(lead.id, 'ammo', 'ammo556', 40);
+  const room0 = gq2.survivors.storeRoom;
+  gq2.survivors.storeRoom = () => 10;
+  lead.bag = {};
+  const re = gq2.equipment.equip(lead.id, pistol.id);
+  gq2.survivors.storeRoom = room0;
+  assert(re.ok && gq2.survivors.loadout(lead).ammo?.key !== 'ammo556' && (lead.bag.ammo556 || 0) === 30 && /放進背包/.test(re.msg || ''), `換槍：倉庫滿了，放不下的子彈放進背包（${re.msg}）`);
+  // 換上用同樣子彈的槍：子彈不動
+  gq2.survivors.loadSlot(lead.id, 'ammo', 'ammo9', 10);
+  const same = gq2.equipment.generate({ level: 2, model: 'm9', rarity: 'common' });
+  gq2.equipment.addItem(same, 't');
+  gq2.equipment.equip(lead.id, same.id);
+  assert(gq2.survivors.loadout(lead).ammo?.key === 'ammo9', '換上用同樣子彈的槍：彈藥欄不動');
 }
 
 // ---- 62. v9 警戒模式 ----
