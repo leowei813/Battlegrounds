@@ -6297,6 +6297,19 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const f0 = A.state.resources.food;
   A.cp.deliverConvoys(cv.endAt + 1);
   assert(A.state.resources.food > f0 && !A.cp.st.convoys.length, '運輸隊抵達避難所後收益入庫');
+  // v15.4.1：駐防沒有期限（快到期時自動延長），佔領者與好友解除關係時駐防隊撤回
+  {
+    await B.shared.poll();
+    const ge = gd.exp;
+    const stayEnd0 = ge.startAt + ge.travelMs + ge.searchMs;
+    B.cp.extendGuards(stayEnd0 - 1000);
+    assert(ge.startAt + ge.travelMs + ge.searchMs > stayEnd0 && !ge.recalled, '駐防快到期時自動延長（直到撤回或被打下）');
+    const rel0 = B.state.relations.players.A;
+    B.state.relations.players.A = { status: 'neutral' };
+    B.cp.extendGuards(Date.now());
+    assert(ge.recalled && B.state.log.some((l) => /駐防隊撤回/.test(l.msg)), '和佔領者解除好友關係：駐防隊撤回');
+    B.state.relations.players.A = rel0;
+  }
   // 共同佔領者變成敵對：回到中立
   await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, owners: [{ p: 'A', n: 'A' }, { p: 'C', n: 'C' }] } }));
   A.state.relations.players.C = { status: 'hostile' };

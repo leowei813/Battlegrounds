@@ -490,7 +490,8 @@ export const SiegeMapLayer = L.Layer.extend({
       const stay = p.phase === 'searching' && STAY_NAMES[exp.kind];
       const phName = exp.defeated ? '🏳️ 撤回中' : exp.recalled ? '↩️ 召回中' : stay || `${ph.icon} ${ph.name}`;
       let line1 = exp.defeated || exp.recalled ? `${phName}・剩 ${km(Math.max(0, p.totalM - p.movedM))}` : p.totalM ? `${phName}・${km(p.movedM)} / ${km(p.totalM)}` : phName;
-      let line2 = `⏱ 剩 ${formatDuration(p.remainingMs)}`;
+      // 駐防中：沒有期限（直到撤回或被打下），不顯示剩餘時間
+      let line2 = stay && exp.kind === 'cpGuard' ? '直到撤回或被打下' : `⏱ 剩 ${formatDuration(p.remainingMs)}`;
       // 集結：出發前在避難所等待；交戰結果出來前顯示抵達時間（不顯示預留的回家時間）
       if (exp.kind === 'rally' && (exp.rallyResult || exp.recalled)) {
         const rs = this.game.rally.statusOf(exp, now);

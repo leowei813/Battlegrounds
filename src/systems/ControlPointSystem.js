@@ -255,6 +255,26 @@ export class ControlPointSystem {
     return { ok: true, exp, msg: `隊伍出發駐防控制點 #${cpById(id).no}，約 ${Math.max(1, Math.round(exp.travelMs / 60000))} 分鐘後抵達` };
   }
 
+  /** v15.4.1：駐防沒有期限（直到撤回或被打下）：快到期時自動延長 */
+  extendGuards(now = Date.now()) {
+    const g = this.game;
+    // 控制點不再是自己或好友的（例如共同佔領的好友解除關係、被打下）：駐防隊撤回
+    g.state.expeditions.filter((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated && e.cpId && this.statusOf(e.cpId) !== 'mine').forEach((e) => {
+      if (!g.exploration.canRecall(e, now)) return;
+      const r = g.exploration.recall(e.id, now);
+      if (!r.ok) return;
+      const msg = `🛡️ 控制點 #${cpById(e.cpId)?.no || ''}已不是你或好友的控制點，駐防隊撤回`;
+      e.travelEvents = [...(e.travelEvents || []), msg];
+      g.log(msg, 'danger');
+    });
+    g.state.expeditions.filter((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated).forEach((e) => {
+      const stayEnd = e.startAt + (e.travelMs || 0) + (e.searchMs || 0);
+      if (stayEnd - now > GUARD_STAY_MS / 2) return;
+      e.searchMs = (e.searchMs || 0) + GUARD_STAY_MS;
+      e.endAt = e.startAt + (e.travelMs || 0) * 2 + e.searchMs;
+    });
+  }
+
   /** 已抵達的駐防隊（寫入共用資料，讓攻打方能讀到守軍） */
   async syncGuards(now = Date.now()) {
     const g = this.game;
@@ -696,6 +716,7 @@ export class ControlPointSystem {
     if (now - (this.lastAt || 0) < 2000) return;
     this.lastAt = now;
     this.resolveAttacks(now).catch(() => {});
+    this.extendGuards(now);
     this.syncGuards(now).catch(() => {});
     this.checkHostileOwners(now).catch(() => {});
     this.npcTurns(now).catch(() => {});
