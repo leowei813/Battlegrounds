@@ -6336,6 +6336,9 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const la = A.state.log.filter((l) => /部隊正前往/.test(l.msg));
     assert(la.length - cntA0 === 1 && /你佔領的控制點/.test(la[0].msg), `佔領者收到一則紅色提醒（${la[0]?.msg || ''}）`);
     assert(B.state.log.some((l) => /部隊正前往你駐防的控制點/.test(l.msg)), '駐防者也收到提醒');
+    // v15.7：地圖左上角持續顯示紅色威脅訊息（同 NPC 攻打避難所），抵達後消失
+    assert(A.cp.incoming(t0 + 1000).some((x) => x.text.includes(`控制點 #${cp.no}`)) && B.cp.incoming(t0 + 1000).length > 0, '佔領者與駐防者的地圖左上角顯示勢力部隊前往控制點的紅色訊息');
+    assert(!A.cp.incoming(mch.arriveAt + 1).some((x) => x.text.includes(`控制點 #${cp.no}`)), '部隊抵達後紅色訊息消失');
     // 同一人同時是佔領者與駐防者：只收到一則
     await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, guards: [...(x.guards || []), { p: 'A', n: 'A', e: 'eA', units: [] }], march: { ...x.march, arriveAt: x.march.arriveAt + 1 } } }));
     const cntA1 = A.state.log.filter((l) => /部隊正前往/.test(l.msg)).length;
@@ -6527,6 +6530,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const { RAID_TRAVEL: RT } = await import('../src/config/constants.js');
     assert(amb && amb.hitAt - arrive >= RT.minMin * 60000 - 5, `大本營派出部隊、移動時間比照攻打避難所（約 ${Math.round((amb?.hitAt - arrive) / 60000)} 分鐘）`);
     assert(gr.cp.marchView(arrive + 1000).some((m) => m.id === `ma:${e.id}`), '地圖上顯示前往探索點的大本營部隊');
+    assert(gr.cp.incoming(arrive + 1000).some((x) => /大本營部隊 → 探索點/.test(x.text)), '地圖左上角顯示大本營部隊前往探索點的紅色訊息');
     e.cp = e.cp || { gained: {} };
     e.cp.gained = { ...(e.cp.gained || {}), food: 10 };
     gr.cp.hqAmbushes(amb.hitAt + 1);

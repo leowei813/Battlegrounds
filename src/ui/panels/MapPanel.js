@@ -695,6 +695,10 @@ export class MapPanel {
     g.threatDetails(now).filter((t) => t.kind !== 'siege').forEach((t) => {
       rows.push(`<button class="feed-chip danger" data-action="gotoShelter">⚠️ ${escapeHtml(t.text)}${t.at ? `・約 ${formatDuration(t.at - now)}後抵達` : ''}</button>`);
     });
+    // v15.7：勢力部隊前往自己的控制點、大本營部隊前往自己的探索隊（點擊移到目標）
+    (g.cp?.incoming?.(now) || []).forEach((t) => {
+      rows.push(`<button class="feed-chip danger" data-action="feedFocus" data-lat="${t.lat}" data-lon="${t.lon}">⚠️ ${escapeHtml(t.text)}・約 ${formatDuration(t.at - now)}後抵達</button>`);
+    });
     // 好友遭受玩家／NPC 攻打：點擊直接進入增援指派（好友的屍潮不顯示在這裡）
     const seen = new Set();
     g.assist.friendRaids(now).map((x) => ({ p: x.player, text: `遭 ${x.raid.by} 攻打・約 ${formatDuration(x.raid.at - now)}後抵達` })).forEach(({ p, text }) => {
@@ -815,6 +819,11 @@ export class MapPanel {
         if (this.game.assist.trips().some((e) => e.assistTarget?.playerId === p.id)) this.openPlayer(p.id);
         else this.openAssist(p);
       }
+    }
+    if (action === 'feedFocus') {
+      const lat = Number(data.lat); const lon = Number(data.lon);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) this.service.focus(lat, lon, 16);
+      return;
     }
     if (action === 'flyTo') {
       const b = this.game.shelter.base(data.id);

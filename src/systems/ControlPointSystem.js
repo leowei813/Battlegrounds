@@ -707,6 +707,31 @@ export class ControlPointSystem {
     }
   }
 
+  /**
+   * v15.7：地圖左上角的紅色威脅訊息（同 NPC 攻打避難所）：
+   * 勢力部隊正前往自己佔領／駐防的控制點、大本營部隊正前往自己的探索隊。
+   * @returns {{text:string, at:number, lat:number, lon:number}[]}
+   */
+  incoming(now = Date.now()) {
+    const out = [];
+    const me = this.myId();
+    CONTROL_POINTS.forEach((cp) => {
+      const m = this.data(cp.id)?.march;
+      if (!m || now >= m.arriveAt) return;
+      const owner = this.owners(cp.id).some((o) => o.p === me);
+      const guard = (this.data(cp.id)?.guards || []).some((h) => h.p === me);
+      if (!owner && !guard) return;
+      const at = this.markerSpot(cp.id);
+      out.push({ text: `勢力「${FACTIONS[m.f]?.name || ''}」部隊 → 控制點 #${cp.no}`, at: m.arriveAt, lat: at.lat, lon: at.lon });
+    });
+    this.game.state.expeditions.forEach((e) => {
+      const a = e.hqAmbush;
+      if (!a || a.done || e.recalled || now >= a.hitAt) return;
+      out.push({ text: `${FACTIONS[a.f]?.name || ''}大本營部隊 → 探索點「${this.game.exploration.poi(e.poiId)?.name || ''}」`, at: a.hitAt, lat: a.to.lat, lon: a.to.lon });
+    });
+    return out.sort((a, b) => a.at - b.at);
+  }
+
   /** 前往自己（或好友）控制點的進攻部隊：提醒一次 */
   warnMarches(now = Date.now()) {
     this.warned = this.warned || new Set();
