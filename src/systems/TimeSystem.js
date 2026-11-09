@@ -1,9 +1,11 @@
-import { DAY_REAL_MS, WORLD_EPOCH_MS, WORLD_START } from '../config/constants.js';
+import {
+  DAY_REAL_MS, DAY_REAL_MS_OLD, DAY_SWITCH_AT, WORLD_EPOCH_MS, WORLD_START,
+} from '../config/constants.js';
 import { TIME_PHASES, phaseForHour } from '../config/timePhases.js';
 
 /**
  * 日夜系統（v9：世界時間）：所有玩家共用同一個日曆，從 WORLD_EPOCH_MS（2050/1/1 06:00）起算，
- * 遊戲一天＝現實 1 小時，大家的時間、日夜都相同。生存天數另外從自己的開局時間起算。
+ * 遊戲一天＝現實 90 分鐘（v15.7 之前 1 小時），大家的時間、日夜都相同。生存天數另外從自己的開局時間起算。
  */
 export class TimeSystem {
   constructor(game) {
@@ -13,8 +15,21 @@ export class TimeSystem {
   /** 遊戲經過的總小時數（含起始偏移） */
   totalHours(at = Date.now()) {
     // worldShift 只在測試時用來調整時刻
-    const elapsed = at - WORLD_EPOCH_MS + (this.game.state.worldShift || 0);
-    return WORLD_START.hour + (elapsed / DAY_REAL_MS) * 24;
+    return TimeSystem.hoursAt(at + (this.game.state.worldShift || 0));
+  }
+
+  /**
+   * 現實時間 → 遊戲經過的總小時數。v15.7：DAY_SWITCH_AT 之前一天 60 分鐘、之後一天 90 分鐘（接續計算，不會跳）。
+   */
+  /** 這個時刻遊戲一天的現實長度（毫秒） */
+  static dayMs(t = Date.now()) {
+    return t < Math.max(WORLD_EPOCH_MS, TimeSystem.switchAt) ? DAY_REAL_MS_OLD : DAY_REAL_MS;
+  }
+
+  static hoursAt(t) {
+    const sw = Math.max(WORLD_EPOCH_MS, TimeSystem.switchAt);
+    if (t <= sw) return WORLD_START.hour + ((t - WORLD_EPOCH_MS) / DAY_REAL_MS_OLD) * 24;
+    return WORLD_START.hour + ((sw - WORLD_EPOCH_MS) / DAY_REAL_MS_OLD) * 24 + ((t - sw) / DAY_REAL_MS) * 24;
   }
 
   /** 世界日序（2050/1/1 為第 1 天） */
@@ -24,7 +39,8 @@ export class TimeSystem {
 
   /** 生存天數：從自己開局算起（第 1 天開始） */
   survivalDay(at = Date.now()) {
-    return Math.max(1, Math.floor((at - (this.game.state.createdAt || at)) / DAY_REAL_MS) + 1);
+    const c = this.game.state.createdAt || at;
+    return Math.max(1, Math.floor((TimeSystem.hoursAt(at) - TimeSystem.hoursAt(c)) / 24) + 1);
   }
 
   /** 世界日期（2050/1/1 起） */
@@ -35,7 +51,7 @@ export class TimeSystem {
 
   /** 夜晚編號：夜晚跨過午夜，以入夜那天計（20:00～隔天 06:00 為同一晚） */
   nightKey(at = Date.now()) {
-    return this.day(at - (6 / 24) * DAY_REAL_MS);
+    return this.day(at - (6 / 24) * TimeSystem.dayMs(at));
   }
 
   hour(at = Date.now()) {
@@ -54,7 +70,7 @@ export class TimeSystem {
   nextDawn(at = Date.now()) {
     const h = this.hour(at);
     const hours = h < 6 ? 6 - h : 30 - h;
-    return at + (hours / 24) * DAY_REAL_MS;
+    return at + (hours / 24) * TimeSystem.dayMs(at);
   }
 
   clockText(at = Date.now()) {
@@ -74,3 +90,6 @@ export class TimeSystem {
     return 1 - (1 - p.exploreSpeed) * (1 - reduce);
   }
 }
+
+/** 改為 90 分鐘一天的時刻（測試可改） */
+TimeSystem.switchAt = DAY_SWITCH_AT;

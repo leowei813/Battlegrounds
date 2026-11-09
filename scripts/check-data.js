@@ -22,6 +22,11 @@ import {
   DAY_REAL_MS, SAVE_VERSION as SAVE_VERSION_NOW, WORLD_EPOCH_MS, WORLD_START,
 } from '../src/config/constants.js';
 
+// v15.7：測試一律用 90 分鐘一天（切換時刻設在世界起點）；連續性另外測試
+const { TimeSystem: TimeSysT } = await import('../src/systems/TimeSystem.js');
+const SWITCH_REAL = TimeSysT.switchAt;
+TimeSysT.switchAt = WORLD_EPOCH_MS;
+
 /** 把遊戲時鐘調到指定時刻（建檔時間往前推） */
 const setHour = (game, hour) => {
   // v9 世界時間：調整 worldShift 讓目前時刻變成 hour
@@ -1374,14 +1379,26 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 
 // ---- 23. v8.5：遊戲一天 = 現實 1 小時，舊存檔維持生存天數（v9 起時刻改為世界時間） ----
 {
-  assert(DAY_REAL_MS === 3600000, '遊戲一天為現實 1 小時');
+  assert(DAY_REAL_MS === 90 * 60000, '遊戲一天為現實 90 分鐘');
+  {
+    // v15.7：改成 90 分鐘一天的那一刻，時間連續不跳；之前照舊 60 分鐘一天
+    TimeSysT.switchAt = SWITCH_REAL;
+    const h0 = TimeSysT.hoursAt(SWITCH_REAL - 1); const h1 = TimeSysT.hoursAt(SWITCH_REAL + 1);
+    const hb = TimeSysT.hoursAt(SWITCH_REAL - 3600000); const ha = TimeSysT.hoursAt(SWITCH_REAL + 5400000);
+    TimeSysT.switchAt = WORLD_EPOCH_MS;
+    assert(Math.abs(h1 - h0) < 0.01 && Math.abs((h0 - hb) - 24) < 0.01 && Math.abs((ha - h1) - 24) < 0.01, `切換前 60 分鐘一天、切換後 90 分鐘一天，時刻連續（${h0.toFixed(3)} → ${h1.toFixed(3)}）`);
+  }
   const gt = Game.newGame({ playerName: 'T', classId: 'warrior', lat: 25, lon: 121 });
   gt.state.createdAt = Date.now() - 5.5 * 30 * 60000; // 舊制（30 分鐘一天）下的第 6 天 20:00
   const old = JSON.parse(JSON.stringify(gt.state));
   old.version = 12;
   const mig = SaveManager.migrate(old);
   const gm = new Game(mig);
-  assert(gm.time.survivalDay() === 6, `舊存檔換算後生存天數不變（第 ${gm.time.survivalDay()} 天）`);
+  // 舊制換算以 60 分鐘一天為準（v15.7 切換前）
+  TimeSysT.switchAt = Date.now() + 86400000;
+  const sd = gm.time.survivalDay();
+  TimeSysT.switchAt = WORLD_EPOCH_MS;
+  assert(sd === 6, `舊存檔換算後生存天數不變（第 ${sd} 天）`);
 }
 
 // ---- 24. v8.7：據點遭襲紀錄 ----

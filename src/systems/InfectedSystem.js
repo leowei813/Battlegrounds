@@ -1,8 +1,8 @@
+import { TimeSystem } from './TimeSystem.js';
 import { unitPower } from '../utils/math.js';
 import { BOSSES, ALL_ENEMIES, ZOMBIE_VS_SURVIVOR } from '../config/enemies.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { zoneAt } from '../config/zones.js';
-import { DAY_REAL_MS } from '../config/constants.js';
 import {
   randInt, randFloat, pick, chance, uid, haversine,
 } from '../utils/math.js';
@@ -72,7 +72,7 @@ export class InfectedSystem {
   nextRefresh(now = Date.now()) {
     const h = this.game.time.totalHours(now) - INFECTED.refreshHour;
     const left = (Math.floor(h / 24) + 1) * 24 - h;
-    return now + (left / 24) * DAY_REAL_MS;
+    return now + (left / 24) * TimeSystem.dayMs(now);
   }
 
   /** 某個固定據點的位置：E4 沿用舊格子算出的位置，其他在格線中心 */

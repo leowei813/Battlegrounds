@@ -9,8 +9,11 @@ export const TICK_MS = 1000;
 export const IDLE_LOW_FPS = false;
 export const AUTOSAVE_MS = 30 * 1000;
 
-/** 現實 1 小時 = 遊戲 1 天（v13 起；之前為 30 分鐘） */
-export const DAY_REAL_MS = 60 * 60 * 1000;
+/** v15.7：遊戲一天＝現實 90 分鐘（原本 60 分鐘，DAY_SWITCH_AT 之前照舊制計算，時間連續不跳） */
+export const DAY_REAL_MS = 90 * 60 * 1000;
+export const DAY_REAL_MS_OLD = 60 * 60 * 1000;
+/** 改為 90 分鐘一天的時刻（所有玩家相同；發版時設定在上線後幾分鐘） */
+export const DAY_SWITCH_AT = Date.UTC(2026, 10, 10, 4, 0, 0);
 /** 遊戲開始時的時刻（早上 8 點） */
 export const START_HOUR = 8;
 
@@ -84,7 +87,7 @@ export const RAID_TRAVEL = { playerMul: 4, npcMul: 2.5, minMin: 5 };
 
 /**
  * 世界時間：所有玩家共用同一個日曆與日夜。
- * WORLD_EPOCH_MS 這一刻為 2050/1/1 06:00（v9.0.0 上線時間），遊戲一天＝現實 1 小時。
+ * WORLD_EPOCH_MS 這一刻為 2050/1/1 06:00（v9.0.0 上線時間），遊戲一天＝現實 1 小時（v15.7 起 90 分鐘）。
  */
 export const WORLD_EPOCH_MS = Date.UTC(2026, 10, 3, 7, 10, 0);
 export const WORLD_START = { year: 2050, month: 1, day: 1, hour: 6 };

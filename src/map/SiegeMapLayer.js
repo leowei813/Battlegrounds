@@ -81,7 +81,7 @@ export const SiegeMapLayer = L.Layer.extend({
     const loop = (t) => {
       if (!this.running) return;
       // v15.7 省電：沒有屍潮、射擊特效時每秒畫 4 次（隊伍移動很慢，看起來一樣），有屍潮時才每幀繪製
-      if (!IDLE_LOW_FPS || window.__fullFps || this.fx.length || this.pulses.length || this.game.siege?.live?.() || t - this.lastT >= IDLE_FRAME_MS) {
+      if (!(IDLE_LOW_FPS || window.__lowFps) || window.__fullFps || this.fx.length || this.pulses.length || this.game.siege?.live?.() || t - this.lastT >= (window.__idleMs || IDLE_FRAME_MS)) {
         this.draw(Math.min(0.1, (t - this.lastT) / 1000));
         this.lastT = t;
       }

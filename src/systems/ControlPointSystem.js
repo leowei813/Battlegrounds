@@ -1,10 +1,11 @@
+import { TimeSystem } from './TimeSystem.js';
 import {
   CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT,
 } from '../config/controlPoints.js';
 import { inNpcHome } from '../config/zones.js';
 import { xpToNext } from '../config/survivors.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
-import { DAY_REAL_MS, RAID_TRAVEL } from '../config/constants.js';
+import { RAID_TRAVEL } from '../config/constants.js';
 import { NPC_CONFIG } from '../config/npcs.js';
 import { HQ_AMBUSH, hqFactionOf } from './ExplorationSystem.js';
 import {
@@ -15,7 +16,7 @@ import { balanceMultipliers } from './MaterialBalance.js';
 import { baseSupplyWeight } from './LootStock.js';
 
 /** 駐防隊在控制點最多停留的時間（之後自動回家） */
-/** 離線期間的每日收益最多補發幾次（遊戲一天＝現實 1 小時，24 次約現實 1 天） */
+/** 離線期間的每日收益最多補發幾次（遊戲一天＝現實 90 分鐘，24 次約現實 1.5 天） */
 export const CP_OFFLINE_INCOME_MAX = 24;
 const GUARD_STAY_MS = 7 * 24 * 3600000;
 /** 運輸隊的移動速度（公尺／秒） */
@@ -471,7 +472,7 @@ export class ControlPointSystem {
     const t = this.game.time;
     const h = t.totalHours(now);
     const day0 = Math.floor(h / 24) * 24;
-    return now - ((h - day0 - CP_INCOME_HOUR) / 24) * DAY_REAL_MS;
+    return now - ((h - day0 - CP_INCOME_HOUR) / 24) * TimeSystem.dayMs(now);
   }
 
   /** 收益內容（食物、木材、燃料＋隨機零件：階級越高機率越低、數量越少） */
@@ -597,7 +598,7 @@ export class ControlPointSystem {
     const t = this.game.time;
     const h = t.totalHours(now);
     const day0 = Math.floor(h / 24) * 24;
-    return now - ((h - day0 - FACTIONS[f].hour) / 24) * DAY_REAL_MS;
+    return now - ((h - day0 - FACTIONS[f].hour) / 24) * TimeSystem.dayMs(now);
   }
 
   /**
@@ -954,7 +955,7 @@ export class ControlPointSystem {
     const label = { mine: '你與好友可探索', hostile: '敵對玩家佔領・不可探索', other: '其他玩家佔領・不可探索', faction: `${FACTIONS[fac]?.name || ''}勢力佔領・不可探索`, neutral: '中立（感染者佔據）・不可探索' }[s];
     return {
       cp, status: s, label, owners: own, guards, garrison: s === 'neutral' || s === 'faction' ? this.garrisonCount(id, now) : guards.reduce((a, h) => a + (h.units || []).length, 0),
-      nextIncome: formatDuration(Math.max(0, this.incomeTime(now) + (now >= this.incomeTime(now) ? DAY_REAL_MS : 0) - now)),
+      nextIncome: formatDuration(Math.max(0, this.incomeTime(now) + (now >= this.incomeTime(now) ? TimeSystem.dayMs(now) : 0) - now)),
     };
   }
 }
