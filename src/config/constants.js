@@ -7,8 +7,8 @@ export const SAVE_VERSION = 35;
 export const TICK_MS = 1000;
 /** v15.7 省電：沒有屍潮時地圖圖層每秒畫 10 次（有屍潮時逐幀） */
 export const IDLE_LOW_FPS = true;
-/** v15.7 省電（待確認）：沒有屍潮時屍潮模擬每秒推進一次 */
-export const IDLE_SIEGE_THROTTLE = false;
+/** v15.7 省電：沒有屍潮時屍潮模擬每秒推進一次（依經過時間補算，結果相同） */
+export const IDLE_SIEGE_THROTTLE = true;
 export const AUTOSAVE_MS = 30 * 1000;
 
 /** v15.7：遊戲一天＝現實 90 分鐘（原本 60 分鐘，DAY_SWITCH_AT 之前照舊制計算，時間連續不跳） */
