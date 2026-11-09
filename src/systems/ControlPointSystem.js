@@ -1,5 +1,5 @@
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR,
+  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START,
 } from '../config/controlPoints.js';
 import { inNpcHome } from '../config/zones.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
@@ -139,7 +139,11 @@ export class ControlPointSystem {
     return this.defenders(id, now).reduce((s, u) => s + unitPower(u), 0);
   }
 
-  canAttack(id) {
+  /**
+   * 能不能進攻：中立、勢力或敵對玩家的控制點，且要和自己或好友佔領的控制點相鄰（最西側一排不受限制）。
+   * @param {{reach?:boolean}} [opts] reach=false：不檢查相鄰（隊伍已經出發、抵達時用）
+   */
+  canAttack(id, { reach = true } = {}) {
     const g = this.game;
     const cp = cpById(id);
     if (!cp) return { ok: false, reason: '找不到控制點' };
@@ -147,7 +151,17 @@ export class ControlPointSystem {
     const s = this.statusOf(id);
     if (s === 'mine') return { ok: false, reason: '這是你或好友的控制點' };
     if (s === 'other') return { ok: false, reason: '只能攻打中立、勢力或敵對玩家的控制點' };
+    if (reach && !this.reachable(id)) {
+      const need = cpNeighbors(id).map((n) => cpById(n).no).sort((a, b) => a - b).map((n) => `#${n}`).join('、');
+      return { ok: false, locked: true, reason: `需先佔領相鄰的控制點才能進攻：${need}` };
+    }
     return { ok: true };
+  }
+
+  /** 和自己或好友佔領的控制點相鄰，或在最西側一排（起始可攻打） */
+  reachable(id) {
+    if (CP_START.includes(id)) return true;
+    return cpNeighbors(id).some((n) => this.statusOf(n) === 'mine');
   }
 
   /** 讓探索系統把控制點當成目的地 */
@@ -260,7 +274,7 @@ export class ControlPointSystem {
     const id = exp.cpId;
     const cp = cpById(id);
     const members = exp.memberIds.map((x) => g.survivors.get(x)).filter(Boolean);
-    const c = this.canAttack(id);
+    const c = this.canAttack(id, { reach: false });
     if (!c.ok) return { victory: false, events: [`🚩 抵達時控制點 #${cp.no} ${c.reason}`] };
     const foes = this.defenders(id, at);
     const before = foes.length;

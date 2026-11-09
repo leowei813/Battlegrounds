@@ -80,6 +80,9 @@ export const CONTROL_POINTS = SEEDS.map(([x, y], i) => {
   };
 });
 
+/** 最西側一排（緊鄰玩家一般區）：沒有任何控制點時也可以攻打 */
+export const CP_START = CONTROL_POINTS.filter((c) => toXY(c.lat, c.lon).x < (COLS[0] + COLS[1]) / 2).map((c) => c.id);
+
 export const cpById = (id) => CONTROL_POINTS.find((c) => c.id === id) || null;
 
 /** 座標所在的控制點（沒有回傳 null） */

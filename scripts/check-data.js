@@ -6130,6 +6130,11 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(!C.cp.canAttack(cp.id).ok, '非敵對的其他玩家不能攻打');
   C.state.relations.players = { A: { status: 'hostile' } };
   assert(C.cp.canAttack(cp.id).ok, '敵對玩家可以攻打');
+  assert(CPC.CP_START.includes('cp2') && A.cp.canAttack('cp2').ok, '最西側一排的控制點隨時可以進攻');
+  assert(A.cp.canAttack('cp5').ok && B.cp.canAttack('cp5').ok, '和自己或好友佔領的控制點相鄰才能進攻（好友的也算）');
+  const far = A.cp.canAttack('cp9');
+  assert(!far.ok && far.locked && /#5/.test(far.reason), '不相鄰的控制點不能進攻，並列出相鄰的控制點');
+  assert(!C.cp.canAttack('cp5').ok && !A.rally.canStart({ kind: 'cp', id: 'cp9' }).ok, '只有敵對玩家相鄰時不能進攻；不相鄰也不能發起集結');
   // 好友駐防（每人最多 2 人）
   A.exploration.update(at.exp.endAt + 1, { silent: true });
   const bl = B.survivors.leader();
