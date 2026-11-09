@@ -1825,7 +1825,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     assert(ex0 && dd && dd.home && dd.status === 'gathering' && dd.departAt > Date.now() + 60000 && dd.teams[0].arriveAt <= Date.now(), '發起集結：發起人的避難所就是集結點，倒數結束才出發');
     assert(A.rally.statusOf(ex0).tag === '集結' && A.rally.statusOf(ex0).line1.includes('集結點'), `發起人的隊伍顯示「集結」（${A.rally.statusOf(ex0).line1}）`);
   }
-  assert(!(await A.rally.start(target, 5, [])).ok, '同時只能發起一個集結');
+  {
+    // v15.6：同時可以發起多個集結（上限依廣播塔等級）；同一個目標不能重複發起
+    const r2 = await A.rally.start(target, 5, []);
+    assert(!r2.ok && /上限/.test(r2.reason || ''), `廣播塔 Lv1：同時只能發起 1 個集結（${r2.reason || ''}）`);
+    assert(A.rally.maxConcurrent(1) === 1 && A.rally.maxConcurrent(5) === 2 && A.rally.maxConcurrent(10) === 3, '同時可發起的集結：Lv1 1 個、Lv5 2 個、Lv10 3 個');
+    A.shelter.primary().facilities.broadcast.level = 5;
+    const r3 = A.rally.canStart(target);
+    assert(!r3.ok && /這個目標/.test(r3.reason || ''), '同一個目標不能重複發起集結');
+    const other = { kind: 'npc', id: 'npc_other', name: '另一個據點', lat: n.lat, lon: n.lon };
+    assert(A.rally.canStart(other).ok, '廣播塔 Lv5：可以對另一個目標再發起一個集結');
+    A.shelter.primary().facilities.broadcast.level = 1;
+  }
   await B.shared.poll();
   B.rally.lastAt = 0;
   B.rally.update(Date.now());
@@ -6248,6 +6259,11 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   await A.shared.poll();
   assert((A.cp.data(cp.id)?.guards || []).some((h) => h.p === 'B'), '駐防隊寫入控制點，攻打方會遇到');
   {
+    const { WorldSync: WSg } = await import('../src/multiplayer/WorldSync.js');
+    const pb = WSg.prototype.presence.call({ game: B });
+    assert(pb.trips.some((t) => t.id === gd.exp.id && t.kind === 'cpGuard'), '駐防隊同步給其他玩家時標示為駐防（不會顯示成搜索中）');
+  }
+  {
     // v15.4：勢力進攻控制點改為派兵行軍（移動時間比照攻打避難所），佔領者與駐防者收到紅色提醒（同一人只一則）
     const t0 = Date.now();
     const { RAID_TRAVEL: RT2 } = await import('../src/config/constants.js');
@@ -6491,6 +6507,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const presR = WS.prototype.presence.call({ game: gr });
     const cl = CPl2({ ...presR, id: 'R', trips: [{ ...before }] });
     assert(cl?.trips?.[0]?.kind === 'explore', '同步資料保留探索隊的種類');
+    assert(CPl2({ ...presR, id: 'R', trips: [{ ...before, kind: 'cpGuard' }] })?.trips?.[0]?.kind === 'cpGuard' && CPl2({ ...presR, id: 'R', trips: [{ ...before, kind: 'cp' }] })?.trips?.[0]?.kind === 'cp', '同步資料保留駐防、攻打控制點的種類（其他玩家看到駐防中、戰鬥中）');
     const { createSurvivor: mkSv3 } = await import('../src/core/GameState.js');
     const sv3 = mkSv3('同步', 'scout', 5, 'common');
     gr.state.survivors.push(sv3);

@@ -218,6 +218,11 @@ export const SiegeMapLayer = L.Layer.extend({
       // 其他玩家的隊伍只看得到移動，看不到剩餘時間；被攔截撤回中的隊伍不能再攔截
       if (trip.kind === 'assist') {
         this.drawTrip(ctx, size, p, `🛡️ ${player.name}・協防`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false, '協防中');
+      } else if (trip.kind === 'cpGuard') {
+        // v15.6：其他玩家的控制點駐防隊：顯示「駐防中」（不是搜索中）
+        this.drawTrip(ctx, size, p, `🛡️ ${player.name}・駐防`, ['rgba(102,187,106,0.6)', '#2e7d32', '#e8f5e9', 'rgba(27,94,32,0.88)'], false, '駐防中');
+      } else if (trip.kind === 'cp') {
+        this.drawTrip(ctx, size, p, `⚔️ ${player.name}・攻打控制點`, ['rgba(38,198,218,0.55)', '#00838f', '#e0f7fa', 'rgba(0,77,64,0.85)'], false, '戰鬥中');
       } else this.drawTrip(ctx, size, p, `👤 ${player.name}${trip.defeated ? '・🏳️撤回' : ''}`, ['rgba(38,198,218,0.55)', '#00838f', '#e0f7fa', 'rgba(0,77,64,0.85)'], !!trip.defeated);
       if (trip.id && !trip.defeated) this.teams.push({ kind: 'player', playerId: player.id, tripId: trip.id, pos: p.pos });
     }));
@@ -406,14 +411,19 @@ export const SiegeMapLayer = L.Layer.extend({
 
   drawTrip(ctx, size, p, name, [line, fill, stroke, labelBg], retreat = false, stayName = '') {
     const m = this.map.latLngToContainerPoint([p.pos.lat, p.pos.lon]);
-    this.tracePath(ctx, p);
-    ctx.setLineDash([3, 6]);
-    ctx.strokeStyle = line;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.setLineDash([]);
+    const staying = p.phase === 'searching' && stayName;
+    // 駐防、協防抵達後不畫路線
+    if (!(staying && /駐防|協防/.test(stayName))) {
+      this.tracePath(ctx, p);
+      ctx.setLineDash([3, 6]);
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     if (m.x < -60 || m.y < -60 || m.x > size.x + 60 || m.y > size.y + 60) return;
-    const ph = EXP_PHASES[p.phase];
+    const ph0 = EXP_PHASES[p.phase];
+    const ph = staying ? { ...ph0, icon: /戰鬥/.test(stayName) ? '⚔️' : '🛡️' } : ph0;
     ctx.beginPath();
     ctx.arc(m.x, m.y, 11, 0, Math.PI * 2);
     ctx.fillStyle = fill;
