@@ -88,6 +88,7 @@ export const RESEARCH = {
   d_npc: r('defense', 2, '反掠奪', '對 NPC 掠奪隊的防禦傷害提升', { raidDefensePct: 0.08 }),
   d_flame: r('defense', 2, '燃燒劑', '解鎖火焰塔，並提升火焰塔傷害', { defDmg_flameTower: 0.1 }, { unlock: ['flameTower'], req: [['d_mg', 3]] }),
   d_em: r('defense', 3, '電磁學', '解鎖電磁塔，並提升電磁塔傷害', { defDmg_emTower: 0.1 }, { unlock: ['emTower'], req: [['d_flame', 3]] }),
+  d_cpguard: r('defense', 3, '據點駐防', '自己派出的控制點駐防隊生命與攻擊提升（好友的駐防隊不受影響）', { cpGuardPct: 0.05 }),
   d_offline: r('defense', 3, '夜間自動防禦', '解鎖離線防守收益，並提升離線擊殺數', { offlineDefPct: 0.1 }, { unlock: ['offlineDefense'], req: [['d_tower', 3]] }),
   // ---- 醫療 ----
   m_regen: r('medical', 1, '休養', '生命自然回復加快', { regenPct: 0.08 }),
@@ -191,7 +192,7 @@ const LABELS = {
   atkSpeedAdd: (v) => `攻速 +${v.toFixed(2)}`, lifeStealAdd: (v) => `吸血 +${pct(v)}`, hpPct: (v) => `生命 +${pct(v)}`,
   defPct: (v) => `防禦 +${pct(v)}`, dodgeAdd: (v) => `閃避 +${pct(v)}`, wallHpPct: (v) => `圍牆耐久 +${pct(v)}`,
   repairPct: (v) => `修繕效率 +${pct(v)}`, towerDmgPct: (v) => `防禦塔傷害 +${pct(v)}`, towerRangePct: (v) => `防禦傷害 +${pct(v)}`,
-  wallReduceAdd: (v) => `圍牆減傷 +${pct(v)}`, wallHardPct: (v) => `圍牆受到傷害 −${pct(v)}`, repairEffPct: (v) => `每單位材料修復量 +${pct(v)}`, guardDmgPct: (v) => `駐守傷害 +${pct(v)}`, raidDefensePct: (v) => `防禦 NPC +${pct(v)}`,
+  wallReduceAdd: (v) => `圍牆減傷 +${pct(v)}`, wallHardPct: (v) => `圍牆受到傷害 −${pct(v)}`, repairEffPct: (v) => `每單位材料修復量 +${pct(v)}`, guardDmgPct: (v) => `駐守傷害 +${pct(v)}`, raidDefensePct: (v) => `防禦 NPC +${pct(v)}`, cpGuardPct: (v) => `控制點駐防生命與攻擊 +${pct(v)}`,
   offlineDefPct: (v) => `離線擊殺 +${pct(v)}`, regenPct: (v) => `回復 +${pct(v)}`, healPct: (v) => `治療量 +${pct(v)}`,
   healCostReduce: (v) => `不消耗藥品機率 ${pct(Math.min(0.5, v))}`, medicinePerHour: (v) => `紗布 +${v.toFixed(1)}/時`, severeRegenPct: (v) => `重傷回復 +${pct(v)}`,
   starveResist: (v) => `飢餓扣血 −${pct(v)}`, foodPct: (v) => `食物 +${pct(v)}`, lumberPct: (v) => `伐木場產量 +${pct(v)}`, lumberFlat: (v) => `每級伐木場木材 +${v.toFixed(1)}/時`,

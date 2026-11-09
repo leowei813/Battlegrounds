@@ -6259,6 +6259,21 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   await A.shared.poll();
   assert((A.cp.data(cp.id)?.guards || []).some((h) => h.p === 'B'), '駐防隊寫入控制點，攻打方會遇到');
   {
+    // v15.6：科技「據點駐防」：自己派出的駐防隊生命與攻擊提升（每級 5%）
+    B.state.research.levels.d_cpguard = 4;
+    B.research.invalidate();
+    const base0 = B.rally.units([bl.id])[0];
+    const gx = { id: 'gx2', kind: 'cpGuard', cpId: cp.id, poiId: `cpguard:${cp.id}`, memberIds: [bl.id], startAt: Date.now() - 100000, travelMs: 1000, searchMs: 3600000, endAt: Date.now() + 3600000, from: { lat: 25, lon: 121 } };
+    B.state.expeditions.push(gx);
+    await B.cp.syncGuards(Date.now());
+    const u = (B.cp.data(cp.id)?.guards || []).find((h) => h.e === 'gx2')?.units?.[0];
+    assert(u && Math.abs(u.maxHp - base0.maxHp * 1.2) <= 1 && Math.abs(u.atk - base0.atk * 1.2) <= 1, `據點駐防 Lv4：駐防隊生命與攻擊 +20%（${base0.maxHp}→${u?.maxHp}）`);
+    await B.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, guards: (x.guards || []).filter((h) => h.e !== 'gx2') } }));
+    B.state.expeditions = B.state.expeditions.filter((e) => e !== gx);
+    B.state.research.levels.d_cpguard = 0;
+    B.research.invalidate();
+  }
+  {
     const { WorldSync: WSg } = await import('../src/multiplayer/WorldSync.js');
     const pb = WSg.prototype.presence.call({ game: B });
     assert(pb.trips.some((t) => t.id === gd.exp.id && t.kind === 'cpGuard'), '駐防隊同步給其他玩家時標示為駐防（不會顯示成搜索中）');

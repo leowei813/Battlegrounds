@@ -355,7 +355,9 @@ export class ControlPointSystem {
       if (!exp.cpListed) {
         if (this.busy.has(exp.id)) continue;
         this.busy.add(exp.id);
-        const units = g.rally.units(exp.memberIds);
+        // v15.6：科技「據點駐防」：自己派出的駐防隊生命與攻擊提升（寫進共用資料，攻打方讀到的就是強化後的數值）
+        const bon = g.research.bonus('cpGuardPct');
+        const units = g.rally.units(exp.memberIds).map((u) => (bon > 0 ? { ...u, hp: Math.round(u.hp * (1 + bon)), maxHp: Math.round(u.maxHp * (1 + bon)), atk: Math.round(u.atk * (1 + bon)) } : u));
         const r = await g.shared.update(CP_KIND, exp.cpId, (x) => {
           const data = x || { owners: [], guards: [] };
           if (!(data.owners || []).some((o) => this.isAlly(o.p))) return { fail: '控制點已經不是你或好友的' };
