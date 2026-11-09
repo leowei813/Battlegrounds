@@ -519,6 +519,32 @@ export class ControlPointSystem {
     this.deliverConvoys(now);
   }
 
+  /**
+   * 地圖上的點位：控制點中心附近、避開其他建築（至少 CLEAR_M 公尺）的位置（所有玩家相同）。
+   */
+  markerSpot(id) {
+    this.spots = this.spots || {};
+    if (this.spots[id]) return this.spots[id];
+    const cp = cpById(id);
+    const CLEAR_M = 40;
+    const near = (this.game.state.map?.pois || []).filter((p) => haversine(p.lat, p.lon, cp.lat, cp.lon) < 450);
+    const kLat = 111320;
+    const kLon = 111320 * Math.cos((cp.lat * Math.PI) / 180);
+    let spot = { lat: cp.lat, lon: cp.lon };
+    search: for (let r = 0; r <= 400; r += 15) {
+      const n = r ? Math.max(8, Math.round(r / 8)) : 1;
+      for (let k = 0; k < n; k += 1) {
+        const a = (k / n) * Math.PI * 2;
+        const lat = cp.lat + (Math.sin(a) * r) / kLat;
+        const lon = cp.lon + (Math.cos(a) * r) / kLon;
+        if (cpAt(lat, lon)?.id !== id) continue;
+        if (near.every((p) => haversine(p.lat, p.lon, lat, lon) >= CLEAR_M)) { spot = { lat, lon }; break search; }
+      }
+    }
+    if ((this.game.state.map?.pois || []).length) this.spots[id] = spot;
+    return spot;
+  }
+
   /** 某位玩家佔領的控制點數 */
   countOf(pid) {
     return CONTROL_POINTS.filter((c) => !this.factionOf(c.id) && this.owners(c.id).some((o) => o.p === pid)).length;

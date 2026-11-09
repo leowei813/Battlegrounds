@@ -1688,4 +1688,6 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .convoy-pin { position: relative; font-size: 20px; filter: drop-shadow(0 0 4px #ffd54f); } .convoy-pin i { position: absolute; left: 22px; top: 2px; font-style: normal; font-size: 10.5px; background: #000b; color: #fff; border-radius: 6px; padding: 0 4px; white-space: nowrap; }
 .cp-pin svg { flex: none; }
 .cp-pin { width: max-content; }
-.cp-dot { width: 22px; height: 22px; border-radius: 50%; background: var(--c); border: 2px solid #fff; box-shadow: 0 0 0 1.5px #111, 0 0 6px #000a; color: #111; font-weight: 900; font-size: 11px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.cp-dot { width: var(--s); height: var(--s); border-radius: 50%; background: var(--c); border: 2px solid #fff; box-sizing: border-box; display: flex; align-items: center; justify-content: center; animation: cp-breathe 3s ease-in-out infinite; }
+.cp-dot svg { width: 62%; height: 62%; }
+@keyframes cp-breathe { 0%, 100% { box-shadow: 0 0 0 1px #111, 0 0 2px 0 color-mix(in srgb, var(--c) 40%, transparent); } 50% { box-shadow: 0 0 0 1px #111, 0 0 9px 3px color-mix(in srgb, var(--c) 70%, transparent); } }

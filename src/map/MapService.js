@@ -28,6 +28,9 @@ import { GPS_RADIUS } from '../systems/GpsSystem.js';
  * 真實地圖（Leaflet + OpenStreetMap 圖磚）。
  * 只負責呈現與互動；點擊事件透過 EventBus 交給 UI 層處理。
  */
+/** 控制點圓點內的圖案（待選定） */
+const CP_ICON = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="1" width="1.4" height="10" fill="#111"/><path d="M3.4 1.5 H10.5 L8.6 4 L10.5 6.5 H3.4Z" fill="#111"/></svg>';
+
 export class MapService {
   /**
    * @param {HTMLElement} container
@@ -226,25 +229,28 @@ export class MapService {
 
 
   /** 重度感染據點（比巨型據點略大，標示淨化度） */
-  /** v14 控制點：旗幟標記（依佔領狀態上色），點擊打開控制點資訊；勢力圖底色一併更新 */
+  /** v14 控制點：圓形點位（依佔領狀態上色），點擊打開控制點資訊；勢力圖底色一併更新 */
   renderCps(game) {
     if (!this.map || !this.layers.cps) return;
     const { CONTROL_POINTS } = this.cpConfig || {};
     if (!CONTROL_POINTS) return;
     const cols = { mine: '#4fc3f7', other: '#9e9e9e', hostile: '#ef9a9a', neutral: '#bdbdbd', faction: '#ef5350' };
-    const st = CONTROL_POINTS.map((c) => `${c.id}:${game.cp.statusOf(c.id)}:${game.cp.factionOf(c.id) || ''}`).join('|');
+    const z = this.map.getZoom();
+    const st = `${z}|${CONTROL_POINTS.map((c) => `${c.id}:${game.cp.statusOf(c.id)}:${game.cp.factionOf(c.id) || ''}`).join('|')}`;
     if (st === this.cpKey) return;
     this.cpKey = st;
     this.layers.cps.clearLayers();
     CONTROL_POINTS.forEach((c) => {
       const s = game.cp.statusOf(c.id);
       const col = s === 'faction' ? FACTION_COLORS[game.cp.factionOf(c.id)] : cols[s];
-      // 控制點以圓形點位呈現（顏色＝佔領狀態、中間是編號），點這個點才打開控制點資訊
-      L.marker([c.lat, c.lon], {
-        icon: this.icon(`<div class="cp-dot" style="--c:${col || '#bdbdbd'}">${c.no}</div>`, 'shelter-icon', 22),
+      // 控制點：與巨型資源點一樣大的圓形點位（隨縮放），位置避開其他建築；顏色＝佔領狀態、外圈慢速呼吸光；點這個點才打開控制點資訊
+      const size = Math.max(10, Math.round((this.poiLayer?.radius?.() || 6) * 1.25 * 2) + 4);
+      const spot = game.cp.markerSpot(c.id);
+      L.marker([spot.lat, spot.lon], {
+        icon: this.icon(`<div class="cp-dot" style="--c:${col || '#bdbdbd'};--s:${size}px">${CP_ICON}</div>`, 'shelter-icon', size),
         zIndexOffset: 850,
       }).on('click', () => bus.emit('ui:openCp', { id: c.id }))
-        .bindTooltip(`🚩 控制點 #${c.no}・${game.cp.summary(c.id).label}`, { direction: 'top', offset: [0, -10] })
+        .bindTooltip(`🚩 控制點・${game.cp.summary(c.id).label}`, { direction: 'top', offset: [0, -size / 2] })
         .addTo(this.layers.cps);
     });
     if (this.zoneLayer) {
