@@ -5410,6 +5410,17 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   for (const p of ps) { await p.g.shared.list('dg', 5); p.g.dungeon.update(T.lock + 1000); }
   assert(trip.exp.recalled, '17:50 鎖定時外出中的小隊自動召回');
   assert(b.g.dungeon.isLocked(b.sv, T.lock + 2000) && b.g.survivors.isAvailable(b.sv) === false, '鎖定後倖存者不能外出');
+  {
+    // v15.5.1：控制點駐防中的倖存者：17:50 鎖定時不叫回（這次副本不能參加）
+    const gd2 = Game.newGame({ playerName: 'DG2', classId: 'warrior', lat: 25.03, lon: 121.56 });
+    const sv2 = gd2.survivors.leader();
+    const gexp = { id: 'gx', kind: 'cpGuard', cpId: 'cp1', memberIds: [sv2.id], startAt: T.lock - 600000, travelMs: 60000, searchMs: 3600000, endAt: T.lock + 7200000, from: { lat: 25.03, lon: 121.56 } };
+    gd2.state.expeditions.push(gexp);
+    const rec2 = { svId: sv2.id, dg: 'lab', day: DungeonSystem.dayKey(T.start) };
+    gd2.dungeon.pushEntry = () => {};
+    gd2.dungeon.lock(rec2, T.lock);
+    assert(!gexp.recalled && gd2.state.expeditions.includes(gexp) && rec2.excluded === 'guard', '副本鎖定時不叫回駐防中的倖存者（這次副本不能參加）');
+  }
   // 集結、開打、結算
   for (const t of [T.depart + 1000, T.start + 1000, T.start + 60 * 60e3]) {
     for (const p of ps) { await p.g.shared.list('dg', 5); p.g.dungeon.update(t); }

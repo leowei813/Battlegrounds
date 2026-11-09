@@ -37,6 +37,7 @@ export function statusOf(g, rec, now = Date.now()) {
   };
   if (rec.settled && rec.excluded === 'nomed') return { ...base, floor: '—', tag: '無法出擊', cls: 't-fail', sub: '重傷且倉庫沒有藥品，今天無法參加' };
   if (rec.excluded === 'nomed') return { ...base, floor: '—', tag: '無法出擊', cls: 't-fail', sub: '重傷且倉庫沒有藥品，今天無法參加' };
+  if (rec.excluded === 'guard') return { ...base, floor: '—', tag: '無法出擊', cls: 't-fail', sub: '正在駐防控制點，不會被叫回，今天無法參加' };
   // 報名人數：不到 3 人橘紅色、3 人以上綠色
   const short = `<span class="dg-cnt ${n < DG_TEAM.min ? 'low' : 'ok'}">👥 ${n} 人</span>`;
   if (now < t.close) return { ...base, floor: short, tag: '已報名', cls: 't-sign', sub: `目前 ${n} 人報名・17:40 截止，18:00 開打` };
