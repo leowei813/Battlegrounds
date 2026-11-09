@@ -16,7 +16,7 @@ export const METERS_PER_UNIT = 1.5;
 const M_PER_LAT = 111320;
 const MAX_FX = 600;
 /** 沒有屍潮時的重繪間隔（毫秒） */
-const IDLE_FRAME_MS = 250;
+const IDLE_FRAME_MS = 100;
 
 const css = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
 const FX_COLORS = {
@@ -80,7 +80,7 @@ export const SiegeMapLayer = L.Layer.extend({
     this.lastT = performance.now();
     const loop = (t) => {
       if (!this.running) return;
-      // v15.7 省電：沒有屍潮、射擊特效時每秒畫 4 次（隊伍移動很慢，看起來一樣），有屍潮時才每幀繪製
+      // v15.7 省電：沒有屍潮、射擊特效時每秒畫 10 次（隊伍移動很慢，看起來一樣），有屍潮時才每幀繪製
       if (!(IDLE_LOW_FPS || window.__lowFps) || window.__fullFps || this.fx.length || this.pulses.length || this.game.siege?.live?.() || t - this.lastT >= (window.__idleMs || IDLE_FRAME_MS)) {
         this.draw(Math.min(0.1, (t - this.lastT) / 1000));
         this.lastT = t;
