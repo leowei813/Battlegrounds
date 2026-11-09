@@ -12,19 +12,19 @@ import { WORLD_CENTER, WORLD_HALF_DIAG_M, inWorld } from '../config/world.js';
  */
 export const WORLD_GEN = {
   cellM: 48,
-  /** 有地點的格子比例：固定世界地圖約 2,250 個地點 */
+  /** 有地點的格子比例：v15 縮小後的固定世界地圖約 1,300 個地點（密度不變） */
   fill: 0.73,
-  /** 軍事基地在深淵區內的比例（v13：固定地圖的深淵區較多，調整後軍事基地仍約佔全部地點 0.6%） */
-  militaryInAbyss: 0.044,
+  /** 軍事基地在深淵區內的比例（v15：深淵區約佔 25%，調整後軍事基地仍約佔全部地點 0.6%） */
+  militaryInAbyss: 0.012,
 };
 
 /**
- * 各建築的權重：v14 依新的區域劃分（中間深淵、往兩側擴散）各區域的面積重新校正，扣掉區域限定後整體平均符合目標比例
+ * 各建築的權重：v15 依新的區域劃分（左安全→右深淵，各區約 14／13／15／16／16／25%）的面積，以實際產生的地點重新校正，扣掉區域限定後整體平均符合目標比例
  * （住宅 15.2、商店 6.5、超市 4.3、樹林 18、加油站 7、工廠 7、修車廠 5、回收站 6、藥局 10、醫院 3、倉庫 6.5、學校 6.5、警察局 4.4）。
  */
-const WEIGHTS = {
-  residential: 13.93, shop: 5.97, supermarket: 3.98, forest: 16.53, gasStation: 6.43, factory: 6.43, garage: 4.59,
-  recycling: 5.51, pharmacy: 15.67, hospital: 4.99, warehouse: 5.97, school: 5.97, police: 4.04,
+export const WEIGHTS = {
+  residential: 13.27, shop: 5.31, supermarket: 3.51, forest: 17.3, gasStation: 6.11, factory: 5.67, garage: 4.35,
+  recycling: 5.22, pharmacy: 21.73, hospital: 3.4, warehouse: 5.4, school: 4.96, police: 3.75,
 };
 /** 可出現的區域（0 安全、1 一般、2 警戒、3 危險、4 致死、5 深淵） */
 const ALLOW = { pharmacy: [0, 1, 2], hospital: [2, 3, 4, 5] };
