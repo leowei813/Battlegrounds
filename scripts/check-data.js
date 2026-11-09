@@ -6211,6 +6211,47 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(A.cp.garrisonCount(cp.id) < cp.garrison.count, '回到中立後守軍慢慢補回');
 }
 
+// ---- v15.3：探索路線繞過不可探索的區域（未佔領的控制點、勢力領地） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const CPC = await import('../src/config/controlPoints.js');
+  const Z = await import('../src/config/zones.js');
+  const gr = Game.newGame({ playerName: 'R', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gr.genMap();
+  gr.shelter.establish(gr.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gr.shelter.canEstablish(p).ok));
+  gr.shared.backend = new MemoryObjects();
+  gr.world = { others: [], myId: 'R', identity: () => ({ id: 'R', token: 't' }) };
+  setHour(gr, 10);
+  // 第二排的控制點 X：只佔領 X（和起始排不相通）→ 沒有路；再佔領相鄰的起始排控制點 Y → 繞路經過 Y
+  const X = CPC.CONTROL_POINTS.find((c) => !CPC.CP_START.includes(c.id) && CPC.cpNeighbors(c.id).some((n) => CPC.CP_START.includes(n)));
+  const Y = CPC.cpNeighbors(X.id).find((n) => CPC.CP_START.includes(n));
+  const own = (id) => gr.shared.update(CPC.CP_KIND, id, () => ({ data: { owners: [{ p: 'R', n: 'R' }], guards: [], faction: null } }));
+  await own(X.id);
+  const target = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === X.id && !gr.npcs.list.some((n) => haversine(n.lat, n.lon, p.lat, p.lon) < 200));
+  const lead = gr.survivors.leader();
+  const r1 = gr.exploration.start(target.id, [lead.id], 5);
+  assert(!r1.ok && /沒有路/.test(r1.reason || ''), `佔領的控制點和可探索區不相通時，不能穿過未佔領的控制點過去（${r1.reason || ''}）`);
+  const Zc = CPC.cpNeighbors(X.id).find((n) => !CPC.CP_START.includes(n) && n !== X.id);
+  if (Zc) {
+    const ra = gr.cp.attack(Zc, [lead.id]);
+    assert(gr.cp.canAttack(Zc).ok && !ra.ok && /沒有路/.test(ra.reason || ''), `攻打控制點也不能穿過未佔領的控制點（${ra.reason || ''}）`);
+  }
+  await own(Y);
+  const r2 = gr.exploration.start(target.id, [lead.id], 5);
+  assert(r2.ok, `佔領沿路的控制點後可以出發（${r2.reason || ''}）`);
+  const path = r2.exp.path || [];
+  const bad = [];
+  for (let i = 1; i < path.length; i += 1) {
+    for (let k = 1; k < 20; k += 1) {
+      const lat = path[i - 1].lat + ((path[i].lat - path[i - 1].lat) * k) / 20;
+      const lon = path[i - 1].lon + ((path[i].lon - path[i - 1].lon) * k) / 20;
+      const c = CPC.cpAt(lat, lon);
+      if (Z.inNpcHome(lat, lon) || (c && gr.cp.statusOf(c.id) !== 'mine')) bad.push(c?.id || 'home');
+    }
+  }
+  assert(path.length >= 2 && bad.length <= 1, `探索路線只走可探索的區域（穿過未佔領：${bad.length} 點）`);
+}
+
 // ---- v14 第 3 批：三大勢力（起始控制點、相鄰進攻、優先無人駐守、打下留守、NPC 據點數量） ----
 {
   const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
@@ -6257,6 +6298,20 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     }).map((c) => `#${c.no}`);
     assert(!out.length, `勢力據點的警戒範圍不超出自己的控制點（超出：${out.join('、') || '無'}）`);
     assert(bases.every((n) => CPC.cpAt(n.lat, n.lon)?.id === n.cp), '勢力據點建在自己的控制點裡');
+    // v15.3：勢力控制點內有 NPC 據點時要先打掉據點
+    if (bases[0]) {
+      const c0 = gq.cp.canAttack(bases[0].cp, { reach: false });
+      assert(!c0.ok && c0.locked && c0.reason.includes(bases[0].name), `控制點內有 NPC 據點時不能進攻（${c0.reason}）`);
+      const keepList = gq.npcs.state.list;
+      gq.npcs.state.list = keepList.filter((n) => n !== bases[0]);
+      assert(!/NPC 據點/.test(gq.cp.canAttack(bases[0].cp, { reach: false }).reason || ''), '打掉 NPC 據點後就不再被擋下');
+      gq.npcs.state.list = keepList;
+    }
+    // v15：勢力據點只探索自己勢力控制點內的建築
+    const trips = [];
+    bases.forEach((n) => { for (let i = 0; i < 30; i += 1) { n.trip = null; gq.npcs.launchExplore(n, Date.now()); if (n.trip) trips.push([n, n.trip.poiId]); } n.trip = null; });
+    const wrong = trips.filter(([n, id]) => { const p = gq.state.map.pois.find((x) => x.id === id); return gq.cp.factionOf(CPC.cpAt(p.lat, p.lon)?.id) !== n.faction; });
+    assert(!wrong.length, `勢力據點只探索自己控制點內的建築（${trips.length} 次中有 ${wrong.length} 次超出）`);
   }
   // 沒有 NPC 據點的勢力由大本營出兵（Lv40 起、不能攻打、不探索）
   const noBase = CPC.FACTION_KEYS.filter((f) => Math.floor(gq.cp.factionCps(f).length / 3) === 0);

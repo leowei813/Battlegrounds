@@ -751,7 +751,9 @@ export class NpcSystem {
     const targets = this.game.state.map.pois.filter((p) => !this.game.shelter.baseAtPoi(p.id)
       && !this.list.some((m) => m.poiId === p.id)
       && POI_TYPES[p.type] && !this.game.poiShare.view(p, now).empty
-      && haversine(n.lat, n.lon, p.lat, p.lon) <= NPC_CONFIG.exploreRadiusM);
+      && haversine(n.lat, n.lon, p.lat, p.lon) <= NPC_CONFIG.exploreRadiusM
+      // v15：勢力據點只探索自己勢力控制點內的建築
+      && (!n.faction || this.game.cp?.factionOf(cpAt(p.lat, p.lon)?.id) === n.faction));
     const poi = pick(targets);
     if (!poi) return;
     const t = this.tripTimes(n, poi, NPC_CONFIG.searchMs);

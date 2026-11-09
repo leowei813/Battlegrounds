@@ -167,6 +167,11 @@ export class RallySystem {
       const sh = g.shelter.primary();
       const from = sh ? { lat: sh.lat, lon: sh.lon } : r.exp.from;
       const route = g.territory?.route ? g.territory.route(from, home, {}) : null;
+      // v15.3：參加者只判斷能不能走到集結點（發起人的避難所）
+      if (route?.noWay) {
+        this.abort(r.exp);
+        return { ok: false, reason: '沒有路可以到集結點：中間被未佔領的控制點擋住' };
+      }
       const path = route?.length > 1 ? route.slice(0, 20) : [from, home];
       const dist = Math.round(pathLength(path));
       const rate = r.exp.distanceM > 0 && r.exp.travelMs > 0 ? r.exp.travelMs / r.exp.distanceM : g.exploration.walkRate(r.exp);
@@ -194,6 +199,11 @@ export class RallySystem {
     const sh0 = g.shelter.primary();
     const dep = this.depart(id, target, memberIds, vehicleIds, sh0 ? { lat: sh0.lat, lon: sh0.lon } : null);
     if (!dep.ok) return dep;
+    // v15.3：從集結點（發起人的避難所）到目標，看發起人能不能走到
+    if (dep.exp.path?.noWay) {
+      this.abort(dep.exp);
+      return { ok: false, reason: `沒有路可以到「${target.name}」：中間被未佔領的控制點擋住，要先佔領沿路的控制點` };
+    }
     // 寫入共用世界期間不要檢查這個集結（還沒寫入前會被誤判成「已取消」而讓隊伍回家）
     this.busy.add(id);
     const now = Date.now();

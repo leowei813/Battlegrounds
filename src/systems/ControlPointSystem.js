@@ -151,6 +151,9 @@ export class ControlPointSystem {
     const s = this.statusOf(id);
     if (s === 'mine') return { ok: false, reason: '這是你或好友的控制點' };
     if (s === 'other') return { ok: false, reason: '只能攻打中立、勢力或敵對玩家的控制點' };
+    // v15.3：勢力控制點裡有 NPC 據點時，要先打掉據點才能佔領
+    const base = this.factionOf(id) ? (g.npcs?.list || []).find((n) => n.cp === id && n.faction && !n.hq && !n.gone) : null;
+    if (base) return { ok: false, locked: true, reason: `需先打掉控制點內的 NPC 據點「${base.name}」才能進攻` };
     if (reach && !this.reachable(id)) {
       const need = cpNeighbors(id).map((n) => cpById(n).no).sort((a, b) => a - b).map((n) => `#${n}`).join('、');
       return { ok: false, locked: true, reason: `需先佔領相鄰的控制點才能進攻：${need}` };
