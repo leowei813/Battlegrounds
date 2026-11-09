@@ -3077,6 +3077,38 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(rep.events.some((e) => e.includes('協防隊員')) && sent?.helpers?.H, `突襲結算包含協防隊員並回報給對方（${rep.events.slice(-2).join(' / ')}）`);
   V.territory.handleEvents([{ from: 'C', fromName: 'C', type: 'attack', data: sent }]);
   assert(V.state.defenseLog[0].assists?.length > 0, `被突襲方的防守紀錄寫入協防（${JSON.stringify(V.state.defenseLog[0].assists)}）`);
+  // v15.4：好友的防禦範圍涵蓋這裡時，NPC 掠奪與玩家突襲也會加上防禦設施的火力
+  {
+    const COVER = 777;
+    const hc = { ...pres(H, 'H'), assist: null, cover: { r: 99999, dps: COVER, to: ['V'] } };
+    const hn = { ...pres(H, 'H'), assist: null, cover: null };
+    // NPC 掠奪：守城火力 = 自己的防禦 + 好友防禦設施
+    const capDps = (gx, fn) => { let cap = null; const orig = gx.combat.wallAssault.bind(gx.combat); gx.combat.wallAssault = (a, w, dps) => { cap = dps; return orig(a, w, dps); }; fn(); gx.combat.wallAssault = orig; return cap; };
+    // 自己的防禦火力在每次掠奪後可能因建築受損而改變：每次都扣掉當下自己的火力再比較
+    const ownDps = () => V.siege.of(V.shelter.primary().id).defenseDps({ raw: true }) * (1 + V.research.bonus('raidDefensePct'));
+    V.shelter.primary().wallHp = null;
+    V.world.others = [hn];
+    const o0 = ownDps();
+    const d0 = capDps(V, () => V.npcs.resolveIncoming(n, n.trip, Date.now())) - o0;
+    V.world.others = [hc];
+    assert(V.assist.incoming().some((h) => h.kind === 'cover' && h.dps === COVER), '好友的防禦範圍涵蓋這裡（cover）');
+    const o1 = ownDps();
+    const d1 = capDps(V, () => V.npcs.resolveIncoming(n, n.trip, Date.now())) - o1;
+    assert(Math.abs(d0) < 1 && Math.abs(d1 - COVER) < 1, `NPC 掠奪時加上好友防禦設施的火力（額外火力 ${Math.round(d0)} → ${Math.round(d1)}）`);
+    assert(V.state.defenseLog[0].assists?.some((x) => x.name === 'H') || /協防|H/.test(V.state.defenseLog[0].note || ''), `防守紀錄寫入好友防禦設施協防（${JSON.stringify(V.state.defenseLog[0].assists)}）`);
+    // 玩家突襲：攻擊方把對方好友的防禦設施火力算進守城
+    C.world.others = [pres(V, 'V'), hn];
+    const p0 = capDps(C, () => C.territory.resolvePvp({ poiId: 'pvp:V#0', memberIds: [C.survivors.leader().id], endAt: Date.now(), travelEvents: [], cargo: 40 }));
+    C.world.others = [pres(V, 'V'), hc];
+    let rp = null;
+    const p1 = capDps(C, () => { rp = C.territory.resolvePvp({ poiId: 'pvp:V#0', memberIds: [C.survivors.leader().id], endAt: Date.now(), travelEvents: [], cargo: 40 }); });
+    assert(p0 != null && Math.abs(p1 - p0 - COVER) < 1, `玩家突襲時加上對方好友防禦設施的火力（${Math.round(p0)} → ${Math.round(p1)}）`);
+    assert(rp.events.some((e) => /好友的防禦設施協助守城/.test(e)), '突襲戰報顯示對方好友的防禦設施協助');
+    // 沒有涵蓋到被攻打的人：不算
+    C.world.others = [pres(V, 'V'), { ...hc, cover: { r: 99999, dps: COVER, to: ['X'] } }];
+    const p2 = capDps(C, () => C.territory.resolvePvp({ poiId: 'pvp:V#0', memberIds: [C.survivors.leader().id], endAt: Date.now(), travelEvents: [], cargo: 40 }));
+    assert(Math.abs(p2 - p0) < 1, '好友的防禦範圍沒涵蓋被攻打的人時不加火力');
+  }
 }
 
 // ---- 59. v9：NPC 據點大幅增強 ----
@@ -6223,6 +6255,34 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     await A.cp.resolveMarches(t0 + 1000);
     assert(A.cp.data(cp.id)?.march, '部隊還沒抵達：不交戰');
     await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, march: null, guards: (x.guards || []).filter((h) => h.p !== 'A') } }));
+    // 完整流程：部隊抵達 → 交戰 → 打贏佔領（只結算一次）；打輸控制點維持原狀
+    const sim0 = A.combat.simulate;
+    const forceWin = (win) => { A.combat.simulate = (team, foes, o) => { const r = sim0.call(A.combat, team, foes, { ...o, record: false }); r.victory = win; if (win) r.foes.forEach((f) => { f.down = true; }); return r; }; };
+    const tgt2 = CPC.CONTROL_POINTS.find((c) => c.id !== cp.id && !A.cp.factionOf(c.id) && !A.cp.owners(c.id).length);
+    const past = Date.now() - 6 * 3600000;
+    await A.cp.launchMarch('red', tgt2.id, past);
+    // 抵達時間設成剛剛（守軍補回時間從抵達算起）
+    await A.shared.update(CPC.CP_KIND, tgt2.id, (x) => ({ data: { ...x, march: { ...x.march, arriveAt: Date.now() - 1000 } } }));
+    assert(A.cp.data(tgt2.id)?.march?.arriveAt <= Date.now(), '部隊已經抵達（測試用：很久以前出發）');
+    forceWin(true);
+    const logs0 = A.state.log.filter((l) => l.msg.includes(`佔領了控制點 #${tgt2.no}`)).length;
+    await A.cp.resolveMarches(Date.now());
+    await B.shared.poll();
+    await B.cp.resolveMarches(Date.now());
+    A.combat.simulate = sim0;
+    assert(A.cp.factionOf(tgt2.id) === 'red' && B.cp.factionOf(tgt2.id) === 'red' && !A.cp.data(tgt2.id)?.march, '部隊抵達後交戰：打贏由勢力佔領控制點、行軍資料清除');
+    assert(A.state.log.filter((l) => l.msg.includes(`佔領了控制點 #${tgt2.no}`)).length - logs0 === 1 && !B.state.log.some((l) => l.msg.includes(`佔領了控制點 #${tgt2.no}`)), '多位玩家同時在線：只結算一次');
+    assert(A.cp.garrisonCount(tgt2.id) < tgt2.garrison.count, '勢力打下後留守部分守軍（之後逐漸補回）');
+    // 打輸：玩家的控制點維持原狀
+    const snap = JSON.parse(JSON.stringify(A.cp.data(cp.id)));
+    await A.cp.launchMarch('red', cp.id, past);
+    forceWin(false);
+    await A.cp.resolveMarches(Date.now());
+    A.combat.simulate = sim0;
+    assert(!A.cp.factionOf(cp.id) && A.cp.owners(cp.id).some((o) => o.p === 'A') && !A.cp.data(cp.id)?.march, '部隊被擊退：控制點維持原本的佔領者');
+    await A.shared.update(CPC.CP_KIND, cp.id, () => ({ data: { ...snap, march: null } }));
+    await A.shared.update(CPC.CP_KIND, tgt2.id, () => ({ data: { owners: [], guards: [], faction: null } }));
+    await B.shared.poll();
   }
   // 每日收益：佔領者與駐守者都能拿，同一人只一份
   assert(A.cp.incomeSources().length === 1 && B.cp.incomeSources().length === 1, '佔領者與駐守者都有收益');
