@@ -36,6 +36,7 @@ import { SharedWorld } from '../multiplayer/SharedWorld.js';
 import { MarketSystem } from '../systems/MarketSystem.js';
 import { InfectedSystem } from '../systems/InfectedSystem.js';
 import { RallySystem } from '../systems/RallySystem.js';
+import { ControlPointSystem } from '../systems/ControlPointSystem.js';
 import { RebirthSystem } from '../systems/RebirthSystem.js';
 import { AssistSystem } from '../systems/AssistSystem.js';
 import { ChatSystem } from '../multiplayer/Chat.js';
@@ -82,6 +83,7 @@ export class Game {
     this.market = new MarketSystem(this);
     this.infected = new InfectedSystem(this);
     this.rally = new RallySystem(this);
+    this.cp = new ControlPointSystem(this);
     this.assist = new AssistSystem(this);
     this.rebirth = new RebirthSystem(this);
 
@@ -164,6 +166,8 @@ export class Game {
     this.genMap();
     // v13：固定世界地圖，範圍外的避難所整座搬進範圍內
     this.shelter.moveIntoWorld();
+    // v14：所有避難所防禦欄位補足
+    this.shelter.ensureDefenseSlots();
     // v12：自己的倖存者不同名（舊版名單只有 30 個，可能有重複）
     this.survivors.dedupeNames();
     // v13.1：舊名單的倖存者換成新名單的名字（只做一次）
@@ -274,6 +278,7 @@ export class Game {
     this.shared.tick(now);
     if (!silent) this.chat.tick(now);
     this.rally.update(now);
+    this.cp.update(now);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();

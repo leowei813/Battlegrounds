@@ -14,6 +14,7 @@ import { createBase } from '../core/GameState.js';
 import { SUPPLIES } from '../config/supplies.js';
 import { canAfford, payCost, scaleCost } from './costUtils.js';
 import { inWorld } from '../config/world.js';
+import { inPlayerSafe } from '../config/zones.js';
 import { DUNGEONS, DG_CLEAR_M } from '../config/dungeons.js';
 import { haversine } from '../utils/math.js';
 
@@ -197,8 +198,11 @@ export class ShelterSystem {
     if (!poi) return { ok: false, reason: '找不到地點' };
     if (this.baseAtPoi(poi.id)) return { ok: false, reason: '這裡已經是你的據點' };
     // 重度感染據點位置固定：據點（含警戒範圍）不能和它重疊
-    const inf = this.game.infected?.blocking(poi, BASE_SIZES[baseSizeOf(poi)]?.alert || 80);
+    // v14：避難所一律比照巨型的警戒範圍
+    const inf = this.game.infected?.blocking(poi, BASE_SIZES[this.primary() ? baseSizeOf(poi) : 'huge']?.alert || 80);
     if (inf) return { ok: false, reason: `這裡太靠近重度感染據點「${inf.name}」，無法建立據點` };
+    // v14：避難所只能建在左側安全區（玩家據點區）
+    if (this.game.state.map?.source === 'generated' && !inPlayerSafe(poi.lat, poi.lon)) return { ok: false, reason: '避難所只能建在地圖左側的安全區' };
     // v12：前哨站已移除，只能有一座避難所（搬遷時先放棄原本的避難所）
     if (this.primary()) return { ok: false, reason: '已經有避難所了' };
     if (!canAfford(this.game.state, this.establishCost())) return { ok: false, reason: '資源不足' };
@@ -212,6 +216,7 @@ export class ShelterSystem {
     payCost(this.game.state, this.establishCost());
     const kind = this.nextKind();
     const base = createBase(poi, kind);
+    if (kind === 'shelter') base.size = 'huge'; // v14：避難所一律比照巨型
     // 搬遷：保留原本避難所的設施等級
     const reloc = kind === 'shelter' ? this.game.state.relocation : null;
     if (reloc?.facilities) {
@@ -252,7 +257,7 @@ export class ShelterSystem {
     const g = this.game;
     const others = (g.world?.others || []).flatMap((p) => p.bases || []);
     const alert = BASE_SIZES[sh.size]?.alert || 80;
-    const free = (g.state.map.pois || []).filter((p) => inWorld(p.lat, p.lon, 100)
+    const free = (g.state.map.pois || []).filter((p) => inWorld(p.lat, p.lon, 100) && inPlayerSafe(p.lat, p.lon)
       && !g.infected?.blocking(p, alert)
       && !others.some((b) => haversine(b.lat, b.lon, p.lat, p.lon) < 250)
       && !Object.values(DUNGEONS).some((dg) => haversine(dg.lat, dg.lon, p.lat, p.lon) < DG_CLEAR_M + alert));
@@ -267,6 +272,43 @@ export class ShelterSystem {
     g.log(`🗺️ 世界地圖改為固定範圍：避難所從「${from}」整座搬到「${poi.name}」，設施與物資全部保留`, 'info');
     g.bus.emit('shelter:changed');
     return poi;
+  }
+
+  /**
+   * v14：改版後一次免費重新選擇避難所（只能選左側安全區）。
+   * 整座搬過去：設施、防禦建築、圍牆、倉庫資源全部保留，規模沿用原本的避難所。
+   */
+  canFreeMove(poi) {
+    const sh = this.primary();
+    if (!this.game.state.freeRelocate) return { ok: false, reason: '已經使用過免費重選' };
+    if (!sh) return { ok: false, reason: '還沒有避難所' };
+    if (!poi || this.baseAtPoi(poi.id)) return { ok: false, reason: '這裡已經是你的避難所' };
+    if (!inPlayerSafe(poi.lat, poi.lon)) return { ok: false, reason: '避難所只能建在地圖左側的安全區' };
+    if (this.game.state.expeditions.length) return { ok: false, reason: '有隊伍在外，等隊伍回來再搬' };
+    const inf = this.game.infected?.blocking(poi, BASE_SIZES[sh.size]?.alert || 80);
+    if (inf) return { ok: false, reason: `這裡太靠近重度感染據點「${inf.name}」` };
+    return { ok: true };
+  }
+
+  freeMove(poi) {
+    const c = this.canFreeMove(poi);
+    if (!c.ok) return c;
+    const sh = this.primary();
+    const from = sh.name;
+    Object.assign(sh, { poiId: poi.id, name: poi.name, lat: poi.lat, lon: poi.lon });
+    sh.defenses.forEach((d) => { d.garrisonId = d.garrisonId || null; });
+    delete this.game.state.freeRelocate;
+    this.game.state.map.center = { lat: poi.lat, lon: poi.lon };
+    this.game.civilization?.invalidate?.();
+    this.game.log(`🏠 免費重新選擇避難所：從「${from}」整座搬到「${poi.name}」，設施、防禦建築與資源全部保留`, 'success');
+    this.game.bus.emit('shelter:changed');
+    return { ok: true, msg: `避難所已搬到「${poi.name}」` };
+  }
+
+  /** 放棄免費重選（不再提醒） */
+  skipFreeMove() {
+    delete this.game.state.freeRelocate;
+    return { ok: true };
   }
 
   /** 舊 API 相容 */
@@ -539,10 +581,20 @@ export class ShelterSystem {
     return this.discounted(FACILITIES[id].cost(lv));
   }
 
-  /** 設施最高等級：依據點規模（小型 Lv8、中型 Lv11、大型 Lv13、巨型 Lv15） */
-  facilityCap(b) {
-    const base = this.resolve(b);
-    return Math.min(FACILITY_MAX_LEVEL, BASE_SIZES[base?.size]?.facMax ?? FACILITY_MAX_LEVEL);
+  /** 設施最高等級：v14 起所有避難所都能升到最高等級（建築規模只影響探索、屍潮與警戒範圍） */
+  facilityCap() {
+    return FACILITY_MAX_LEVEL;
+  }
+
+  /** v14：所有避難所的防禦欄位都是最多的數量（舊存檔的避難所補足欄位） */
+  ensureDefenseSlots() {
+    const max = Math.max(...Object.values(BASE_SIZES).map((x) => x.slots));
+    this.bases.forEach((b) => {
+      if (b.kind === 'outpost' || !Array.isArray(b.defenses)) return;
+      // v14：避難所沒有大小之分，屍潮強度與警戒範圍一律比照巨型
+      b.size = 'huge';
+      for (let i = b.defenses.length; i < max; i += 1) b.defenses.push({ slot: i, type: null, level: 0, garrisonId: null });
+    });
   }
 
   /**
@@ -575,7 +627,7 @@ export class ShelterSystem {
   relocationCapPreview(poi) {
     const reloc = this.game.state.relocation;
     if (!reloc?.facilities) return { changes: [], refund: {} };
-    const cap = Math.min(FACILITY_MAX_LEVEL, BASE_SIZES[baseSizeOf(poi)]?.facMax ?? FACILITY_MAX_LEVEL);
+    const cap = FACILITY_MAX_LEVEL;
     const base = { size: baseSizeOf(poi), facilities: JSON.parse(JSON.stringify(reloc.facilities)) };
     const changes = [];
     const refund = {};

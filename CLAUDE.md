@@ -30,3 +30,4 @@
 - 所有回覆、文件、更新日誌、PR 都使用繁體中文。
 - 改動後執行 `npm run check` 與 `npm run build`。
 - 存檔格式變更時提高 `SAVE_VERSION` 並在 `SaveManager.migrate()` 加入遷移。
+- **材料需求與掉落配比**（`docs/material-balance.md`、`src/systems/MaterialBalance.js`）：新增或修改研究、建築、防禦、裝備、子彈或藥品配方等會用到耗材的內容時，配比會自動依需求重新計算；改動後執行 `npm run balance -- --md` 更新報表並一起提交。任何跟材料價值或取得有關的新系統（例如黑市、交易）都要參考這張表的稀缺度。

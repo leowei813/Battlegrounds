@@ -4,6 +4,7 @@ import { uid, pick, randInt } from '../utils/math.js';
 import { haversine, formatDuration } from '../utils/math.js';
 import { NPC_REWARD_MUL, RALLY_SHARE_FLOOR } from '../config/npcs.js';
 import { AUTO_HOME_LABEL } from './AutoHomeSystem.js';
+import { cpById } from '../config/controlPoints.js';
 
 /** 集結：出發倒數可選的分鐘數 */
 export const RALLY_DELAYS = [5, 10, 15, 20];
@@ -80,6 +81,7 @@ export class RallySystem {
     if (this.targetGone(t)) return null;
     if (t.kind === 'npc') return g.npcs.get(t.id) || g.npcs.byIdent?.(t.ident) || null;
     if (t.kind === 'inf') return g.infected.get(t.id) || g.infected.byId?.(t.id) || null;
+    if (t.kind === 'cp') return cpById(t.id);
     return null;
   }
 
@@ -121,7 +123,8 @@ export class RallySystem {
     if (this.trips().some((e) => this.get(e.rallyId)?.owner === this.myId() && ['gathering', 'departed', 'resolving'].includes(this.get(e.rallyId)?.status))) {
       return { ok: false, reason: '已經有進行中的集結' };
     }
-    if (target && !['npc', 'inf'].includes(target.kind)) return { ok: false, reason: '只能對 NPC 據點或重度感染據點發起集結' };
+    if (target && !['npc', 'inf', 'cp'].includes(target.kind)) return { ok: false, reason: '只能對 NPC 據點、控制點發起集結' };
+    if (target?.kind === 'cp') { const c = g.cp.canAttack(target.id); if (!c.ok) return c; }
     return { ok: true };
   }
 
@@ -626,6 +629,32 @@ export class RallySystem {
       } else {
         if (result) g.npcs.assaultWound(n, result.kills.length, now); // 沒打破圍牆就沒有擊倒守軍
         res.summary = `💀 集結攻打「${n.name}」失敗（${as.breached ? '與守軍交戰落敗' : '沒能打破圍牆'}）`;
+      }
+    } else if (d.target.kind === 'cp') {
+      // v14：集結攻打控制點，打下後為所有參加者共同擁有
+      const cp = tg;
+      const foes = g.cp.defenders(cp.id, now);
+      const before = foes.length;
+      result = g.combat.simulate([], foes, { allies: units, record: false, capture: RALLY_LOG, title: `🚩 集結攻打控制點 #${cp.no}` });
+      if (result.entry) res.battle = result.entry;
+      units.forEach((u) => {
+        const r = result.team.find((x) => x.id === u.id);
+        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: Math.round(r?.hp ?? 0), down: !!r?.down, dealt: Math.round(r?.dealt || 0), kills: r?.kills || 0, maxHp: u.maxHp, meds: r?.medsUsed || 0 });
+      });
+      const killed = result.foes.filter((f) => f.down).length;
+      res.detail = [`⚔️ 控制點 #${cp.no}：守軍 ${before} 人，擊倒 ${killed} 人，我方 ${units.length} 人中倒下 ${result.team.filter((x) => x.down).length} 人`, ...teamLines(teams, res)];
+      res.victory = !!result.victory;
+      if (res.victory) {
+        const owners = teams.map((t) => ({ p: t.player, n: t.name }));
+        await g.shared.update('cp', cp.id, (x) => ({ data: { ...(x || {}), owners, faction: null, guards: [], lost: cp.garrison.count, lostAt: now, takenAt: now } }), { lat: cp.lat, lon: cp.lon });
+        res.summary = `🏆 集結佔領控制點 #${cp.no}（${teams.length} 位玩家共同擁有）`;
+      } else {
+        await g.shared.update('cp', cp.id, (x) => {
+          const data = x || { owners: [], guards: [] };
+          if (!data.owners?.length || data.faction) { data.lost = Math.min(cp.garrison.count, (cp.garrison.count - g.cp.garrisonCount(cp.id, now)) + killed); data.lostAt = now; }
+          return { data };
+        }, { lat: cp.lat, lon: cp.lon });
+        res.summary = `💀 集結攻打控制點 #${cp.no} 失敗`;
       }
     } else {
       const s = tg;

@@ -53,6 +53,8 @@ const { InfectedSystem: InfSys } = await import('../src/systems/InfectedSystem.j
 const { RallySystem: RallySys } = await import('../src/systems/RallySystem.js');
 const { tripProgress } = await import('../src/systems/ExplorationSystem.js');
 const realBlocking = InfSys.prototype.blocking;
+// v14：重度感染據點已停用；測試仍檢查原本的機制
+{ const { INFECTED: INF0 } = await import('../src/systems/InfectedSystem.js'); INF0.disabled = false; }
 InfSys.prototype.blocking = function blocking(...a) { return this.game.testInfBlock ? realBlocking.apply(this, a) : null; };
 let failures = 0;
 const assert = (cond, msg) => {
@@ -396,10 +398,10 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gv.state.resources.food = 1;
   gv.resources.apply(60 * 60000);
   assert(gv.state.starving && gv.resources.lastStarvingMs > 0, `人數多、食物見底時進入飢餓（淨收入 ${gv.resources.rates().net.food.toFixed(1)}/時）`);
-  // 人員上限：依領袖等級與據點等級提高，最多 10 人
+  // 人員上限：依領袖等級與據點等級提高，最多 12 人（v14）
   leader.level = 50;
   gv.state.bases[0].facilities = Object.fromEntries(Object.keys(gv.state.bases[0].facilities).map((k) => [k, { level: 10 }]));
-  assert(sv.housing() === 10, `人員上限最多 10 人（目前 ${sv.housing()}）`);
+  assert(sv.housing() === 12, `人員上限最多 12 人（目前 ${sv.housing()}）`);
   // 品級越高成長越多
   const a = gv.survivors.makeCandidate(30);
   const b = { ...a, id: 'x', rarity: 'legendary' };
@@ -411,7 +413,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 據點規模：巨型據點可建 20 棟建築
   const base = gv.shelter.primary();
   assert(gv.shelter.sizeInfo(base).total === 20 && base.defenses.length === 11, '最大（巨型）據點可建造 20 棟建築');
-  const small = gv.shelter.sizeInfo(gv.state.map.pois.find((p) => p.type === 'gasStation'));
+  const small = gv.shelter.sizeInfo({ id: 'ph', type: 'pharmacy', name: 'x', lat: 25.03, lon: 121.556 });
   assert(small.total < 20, `其他規模可建造數較少（${small.name} ${small.total} 棟）`);
   // 突破：第 1 波就被突破損失 55% 資源，建築可能降級或被拆毀，當晚不再來襲
   Object.keys(gv.state.resources).forEach((k) => { gv.state.resources[k] = 1000; });
@@ -454,14 +456,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { ZONES, zoneIndexAt, zoneAt } = await import('../src/config/zones.js');
   const { stockOf } = await import('../src/systems/LootStock.js');
   const counts = ZONES.map(() => 0);
-  for (let i = 0; i < 20000; i += 1) counts[zoneIndexAt(25 + (i % 141) * 0.0011, 121 + Math.floor(i / 141) * 0.0011)] += 1;
+  for (let i = 0; i < 20000; i += 1) counts[zoneIndexAt(25.0204 + (i % 141) * 0.00016, 121.5557 + Math.floor(i / 141) * 0.0002)] += 1;
   assert(counts.every((c) => c > 0), `六種區域都會出現（${counts.join('/')}）`);
   assert(zoneIndexAt(25.01, 121.52) === zoneIndexAt(25.01, 121.52), '同一座標的區域固定（所有玩家相同）');
   // 找一棟安全區與一棟深淵區的建築比較物資
   const find = (idx) => {
     for (let i = 0; i < 40000; i += 1) {
-      const lat = 25 + (i % 200) * 0.0009;
-      const lon = 121 + Math.floor(i / 200) * 0.0009;
+      const lat = 25.0204 + (i % 200) * 0.0001;
+      const lon = 121.5557 + Math.floor(i / 200) * 0.00015;
       if (zoneIndexAt(lat, lon) === idx) return { lat, lon };
     }
     return null;
@@ -3471,21 +3473,20 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const hb = gc6.shelter.primary();
   hb.facilities.farm.level = gc6.shelter.facilityCap(hb);
   Object.keys(gc6.state.resources).forEach((k) => { gc6.state.resources[k] = 1e7; });
-  const up = gc6.shelter.canUpgradeFacility(hb, 'farm');
-  assert(!up.ok && /需要更大的據點/.test(up.reason), '設施達到據點規模上限時不能再升級');
+  // v14：所有避難所的設施都能升到最高等級；搬到小地點也不會降級
+  assert(gc6.shelter.facilityCap(hb) === 15, '避難所設施一律可升到 Lv15（v14）');
   hb.facilities.farm.level = 12;
   hb.facilities.workbench.level = 5;
   gc6.shelter.abandon(hb.id);
   const pv = gc6.shelter.relocationCapPreview(small);
-  assert(pv.changes.some((c) => c.id === 'farm' && c.from === 12 && c.to === 8) && !pv.changes.some((c) => c.id === 'workbench'), '搬遷前可預覽小地點會降級的設施');
-  const before6 = JSON.stringify(gc6.state.supplies) + JSON.stringify(gc6.state.resources);
+  assert(!pv.changes.length, '搬到小地點不會降級設施（v14）');
   const nb6 = gc6.shelter.establish(small).base;
-  assert(nb6.facilities.farm.level === 8 && nb6.facilities.workbench.level === 5, '搬到較小的地點：超過上限的設施降到上限，其他不變');
-  assert(JSON.stringify(gc6.state.supplies) + JSON.stringify(gc6.state.resources) !== before6, '降掉的等級退還建造材料');
+  assert(nb6.facilities.farm.level === 12 && nb6.defenses.length === 11, `搬到小地點：設施等級保留、防禦欄位一律 11 格（${nb6.facilities.farm.level}/${nb6.defenses.length}）`);
   // 舊存檔：超過上限的設施降級並退還
   const od = JSON.parse(JSON.stringify(gc6.state));
   od.version = 21;
   od.bases[0].facilities.farm.level = 12;
+  od.bases[0].size = 'small'; // 舊版的小型據點
   const supBefore = JSON.stringify(od.supplies);
   const md = SaveManager.migrate(od);
   assert(md.bases[0].facilities.farm.level === 8 && JSON.stringify(md.supplies) !== supBefore, '舊存檔超過上限的設施降到上限並退還材料');
@@ -4228,17 +4229,17 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gd.state.map.pois = fillPois([], 25, 121);
   gd.shelter.establish(gd.state.map.pois.find((p) => gd.shelter.canEstablish(p).ok));
   const dorm = gd.shelter.primary().facilities.dormitory;
-  dorm.level = 7;
+  dorm.level = 9; // v14：宿舍 Lv9 住滿 12 人
   const cap7 = gd.survivors.dormCap(); const mul7 = gd.survivors.regenMul(); const food7 = gd.resources.rates().upkeep.food; const board7 = gd.survivors.boardSize();
   dorm.level = 15;
   const cap15 = gd.survivors.dormCap(); const mul15 = gd.survivors.regenMul(); const food15 = gd.resources.rates().upkeep.food; const board15 = gd.survivors.boardSize();
   dorm.level = 10;
   const board10 = gd.survivors.boardSize();
-  assert(cap7 === 10 && cap15 === 10 && fac.dormCap(3) === 6, `宿舍 Lv7 住滿 10 人，之後不再增加（${cap7}/${cap15}）`);
+  assert(cap7 === 12 && cap15 === 12 && fac.dormCap(3) === 6, `宿舍 Lv9 住滿 12 人，之後不再增加（${cap7}/${cap15}）`);
   assert(Math.abs(mul15 - mul7 - 0.48) < 1e-9, `宿舍 Lv15 休息回復 +48%（${mul7.toFixed(2)} → ${mul15.toFixed(2)}）`);
   assert(Math.abs(food15 / food7 - 0.84) < 0.001, `宿舍 Lv15 食物消耗 −16%（${food7.toFixed(2)} → ${food15.toFixed(2)}）`);
   assert(board10 === board7 + 1 && board15 === board7 + 2, `宿舍 Lv10、Lv15 招募候選人各 +1（${board7} → ${board10} → ${board15}）`);
-  assert(fac.FACILITIES.dormitory.effectText(12).includes('休息回復 +30%') && fac.FACILITIES.dormitory.effectText(5).includes('8 人'), '宿舍效果說明顯示對應等級的效果');
+  assert(fac.FACILITIES.dormitory.effectText(12).includes('休息回復 +24%') && fac.FACILITIES.dormitory.effectText(5).includes('8 人'), '宿舍效果說明顯示對應等級的效果');
 }
 
 // ---- 94. 探索遇到的倖存者：等級依自己隊伍的平均等級，不會因建築殭屍等級過高 ----
@@ -4491,7 +4492,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(vC.left && vC.left.done === 1 && vC.left.total === A.exploration.checkpointCount(T), `探索到一半離開：其他玩家看到剩下的檢核點（${vC.left?.done}/${vC.left?.total}）`);
   assert(!vC.occ.some((x) => x.n === 'B101' && x.l > Date.now() + 60000), '離開後移除自己的佔用紀錄');
   // C 接著探索：從第 2 個檢核點繼續，搜索時間較短
-  const fullMin = C.exploration.searchMinutes({ ...T, id: 'fresh-copy' });
+  // 同規模的另一棟（v14：規模依區域與建築 ID 決定）
+  const { baseSizeOf: bso } = await import('../src/config/civilization.js');
+  let copyId = 'fresh-copy';
+  for (let k = 0; k < 200 && bso({ ...T, id: copyId }) !== bso(T); k += 1) copyId = `fresh-copy-${k}`;
+  const fullMin = C.exploration.searchMinutes({ ...T, id: copyId });
   assert(C.exploration.searchMinutes(T) < fullMin, '接續探索只需剩餘的搜索時間');
   const rc = C.exploration.start(T.id, ['leader'], 1, false, Date.now());
   assert(rc.ok, `C 繼續探索（${rc.reason || ''}）`);
@@ -4759,22 +4764,42 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(spots.supermarket > 0 && spots.residential > 0 && spots.school > 0, '超市、住宅、學校有機會找到塑膠外殼');
 }
 
-// ---- 110. 黑市交換：同價值 10 換 1、跨階 ×2、只能同階或低一階、★5 不開放、不到 1 個不換 ----
+// ---- 110. 黑市交換：同價值 5 換 1（v13.3）、跨階 ×2、只能同階或低一階、★5 不開放、不到 1 個不換 ----
 {
+  const { EXCHANGE: EX } = await import('../src/systems/BlackMarketSystem.js');
   const gx = Game.newGame({ playerName: 'X110', classId: 'warrior', lat: 25, lon: 121 });
   const bm = gx.blackMarket;
-  gx.state.supplies = { steelPlate: 40, spring: 100, nail: 500, hinge: 3 };
-  const q1 = bm.exchangeQuote('steelPlate', 'valve', 40);
-  assert(q1.ok && q1.get === 2 && q1.used === 34, `同階：鋼板 40 → 閥門 2，只用掉 34（${q1.get}/${q1.used}）`);
-  const q2 = bm.exchangeQuote('spring', 'valve', 100);
-  assert(q2.ok && q2.get === 2 && q2.used === 80, `低一階：彈簧 100 → 閥門 2（每個 40）（${q2.get}/${q2.used}）`);
+  assert(EX.rate === 5, '黑市交換：同價值 5 換 1');
+  const V = EX.value;
+  const per1 = (V.valve / V.steelPlate) * 5;
+  const per2 = (V.valve / V.spring) * 5 * 2;
+  gx.state.supplies = { steelPlate: 400, spring: 1000, nail: 500, hinge: 1 };
+  const q1 = bm.exchangeQuote('steelPlate', 'valve', 400);
+  assert(q1.ok && q1.get === Math.floor(400 / per1 + 1e-9) && Math.abs(q1.per - per1) < 1e-9, `同階：依價值換算（鋼板 400 → 閥門 ${q1.get}，每個 ${per1}）`);
+  const q2 = bm.exchangeQuote('spring', 'valve', 1000);
+  assert(q2.ok && Math.abs(q2.per - per2) < 1e-9, `低一階：再 ×2（彈簧每 ${per2} 個換 1 個閥門）`);
   assert(!bm.exchangeQuote('nail', 'valve', 500).ok, '不能用低兩階的材料交換');
   assert(!bm.exchangeQuote('valve', 'spring', 10).ok, '不能用高階換低階');
   assert(!bm.exchangeable('precision') && !bm.exchangeable('kevlar'), '★5 最高階不開放');
   assert(!bm.exchangeQuote('nail', 'cotton', 100).ok, '零件與布料不能互換');
-  assert(!bm.exchangeQuote('hinge', 'spring', 3).ok, '不到 1 個不能換');
-  const r = bm.exchange('steelPlate', 'valve', 40);
-  assert(r.ok && gx.state.supplies.valve === 2 && gx.state.supplies.steelPlate === 6, `交換後倉庫正確（閥門 ${gx.state.supplies.valve}，鋼板 ${gx.state.supplies.steelPlate}）`);
+  assert(!bm.exchangeQuote('hinge', 'spring', 1).ok, '不到 1 個不能換');
+  const r = bm.exchange('steelPlate', 'valve', 400);
+  assert(r.ok && gx.state.supplies.valve === q1.get && gx.state.supplies.steelPlate === 400 - q1.used, `交換後倉庫正確（閥門 ${gx.state.supplies.valve}，鋼板 ${gx.state.supplies.steelPlate}）`);
+  // 依配比表：比較缺的材料價值較高
+  assert(V.valve > V.steelPipe && V.rubber > V.ironWire, `交換價值參考材料需求與掉落配比表（閥門 ${V.valve} > 鋼管 ${V.steelPipe}、橡膠 ${V.rubber} > 鐵絲 ${V.ironWire}）`);
+}
+
+// ---- v13.3：材料需求與掉落配比 ----
+{
+  const MB = await import('../src/systems/MaterialBalance.js');
+  const { baseSupplyWeight: bw } = await import('../src/systems/LootStock.js');
+  const mul = MB.balanceMultipliers(bw);
+  const keep = new Set(MB.consumableMaterials());
+  assert(Object.values(mul).every((m) => m >= MB.BALANCE.min - 1e-9 && m <= MB.BALANCE.max + 1e-9), '掉落倍率在 ×0.6～×2 之間');
+  assert([...keep].every((k) => mul[k] >= 1 - 1e-9) && keep.has('plastic') && keep.has('nail'), '消耗品材料（子彈、藥品、修牆用）不會被降低');
+  assert(mul.valve > 1.5 && mul.ironPlate < 0.8 && mul.sensor < 0.8, `需求高的材料掉落提高、需求低的降低（閥門 ×${mul.valve.toFixed(2)}、鐵板 ×${mul.ironPlate.toFixed(2)}、感測器 ×${mul.sensor.toFixed(2)}）`);
+  const sc = MB.scarcity(bw);
+  assert(sc.valve < 2.71 && sc.valve >= 1, `調整後閥門稀缺度下降（${sc.valve.toFixed(2)}）`);
 }
 
 // ---- 111. 快速換裝不會降低戰力；材料節約也套用到彈藥與藥品 ----
@@ -5947,11 +5972,19 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const r = W.randomInWorld();
     if (!W.inWorld(r.lat, r.lon)) { assert(false, '隨機起點在範圍內'); break; }
   }
-  Z.ABYSS_SPOTS.forEach((a) => {
-    assert(Z.zoneIndexAt(a.lat, a.lon) === 5 && Z.zoneAt(a.lat, a.lon).id === 'abyss', `指定的深淵區：${a.name}`);
-    const near = Z.zoneIndexAt(a.lat + (a.r + 60) / 111320, a.lon);
-    assert(near >= 4, `深淵區外圍一圈為致死區以上（${a.name}：${near}）`);
-  });
+  // v14：中間深淵、往兩側擴散；左側安全區是玩家據點區，右側是勢力領地
+  {
+    const B = W.WORLD_BOUNDS;
+    const mid = (B.n + B.s) / 2;
+    const at = (x) => Z.zoneIndexAt(mid, B.w + (B.e - B.w) * x);
+    assert(at(0.5) === 5 && at(0.03) === 0 && at(0.97) === 0, `中間是深淵區、兩側是安全區（${at(0.03)}/${at(0.5)}/${at(0.97)}）`);
+    assert(Z.inPlayerSafe(mid, B.w + (B.e - B.w) * 0.03) && !Z.inPlayerSafe(mid, B.w + (B.e - B.w) * 0.97) && Z.inNpcHome(mid, B.w + (B.e - B.w) * 0.95), '左側安全區是玩家據點區、右側是勢力領地');
+    const { baseSizeOf: bso } = await import('../src/config/civilization.js');
+    const wp2 = generateWorldPois();
+    const hugeLow = wp2.filter((p) => Z.zoneIndexAt(p.lat, p.lon) <= 3 && bso(p) === 'huge').length;
+    const hugeAbyss = wp2.filter((p) => Z.zoneIndexAt(p.lat, p.lon) === 5 && bso(p) === 'huge').length;
+    assert(hugeLow === 0 && hugeAbyss > 50, `巨型建築只在致死區與深淵區（危險區以下 ${hugeLow} 棟、深淵區 ${hugeAbyss} 棟）`);
+  }
   // 範圍外的避難所：整座搬進範圍內，設施保留
   const gm = Game.newGame({ playerName: 'M13', classId: 'warrior', lat: 24.1, lon: 120.6 });
   gm.state.map.pois = fillPoisAt([], 24.1, 120.6);
@@ -6024,6 +6057,146 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const inj = gq.siege.of(bq.id).injureGuards();
   const top = [...gs].sort((a, b) => b.level - a.level).slice(0, 5).map((x) => x.name);
   assert(inj.filter((x) => x.cellar).map((x) => x.name).sort().join() === top.sort().join() && inj.filter((x) => x.cellar).every((x) => !x.severe && !x.light), `屍潮突破時等級最高的 5 位駐守者撤進地窖不受傷（Lv10 地窖）`);
+}
+
+// ---- v14：避難所只能建在左側安全區、改版後免費重選一次 ----
+{
+  const Z = await import('../src/config/zones.js');
+  const gf = Game.newGame({ playerName: 'F14', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gf.genMap();
+  const safe = gf.state.map.pois.filter((p) => Z.inPlayerSafe(p.lat, p.lon));
+  const abyss = gf.state.map.pois.find((p) => Z.zoneIndexAt(p.lat, p.lon) === 5);
+  assert(!gf.shelter.canEstablish(abyss).ok && gf.shelter.canEstablish(safe[0]).ok, '避難所只能建在左側安全區');
+  gf.shelter.establish(abyss); // 不能建
+  assert(!gf.shelter.primary(), '深淵區不能建立避難所');
+  // 舊玩家：避難所在深淵區（舊地圖），改版後可免費重選
+  const old = gf.shelter.establish({ ...safe[0] }).base;
+  Object.assign(old, { lat: abyss.lat, lon: abyss.lon, poiId: abyss.id, name: abyss.name, size: 'huge' });
+  old.facilities.farm.level = 14;
+  gf.state.resources.food = 777;
+  const mig = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 33 });
+  assert(mig.freeRelocate === true && mig.guideSeen === 0, '改版存檔：提供一次免費重選與顯示新玩法說明');
+  gf.state.freeRelocate = true;
+  assert(!gf.shelter.canFreeMove(abyss).ok, '免費重選只能選安全區');
+  const r = gf.shelter.freeMove(safe[1]);
+  const nb = gf.shelter.primary();
+  assert(r.ok && Z.inPlayerSafe(nb.lat, nb.lon) && nb.size === 'huge' && nb.facilities.farm.level === 14 && gf.state.resources.food === 777, '免費重選：整座搬到安全區，規模、設施、資源全部保留');
+  assert(!gf.state.freeRelocate && !gf.shelter.canFreeMove(safe[2]).ok, '免費重選只能用一次');
+  const { GUIDE_VERSION } = await import('../src/ui/GuideDialog.js');
+  assert(GUIDE_VERSION === 14, '遊戲說明版本 14');
+}
+
+// ---- v14 第 2 批：控制點（佔領後才能探索、好友可探索與駐防、06:00 運輸收益、敵對回到中立） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const CPC = await import('../src/config/controlPoints.js');
+  const Z = await import('../src/config/zones.js');
+  assert(CPC.CONTROL_POINTS.length === 21, '控制點共 21 個');
+  assert(CPC.CONTROL_POINTS.every((c) => c.zone >= 2), '控制點只在警戒區～深淵區');
+  assert(CPC.cpNeighbors('cp1').length > 0 && CPC.cpNeighbors('cp13').length >= 3, '控制點有相鄰關係');
+  const store = new MemoryObjects();
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.03, lon: 121.56 });
+    gx.genMap();
+    gx.shelter.establish(gx.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gx.shelter.canEstablish(p).ok));
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    setHour(gx, 10);
+    return gx;
+  };
+  const A = mk('A');
+  const B = mk('B');
+  const C = mk('C');
+  A.state.relations.players = { B: { status: 'friend' }, C: { status: 'neutral' } };
+  B.state.relations.players = { A: { status: 'friend' } };
+  const cp = CPC.CONTROL_POINTS[0];
+  const inCp = A.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === cp.id);
+  const free = A.state.map.pois.find((p) => !CPC.cpAt(p.lat, p.lon) && Z.zoneSide(p.lat, p.lon) === 'player' && Z.zoneIndexAt(p.lat, p.lon) === 1);
+  const npcHome = A.state.map.pois.find((p) => Z.inNpcHome(p.lat, p.lon));
+  assert(!A.cp.canExplore(inCp).ok && A.cp.canExplore(free).ok && !A.cp.canExplore(npcHome).ok, '中立控制點區域、勢力領地不能探索；左側一般區可以');
+  const lead = A.survivors.leader();
+  assert(!A.exploration.start(inCp.id, [lead.id], 5).ok, '派遣探索未佔領的控制點區域會被擋下');
+  assert(A.cp.garrisonCount(cp.id) === cp.garrison.count && A.cp.npcGarrison(cp.id).length === cp.garrison.count, `中立控制點有感染者守軍（${cp.garrison.count} 人）`);
+  // 攻打（測試用：必勝）
+  const sim = A.combat.simulate.bind(A.combat);
+  A.combat.simulate = (team, foes, o) => { const r = sim(team, foes, { ...o, record: false }); r.victory = true; r.foes.forEach((f) => { f.down = true; }); return r; };
+  const at = A.cp.attack(cp.id, [lead.id]);
+  assert(at.ok, `派隊攻打控制點（${at.reason || ''}）`);
+  await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs + 1);
+  A.combat.simulate = sim;
+  await B.shared.poll(); await C.shared.poll();
+  assert(A.cp.statusOf(cp.id) === 'mine' && B.cp.statusOf(cp.id) === 'mine' && C.cp.statusOf(cp.id) === 'other', '打下後：自己與好友是可探索，其他玩家不行');
+  assert(A.cp.canExplore(inCp).ok && B.cp.canExplore(inCp).ok && !C.cp.canExplore(inCp).ok, '佔領後該區域：佔領者與好友可以探索，其他玩家不行');
+  assert(!C.cp.canAttack(cp.id).ok, '非敵對的其他玩家不能攻打');
+  C.state.relations.players = { A: { status: 'hostile' } };
+  assert(C.cp.canAttack(cp.id).ok, '敵對玩家可以攻打');
+  // 好友駐防（每人最多 2 人）
+  A.exploration.update(at.exp.endAt + 1, { silent: true });
+  const bl = B.survivors.leader();
+  const gd = B.cp.guard(cp.id, [bl.id]);
+  assert(gd.ok, `佔領者的好友可以駐防（${gd.reason || ''}）`);
+  assert(!B.cp.canGuard(cp.id, 2).ok, '每名玩家每個控制點最多駐防 2 人');
+  await B.cp.syncGuards(gd.exp.startAt + gd.exp.travelMs + 1);
+  await A.shared.poll();
+  assert((A.cp.data(cp.id)?.guards || []).some((h) => h.p === 'B'), '駐防隊寫入控制點，攻打方會遇到');
+  // 每日收益：佔領者與駐守者都能拿，同一人只一份
+  assert(A.cp.incomeSources().length === 1 && B.cp.incomeSources().length === 1, '佔領者與駐守者都有收益');
+  const inc = A.cp.rollIncome(cp);
+  assert(inc.food === CPC.CP_INCOME[cp.zone].food && Object.keys(inc).length > 3, `收益：少量資源＋隨機零件（${JSON.stringify(inc)}）`);
+  const t6 = A.cp.incomeTime(Date.now());
+  A.cp.startConvoys(t6 + 1000);
+  const cv = A.cp.st.convoys[0];
+  assert(A.cp.st.convoys.length === 1 && cv.endAt > cv.startAt, '06:00 運輸隊從控制點出發');
+  A.cp.startConvoys(t6 + 2000);
+  assert(A.cp.st.convoys.length === 1, '同一天只送一次');
+  const f0 = A.state.resources.food;
+  A.cp.deliverConvoys(cv.endAt + 1);
+  assert(A.state.resources.food > f0 && !A.cp.st.convoys.length, '運輸隊抵達避難所後收益入庫');
+  // 共同佔領者變成敵對：回到中立
+  await A.shared.update('cp', cp.id, (x) => ({ data: { ...x, owners: [{ p: 'A', n: 'A' }, { p: 'C', n: 'C' }] } }));
+  A.state.relations.players.C = { status: 'hostile' };
+  await A.cp.checkHostileOwners(Date.now());
+  assert(A.cp.statusOf(cp.id) === 'neutral', '共同佔領者變成敵對時，控制點回到中立');
+  assert(A.cp.garrisonCount(cp.id) < cp.garrison.count, '回到中立後守軍慢慢補回');
+}
+
+// ---- v14 第 3 批：三大勢力（起始控制點、相鄰進攻、優先無人駐守、打下留守、NPC 據點數量） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const CPC = await import('../src/config/controlPoints.js');
+  const Z = await import('../src/config/zones.js');
+  const gq = Game.newGame({ playerName: 'Q3', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gq.genMap();
+  gq.shelter.establish(gq.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gq.shelter.canEstablish(p).ok));
+  gq.shared.backend = new MemoryObjects();
+  gq.world = { others: [], myId: 'Q3', identity: () => ({ id: 'Q3', token: 't' }) };
+  const own = Object.fromEntries(CPC.FACTION_KEYS.map((f) => [f, gq.cp.factionCps(f)]));
+  assert(CPC.FACTION_KEYS.every((f) => own[f].length >= 1) && own.red.every((id) => CPC.cpById(id).side === 'npc'), `三大勢力一開始各自擁有東側的控制點（${JSON.stringify(own)}）`);
+  CPC.FACTION_KEYS.forEach((f) => {
+    const t = gq.cp.pickTarget(f);
+    assert(t && own[f].some((id) => CPC.cpNeighbors(id).includes(t)) && !own[f].includes(t), `勢力「${CPC.FACTIONS[f].name}」只攻打相鄰的控制點（${t}）`);
+  });
+  // 有駐防的排在後面：把 black 的候選之一標記為玩家佔領＋駐防
+  const cands = [...new Set(own.black.flatMap((id) => CPC.cpNeighbors(id)))].filter((id) => !own.black.includes(id));
+  const first = gq.cp.pickTarget('black');
+  await gq.shared.update('cp', first, () => ({ data: { owners: [{ p: 'X', n: 'X' }], guards: [{ p: 'X', n: 'X', e: 'e1', units: [{ i: 0, hp: 9e5, maxHp: 9e5, atk: 1, lv: 1 }] }], faction: null } }));
+  const second = gq.cp.pickTarget('black');
+  assert(cands.length < 2 || second !== first, `優先攻擊無人駐守的控制點（${first} 有駐防 → 改打 ${second}）`);
+  // 勢力打下後留守、擁有數增加；NPC 據點依控制點數量建立（每 3 個 1 座，最多 4 座）
+  const before = gq.cp.factionCps('blue').length;
+  const tgt = gq.cp.pickTarget('blue');
+  const sim = gq.combat.simulate.bind(gq.combat);
+  gq.combat.simulate = (t, f, o) => { const r = sim(t, f, o); r.victory = true; return r; };
+  const ra = await gq.cp.npcAttack('blue', tgt);
+  gq.combat.simulate = sim;
+  assert(ra.win && gq.cp.factionOf(tgt) === 'blue' && gq.cp.factionCps('blue').length === before + 1, '勢力打下控制點後佔領');
+  assert(gq.cp.garrisonCount(tgt) < CPC.cpById(tgt).garrison.count && gq.cp.garrisonCount(tgt) > 0, '打下後留下一半守軍');
+  gq.npcs.fillCells(Date.now(), { silent: true });
+  const bases = gq.npcs.list.filter((n) => n.faction);
+  const expect = CPC.FACTION_KEYS.reduce((a, f) => a + Math.min(4, Math.floor(gq.cp.factionCps(f).length / 3)), 0);
+  assert(bases.length === expect && bases.every((n) => n.level >= 35 && n.name.includes('・')), `NPC 據點依勢力的控制點數建立、Lv35 起（${bases.length}/${expect} 座：${bases.map((n) => n.name).join('、')}）`);
+  assert(!gq.npcs.list.some((n) => n.sid && !n.faction), '新地圖不再有散布式的舊 NPC 據點');
+  assert(gq.cp.countOf('X') === 1, '玩家資訊顯示佔領的控制點數');
 }
 
 if (failures) {

@@ -1,3 +1,4 @@
+import { openGuide } from '../GuideDialog.js';
 import { GAME_TITLE } from '../../config/constants.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { formatNumber } from '../../utils/math.js';
@@ -124,7 +125,7 @@ export class SettingsPanel {
       <div class="stat-grid">${stats}</div>
       ${accessGateEnabled() ? `<h3>通行碼</h3><div class="btn-row">${btn('🔒 鎖定此裝置（下次需重新輸入通行碼）', 'lockDevice', {}, { cls: 'btn-ghost' })}</div>` : ''}
       <h3>關於</h3>
-      <div class="row-between"><span>目前版本 <span class="ver-tag">v${APP_VERSION}</span></span>${btn('📋 更新內容', 'changelog', {}, { cls: 'btn-sm' })}</div>
+      <div class="row-between"><span>目前版本 <span class="ver-tag">v${APP_VERSION}</span></span><span class="btn-row">${btn('📖 遊戲說明', 'guide', {}, { cls: 'btn-sm' })}${btn('📋 更新內容', 'changelog', {}, { cls: 'btn-sm' })}</span></div>
       <h3>危險區域</h3>
       <div class="btn-row">${btn('🗑️ 刪除進度重新開始', 'cloudReset', {}, { cls: 'btn-danger' })}</div>
       <p class="copyright left">${COPYRIGHT}</p>
@@ -143,6 +144,7 @@ export class SettingsPanel {
 
   onAction(action, data = {}) {
     const g = this.game;
+    if (action === 'guide') { openGuide(this.ui); return; }
     if (action === 'changelog') {
       showChangelog(this.ui);
       return;

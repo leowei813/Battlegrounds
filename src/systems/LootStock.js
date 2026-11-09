@@ -2,6 +2,7 @@ import { POI_TYPES } from '../config/poiTypes.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
 import { zoneAt } from '../config/zones.js';
 import { SUPPLIES, suppliesOf, medWeight } from '../config/supplies.js';
+import { balanceMultipliers } from './MaterialBalance.js';
 
 /**
  * 建築每日物資：以「建築 ID + 當地日期」為種子隨機產生當天的物資種類與數量，
@@ -76,6 +77,10 @@ const PLASTIC_BOOST = 1.5;
 const RECYCLING_ELEC_BOOST = 2;
 /** 這些常見地點本身不太出零件，但每次有機會找到少量塑膠外殼 */
 export const PLASTIC_SPOTS = { supermarket: 0.15, residential: 0.1, school: 0.15 };
+/** 零件與布料掉落的基本權重（與危險度、建築類型無關的部分） */
+export const baseSupplyWeight = (k) => (isBasicBuild(k) ? BASIC_BUILD_BOOST : 1)
+  * (SUPPLIES[k].tier === 1 ? BASIC_TIER_BOOST : 1)
+  * (k === 'plastic' ? PLASTIC_BOOST : 1);
 /** 找到零件時額外多找到 1、2 種零件的機率 */
 const PART_EXTRA_KINDS = [0.6, 0.3];
 
@@ -109,9 +114,9 @@ export function pickSupply(cat, rnd, danger, poiType = null) {
     keys = suppliesOf(cat).filter((k) => SUPPLIES[k].tag !== 'ammo');
     // 越危險的地點越容易出現高階零件與布料
     // 基礎建設材料（第 1～2 階結構零件，例如釘子、螺絲、鐵絲、鐵板）較容易出現
-    weight = (k) => 0.45 ** Math.max(0, SUPPLIES[k].tier - Math.ceil(danger / 1.3)) * (isBasicBuild(k) ? BASIC_BUILD_BOOST : 1)
-      * (SUPPLIES[k].tier === 1 ? BASIC_TIER_BOOST : 1)
-      * (k === 'plastic' ? PLASTIC_BOOST : 1)
+    // v13.3：同階內依需求比例調整掉落（MaterialBalance，隨成本設定自動更新）
+    const bal = balanceMultipliers(baseSupplyWeight);
+    weight = (k) => 0.45 ** Math.max(0, SUPPLIES[k].tier - Math.ceil(danger / 1.3)) * baseSupplyWeight(k) * (bal[k] ?? 1)
       * (poiType === 'recycling' && SUPPLIES[k].tag === 'elec' ? RECYCLING_ELEC_BOOST : 1);
   }
   const total = keys.reduce((sum, k) => sum + weight(k), 0);

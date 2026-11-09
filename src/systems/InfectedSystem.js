@@ -25,6 +25,8 @@ export const INFECTED = {
   decayPerHour: 3,
   /** 舊版每天重置的時間（世界時間）；v13 起淨化度不再歸零，只會緩慢回復感染 */
   refreshHour: 12,
+  /** v14：重度感染據點先移除（新地圖改用控制點）；保留程式以便之後改成控制點守軍 */
+  disabled: true,
   /** v13：被消滅後幾天（現實天數）在原地重新出現 */
   respawnDays: 3,
   /**
@@ -104,6 +106,7 @@ export class InfectedSystem {
 
   /** 全部固定據點（含已被消滅、等待重生的） */
   sites() {
+    if (INFECTED.disabled) return [];
     if (!this.siteCache) this.siteCache = INFECTED.sites.map((def) => this.siteOf(def));
     return this.siteCache;
   }

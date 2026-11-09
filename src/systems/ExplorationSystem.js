@@ -161,7 +161,7 @@ export class ExplorationSystem {
 
   poi(id) {
     return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id)
-      || this.game.intercept?.asPoi(id) || this.game.assist?.asPoi(id) || this.game.infected?.asPoi(id) || this.game.rally?.asPoi(id) || this.huntPoi(id) || null;
+      || this.game.intercept?.asPoi(id) || this.game.assist?.asPoi(id) || this.game.infected?.asPoi(id) || this.game.rally?.asPoi(id) || this.game.cp?.asPoi(id) || this.huntPoi(id) || null;
   }
 
   /**
@@ -445,11 +445,16 @@ export class ExplorationSystem {
     const v = this.validate(poiId, memberIds);
     if (!v.ok) return v;
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' || kind === 'rally' ? 0 : kind === 'raid' || kind === 'pvp' || kind === 'infect' ? 2 : this.searchMinutes(v.poi);
+    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' || kind === 'rally' || kind === 'cpGuard' ? 0 : kind === 'raid' || kind === 'pvp' || kind === 'infect' || kind === 'cp' ? 2 : this.searchMinutes(v.poi);
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile, from });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
     const plan = this.plan(v.poi, v.members, durationMin, startAt, car.vehicles, { avoidHostile, from });
+    // v14：控制點區域要自己或好友佔領才能探索；勢力領地不能探索
+    if (kind === 'explore' && POI_TYPES[v.poi.type] && !v.poi.npc && this.game.state.map?.source === 'generated') {
+      const ce = this.game.cp?.canExplore(v.poi);
+      if (ce && !ce.ok) return ce;
+    }
     // v10 佔用規則：玩家手動派遣時，確定會撲空（已搜空、或抵達時有人在搜索）就不出發，避免白跑
     if (kind === 'explore' && !from && !carried && Math.abs(startAt - Date.now()) < 5000 && POI_TYPES[v.poi.type] && !v.poi.npc) {
       const block = this.game.poiShare?.blockerAt(v.poi, startAt + plan.travelMs);
@@ -933,6 +938,8 @@ export class ExplorationSystem {
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)
             : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
             : exp.kind === 'infect' ? this.game.infected.resolveAttack(exp)
+            : exp.kind === 'cp' ? this.game.cp.report(exp)
+            : exp.kind === 'cpGuard' ? this.game.cp.guardReport(exp)
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp)));
         // 召回（手動召回、自動回家、集結取消走回家）：標記為召回，不是探索失敗
         if (exp.recalled && !report.success && !exp.defeated) report.recalled = true;

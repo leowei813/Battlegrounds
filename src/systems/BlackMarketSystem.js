@@ -6,6 +6,8 @@ import {
   RARITIES, RARITY_ORDER, ITEM_TYPES, ITEM_MODELS, tierMul,
 } from '../config/equipment.js';
 import { sha256 } from '../utils/sha256.js';
+import { exchangeValues, scarcity } from './MaterialBalance.js';
+import { baseSupplyWeight } from './LootStock.js';
 
 /** 設計圖回收價：同型號、同保底品級裝備回收價的倍數 */
 export const BLUEPRINT_PRICE_MUL = 1.5;
@@ -29,23 +31,21 @@ export const TRADER = {
 
 /**
  * 黑市「交換物資」：用倉庫裡的零件或布料換成想要的材料（同類別才能換）。
- * 價值點數依階級與「使用需求 ÷ 產出量」估算；黑市抽成很重：同價值 10 換 1，低一階換高一階再 ×2。
+ * 價值點數依階級與材料需求與掉落配比表的稀缺度計算；黑市抽成：同價值 5 換 1，低一階換高一階再 ×2。
  * 只能用同階或低一階的材料交換，最高階（★5）不開放，不限制交換次數。
  */
 export const EXCHANGE = {
-  rate: 10,
+  /** v13.3：同價值 5 換 1（原本 10 換 1） */
+  rate: 5,
   crossMul: 2,
   maxTier: 4,
-  value: {
-    // 零件 ★1～★4
-    rubber: 1.5, bolt: 1.5, wire: 1.5, tape: 1, glass: 1, scrap: 1, screw: 1, bulb: 1, nail: 1, ironWire: 1, plastic: 0.5,
-    gear: 5, spring: 5, chain: 3.5, copperCoil: 3.5, rebar: 3, battery: 2.5, hinge: 2.5, switch: 2, ironPlate: 2,
-    valve: 10, bearing: 7, steelPlate: 6, motor: 6, aluminum: 5, steelPipe: 5, circuit: 5, firingPin: 5,
-    hydraulic: 18, piston: 15, barrel: 13, alloyPlate: 12, icBoard: 10, sensor: 7,
-    // 布料 ★1～★4
-    coarse: 1, cotton: 1, linen: 1, nylon: 4, leather: 3, canvas: 2.5, techCotton: 6, reinforced: 13, ballistic: 11,
+  /** 價值點數：依材料需求與掉落配比表（MaterialBalance）即時計算，新增研究或建築後會自動更新 */
+  get value() {
+    if (!exchangeCache) exchangeCache = exchangeValues(baseSupplyWeight, EXCHANGE.maxTier);
+    return exchangeCache;
   },
 };
+let exchangeCache = null;
 
 /**
  * 黑市：全體玩家共用的 20 格商品，每 30 分鐘全部一起換新（同一時間大家看到的商品相同）。
@@ -132,7 +132,9 @@ export class BlackMarketSystem {
     }
     const tier = Math.min(5, RARITY_ORDER.indexOf(rarity) + 1);
     const keys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].tier === tier);
-    const key = pick(keys.length ? keys : SUPPLY_KEYS);
+    // v13.3：比較缺的零件與布料比較常上架（依材料需求與掉落配比表）
+    const sc = scarcity(baseSupplyWeight);
+    const key = keys.length ? weightedPick(Object.fromEntries([...keys].sort().map((k) => [k, sc[k] ? Math.min(3, Math.max(0.5, sc[k])) : 1]))) : pick(SUPPLY_KEYS);
     const sp = SUPPLIES[key];
     // 子彈類一格的數量（v10.7.1 起 ×3，單價不變，總價跟著數量計算）
     const qty = Math.max(1, Math.round((sp.cat === 'ammo' ? BLACK_MARKET.ammoQty : sp.cat === 'med' ? 2 : 10) * ((6 - sp.tier) / 3) * randFloat(0.6, 1.4)));
@@ -202,7 +204,10 @@ export class BlackMarketSystem {
     const sp = SUPPLIES[key];
     if (sp.cat === 'med') return Math.round(15 + 300 * (sp.heal || 0.1) ** 1.6);
     if (sp.cat === 'ammo') return AMMO_PRICE[key] || 2;
-    return TRADER.supplyPrice[sp.tier];
+    // v13.3：零件與布料依稀缺度調整（越缺越貴，限制在 ×0.7～×1.5）
+    const sc = scarcity(baseSupplyWeight)[key];
+    const f = sc ? Math.min(1.5, Math.max(0.7, Math.sqrt(sc))) : 1;
+    return Math.round(TRADER.supplyPrice[sp.tier] * f * 10) / 10;
   }
 
   /** 商人的售價（基準價 × 售價倍率） */

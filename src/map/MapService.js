@@ -1,3 +1,4 @@
+import { formatDuration } from '../utils/math.js';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ALL_ENEMIES } from '../config/enemies.js';
@@ -7,7 +8,8 @@ import { bus, EVT } from '../core/EventBus.js';
 import { escapeHtml } from '../utils/dom.js';
 import { SiegeMapLayer } from './SiegeMapLayer.js';
 import { PoiCanvasLayer } from './PoiCanvasLayer.js';
-import { ZoneLayer, ZONE_MODES, ZONE_MODE_ORDER } from './ZoneLayer.js';
+import { ZoneLayer, ZONE_MODES, ZONE_MODE_ORDER, FACTION_COLORS } from './ZoneLayer.js';
+import * as CP_CONFIG from '../config/controlPoints.js';
 
 const ZONE_MODE_KEY = 'jdqs.zoneMode';
 /** 危險度圖層模式（每台裝置各自記住） */
@@ -26,6 +28,9 @@ import { GPS_RADIUS } from '../systems/GpsSystem.js';
  * 真實地圖（Leaflet + OpenStreetMap 圖磚）。
  * 只負責呈現與互動；點擊事件透過 EventBus 交給 UI 層處理。
  */
+/** 控制點圓點內的圖案：交叉劍 */
+const CP_ICON = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2 L10 10 M10 2 L2 10" stroke="#111" stroke-width="1.6" stroke-linecap="round"/><path d="M1.5 8.5 l2 2 M8.5 10.5 l2-2" stroke="#111" stroke-width="1.6"/></svg>';
+
 export class MapService {
   /**
    * @param {HTMLElement} container
@@ -86,6 +91,9 @@ export class MapService {
     this.layers.others = L.layerGroup().addTo(this.map);
     this.layers.npcs = L.layerGroup().addTo(this.map);
     this.layers.infected = L.layerGroup().addTo(this.map);
+    this.layers.cps = L.layerGroup().addTo(this.map);
+    this.layers.convoys = L.layerGroup().addTo(this.map);
+    this.cpConfig = CP_CONFIG;
     this.layers.dungeons = L.layerGroup().addTo(this.map);
     this.layers.gps = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
@@ -180,7 +188,7 @@ export class MapService {
     }).addTo(this.layers.gps);
   }
 
-  /** 切換危險度圖層：淡 ↔ 關閉 */
+  /** 切換圖層：危險度 → 勢力圖 → 關閉 */
   cycleZoneMode() {
     const cur = this.zoneLayer?.mode || savedZoneMode();
     const next = ZONE_MODE_ORDER[(ZONE_MODE_ORDER.indexOf(cur) + 1) % ZONE_MODE_ORDER.length];
@@ -221,6 +229,66 @@ export class MapService {
 
 
   /** 重度感染據點（比巨型據點略大，標示淨化度） */
+  /** v14 控制點：圓形點位（依佔領狀態上色），點擊打開控制點資訊；勢力圖底色一併更新 */
+  renderCps(game) {
+    if (!this.map || !this.layers.cps) return;
+    const { CONTROL_POINTS } = this.cpConfig || {};
+    if (!CONTROL_POINTS) return;
+    const cols = { mine: '#4fc3f7', other: '#9e9e9e', hostile: '#ef9a9a', neutral: '#bdbdbd', faction: '#ef5350' };
+    const z = this.map.getZoom();
+    const st = `${z}|${CONTROL_POINTS.map((c) => `${c.id}:${game.cp.statusOf(c.id)}:${game.cp.factionOf(c.id) || ''}`).join('|')}`;
+    if (st === this.cpKey) return;
+    this.cpKey = st;
+    this.layers.cps.clearLayers();
+    CONTROL_POINTS.forEach((c) => {
+      const s = game.cp.statusOf(c.id);
+      const col = s === 'faction' ? FACTION_COLORS[game.cp.factionOf(c.id)] : cols[s];
+      // 控制點：與巨型資源點一樣大的圓形點位（隨縮放），位置避開其他建築；顏色＝佔領狀態、外圈慢速呼吸光；點這個點才打開控制點資訊
+      const size = Math.max(10, Math.round((this.poiLayer?.radius?.() || 6) * 1.25 * 2) + 4);
+      const spot = game.cp.markerSpot(c.id);
+      L.marker([spot.lat, spot.lon], {
+        icon: this.icon(`<div class="cp-dot" style="--c:${col || '#bdbdbd'};--s:${size}px">${CP_ICON}</div>`, 'shelter-icon', size),
+        zIndexOffset: 850,
+      }).on('click', () => bus.emit('ui:openCp', { id: c.id }))
+        .bindTooltip(`🚩 控制點・${game.cp.summary(c.id).label}`, { direction: 'top', offset: [0, -size / 2] })
+        .addTo(this.layers.cps);
+    });
+    if (this.zoneLayer) {
+      this.zoneLayer.factionColor = (i) => {
+        const c = CONTROL_POINTS[i];
+        const s = c ? game.cp.statusOf(c.id) : 'neutral';
+        if (s === 'faction') return FACTION_COLORS[game.cp.factionOf(c.id)] || FACTION_COLORS.red;
+        return FACTION_COLORS[s] || FACTION_COLORS.neutral;
+      };
+      if (this.zoneLayer.mode === 'faction') this.zoneLayer.redraw();
+    }
+  }
+
+  /** v14 控制點運輸隊（乙：發光物資箱＋小字倒數，淡金色虛線路線）；每秒更新位置 */
+  renderConvoys(list = []) {
+    if (!this.map || !this.layers.convoys) return;
+    const ids = list.map((c) => c.id).join('|');
+    if (ids !== this.convoyIds) {
+      this.convoyIds = ids;
+      this.layers.convoys.clearLayers();
+      this.convoyMarks = new Map();
+      list.forEach((c) => {
+        L.polyline([[c.from.lat, c.from.lon], [c.to.lat, c.to.lon]], { color: '#ffd54f', weight: 1.5, dashArray: '2 6', opacity: 0.7, interactive: false }).addTo(this.layers.convoys);
+        const mk = L.marker([c.lat, c.lon], { icon: this.icon('<div class="convoy-pin">📦<i></i></div>', 'shelter-icon', 24), zIndexOffset: 870 })
+          .on('click', () => bus.emit('ui:openConvoy', { id: c.id }))
+          .addTo(this.layers.convoys);
+        this.convoyMarks.set(c.id, mk);
+      });
+    }
+    list.forEach((c) => {
+      const mk = this.convoyMarks?.get(c.id);
+      if (!mk) return;
+      mk.setLatLng([c.lat, c.lon]);
+      const el = mk.getElement()?.querySelector('.convoy-pin i');
+      if (el) el.textContent = formatDuration(c.left);
+    });
+  }
+
   renderInfected(list = [], pin = 48) {
     if (!this.map) return;
     // 位置也列入比對：附近玩家據點載入或新建時，據點會換到不重疊的位置，要跟著重畫

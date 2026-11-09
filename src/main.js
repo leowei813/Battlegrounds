@@ -13,6 +13,7 @@ import { CloudSync } from './cloud/CloudSync.js';
 import { createProvider } from './cloud/providers/index.js';
 import { requireAccess } from './security/AccessGate.js';
 import { showWhatsNew, markVersionSeen } from './ui/ChangelogView.js';
+import { showGuideIfNeeded, openGuide } from './ui/GuideDialog.js';
 import { WorldSync } from './multiplayer/WorldSync.js';
 import { gainsHtml } from './ui/components.js';
 import { $ } from './utils/dom.js';
@@ -75,21 +76,6 @@ function showOfflineReport(ui, report) {
   });
 }
 
-function showWelcome(ui) {
-  ui.modal.open({
-    title: '☣️ 歡迎來到末日',
-    body: `
-      <ol class="tutorial">
-        <li>🗺️ 在<b>地圖</b>上點選任一棟真實建築，設為你的<b>避難所</b>。</li>
-        <li>🏠 在<b>避難所</b>升級農場、工作台等設施，資源會自動累積（離線也會，最多 24 小時）。</li>
-        <li>🧭 點地圖建築<b>派遣探索</b>，帶回物資、裝備、設計圖，甚至遇到新的倖存者。</li>
-        <li>🛡️ 在避難所外圍空地建造<b>防禦建築</b>，抵擋越來越強的屍潮。<b>夜晚與午夜</b>格外危險！</li>
-        <li>🔬 建造研究中心解鎖新科技，📜 完成任務領取獎勵。</li>
-      </ol>
-      <p class="muted">提示：現實 1 小時 = 遊戲 1 天。</p>
-      <div class="btn-row end"><button class="btn btn-primary" data-action="close">開始求生</button></div>`,
-  });
-}
 
 /**
  * 登入帳號並讀取雲端進度（遊戲進度只存在雲端）。
@@ -206,14 +192,17 @@ async function boot() {
   game.world = new WorldSync(game, cloud.provider, cloud);
   game.world.start();
 
+  // v14：更新內容看完之後顯示遊戲說明（改版後或新玩家第一次登入）
+  const guide = () => showGuideIfNeeded(ui);
+  const whatsNew = () => { if (!showWhatsNew(ui, { onClose: guide })) guide(); };
   if (fresh) {
     markVersionSeen(); // 新玩家不需要看更新內容
-    showWelcome(ui);
+    openGuide(ui, { tab: 'basic' }); // 新玩家：遊戲說明（基本玩法）
   } else if (report) {
     // 先看離線收益，關閉後再顯示更新內容
-    showOfflineReport(ui, report).onClose = () => showWhatsNew(ui);
+    showOfflineReport(ui, report).onClose = whatsNew;
   } else {
-    showWhatsNew(ui);
+    whatsNew();
   }
   ui.toastEl.show(`☁️ 已登入 ${cloud.username}${cloudMeta?.deviceName ? `・進度來自 ${cloudMeta.deviceName}` : ''}`, 'success', 4000);
 

@@ -1,4 +1,5 @@
 import { materialize } from './supplies.js';
+import { zoneIndexAt } from './zones.js';
 
 /**
  * 文明度與據點設定。
@@ -173,8 +174,41 @@ function hashString(s) {
   return h;
 }
 
-/** 某棟建築作為據點時的規模 ID */
+/**
+ * v14：各區域的建築規模比例（小、中、大、巨，%）：巨型、大型集中在致死區與深淵區，致死區以下沒有巨型。
+ */
+export const SIZE_BY_ZONE = [
+  [55, 40, 5, 0], // 安全區
+  [45, 45, 10, 0], // 一般區
+  [35, 50, 15, 0], // 警戒區
+  [25, 50, 25, 0], // 危險區
+  [15, 35, 35, 15], // 致死區
+  [5, 25, 40, 30], // 深淵區
+];
+/**
+ * 實際挑選用的比例（已扣掉固定規模的建築：藥局、樹林、軍事基地），讓各區整體比例符合 SIZE_BY_ZONE。
+ * 區域或建築種類比例改變時，用 scripts 重新計算（見 docs/material-balance.md 同一份流程）。
+ */
+const SIZE_PICK = [[45, 47, 8, 0], [33, 52, 15, 0], [21, 57, 21, 0], [23, 46, 31, 0], [12, 29, 41, 18], [2, 12, 52, 33]];
+const SIZE_KEYS = ['small', 'medium', 'large', 'huge'];
+/** 固定規模的建築：藥局、麵包店一律小型，軍事基地一律巨型，樹林最多中型 */
+const SIZE_LIMIT = { pharmacy: ['small'], bakery: ['small'], military: ['huge'], forest: ['small', 'medium'] };
+
+/** 某棟建築作為據點時的規模 ID（依所在區域的比例，建築 ID 固定挑選，不會每次變動） */
 export function baseSizeOf(poi) {
+  const h = hashString(String(poi?.id || ''));
+  if (Number.isFinite(poi?.lat) && Number.isFinite(poi?.lon)) {
+    const allow = SIZE_LIMIT[poi.type] || SIZE_KEYS;
+    if (allow.length === 1) return allow[0];
+    const row = SIZE_PICK[zoneIndexAt(poi.lat, poi.lon)] || SIZE_PICK[1];
+    const w = SIZE_KEYS.map((k, i) => (allow.includes(k) ? row[i] : 0));
+    const tot = w.reduce((a, b) => a + b, 0) || 1;
+    let m = Math.imul(h ^ (h >>> 16), 2246822507);
+    m = Math.imul(m ^ (m >>> 13), 3266489909);
+    let x = (((m ^ (m >>> 16)) >>> 0) / 4294967296) * tot;
+    for (let i = 0; i < SIZE_KEYS.length; i += 1) { x -= w[i]; if (x < 0 && w[i] > 0) return SIZE_KEYS[i]; }
+    return allow[allow.length - 1];
+  }
   const options = SIZE_BY_TYPE[poi?.type] || ['medium'];
-  return options[hashString(String(poi?.id || '')) % options.length];
+  return options[h % options.length];
 }

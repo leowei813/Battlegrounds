@@ -1,6 +1,8 @@
 import L from 'leaflet';
 import { ZONES, zoneIndexAt } from '../config/zones.js';
 import { inWorld } from '../config/world.js';
+import { cpIndexAt } from '../config/controlPoints.js';
+import { inNpcHome } from '../config/zones.js';
 
 /** 地圖範圍外（不計算、不繪製） */
 const OUT = 255;
@@ -16,10 +18,17 @@ const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
  *  - off（關閉）
  */
 export const ZONE_MODES = {
-  light: { name: '淡', alpha: ZONES.map((z) => z.alpha), border: 1 },
+  light: { name: '危險度', alpha: ZONES.map((z) => z.alpha), border: 1 },
+  faction: { name: '勢力圖', faction: true, border: 2 },
   off: { name: '關閉' },
 };
-export const ZONE_MODE_ORDER = ['light', 'off'];
+/** v14：同一顆按鈕切換：危險度 → 勢力圖 → 關閉 */
+export const ZONE_MODE_ORDER = ['light', 'faction', 'off'];
+/** 勢力圖顏色（status 由 ControlPointSystem.statusOf 決定） */
+export const FACTION_COLORS = {
+  mine: '#4fc3f7', other: '#9e9e9e', hostile: '#9e9e9e', neutral: '#9e9e9e', free: '#4fc3f7', npcHome: '#5d4037',
+  red: '#ef5350', black: '#ffb300', blue: '#7e57c2',
+};
 
 /**
  * 區域危險度底色：以淡淡的顏色區分安全區～深淵區，區域交界畫細邊界線。
@@ -54,6 +63,51 @@ export const ZoneLayer = L.Layer.extend({
     this.canvas.remove();
   },
 
+  /** 勢力圖：每個控制點依佔領狀態上色（淡藍＝可探索），控制點之間畫邊界 */
+  drawFaction(ctx, size, m) {
+    const map = this.map;
+    const colorOf = this.factionColor || (() => FACTION_COLORS.neutral);
+    const w = Math.ceil(size.x / BLOCK) + 1;
+    const h = Math.ceil(size.y / BLOCK) + 1;
+    const grid = new Int16Array(w * h);
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const ll = map.containerPointToLatLng([x * BLOCK, y * BLOCK]);
+        // -2＝地圖外、-3＝勢力領地、-1＝自由探索區、其他＝控制點
+        grid[y * w + x] = !inWorld(ll.lat, ll.lng) ? -2 : inNpcHome(ll.lat, ll.lng) ? -3 : cpIndexAt(ll.lat, ll.lng);
+      }
+    }
+    this.low.width = w;
+    this.low.height = h;
+    const lctx = this.low.getContext('2d');
+    const img = lctx.createImageData(w, h);
+    const cache = new Map();
+    const rgbaOf = (k) => {
+      if (!cache.has(k)) {
+        const hex = k === -3 ? FACTION_COLORS.npcHome : k === -1 ? FACTION_COLORS.free : colorOf(k);
+        cache.set(k, [...rgb(hex), k === -1 ? 40 : 90]);
+      }
+      return cache.get(k);
+    };
+    for (let i = 0; i < grid.length; i += 1) {
+      if (grid[i] === -2) continue;
+      img.data.set(rgbaOf(grid[i]), i * 4);
+    }
+    lctx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(this.low, 0, 0, w * BLOCK, h * BLOCK);
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const a = grid[y * w + x];
+        if (a < 0) continue;
+        if ((x + 1 < w && grid[y * w + x + 1] !== a && grid[y * w + x + 1] !== -2) || (y + 1 < h && grid[(y + 1) * w + x] !== a && grid[(y + 1) * w + x] !== -2)) {
+          ctx.fillRect(x * BLOCK + BLOCK / 2, y * BLOCK + BLOCK / 2, m.border, m.border);
+        }
+      }
+    }
+  },
+
   redraw() {
     const map = this.map;
     if (!map) return;
@@ -66,6 +120,7 @@ export const ZoneLayer = L.Layer.extend({
     const ctx = this.canvas.getContext('2d');
     ctx.clearRect(0, 0, size.x, size.y);
     const m = ZONE_MODES[this.mode];
+    if (m.faction) { this.drawFaction(ctx, size, m); return; }
     if (!m.alpha) return;
 
     // 1. 取樣每個方塊所在的區域
