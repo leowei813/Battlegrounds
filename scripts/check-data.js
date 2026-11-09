@@ -1929,6 +1929,12 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   }
   assert(d2.result.victory, `強大的集結隊伍攻陷弱小的 NPC（${d2.result.summary}）`);
   {
+    // v15.6.1：集結打贏有經驗（倒下的人沒有）
+    const xe = Object.values(d2.result.teams || {})[0]?.xpEach || 0;
+    const ra2 = repsA.find((r) => r.poiName.includes('集結'));
+    assert(xe > 0 && ra2 && ra2.xp > 0 && ra2.events.some((e) => /集結戰鬥經驗/.test(e)), `集結打贏：參戰隊員獲得經驗（每人 ${xe}，報告 +${ra2?.xp}）`);
+  }
+  {
     assert(A.state.player.coins > ca0 && B.state.player.coins > cb0, `勝利時依貢獻分配金錢，每支隊伍都有保底（${A.state.player.coins - ca0} / ${B.state.player.coins - cb0}）`);
     Object.assign(NA, naBak);
     await B.shared.poll();
