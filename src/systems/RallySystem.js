@@ -750,6 +750,10 @@ export class RallySystem {
       report.xp += xpGot;
       report.events.push(`⭐ 集結戰鬥經驗：每人 +${xpEach}（倒下的隊員沒有經驗）`);
     }
+    // v15.6.1：比照一般戰鬥：戰後生命低於 70% 的人從藥品欄吃藥補血，藥品欄再從隊伍背包補滿
+    const alive = members.filter((m) => !m.severe);
+    const notes = [...alive.map((m) => g.survivors.postBattleHeal(m)).filter(Boolean), ...g.survivors.refillMeds(alive)];
+    if (notes.length) report.events.push(`💊 ${notes.join('；')}`);
     (r.items || []).forEach((it) => {
       const item = { ...it, id: uid('it') };
       if (g.equipment.addItem(item, '集結')) report.items.push(item);
