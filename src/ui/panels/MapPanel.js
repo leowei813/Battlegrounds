@@ -6,7 +6,7 @@ import { DUNGEONS } from '../../config/dungeons.js';
 import { CLASSES } from '../../config/survivors.js';
 import { DungeonSystem } from '../../systems/DungeonSystem.js';
 import {
-  DG_PIN_SVG, hudHtml, openStatus,
+  DG_PIN_SVG, hudHtml, hudOpen, openStatus, openDungeon,
 } from '../DungeonView.js';
 import { MapService } from '../../map/MapService.js';
 import { POI_TYPES, LOOT_CATS } from '../../config/poiTypes.js';
@@ -642,10 +642,11 @@ export class MapPanel {
   async onAction(action, data = {}) {
     const sh = this.game.shelter.primary();
     if (action === 'dgStatus') { openStatus(this.ui, data.dg); return; }
+    if (action === 'dgOpen') { openDungeon(this.ui, data.dg); return; }
     if (action === 'dgFold') {
       const st = this.game.state;
       st.settings = st.settings || {};
-      st.settings.dgHudOpen = !st.settings.dgHudOpen;
+      st.settings.dgHudOpen = !hudOpen(this.game);
       this.game.requestSave?.();
       this.lastOverlay = '';
       this.renderOverlay();
