@@ -161,6 +161,7 @@ export class DungeonSystem {
     const sv = g.survivors.get(svId);
     if (!sv) return { ok: false, reason: '找不到倖存者' };
     if (sv.isLeader) return { ok: false, reason: '指揮官不能參加副本' };
+    if (g.state.expeditions.some((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated && (e.memberIds || []).includes(svId))) return { ok: false, reason: `${sv.name} 正在駐防控制點，撤回後才能報名副本` };
     if (this.record(dg, now) && !this.record(dg, now).cancelled) return { ok: false, reason: '今天已經報名這個副本（每個副本每天一次）' };
     const other = this.signedDungeon(svId, now);
     if (other) return { ok: false, reason: `${sv.name} 今天已經報名「${DUNGEONS[other].name}」` };
@@ -614,6 +615,13 @@ export class DungeonSystem {
     }
     const ex = g.exploration;
     ex.update(at, { silent: true });
+    // 控制點駐防中：不叫回（駐防到撤回或被打下為止），這次副本不能參加
+    if (g.state.expeditions.some((exp) => exp.kind === 'cpGuard' && !exp.recalled && !exp.defeated && (exp.memberIds || []).includes(sv.id))) {
+      rec.excluded = 'guard';
+      g.log(`🛡️ ${sv.name} 正在駐防控制點，不會被叫回，無法參加「${DUNGEONS[rec.dg].name}」`, 'danger');
+      this.pushEntry(rec, { x: 'guard' }, at);
+      return;
+    }
     [...g.state.expeditions].filter((exp) => (exp.memberIds || []).includes(sv.id)).forEach((exp) => {
       exp.queue = [];
       if (exp.kind === 'rally') g.rally.withdraw(exp, at);

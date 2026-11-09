@@ -69,6 +69,8 @@ export class AutoHomeSystem {
         if (g.rally.withdraw(exp, at)) recalled += 1;
         return;
       }
+      // 控制點駐防隊：駐防到撤回或被打下為止，19:30 不叫回
+      if (exp.kind === 'cpGuard') return;
       if (!ex.canRecall(exp, at) || exp.startAt > at) return;
       const r = ex.recall(exp.id, at);
       if (!r.ok) return;

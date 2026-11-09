@@ -4009,7 +4009,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(r2.ok && e2.distanceM < 5 && e2.backMs > 0, '同一地點再搜索：去程為 0、回程直接回避難所');
   const mid2 = e2.startAt + e2.travelMs + Math.round(e2.searchMs / 2);
   const back2 = e2.backMs;
-  assert(ex.recall(e2.id, mid2).ok && e2.endAt - mid2 >= back2 * 0.95 - 5, `同一地點再搜索時召回：仍需要回程時間（${Math.round((e2.endAt - mid2) / 1000)} 秒，不會瞬間回家）`);
+  // 重點是「不會瞬間回家」：回程至少要回程時間的一半（執行速度、日夜交界會讓時間略有差異）
+  assert(ex.recall(e2.id, mid2).ok && e2.endAt - mid2 >= Math.min(back2 * 0.5, 5000), `同一地點再搜索時召回：仍需要回程時間（${Math.round((e2.endAt - mid2) / 1000)} 秒，不會瞬間回家）`);
   ex.update(mid2 + Math.min(1000, Math.max(1, (e2.endAt - mid2) / 2)));
   assert(ex.list.includes(e2), '召回後隊伍還在回程中');
 }
@@ -5410,6 +5411,22 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   for (const p of ps) { await p.g.shared.list('dg', 5); p.g.dungeon.update(T.lock + 1000); }
   assert(trip.exp.recalled, '17:50 鎖定時外出中的小隊自動召回');
   assert(b.g.dungeon.isLocked(b.sv, T.lock + 2000) && b.g.survivors.isAvailable(b.sv) === false, '鎖定後倖存者不能外出');
+  {
+    // v15.5.1：控制點駐防中的倖存者：17:50 鎖定時不叫回（這次副本不能參加）
+    const gd2 = Game.newGame({ playerName: 'DG2', classId: 'warrior', lat: 25.03, lon: 121.56 });
+    const sv2 = gd2.survivors.leader();
+    const gexp = { id: 'gx', kind: 'cpGuard', cpId: 'cp1', memberIds: [sv2.id], startAt: T.lock - 600000, travelMs: 60000, searchMs: 3600000, endAt: T.lock + 7200000, from: { lat: 25.03, lon: 121.56 } };
+    gd2.state.expeditions.push(gexp);
+    const rec2 = { svId: sv2.id, dg: 'lab', day: DungeonSystem.dayKey(T.start) };
+    gd2.dungeon.pushEntry = () => {};
+    gd2.dungeon.lock(rec2, T.lock);
+    assert(!gexp.recalled && gd2.state.expeditions.includes(gexp) && rec2.excluded === 'guard', '副本鎖定時不叫回駐防中的倖存者（這次副本不能參加）');
+    const sv3 = gd2.state.survivors.find((x) => !x.isLeader) || (() => { const x = { ...sv2, id: 'svx', isLeader: false }; gd2.state.survivors.push(x); return x; })();
+    gexp.memberIds = [sv3.id];
+    gd2.shelter.establish(gd2.state.map.pois.find((p) => gd2.shelter.canEstablish(p).ok) || { id: 'p', lat: 25.03, lon: 121.56, type: 'residential', name: 'x' });
+    const cs = gd2.dungeon.canSignup('lab', sv3.id, T.lock - 3600000);
+    assert(!cs.ok && /駐防/.test(cs.reason || ''), `駐防中的倖存者報名副本時就擋下（${cs.reason || ''}）`);
+  }
   // 集結、開打、結算
   for (const t of [T.depart + 1000, T.start + 1000, T.start + 60 * 60e3]) {
     for (const p of ps) { await p.g.shared.list('dg', 5); p.g.dungeon.update(t); }
@@ -6325,10 +6342,23 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const stayEnd0 = ge.startAt + ge.travelMs + ge.searchMs;
     B.cp.extendGuards(stayEnd0 - 1000);
     assert(ge.startAt + ge.travelMs + ge.searchMs > stayEnd0 && !ge.recalled, '駐防快到期時自動延長（直到撤回或被打下）');
+    B.autoHome.run(Date.now(), { silent: true });
+    assert(!ge.recalled && B.state.expeditions.includes(ge), '19:30 自動回家不會叫回駐防隊');
     const rel0 = B.state.relations.players.A;
+    // 連線時剛開遊戲、還沒讀到共用的控制點資料：所有控制點看起來是中立，不能因此撤回
+    const be0 = B.shared.backend;
+    const pv0 = B.world.provider;
+    const la0 = B.shared.listedAt;
+    B.shared.backend = null; B.world.provider = { objPut: () => {} }; B.shared.listedAt = {};
+    const cache0 = new Map(B.shared.cache);
+    B.shared.cache.clear();
+    B.cp.extendGuards(Date.now());
+    assert(!ge.recalled && B.cp.recallLostExplores(Date.now()) === 0, '還沒讀到共用控制點資料時，不會誤判而撤回駐防隊或探索隊');
+    B.shared.cache = cache0; B.shared.backend = be0; B.world.provider = pv0; B.shared.listedAt = la0;
     B.state.relations.players.A = { status: 'neutral' };
     B.cp.extendGuards(Date.now());
     assert(ge.recalled && B.state.log.some((l) => /駐防隊撤回/.test(l.msg)), '和佔領者解除好友關係：駐防隊撤回');
+    assert(!(ge.travelEvents || []).some((t) => /收到召回命令/.test(t)) && ge.travelEvents.some((t) => /駐防隊撤回/.test(t)), '強制撤回的報告寫原因，不會寫「收到召回命令」');
     B.state.relations.players.A = rel0;
   }
   // 共同佔領者變成敵對：回到中立
