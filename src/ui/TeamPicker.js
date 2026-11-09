@@ -169,7 +169,11 @@ export function openTeamPicker(ui, opts) {
       } else if (action === 'dur') {
         duration = +data.d;
       } else if (action === 'confirm') {
-        const res = opts.onConfirm(squadId ? [] : [...selected], duration, auto, [...cars], { avoidHostile, squadId });
+        // 小隊在視窗開著時可能已經前往下一站（換了新的隊伍編號）：以成員找回目前的小隊
+        const sq0 = squadId ? squads.find((e) => e.id === squadId) : null;
+        const sqNow = sq0 ? game.exploration.squadNow(squadId, sq0.memberIds) : null;
+        if (squadId && !sqNow) { ui.result({ ok: false, reason: '這支小隊已經回到避難所，請重新選擇' }); return; }
+        const res = opts.onConfirm(squadId ? [] : [...selected], duration, auto, [...cars], { avoidHostile, squadId: sqNow ? sqNow.id : null });
         if (res?.ok !== false) m.close();
         return;
       }

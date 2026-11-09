@@ -791,6 +791,19 @@ export class ExplorationSystem {
    * 指定載具給臨時小隊：回到避難所後、下一次出門時自動生效。確認後不可取消或變更，其他人也不能選用、拆解。
    * @param {{dry?:boolean}} [opts] dry = 只檢查不套用
    */
+  /**
+   * 臨時小隊目前的隊伍編號：小隊每到下一站會換成新的隊伍編號，畫面上還開著的視窗可能拿著上一站的編號。
+   * 依原本的編號找不到時，改找成員相同、還在外面的探索隊。
+   */
+  squadNow(expId, memberIds = null) {
+    const cur = this.list.find((e) => e.id === expId);
+    if (cur) return cur;
+    const ids = memberIds || [];
+    if (!ids.length) return null;
+    const key = [...ids].sort().join(',');
+    return this.list.find((e) => e.kind === 'explore' && !e.recalled && !e.defeated && [...e.memberIds].sort().join(',') === key) || null;
+  }
+
   assignVehicles(expId, vehicleIds, { dry = false } = {}) {
     const exp = this.list.find((e) => e.id === expId);
     if (!exp || exp.kind !== 'explore' || exp.recalled || exp.defeated) return { ok: false, reason: '這支小隊無法指定載具' };

@@ -3348,6 +3348,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const next = gv2.state.expeditions[0];
   assert(next && next.poiId === pois[1].id && (next.vehicleIds || []).includes(car1.id) && car1.status === 'out', '回到避難所後下一次出門自動帶上指定的載具');
   assert(!(next.nextVehicleIds || []).length, '生效後清除指定');
+  assert(next.id !== st.exp.id && ex.squadNow(st.exp.id, st.exp.memberIds) === next && ex.assignVehicles(ex.squadNow(st.exp.id, st.exp.memberIds).id, [], { dry: true }).ok, '小隊前往下一站換了隊伍編號：開著的視窗仍能找回同一支小隊（指定載具、加入佇列不會失敗）');
   ex.update(next.endAt + 1, { silent: true });
   assert(!gv2.state.expeditions.length && car1.status === 'idle', '小隊結束後載具回到車庫');
   // 小隊沒有再出門：指定的載具歸還
