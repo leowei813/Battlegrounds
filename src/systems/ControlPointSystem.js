@@ -258,7 +258,7 @@ export class ControlPointSystem {
   async resolveAttacks(now = Date.now()) {
     const g = this.game;
     for (const exp of g.state.expeditions.filter((e) => e.kind === 'cp' && e.cpId && !e.cpResult && !e.recalled)) {
-      const at = exp.startAt + exp.travelMs;
+      const at = exp.startAt + exp.travelMs + (exp.searchMs || 0); // 攻打時間（倒數）結束才結算佔領
       if (now < at || this.busy.has(exp.id)) continue;
       this.busy.add(exp.id);
       try {

@@ -10,6 +10,9 @@ const OUT = 255;
 /** 每個取樣方塊的像素大小（低解析度取樣後放大；邊界線依同樣的方塊描繪） */
 const BLOCK = 6;
 
+/** v15.2：控制點／領地分界線：較小的黑色點 */
+const EDGE = { dot: 2, alpha: 0.7, color: '0,0,0' };
+
 /** v15：不可探索區域的黑色遮罩 */
 const FOG = [38, 42, 50, 185];
 
@@ -104,7 +107,7 @@ export const ZoneLayer = L.Layer.extend({
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(this.low, 0, 0, w * BLOCK, h * BLOCK);
     this.drawFog(ctx, lctx, grid, w, h);
-    this.cpEdges(ctx, grid, w, h, m.border, 0.75);
+    this.cpEdges(ctx, grid, w, h, EDGE.dot, EDGE.alpha, EDGE.color);
   },
 
   /** v15：不可探索的區域（未佔領的控制點、勢力領地）蓋上淺黑灰遮罩 */
@@ -219,14 +222,7 @@ export const ZoneLayer = L.Layer.extend({
     // 4. v15：不可探索的區域（未佔領的控制點、勢力領地）變成淺黑灰
     this.drawFog(ctx, lctx, cps, w, h);
 
-    // 5. v14：控制點邊界用佔領狀態／勢力顏色（和勢力圖相同），外圈淡白底讓線在地圖上看得清楚
-    const colorOf = this.factionColor || (() => FACTION_COLORS.neutral);
-    const tone = new Map();
-    const toneOf = (k) => {
-      if (!tone.has(k)) tone.set(k, rgb(k <= -10 ? FACTION_COLORS[FACTION_KEYS[-10 - k]] : colorOf(k)).join(','));
-      return tone.get(k);
-    };
-    this.cpEdges(ctx, cps, w, h, m.border + 3, 0.5, '255,255,255');
-    this.cpEdges(ctx, cps, w, h, m.border + 1, 0.95, toneOf);
+    // 5. 控制點／領地分界：一律較小的黑色點狀線（v15.2：不再使用勢力顏色）
+    this.cpEdges(ctx, cps, w, h, EDGE.dot, EDGE.alpha, EDGE.color);
   },
 });
