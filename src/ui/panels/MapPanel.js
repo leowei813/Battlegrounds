@@ -257,7 +257,10 @@ export class MapPanel {
     const zone = ZONES[cp.zone];
     const fac = g.cp.factionOf(id);
     const ownTxt = fac ? `🏴 ${FACTIONS[fac].name}勢力` : sm.owners.length ? sm.owners.map((o) => escapeHtml(o.n)).join('、') : '—';
-    const guardTxt = sm.guards.length ? sm.guards.map((h) => `${escapeHtml(h.n)} ${(h.units || []).length} 人`).join('・') : '沒有駐防';
+    // 同一位玩家分多次派出的駐防隊合計顯示
+    const byPlayer = new Map();
+    sm.guards.forEach((h) => { const cur = byPlayer.get(h.p) || { n: h.n, c: 0 }; cur.c += (h.units || []).length; byPlayer.set(h.p, cur); });
+    const guardTxt = byPlayer.size ? [...byPlayer.values()].map((x) => `${escapeHtml(x.n)} ${x.c} 人`).join('・') : '沒有駐防';
     const npc = sm.status === 'neutral' || sm.status === 'faction';
     const atk = g.cp.canAttack(id);
     const rally = g.rally.canStart({ kind: 'cp', id });
