@@ -18,7 +18,6 @@ import { CivilizationSystem } from '../systems/CivilizationSystem.js';
 import { VehicleSystem } from '../systems/VehicleSystem.js';
 import { NpcSystem } from '../systems/NpcSystem.js';
 import { TerritorySystem } from '../systems/TerritorySystem.js';
-import { GpsSystem } from '../systems/GpsSystem.js';
 import { grant } from '../systems/costUtils.js';
 import { isSupply } from '../config/supplies.js';
 import { generateWorldPois } from '../map/WorldGen.js';
@@ -76,7 +75,6 @@ export class Game {
     this.vehicles = new VehicleSystem(this);
     this.npcs = new NpcSystem(this);
     this.territory = new TerritorySystem(this);
-    this.gps = new GpsSystem(this);
     this.markers = new MarkerSystem(this);
     this.intercept = new InterceptSystem(this);
     this.blackMarket = new BlackMarketSystem(this);

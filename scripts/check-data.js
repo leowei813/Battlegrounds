@@ -1061,14 +1061,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const max = gq.survivors.withdraw(lead.id, 'food', 1e6);
   assert(max.n === gq.equipment.bagSlotCap(lead) * STACK_MAX, '背包格子決定可攜帶的消耗品上限');
   lead.bag = {};
-  // GPS：50 公尺內的建築被偵測；在據點範圍內不偵測
-  const poi = gq.state.map.pois.find((p) => !gq.shelter.baseAtPoi(p.id) && Math.hypot((p.lat - home.lat) * 111320, (p.lon - home.lon) * 100000) > 300);
-  gq.gps.discover = async () => {};
-  gq.gps.onPosition(poi.lat + 0.0002, poi.lon);
-  assert(gq.gps.status === 'active' && gq.gps.nearby.some((p) => p.id === poi.id) && gq.gps.isDetected(poi), 'GPS 偵測 50 公尺內的建築');
-  assert(gq.gps.nearby.every((p) => Math.hypot((p.lat - poi.lat - 0.0002) * 111320, (p.lon - poi.lon) * 100800) <= 55), '只偵測 50 公尺內');
-  gq.gps.onPosition(home.lat, home.lon);
-  assert(gq.gps.status === 'inBase' && gq.gps.nearby.length === 0, '人在自己的據點範圍內時不偵測');
+  // v15.7：GPS 功能移除：舊存檔的偵測資料與設定一併清掉
+  {
+    const o = JSON.parse(JSON.stringify(gq.state));
+    o.map.detected = { a: 1 }; o.settings.gps = true;
+    const m = SaveManager.migrate(o);
+    assert(!m.map.detected && !('gps' in m.settings) && !('gps' in gq), '移除 GPS：舊存檔的偵測資料與設定清除');
+  }
   // 舊存檔：物品倉庫沿用原倉庫等級
   const old = JSON.parse(JSON.stringify(gq.state));
   old.version = 10;

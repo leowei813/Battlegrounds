@@ -49,12 +49,10 @@ export const PoiCanvasLayer = L.Layer.extend({
     this.canvas.remove();
   },
 
-  /** @param {Record<string, number>} [detected] GPS 今日偵測過的建築（id → 日期） */
-  setData(pois, detected = {}, { marked = new Set(), statusOf = null } = {}) {
+  setData(pois, { marked = new Set(), statusOf = null } = {}) {
     this.marked = marked;
     this.statusOf = statusOf;
     this.pois = pois;
-    this.detected = detected;
     if (this.map) this.redraw();
   },
 

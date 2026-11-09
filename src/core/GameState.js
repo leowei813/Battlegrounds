@@ -105,7 +105,6 @@ export function createInitialState({ playerName, classId, lat, lon }) {
       fetchedAt: 0,
       zombieGroups: [],
       lastZombieRefresh: 0,
-      detected: {}, // GPS 今日偵測過的建築
       markers: [], // 標記的建築（最多 5 個，保留建築資料方便日後建立避難所）
       remain: {}, // 建築內殘留的物資 { poiId: { day, res } }
     },
