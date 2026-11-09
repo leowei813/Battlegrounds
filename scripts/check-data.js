@@ -6257,6 +6257,11 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     }).map((c) => `#${c.no}`);
     assert(!out.length, `勢力據點的警戒範圍不超出自己的控制點（超出：${out.join('、') || '無'}）`);
     assert(bases.every((n) => CPC.cpAt(n.lat, n.lon)?.id === n.cp), '勢力據點建在自己的控制點裡');
+    // v15：勢力據點只探索自己勢力控制點內的建築
+    const trips = [];
+    bases.forEach((n) => { for (let i = 0; i < 30; i += 1) { n.trip = null; gq.npcs.launchExplore(n, Date.now()); if (n.trip) trips.push([n, n.trip.poiId]); } n.trip = null; });
+    const wrong = trips.filter(([n, id]) => { const p = gq.state.map.pois.find((x) => x.id === id); return gq.cp.factionOf(CPC.cpAt(p.lat, p.lon)?.id) !== n.faction; });
+    assert(!wrong.length, `勢力據點只探索自己控制點內的建築（${trips.length} 次中有 ${wrong.length} 次超出）`);
   }
   // 沒有 NPC 據點的勢力由大本營出兵（Lv40 起、不能攻打、不探索）
   const noBase = CPC.FACTION_KEYS.filter((f) => Math.floor(gq.cp.factionCps(f).length / 3) === 0);
