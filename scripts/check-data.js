@@ -6335,6 +6335,16 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const gd = B.cp.guard(cp.id, [bl.id]);
   assert(gd.ok, `佔領者的好友可以駐防（${gd.reason || ''}）`);
   assert(!B.cp.canGuard(cp.id, 2).ok, '每名玩家每個控制點最多駐防 2 人');
+  {
+    // v15.7：出發時就寫進共用資料（含抵達時間）：抵達時玩家離線（沒有執行 syncGuards），交戰時也算得到
+    await new Promise((r) => setTimeout(r, 50));
+    await A.shared.poll();
+    const arr = gd.exp.startAt + gd.exp.travelMs;
+    const hB = (A.cp.data(cp.id)?.guards || []).find((h) => h.e === gd.exp.id);
+    assert(hB && hB.arr === arr && gd.exp.cpListed, '駐防隊出發時就寫進共用資料（含抵達時間）');
+    assert(!A.cp.guardsAt(cp.id, arr - 1).some((h) => h.e === gd.exp.id) && !A.cp.defenders(cp.id, arr - 1).some((u) => u.ally?.e === gd.exp.id), '還沒抵達的駐防隊不參戰');
+    assert(A.cp.defenders(cp.id, arr + 1).some((u) => u.ally?.e === gd.exp.id), '已抵達的駐防隊參戰（玩家離線也算）');
+  }
   await B.cp.syncGuards(gd.exp.startAt + gd.exp.travelMs + 1);
   await A.shared.poll();
   assert((A.cp.data(cp.id)?.guards || []).some((h) => h.p === 'B'), '駐防隊寫入控制點，攻打方會遇到');
@@ -6406,6 +6416,8 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     assert(A.cp.garrisonCount(tgt2.id) < tgt2.garrison.count, '勢力打下後留守部分守軍（之後逐漸補回）');
     // 打輸：玩家的控制點維持原狀
     const snap = JSON.parse(JSON.stringify(A.cp.data(cp.id)));
+    // 測試用：部隊很久以前出發，駐防隊也設成更早就抵達
+    await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, guards: (x.guards || []).map((h) => ({ ...h, arr: past - 3600000 })) } }));
     await A.cp.launchMarch('red', cp.id, past);
     forceWin(false);
     await A.cp.resolveMarches(Date.now());
@@ -6432,7 +6444,9 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     await A.shared.update(CPC.CP_KIND, tgt2.id, () => ({ data: { owners: [], guards: [], faction: null } }));
     await B.shared.poll();
   }
-  // 每日收益：佔領者與駐守者都能拿，同一人只一份
+  // 每日收益：佔領者與駐守者都能拿，同一人只一份（駐防隊要已抵達；測試用設成早已抵達）
+  await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, guards: (x.guards || []).map((h) => ({ ...h, arr: 0 })) } }));
+  await B.shared.poll();
   assert(A.cp.incomeSources().length === 1 && B.cp.incomeSources().length === 1, '佔領者與駐守者都有收益');
   const inc = A.cp.rollIncome(cp);
   assert(inc.food === CPC.CP_INCOME[cp.zone].food && Object.keys(inc).length > 3, `收益：少量資源＋隨機零件（${JSON.stringify(inc)}）`);

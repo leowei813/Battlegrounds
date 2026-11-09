@@ -240,7 +240,7 @@ export class MapService {
     if (!CONTROL_POINTS) return;
     const cols = { mine: '#4fc3f7', other: '#9e9e9e', hostile: '#ef9a9a', neutral: '#bdbdbd', faction: '#ef5350' };
     const z = this.map.getZoom();
-    const guardsOf = (id) => (game.cp.data(id)?.guards || []).reduce((n, h) => n + ((h.units || []).length || 1), 0);
+    const guardsOf = (id) => game.cp.guardsAt(id).reduce((n, h) => n + ((h.units || []).length || 1), 0);
     const st = `${z}|${CONTROL_POINTS.map((c) => `${c.id}:${game.cp.statusOf(c.id)}:${game.cp.factionOf(c.id) || ''}:${guardsOf(c.id)}`).join('|')}`;
     if (st === this.cpKey) return;
     this.cpKey = st;

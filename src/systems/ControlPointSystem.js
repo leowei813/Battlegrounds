@@ -135,11 +135,19 @@ export class ControlPointSystem {
     return list;
   }
 
+  /**
+   * v15.7：已經抵達的駐防隊（出發時就寫進共用資料並記下抵達時間 arr，玩家離線時抵達也算數）。
+   * 舊資料沒有 arr：視為已抵達。
+   */
+  guardsAt(id, at = Date.now()) {
+    return (this.data(id)?.guards || []).filter((h) => !(h.arr > at));
+  }
+
   /** 防守方：玩家佔領的是駐防隊員，其他是 NPC／感染者守軍 */
   defenders(id, now = Date.now()) {
     if (this.owners(id).length && !this.factionOf(id)) {
       // 記下是哪一支駐防隊（h.e）的第幾位，交戰後依此判斷誰倒下、誰拿防守經驗
-      return (this.data(id)?.guards || []).flatMap((h) => (h.units || []).slice(0, CP_GUARD_MAX).map((u) => {
+      return this.guardsAt(id, now).flatMap((h) => (h.units || []).slice(0, CP_GUARD_MAX).map((u) => {
         const x = AssistSystem.unitOf({ id: h.p, name: h.n }, u);
         x.ally.e = h.e;
         return x;
@@ -321,6 +329,8 @@ export class ControlPointSystem {
     exp.cpId = id;
     exp.searchMs = GUARD_STAY_MS;
     exp.endAt = exp.startAt + exp.travelMs * 2 + exp.searchMs;
+    // v15.7：出發時就寫進共用資料（含抵達時間）：抵達時玩家離線，交戰時也算得到這支駐防隊
+    this.listGuard(exp).catch(() => {});
     return { ok: true, exp, msg: `隊伍出發駐防控制點 #${cpById(id).no}，約 ${Math.max(1, Math.round(exp.travelMs / 60000))} 分鐘後抵達` };
   }
 
@@ -348,8 +358,6 @@ export class ControlPointSystem {
   /** 已抵達的駐防隊（寫入共用資料，讓攻打方能讀到守軍） */
   async syncGuards(now = Date.now()) {
     const g = this.game;
-    const me = this.myId();
-    const name = g.state.player.name || '倖存者';
     for (const exp of g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId)) {
       const arrived = now >= exp.startAt + exp.travelMs;
       const d = this.data(exp.cpId);
@@ -358,28 +366,41 @@ export class ControlPointSystem {
         if (listed) await this.removeGuard(exp.cpId, exp.id);
         continue;
       }
-      if (!arrived) continue;
       if (!exp.cpListed) {
-        if (this.busy.has(exp.id)) continue;
-        this.busy.add(exp.id);
-        // v15.6：科技「據點駐防」：自己派出的駐防隊生命與攻擊提升（寫進共用資料，攻打方讀到的就是強化後的數值）
-        const bon = g.research.bonus('cpGuardPct');
-        const units = g.rally.units(exp.memberIds).map((u) => (bon > 0 ? { ...u, hp: Math.round(u.hp * (1 + bon)), maxHp: Math.round(u.maxHp * (1 + bon)), atk: Math.round(u.atk * (1 + bon)) } : u));
-        const r = await g.shared.update(CP_KIND, exp.cpId, (x) => {
-          const data = x || { owners: [], guards: [] };
-          if (!(data.owners || []).some((o) => this.isAlly(o.p))) return { fail: '控制點已經不是你或好友的' };
-          data.guards = [...(data.guards || []).filter((h) => h.e !== exp.id), { p: me, n: name, e: exp.id, units, at: now }];
-          return { data };
-        }, { lat: cpById(exp.cpId).lat, lon: cpById(exp.cpId).lon });
-        this.busy.delete(exp.id);
-        if (r.ok) exp.cpListed = true;
-        else { exp.cpListed = false; g.exploration.recall(exp.id, now); }
-      } else if (d && !listed) {
+        // 出發時沒寫成功（例如離線）：抵達前持續重試；抵達時控制點已經不是自己或好友的就撤回
+        const r = await this.listGuard(exp, now);
+        if (r && !r.ok && arrived && r.reason !== 'busy') { exp.cpListed = false; g.exploration.recall(exp.id, now); }
+      } else if (arrived && d && !listed) {
         // 駐防隊被擊退（從共用資料中移除）：受傷回家
         exp.defeated = true;
         g.log(`🚩 控制點 #${cpById(exp.cpId).no} 的駐防隊被擊退，正在撤回避難所`, 'danger');
         g.exploration.recall(exp.id, now);
       }
+    }
+  }
+
+  /** 把駐防隊寫進共用資料（含抵達時間 arr） */
+  async listGuard(exp, now = Date.now()) {
+    const g = this.game;
+    if (this.busy.has(exp.id)) return { ok: false, reason: 'busy' };
+    this.busy.add(exp.id);
+    try {
+      const me = this.myId();
+      const name = g.state.player.name || '倖存者';
+      // v15.6：科技「據點駐防」：自己派出的駐防隊生命與攻擊提升（寫進共用資料，攻打方讀到的就是強化後的數值）
+      const bon = g.research.bonus('cpGuardPct');
+      const units = g.rally.units(exp.memberIds).map((u) => (bon > 0 ? { ...u, hp: Math.round(u.hp * (1 + bon)), maxHp: Math.round(u.maxHp * (1 + bon)), atk: Math.round(u.atk * (1 + bon)) } : u));
+      const arr = exp.startAt + (exp.travelMs || 0);
+      const r = await g.shared.update(CP_KIND, exp.cpId, (x) => {
+        const data = x || { owners: [], guards: [] };
+        if (!(data.owners || []).some((o) => this.isAlly(o.p))) return { fail: '控制點已經不是你或好友的' };
+        data.guards = [...(data.guards || []).filter((h) => h.e !== exp.id), { p: me, n: name, e: exp.id, units, at: now, arr }];
+        return { data };
+      }, { lat: cpById(exp.cpId).lat, lon: cpById(exp.cpId).lon });
+      if (r.ok) exp.cpListed = true;
+      return r;
+    } finally {
+      this.busy.delete(exp.id);
     }
   }
 
@@ -499,7 +520,7 @@ export class ControlPointSystem {
     return CONTROL_POINTS.filter((cp) => {
       const d = this.data(cp.id);
       if (!d || d.faction) return false;
-      return (d.owners || []).some((o) => o.p === me) || (d.guards || []).some((h) => h.p === me);
+      return (d.owners || []).some((o) => o.p === me) || this.guardsAt(cp.id).some((h) => h.p === me);
     });
   }
 
@@ -618,7 +639,7 @@ export class ControlPointSystem {
     const hq = this.hqLatLon(f);
     const list = [...near].map((id) => {
       const cp = cpById(id);
-      const guarded = this.owners(id).length > 0 && !this.factionOf(id) && (this.data(id)?.guards || []).length > 0;
+      const guarded = this.owners(id).length > 0 && !this.factionOf(id) && this.guardsAt(id, now).length > 0;
       return { id, guarded, power: this.defensePower(id, now), dist: haversine(cp.lat, cp.lon, hq.lat, hq.lon) };
     });
     if (!list.length) return null;
@@ -835,11 +856,11 @@ export class ControlPointSystem {
       // v15.6：交戰結果記在共用資料，佔領者與駐防者（不在線也一樣）之後都會收到戰報
       const fight = {
         f, at, win, lost: killed, total: foes.length, atk: attackers.length, atkDown: (r.team || []).filter((u) => u.down).length,
-        owners: (data.owners || []).map((o) => o.p), guards: [...new Set((data.guards || []).map((h) => h.p))],
+        owners: (data.owners || []).map((o) => o.p), guards: [...new Set((data.guards || []).filter((h) => !(h.arr > at)).map((h) => h.p))],
         down: [...downIds],
         // v15.7：倒下的駐防隊員（駐防隊 id:第幾位），沒倒下的人防守成功時拿經驗
         downU: r.foes.filter((x) => x.down && x.ally?.e).map((x) => `${x.ally.e}:${x.ally.i}`).slice(0, 60),
-        ge: [...new Set((data.guards || []).map((h) => h.e).filter(Boolean))].slice(0, 30),
+        ge: [...new Set((data.guards || []).filter((h) => !(h.arr > at)).map((h) => h.e).filter(Boolean))].slice(0, 30),
       };
       if (win) {
         // 打下後留守：守軍約為進攻部隊的一半（之後每小時補回）
@@ -956,7 +977,7 @@ export class ControlPointSystem {
     const cp = cpById(id);
     const s = this.statusOf(id);
     const own = this.owners(id);
-    const guards = this.data(id)?.guards || [];
+    const guards = this.guardsAt(id, now);
     const fac = this.factionOf(id);
     const label = { mine: '你與好友可探索', hostile: '敵對玩家佔領・不可探索', other: '其他玩家佔領・不可探索', faction: `${FACTIONS[fac]?.name || ''}勢力佔領・不可探索`, neutral: '中立（感染者佔據）・不可探索' }[s];
     return {
