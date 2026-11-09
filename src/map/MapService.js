@@ -28,8 +28,8 @@ import { GPS_RADIUS } from '../systems/GpsSystem.js';
  * 真實地圖（Leaflet + OpenStreetMap 圖磚）。
  * 只負責呈現與互動；點擊事件透過 EventBus 交給 UI 層處理。
  */
-/** 控制點圓點內的圖案（待選定） */
-const CP_ICON = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="1" width="1.4" height="10" fill="#111"/><path d="M3.4 1.5 H10.5 L8.6 4 L10.5 6.5 H3.4Z" fill="#111"/></svg>';
+/** 控制點圓點內的圖案：交叉劍 */
+const CP_ICON = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2 L10 10 M10 2 L2 10" stroke="#111" stroke-width="1.6" stroke-linecap="round"/><path d="M1.5 8.5 l2 2 M8.5 10.5 l2-2" stroke="#111" stroke-width="1.6"/></svg>';
 
 export class MapService {
   /**
