@@ -2921,6 +2921,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   A.shelter.primary().defenses[0] = { ...A.shelter.primary().defenses[0], type: 'machineGun', level: 1 };
   const pc = pres(A, 'A').cover;
   assert(pc && pc.r > 0 && pc.dps > 0, `公開防禦範圍與可分出的火力（${JSON.stringify(pc)}）`);
+  // v15.3.1：公開涵蓋到的好友（玩家攻打好友時算進協防火力）；NPC 掠奪時防禦設施也會協助
+  B.state.bases[0].lon = A.state.bases[0].lon + 0.0004; // 約 40 公尺（在防禦範圍內）
+  A.world.others = [pres(B, 'B')];
+  const pc2 = A.assist.publishedCover();
+  assert((pc2.to || []).includes('B'), `防禦範圍涵蓋的好友會公開（${JSON.stringify(pc2)}）`);
+  const { cleanPlayer: CPl } = await import('../src/multiplayer/WorldSync.js');
+  assert((CPl({ id: 'A', name: 'A', bases: [{ lat: 25.03, lon: 121.56, name: 'x', primary: true }], cover: { r: 100, dps: 50, to: ['B'] } })?.cover?.to || []).includes('B'), '同步資料保留涵蓋的好友');
 }
 
 // ---- 53. v8.46：突襲避難所移動時間較長、載具仍加速 ----

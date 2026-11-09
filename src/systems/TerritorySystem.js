@@ -244,9 +244,13 @@ export class TerritorySystem {
     const allyFoes = g.assist.defendersOf(poi.playerId, exp.endAt);
     const helperNames = Object.fromEntries((g.world?.others || []).filter((p) => p.assist?.to === poi.playerId).map((p) => [p.id, p.name]));
     const allyDps = (g.world?.others || []).filter((p) => p.assist?.to === poi.playerId && p.assist.until > exp.endAt && (p.assist.at || 0) <= exp.endAt).reduce((s, p) => s + (p.assist.dps || 0), 0);
+    // v15.3.1：對方好友的防禦範圍涵蓋對方據點時，防禦設施也會協助守城
+    const myId = g.world?.myId;
+    const coverDps = (g.world?.others || []).filter((p) => p.id !== myId && p.id !== poi.playerId && (p.cover?.to || []).includes(poi.playerId)).reduce((s, p) => s + (p.cover.dps || 0), 0);
     let helperResult = null;
     let downs = 0; // 對方駐守人員被擊倒的人數（對方據此結算傷勢）
-    const as = g.combat.wallAssault(attackers, zone.wall || 0, (zone.dps || 0) + allyDps);
+    const as = g.combat.wallAssault(attackers, zone.wall || 0, (zone.dps || 0) + allyDps + coverDps);
+    if (coverDps > 0) report.events.push(`🛡️ 對方好友的防禦設施協助守城（每秒 ${Math.round(coverDps).toLocaleString()} 傷害）`);
     attackers.forEach((a) => {
       if (!as.alive.includes(a)) g.survivors.becomeSevere(a.sv, '在突襲中被防禦設施擊倒', exp.endAt);
       else g.survivors.setHp(a.sv, a.hp);

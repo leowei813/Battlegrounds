@@ -858,7 +858,8 @@ export class NpcSystem {
     const wallBefore = g.shelter.wallHp(base);
     // 友好玩家的協防隊：守城時一起射擊，圍牆被打破後一起迎戰
     const isHome = g.shelter.isPrimary(base);
-    const helpers = isHome ? g.assist.incoming().filter((h) => h.kind === 'team') : [];
+    // v15.3.1：防禦範圍涵蓋這裡的好友，防禦設施也會協助（kind cover）
+    const helpers = isHome ? g.assist.incoming().filter((h) => h.kind === 'team' || h.kind === 'cover') : [];
     const allies = isHome ? g.assist.allyUnits() : [];
     const helpDps = helpers.reduce((s, h) => s + (h.dps || 0), 0);
     const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));

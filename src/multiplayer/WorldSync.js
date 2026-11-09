@@ -142,7 +142,10 @@ export function cleanPlayer(p) {
     // 最後一次上傳的時間（判斷對方是否開著遊戲）
     updatedAt: finite(p.updatedAt) ? p.updatedAt : 0,
     cover: p.cover && finite(p.cover.r) && finite(p.cover.dps)
-      ? { r: Math.min(400, Math.max(0, p.cover.r)), dps: Math.min(MAX_ASSIST_DPS, Math.max(0, Math.round(p.cover.dps))) } : null,
+      ? {
+        r: Math.min(400, Math.max(0, p.cover.r)), dps: Math.min(MAX_ASSIST_DPS, Math.max(0, Math.round(p.cover.dps))),
+        ...(Array.isArray(p.cover.to) ? { to: p.cover.to.slice(0, 20).map((x) => String(x).slice(0, 50)) } : {}),
+      } : null,
   };
 }
 
