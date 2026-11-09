@@ -19,7 +19,7 @@ import {
 } from '../utils/math.js';
 import { seeded, cellOf as gridCell, cellBox } from '../multiplayer/worldGrid.js';
 import { inWorld } from '../config/world.js';
-import { FACTIONS, FACTION_KEYS, FACTION_BASE, cpById, factionHq } from '../config/controlPoints.js';
+import { FACTIONS, FACTION_KEYS, FACTION_BASE, cpById, cpAt, factionHq } from '../config/controlPoints.js';
 
 /**
  * 共用 NPC：位置、名稱、基礎等級由「格子＋世代」決定（所有玩家相同）；
@@ -208,12 +208,9 @@ export class NpcSystem {
     const list = cps.map((id) => cpById(id)).sort((a, b) => a.lon - b.lon);
     const cp = list[slot];
     if (!cp) return null;
-    const ident = `${sid}:${gen}:${dc}:${cp.id}`;
+    const ident = `${sid}:${gen}:${dc}:${cp.id}:p2`; // p2：v15.2 位置改為完整在控制點內（舊位置的據點換新）
     const npc = seeded(`npc:${ident}`, () => {
-      const ang = randFloat(0, Math.PI * 2);
-      const r = randFloat(80, 180);
-      const lat = cp.lat + (Math.sin(ang) * r) / 111320;
-      const lon = cp.lon + (Math.cos(ang) * r) / (111320 * Math.cos((cp.lat * Math.PI) / 180));
+      const { lat, lon } = this.factionSpot(cp, randFloat(0, Math.PI * 2));
       return {
         sid, ident, gen, dc, cell: `fx:${f}`, lat, lon, bornAt: d?.destroyed?.respawnAt || SHARED_NPC.freezeAt, baseLevel: FACTION_BASE.level,
         faction: f, cp: cp.id, name: pick(NPC_NAMES),
@@ -225,6 +222,41 @@ export class NpcSystem {
     });
     npc.baseLevel = Math.max(npc.baseLevel, FACTION_BASE.level);
     return npc;
+  }
+
+  /**
+   * v15：勢力據點的位置：在自己的控制點裡面，警戒範圍（最大等級時）也不超出這個控制點，並避開控制點圓點。
+   * 只依控制點與起始角度決定（所有玩家相同）。
+   */
+  factionSpot(cp, ang0 = 0) {
+    const R = 60 + NPC_CONFIG.maxLevel + 10;
+    const kLat = 111320;
+    const kLon = 111320 * Math.cos((cp.lat * Math.PI) / 180);
+    const at = (lat, lon, r, a) => ({ lat: lat + (Math.sin(a) * r) / kLat, lon: lon + (Math.cos(a) * r) / kLon });
+    const ring = (p, r) => Array.from({ length: 16 }, (_, i) => at(p.lat, p.lon, r, (i / 16) * Math.PI * 2)).every((q) => cpAt(q.lat, q.lon)?.id === cp.id);
+    // 控制點內所有候選點（20 公尺格線）依「離邊界的距離」分級，快取起來（每個控制點只算一次）
+    this.spotCache = this.spotCache || {};
+    if (!this.spotCache[cp.id]) {
+      const mark = this.game.cp?.markerSpot?.(cp.id);
+      const list = [];
+      for (let dy = -800; dy <= 800; dy += 20) {
+        for (let dx = -800; dx <= 800; dx += 20) {
+          const p = { lat: cp.lat + dy / kLat, lon: cp.lon + dx / kLon };
+          if (cpAt(p.lat, p.lon)?.id !== cp.id) continue;
+          if (mark && haversine(mark.lat, mark.lon, p.lat, p.lon) < 70) continue;
+          let r = 0;
+          for (const t of [R, R * 0.85, R * 0.7, R * 0.55, R * 0.4]) if (ring(p, t)) { r = t; break; }
+          list.push({ ...p, r });
+        }
+      }
+      const best = Math.max(0, ...list.map((x) => x.r));
+      this.spotCache[cp.id] = list.filter((x) => x.r === best);
+    }
+    const pool = this.spotCache[cp.id];
+    if (!pool.length) return at(cp.lat, cp.lon, 80, ang0);
+    const k = Math.floor(((ang0 / (Math.PI * 2)) % 1) * pool.length);
+    const p = pool[Math.max(0, Math.min(pool.length - 1, k))];
+    return { lat: p.lat, lon: p.lon };
   }
 
   /** 大本營出兵用的 NPC（地圖上顯示為大本營，不能攻打） */

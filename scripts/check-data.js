@@ -6247,6 +6247,17 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const expect = CPC.FACTION_KEYS.reduce((a, f) => a + Math.min(4, Math.floor(gq.cp.factionCps(f).length / 3)), 0);
   assert(bases.length === expect && bases.every((n) => n.level >= 35 && n.name.includes('・')), `NPC 據點依勢力的控制點數建立、Lv35 起（${bases.length}/${expect} 座：${bases.map((n) => n.name).join('、')}）`);
   assert(!gq.npcs.list.some((n) => n.sid && !n.faction), '新地圖不再有散布式的舊 NPC 據點');
+  {
+    // v15：勢力據點的警戒範圍（最高等級）完整落在自己的控制點內，不會蓋到旁邊已佔領的控制點
+    const { NPC_CONFIG: NC } = await import('../src/config/npcs.js');
+    const R = 60 + NC.maxLevel;
+    const out = CPC.CONTROL_POINTS.filter((cp) => {
+      const p = gq.npcs.factionSpot(cp, 2.1);
+      return !Array.from({ length: 36 }, (_, i) => (i / 36) * Math.PI * 2).every((a) => CPC.cpAt(p.lat + (Math.sin(a) * R) / 111320, p.lon + (Math.cos(a) * R) / (111320 * Math.cos((p.lat * Math.PI) / 180)))?.id === cp.id);
+    }).map((c) => `#${c.no}`);
+    assert(!out.length, `勢力據點的警戒範圍不超出自己的控制點（超出：${out.join('、') || '無'}）`);
+    assert(bases.every((n) => CPC.cpAt(n.lat, n.lon)?.id === n.cp), '勢力據點建在自己的控制點裡');
+  }
   // 沒有 NPC 據點的勢力由大本營出兵（Lv40 起、不能攻打、不探索）
   const noBase = CPC.FACTION_KEYS.filter((f) => Math.floor(gq.cp.factionCps(f).length / 3) === 0);
   const hqs = gq.npcs.list.filter((n) => n.hq);
