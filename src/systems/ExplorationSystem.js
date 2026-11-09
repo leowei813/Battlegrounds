@@ -463,6 +463,8 @@ export class ExplorationSystem {
     if (kind === 'explore' && POI_TYPES[v.poi.type] && !v.poi.npc && this.game.state.map?.source === 'generated') {
       const ce = this.game.cp?.canExplore(v.poi);
       if (ce && !ce.ok) return ce;
+      // v15.3：路線只能走可探索的區域，完全繞不過去就不能出發
+      if (plan.path?.noWay) return { ok: false, reason: `沒有路可以到「${v.poi.name}」：中間被未佔領的控制點擋住，要先佔領沿路的控制點` };
     }
     // v10 佔用規則：玩家手動派遣時，確定會撲空（已搜空、或抵達時有人在搜索）就不出發，避免白跑
     if (kind === 'explore' && !from && !carried && Math.abs(startAt - Date.now()) < 5000 && POI_TYPES[v.poi.type] && !v.poi.npc) {

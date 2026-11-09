@@ -3,6 +3,10 @@ import { BASE_SIZES } from '../config/civilization.js';
 import { HOME_DEFENSE_DOWN } from '../config/enemies.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
 import { planRoute, crossings } from '../map/routing.js';
+import { gridRoute } from '../map/regionRoute.js';
+import { WORLD_BOUNDS, inWorld } from '../config/world.js';
+import { inNpcHome } from '../config/zones.js';
+import { cpAt, CONTROL_POINTS } from '../config/controlPoints.js';
 import { uid, chance, randFloat, haversine } from '../utils/math.js';
 
 /** 驗證攻擊事件裡附帶的協防結果 */
@@ -127,7 +131,53 @@ export class TerritorySystem {
   route(from, to, { avoidHostile = false, ignore = [] } = {}) {
     void avoidHostile;
     const avoid = this.zones().filter((z) => !ignore.includes(z.id) && z.relation !== 'friend');
-    return planRoute(from, to, avoid);
+    const path = planRoute(from, to, avoid);
+    return this.regionDetour(from, to, path, avoid);
+  }
+
+  /**
+   * v15.3：路線不能穿過不可探索的區域（未佔領的控制點、勢力領地）：沿可探索的區域繞路。
+   * 起點與終點所在的控制點可以進出（例如攻打、駐防的控制點）。找不到路時回傳原路線並標記 noWay。
+   */
+  regionDetour(from, to, path, avoid = []) {
+    const g = this.game;
+    if (g.state.map?.source !== 'generated' || !g.cp) return path;
+    const own = new Set([cpAt(from.lat, from.lon)?.id, cpAt(to.lat, to.lon)?.id].filter(Boolean));
+    const homeOk = inNpcHome(from.lat, from.lon) || inNpcHome(to.lat, to.lon);
+    const status = new Map();
+    const open = (lat, lon) => {
+      if (!inWorld(lat, lon)) return false;
+      if (inNpcHome(lat, lon)) return homeOk;
+      const c = cpAt(lat, lon);
+      if (!c || own.has(c.id)) return true;
+      if (!status.has(c.id)) status.set(c.id, g.cp.statusOf(c.id) === 'mine');
+      return status.get(c.id);
+    };
+    // 原本的路線沒有穿過不可探索的區域：照舊
+    const clear = (pts) => {
+      for (let i = 1; i < pts.length; i += 1) {
+        const a = pts[i - 1];
+        const b = pts[i];
+        const n = Math.max(2, Math.ceil(haversine(a.lat, a.lon, b.lat, b.lon) / 20));
+        for (let k = 1; k < n; k += 1) if (!open(a.lat + ((b.lat - a.lat) * k) / n, a.lon + ((b.lon - a.lon) * k) / n)) return false;
+      }
+      return true;
+    };
+    if (clear(path)) return path;
+    const key = `${from.lat.toFixed(5)},${from.lon.toFixed(5)}>${to.lat.toFixed(5)},${to.lon.toFixed(5)}|${CONTROL_POINTS.map((c) => (status.has(c.id) ? +status.get(c.id) : (g.cp.statusOf(c.id) === 'mine' ? 1 : 0))).join('')}|${avoid.map((z) => `${z.id}:${Math.round(z.r)}`).join(',')}`;
+    this.detourCache = this.detourCache || new Map();
+    if (this.detourCache.has(key)) return this.detourCache.get(key);
+    const circles = avoid.filter((z) => haversine(z.lat, z.lon, from.lat, from.lon) > z.r && haversine(z.lat, z.lon, to.lat, to.lon) > z.r);
+    const passable = (lat, lon) => open(lat, lon) && !circles.some((z) => haversine(z.lat, z.lon, lat, lon) < z.r);
+    let out = gridRoute(from, to, passable, WORLD_BOUNDS);
+    if (!out) out = gridRoute(from, to, open, WORLD_BOUNDS); // 警戒範圍擋住時，至少不穿過不可探索的區域
+    if (!out) {
+      out = path.slice();
+      out.noWay = true;
+    }
+    if (this.detourCache.size > 200) this.detourCache.clear();
+    this.detourCache.set(key, out);
+    return out;
   }
 
   /** 路線會經過的「敵對且有駐守人員」的警戒範圍（依經過順序） */

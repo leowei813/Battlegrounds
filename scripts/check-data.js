@@ -6211,6 +6211,42 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(A.cp.garrisonCount(cp.id) < cp.garrison.count, '回到中立後守軍慢慢補回');
 }
 
+// ---- v15.3：探索路線繞過不可探索的區域（未佔領的控制點、勢力領地） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const CPC = await import('../src/config/controlPoints.js');
+  const Z = await import('../src/config/zones.js');
+  const gr = Game.newGame({ playerName: 'R', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gr.genMap();
+  gr.shelter.establish(gr.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gr.shelter.canEstablish(p).ok));
+  gr.shared.backend = new MemoryObjects();
+  gr.world = { others: [], myId: 'R', identity: () => ({ id: 'R', token: 't' }) };
+  setHour(gr, 10);
+  // 第二排的控制點 X：只佔領 X（和起始排不相通）→ 沒有路；再佔領相鄰的起始排控制點 Y → 繞路經過 Y
+  const X = CPC.CONTROL_POINTS.find((c) => !CPC.CP_START.includes(c.id) && CPC.cpNeighbors(c.id).some((n) => CPC.CP_START.includes(n)));
+  const Y = CPC.cpNeighbors(X.id).find((n) => CPC.CP_START.includes(n));
+  const own = (id) => gr.shared.update(CPC.CP_KIND, id, () => ({ data: { owners: [{ p: 'R', n: 'R' }], guards: [], faction: null } }));
+  await own(X.id);
+  const target = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === X.id && !gr.npcs.list.some((n) => haversine(n.lat, n.lon, p.lat, p.lon) < 200));
+  const lead = gr.survivors.leader();
+  const r1 = gr.exploration.start(target.id, [lead.id], 5);
+  assert(!r1.ok && /沒有路/.test(r1.reason || ''), `佔領的控制點和可探索區不相通時，不能穿過未佔領的控制點過去（${r1.reason || ''}）`);
+  await own(Y);
+  const r2 = gr.exploration.start(target.id, [lead.id], 5);
+  assert(r2.ok, `佔領沿路的控制點後可以出發（${r2.reason || ''}）`);
+  const path = r2.exp.path || [];
+  const bad = [];
+  for (let i = 1; i < path.length; i += 1) {
+    for (let k = 1; k < 20; k += 1) {
+      const lat = path[i - 1].lat + ((path[i].lat - path[i - 1].lat) * k) / 20;
+      const lon = path[i - 1].lon + ((path[i].lon - path[i - 1].lon) * k) / 20;
+      const c = CPC.cpAt(lat, lon);
+      if (Z.inNpcHome(lat, lon) || (c && gr.cp.statusOf(c.id) !== 'mine')) bad.push(c?.id || 'home');
+    }
+  }
+  assert(path.length >= 2 && bad.length <= 1, `探索路線只走可探索的區域（穿過未佔領：${bad.length} 點）`);
+}
+
 // ---- v14 第 3 批：三大勢力（起始控制點、相鄰進攻、優先無人駐守、打下留守、NPC 據點數量） ----
 {
   const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
