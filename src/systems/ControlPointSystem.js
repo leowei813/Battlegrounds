@@ -177,9 +177,48 @@ export class ControlPointSystem {
   /**
    * v15.4：探索中，目標建築所在的控制點被別人佔領（不能再探索）時，強制撤回這些隊伍（佇列一併取消）。
    */
+  /** 讀到共用的控制點資料了沒（連線時剛開遊戲還沒讀到前，所有控制點看起來都是中立，不能據此撤回隊伍） */
+  ready() {
+    const sh = this.game.shared;
+    return !sh?.online || !!sh.backend || !!sh.listedAt?.[CP_KIND];
+  }
+
+  /**
+   * 共用資料太久沒更新（14 天）會被當成不存在（控制點會看起來回到中立）：
+   * 佔領者每 3 天把自己佔領的控制點資料更新一次。
+   */
+  async touchOwned(now = Date.now()) {
+    const g = this.game;
+    if (!this.ready() || this.busy.has('touch')) return;
+    const me = this.myId();
+    const stale = CONTROL_POINTS.filter((c) => {
+      const o = g.shared?.cache?.get(`${CP_KIND}:${c.id}`);
+      return o?.updatedAt && now - o.updatedAt > 3 * 24 * 3600000 && (o.data?.owners || []).some((x) => x.p === me);
+    });
+    if (!stale.length) return;
+    this.busy.add('touch');
+    try {
+      for (const c of stale) {
+        // eslint-disable-next-line no-await-in-loop
+        await g.shared.update(CP_KIND, c.id, (x) => (x ? { data: { ...x, touchedAt: now } } : { fail: 'gone' }), { lat: c.lat, lon: c.lon });
+      }
+    } finally {
+      this.busy.delete('touch');
+    }
+  }
+
+  /** 強制撤回時，把一般的「收到召回命令」換成原因 */
+  static replaceRecallText(e, msg) {
+    const list = e.travelEvents || [];
+    const i = list.lastIndexOf('↩️ 收到召回命令，隊伍折返避難所');
+    if (i >= 0) list.splice(i, 1, msg);
+    else list.push(msg);
+    e.travelEvents = list;
+  }
+
   recallLostExplores(now = Date.now()) {
     const g = this.game;
-    if (g.state.map?.source !== 'generated') return 0;
+    if (g.state.map?.source !== 'generated' || !this.ready()) return 0;
     let n = 0;
     let dropped = 0;
     // 佇列中（自動探索預定前往）的地點：在不能再探索的區域裡的一併取消
@@ -205,7 +244,7 @@ export class ControlPointSystem {
       e.auto = false;
       const r = g.exploration.recall(e.id, at);
       if (!r.ok) return;
-      e.travelEvents = [...(e.travelEvents || []), `🚩 控制點${cp ? ` #${cp.no}` : ''}被佔領，「${poi.name}」不能再探索，隊伍強制撤回`];
+      ControlPointSystem.replaceRecallText(e, `🚩 控制點${cp ? ` #${cp.no}` : ''}被佔領，「${poi.name}」不能再探索，隊伍強制撤回`);
       n += 1;
     });
     if (n) {
@@ -282,12 +321,13 @@ export class ControlPointSystem {
   extendGuards(now = Date.now()) {
     const g = this.game;
     // 控制點不再是自己或好友的（例如共同佔領的好友解除關係、被打下）：駐防隊撤回
-    g.state.expeditions.filter((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated && e.cpId && this.statusOf(e.cpId) !== 'mine').forEach((e) => {
+    // （連線時要等讀到共用的控制點資料，否則剛開遊戲時所有控制點看起來都是中立）
+    if (this.ready()) g.state.expeditions.filter((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated && e.cpId && this.statusOf(e.cpId) !== 'mine').forEach((e) => {
       if (!g.exploration.canRecall(e, now)) return;
       const r = g.exploration.recall(e.id, now);
       if (!r.ok) return;
       const msg = `🛡️ 控制點 #${cpById(e.cpId)?.no || ''}已不是你或好友的控制點，駐防隊撤回`;
-      e.travelEvents = [...(e.travelEvents || []), msg];
+      ControlPointSystem.replaceRecallText(e, msg);
       g.log(msg, 'danger');
     });
     g.state.expeditions.filter((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated).forEach((e) => {
@@ -770,6 +810,7 @@ export class ControlPointSystem {
     this.lastAt = now;
     this.resolveAttacks(now).catch(() => {});
     this.extendGuards(now);
+    this.touchOwned(now).catch(() => {});
     this.syncGuards(now).catch(() => {});
     this.checkHostileOwners(now).catch(() => {});
     this.npcTurns(now).catch(() => {});
