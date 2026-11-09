@@ -152,7 +152,9 @@ export class ChatSystem {
   /** 由遊戲迴圈呼叫：聊天開著時 4 秒、關閉時 20 秒讀一次 */
   tick(now = Date.now()) {
     if (!this.online || this.polling) return;
-    if (now - this.pollAt < (this.open ? POLL_OPEN_MS : POLL_CLOSED_MS)) return;
+    // v15.7 省電：切到背景時 60 秒一次
+    const hidden = typeof document !== 'undefined' && document.hidden;
+    if (now - this.pollAt < (hidden ? 60000 : this.open ? POLL_OPEN_MS : POLL_CLOSED_MS)) return;
     this.poll();
   }
 

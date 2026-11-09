@@ -9,6 +9,8 @@ import { MAX_ASSIST_DPS } from '../systems/AssistSystem.js';
 const SYNC_MS = 30000;
 /** 自己或友好玩家正遭到屍潮攻擊（或正在協防）時加快同步，讓對方即時看到狀況 */
 const FAST_SYNC_MS = 10000;
+/** 背景分頁的同步間隔 */
+const HIDDEN_SYNC_MS = 60000;
 /** 顯示多遠範圍內的其他玩家（公里） */
 export const WORLD_RADIUS_KM = 5;
 export const WORLD_EVT = 'world:updated';
@@ -230,8 +232,18 @@ export class WorldSync {
     this.dropLegacy().finally(() => this.sync());
     this.timer = setInterval(() => {
       const gap = Date.now() - (this.lastTryAt || 0);
+      // v15.7 省電：切到背景時每 60 秒同步一次（回到前景立刻同步）
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (gap >= HIDDEN_SYNC_MS) this.sync();
+        return;
+      }
       if (gap >= SYNC_MS || (gap >= FAST_SYNC_MS && this.urgent())) this.sync();
     }, FAST_SYNC_MS);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && this.timer && Date.now() - (this.lastTryAt || 0) >= FAST_SYNC_MS) this.sync();
+      });
+    }
   }
 
   stop() {

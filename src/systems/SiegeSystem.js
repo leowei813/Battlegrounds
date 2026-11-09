@@ -1005,6 +1005,11 @@ export class SiegeSystem {
     return this.sieges.get(id);
   }
 
+  /** v15.7 省電：有任何據點正在屍潮中（夜晚來襲或場上還有殭屍）才需要逐幀模擬與繪製 */
+  live() {
+    return this.game.state.bases.some((b) => { const s = this.of(b.id); return s.zombies.length > 0 || s.active(); });
+  }
+
   /**
    * 推進所有據點的屍潮，並把本幀的特效以 `siege:fx` 事件廣播
    * （避難所場景與地圖圖層各自取用需要的據點）。

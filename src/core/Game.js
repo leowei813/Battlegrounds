@@ -28,7 +28,7 @@ import { DungeonSystem } from '../systems/DungeonSystem.js';
 import { AutoHomeSystem } from '../systems/AutoHomeSystem.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import { haversine } from '../utils/math.js';
-import { POI_THIN_VERSION } from '../config/constants.js';
+import { POI_THIN_VERSION, IDLE_LOW_FPS } from '../config/constants.js';
 import { MarkerSystem } from '../systems/MarkerSystem.js';
 import { InterceptSystem } from '../systems/InterceptSystem.js';
 import { BlackMarketSystem } from '../systems/BlackMarketSystem.js';
@@ -217,8 +217,10 @@ export class Game {
       behind -= dt;
       if (dt > 0) this.siegeCatchUp(dt);
     };
+    // v15.7 省電：沒有屍潮時每秒推進一次就好（依經過時間補算，結果相同），有屍潮時才逐幀
+    let lastPump = 0;
     const loop = (t) => {
-      pump(t);
+      if (!IDLE_LOW_FPS || t - lastPump >= 1000 || this.siege?.live?.()) { pump(t); lastPump = t; }
       this.siegeRaf = requestAnimationFrame(loop);
     };
     this.siegeRaf = requestAnimationFrame(loop);

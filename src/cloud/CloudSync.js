@@ -304,6 +304,10 @@ export class CloudSync {
 
   async checkRemote() {
     if (!this.enabled || this.locked || !this.game) return;
+    // v15.7 省電：切到背景時最多每 60 秒檢查一次（回到前景時照常）
+    const now = Date.now();
+    if (typeof document !== 'undefined' && document.hidden && now - (this.remoteAt || 0) < SAFETY_POLL_MS) return;
+    this.remoteAt = now;
     try {
       const { id, token } = this.creds();
       this.onRemoteMeta(await this.provider.meta(id, token));

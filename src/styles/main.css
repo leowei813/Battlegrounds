@@ -208,7 +208,7 @@ h4 { margin: 14px 0 6px; font-size: 14px; color: #c5e1a5; }
 .poi-icon, .zombie-icon, .shelter-icon { background: none; border: 0; }
 .poi-pin { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 17px; border-radius: 50%; background: #111c; border: 2px solid var(--c); box-shadow: 0 0 8px #0009; }
 .poi-pin.sm { width: 30px; height: 30px; flex: 0 0 30px; }
-.zombie-pin { position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 15px; border-radius: 50%; background: #7f0000cc; border: 2px solid #ff5252; animation: pulse 1.5s infinite; }
+.zombie-pin { position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 15px; border-radius: 50%; background: #7f0000cc; border: 2px solid #ff5252; }
 .zombie-pin span { position: absolute; bottom: -4px; right: -6px; font-size: 10px; background: #000; color: #fff; border-radius: 6px; padding: 0 3px; }
 .zombie-pin.elite { border-color: #ffd54f; }
 .zombie-pin.boss { width: 40px; height: 40px; font-size: 22px; border-color: #e040fb; background: #4a148ccc; }
@@ -394,7 +394,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .poi-icon .poi-pin.sm { width: 24px; height: 24px; flex: 0 0 24px; font-size: 13px; border-width: 1.5px; }
 .siege-banner { position: absolute; top: 10px; left: 56px; right: 64px; display: flex; flex-wrap: wrap; gap: 4px; pointer-events: none; }
 .siege-chip { pointer-events: auto; border: 1px solid #ff5252; background: #7f0000dd; color: #fff; border-radius: 14px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
-.siege-chip.danger { animation: pulse 1s infinite; background: #b71c1c; }
+.siege-chip.danger { background: #b71c1c; }
 .siege-chip b { color: #ffe082; }
 .siege-chip.wait { border-color: #90a4ae; background: #263238dd; }
 .siege-chip.lull { border-color: #ffb74d; background: #5d3a00dd; }
@@ -689,7 +689,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .alert-on { border-color: #e53935; background: rgba(229,57,53,0.12); }
 .map-feed { position: absolute; top: 48px; left: 56px; max-width: min(70%, 420px); display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
 .feed-chip { pointer-events: auto; text-align: left; border: 1px solid #546e7a; background: #102027e6; color: #eceff1; border-radius: 12px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.feed-chip.danger { border-color: #ff5252; background: #7f0000e6; animation: pulse 1.2s infinite; }
+.feed-chip.danger { border-color: #ff5252; background: #7f0000e6; }
 .feed-chip.friend { border-color: #66bb6a; background: #1b5e20e6; }
 .feed-chip.rally { border-color: #ffb300; background: #4e3400e6; }
 .feed-chip.team { border-color: #ffd54f; }
@@ -1407,7 +1407,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 /* 地圖：副本入口 */
 .dg-pin-wrap { background: none; border: 0; }
 .dg-pin { display: flex; flex-direction: column; align-items: center; }
-.dg-pin-ic { width: 56px; height: 46px; display: block; filter: drop-shadow(0 0 6px #ff1744); animation: dg-pulse 1.8s ease-in-out infinite; }
+.dg-pin-ic { width: 56px; height: 46px; display: block; filter: drop-shadow(0 0 6px #ff1744); }
+.dg-pin-ic.live { animation: dg-pulse 1.8s ease-in-out infinite; }
 @keyframes dg-pulse { 50% { filter: drop-shadow(0 0 2px #ff174466); } }
 .dg-pin-lb { font-style: normal; margin-top: -4px; background: #000c; color: #ffcdd2; border-radius: 6px; padding: 0 6px; font-size: 11px; white-space: nowrap; }
 /* 地圖左上角資訊框 */
@@ -1667,7 +1668,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .bm-gear.bm-mine .bm-row { border-color: #66bb6a; background: #1f2e1a; }
 .bm-gear.sold-out .bm-row { opacity: .55; }
 /* v12.2.1 地圖左上角集結資訊：淡藍色呼吸光 */
-.feed-chip.rally { border-color: #81d4fa; background: #0d2f45e6; color: #e1f5fe; animation: rally-glow 2.2s ease-in-out infinite; }
+.feed-chip.rally { border-color: #81d4fa; background: #0d2f45e6; color: #e1f5fe; }
 @keyframes rally-glow { 0%, 100% { box-shadow: 0 0 3px #81d4fa55; } 50% { box-shadow: 0 0 12px #81d4facc, 0 0 2px #b3e5fc; } }
 .setup-world { margin: 10px 0 4px; background: #1b5e2033; border: 1px dashed #66bb6a; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: #c8e6c9; line-height: 1.6; }
 /* 探索遇到的倖存者：留下品級（一行） */
@@ -1689,7 +1690,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .cp-lock { margin-top: 8px; padding: 6px 10px; border-radius: 8px; background: #ffb30014; border: 1px solid #ffb30055; color: #ffcc80; font-size: 12.5px; }
 .cp-pin svg { flex: none; }
 .cp-pin { width: max-content; }
-.cp-dot { width: var(--s); height: var(--s); border-radius: 50%; background: var(--c); border: 2px solid #fff; box-sizing: border-box; display: flex; align-items: center; justify-content: center; animation: cp-breathe 3s ease-in-out infinite; }
+.cp-dot { width: var(--s); height: var(--s); border-radius: 50%; background: var(--c); border: 2px solid #fff; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .cp-dot svg { width: 62%; height: 62%; }
 .cp-dot { position: relative; } .cp-dot .cp-guard { position: absolute; right: -14px; bottom: -8px; font-style: normal; font-size: 10.5px; font-weight: 700; background: #0d47a1e6; color: #fff; border: 1px solid #90caf9; border-radius: 8px; padding: 0 4px; white-space: nowrap; line-height: 15px; }
 @keyframes cp-breathe { 0%, 100% { box-shadow: 0 0 0 1px #111, 0 0 2px 0 color-mix(in srgb, var(--c) 40%, transparent); } 50% { box-shadow: 0 0 0 1px #111, 0 0 9px 3px color-mix(in srgb, var(--c) 70%, transparent); } }
