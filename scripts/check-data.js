@@ -2921,6 +2921,13 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   A.shelter.primary().defenses[0] = { ...A.shelter.primary().defenses[0], type: 'machineGun', level: 1 };
   const pc = pres(A, 'A').cover;
   assert(pc && pc.r > 0 && pc.dps > 0, `公開防禦範圍與可分出的火力（${JSON.stringify(pc)}）`);
+  // v15.3.1：公開涵蓋到的好友（玩家攻打好友時算進協防火力）；NPC 掠奪時防禦設施也會協助
+  B.state.bases[0].lon = A.state.bases[0].lon + 0.0004; // 約 40 公尺（在防禦範圍內）
+  A.world.others = [pres(B, 'B')];
+  const pc2 = A.assist.publishedCover();
+  assert((pc2.to || []).includes('B'), `防禦範圍涵蓋的好友會公開（${JSON.stringify(pc2)}）`);
+  const { cleanPlayer: CPl } = await import('../src/multiplayer/WorldSync.js');
+  assert((CPl({ id: 'A', name: 'A', bases: [{ lat: 25.03, lon: 121.56, name: 'x', primary: true }], cover: { r: 100, dps: 50, to: ['B'] } })?.cover?.to || []).includes('B'), '同步資料保留涵蓋的好友');
 }
 
 // ---- 53. v8.46：突襲避難所移動時間較長、載具仍加速 ----
@@ -3341,6 +3348,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const next = gv2.state.expeditions[0];
   assert(next && next.poiId === pois[1].id && (next.vehicleIds || []).includes(car1.id) && car1.status === 'out', '回到避難所後下一次出門自動帶上指定的載具');
   assert(!(next.nextVehicleIds || []).length, '生效後清除指定');
+  assert(next.id !== st.exp.id && ex.squadNow(st.exp.id, st.exp.memberIds) === next && ex.assignVehicles(ex.squadNow(st.exp.id, st.exp.memberIds).id, [], { dry: true }).ok, '小隊前往下一站換了隊伍編號：開著的視窗仍能找回同一支小隊（指定載具、加入佇列不會失敗）');
   ex.update(next.endAt + 1, { silent: true });
   assert(!gv2.state.expeditions.length && car1.status === 'idle', '小隊結束後載具回到車庫');
   // 小隊沒有再出門：指定的載具歸還
@@ -6190,6 +6198,32 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   await B.cp.syncGuards(gd.exp.startAt + gd.exp.travelMs + 1);
   await A.shared.poll();
   assert((A.cp.data(cp.id)?.guards || []).some((h) => h.p === 'B'), '駐防隊寫入控制點，攻打方會遇到');
+  {
+    // v15.4：勢力進攻控制點改為派兵行軍（移動時間比照攻打避難所），佔領者與駐防者收到紅色提醒（同一人只一則）
+    const t0 = Date.now();
+    const { RAID_TRAVEL: RT2 } = await import('../src/config/constants.js');
+    await A.cp.launchMarch('red', cp.id, t0);
+    const mch = A.cp.data(cp.id)?.march;
+    assert(mch && mch.arriveAt - t0 >= RT2.minMin * 60000 - 5, `勢力派兵前往控制點，移動時間比照攻打避難所（約 ${Math.round((mch?.arriveAt - t0) / 60000)} 分鐘）`);
+    await B.shared.poll();
+    const cntA0 = A.state.log.filter((l) => /部隊正前往/.test(l.msg)).length;
+    A.cp.warnMarches(t0 + 1000); A.cp.warnMarches(t0 + 2000);
+    B.cp.warnMarches(t0 + 1000);
+    const la = A.state.log.filter((l) => /部隊正前往/.test(l.msg));
+    assert(la.length - cntA0 === 1 && /你佔領的控制點/.test(la[0].msg), `佔領者收到一則紅色提醒（${la[0]?.msg || ''}）`);
+    assert(B.state.log.some((l) => /部隊正前往你駐防的控制點/.test(l.msg)), '駐防者也收到提醒');
+    // 同一人同時是佔領者與駐防者：只收到一則
+    await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, guards: [...(x.guards || []), { p: 'A', n: 'A', e: 'eA', units: [] }], march: { ...x.march, arriveAt: x.march.arriveAt + 1 } } }));
+    const cntA1 = A.state.log.filter((l) => /部隊正前往/.test(l.msg)).length;
+    A.cp.warnMarches(t0 + 3000);
+    const la2 = A.state.log.filter((l) => /部隊正前往/.test(l.msg));
+    assert(la2.length - cntA1 === 1 && /你佔領並駐防的/.test(la2[0].msg), `同時是佔領者與駐防者：只收到一則（${la2[0]?.msg || ''}）`);
+    assert(A.cp.marchView(t0 + 1000).some((m) => m.id === `mc:${cp.id}`), '地圖上顯示前往控制點的勢力部隊');
+    // 還沒抵達不交戰；抵達後由一位玩家結算
+    await A.cp.resolveMarches(t0 + 1000);
+    assert(A.cp.data(cp.id)?.march, '部隊還沒抵達：不交戰');
+    await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, march: null, guards: (x.guards || []).filter((h) => h.p !== 'A') } }));
+  }
   // 每日收益：佔領者與駐守者都能拿，同一人只一份
   assert(A.cp.incomeSources().length === 1 && B.cp.incomeSources().length === 1, '佔領者與駐守者都有收益');
   const inc = A.cp.rollIncome(cp);
@@ -6250,6 +6284,54 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     }
   }
   assert(path.length >= 2 && bad.length <= 1, `探索路線只走可探索的區域（穿過未佔領：${bad.length} 點）`);
+  // v15.4：探索中目標所在的控制點被佔領：強制撤回
+  r2.exp.queue = ['x'];
+  // 另一支小隊：目前的目標在安全區，但佇列中有 X 裡的地點
+  const fakeQ = { id: 'qq', kind: 'explore', memberIds: [], poiId: gr.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon)).id, queue: [target.id], startAt: Date.now(), endAt: Date.now() + 600000, travelMs: 1000, searchMs: 1000 };
+  gr.state.expeditions.push(fakeQ);
+  await gr.shared.update(CPC.CP_KIND, X.id, () => ({ data: { owners: [], guards: [], faction: 'red' } }));
+  gr.cp.recallLostExplores(r2.exp.startAt + 1000);
+  assert(r2.exp.recalled && !r2.exp.queue.length, '探索中控制點被佔領：隊伍強制撤回、佇列取消');
+  assert(!fakeQ.queue.length && !fakeQ.recalled, '控制點被佔領：其他隊伍佇列中（自動探索預定）在那裡的地點也一併取消');
+  gr.state.expeditions = gr.state.expeditions.filter((e) => e !== fakeQ);
+  // v15.4：探索點在鄰接大本營的控制點：有機會被大本營的部隊襲擊
+  {
+    const EX = await import('../src/systems/ExplorationSystem.js');
+    const eastCp = CPC.CONTROL_POINTS.find((c) => CPC.FACTION_KEYS.some((f) => CPC.hqNeighbors(f).includes(c.id)));
+    const ep = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === eastCp.id);
+    const westP = gr.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon));
+    assert(EX.hqFactionOf(ep) && !EX.hqFactionOf(westP), '鄰接大本營的控制點才會被大本營襲擊');
+    // 大本營派出部隊：移動時間比照攻打玩家避難所；抵達時隊伍還在搜索才交戰，先撤回就能躲開
+    const c0 = EX.HQ_AMBUSH.chance;
+    EX.HQ_AMBUSH.chance = 1;
+    const ce0 = gr.cp.canExplore;
+    const so0 = gr.cp.statusOf;
+    gr.cp.canExplore = () => ({ ok: true });
+    gr.cp.statusOf = () => 'mine';
+    const { createSurvivor: mkSv } = await import('../src/core/GameState.js');
+    const weak = mkSv('偵察', 'scout', 1, 'common');
+    gr.state.survivors.push(weak);
+    const ra = gr.exploration.start(ep.id, [weak.id], 5);
+    assert(ra.ok, `派隊到鄰接大本營的控制點探索（${ra.reason || ''}）`);
+    const e = ra.exp;
+    e.searchMs = 3600000; // 測試用：搜索很久，部隊抵達時還在
+    const arrive = e.startAt + e.travelMs + 1;
+    gr.cp.hqAmbushes(arrive);
+    const amb = e.hqAmbush;
+    const { RAID_TRAVEL: RT } = await import('../src/config/constants.js');
+    assert(amb && amb.hitAt - arrive >= RT.minMin * 60000 - 5, `大本營派出部隊、移動時間比照攻打避難所（約 ${Math.round((amb?.hitAt - arrive) / 60000)} 分鐘）`);
+    assert(gr.cp.marchView(arrive + 1000).some((m) => m.id === `ma:${e.id}`), '地圖上顯示前往探索點的大本營部隊');
+    e.cp = e.cp || { gained: {} };
+    e.cp.gained = { ...(e.cp.gained || {}), food: 10 };
+    gr.cp.hqAmbushes(amb.hitAt + 1);
+    assert(amb.done && (e.travelEvents || []).some((x) => /襲擊/.test(x)), `部隊抵達時隊伍還在：交戰（${(e.travelEvents || []).slice(-1)[0] || ''}）`);
+    gr.exploration.recall(e.id, amb.hitAt + 2);
+    gr.state.expeditions = gr.state.expeditions.filter((x) => x !== e);
+    gr.state.survivors = gr.state.survivors.filter((x) => x !== weak);
+    gr.cp.canExplore = ce0;
+    gr.cp.statusOf = so0;
+    EX.HQ_AMBUSH.chance = c0;
+  }
 }
 
 // ---- v14 第 3 批：三大勢力（起始控制點、相鄰進攻、優先無人駐守、打下留守、NPC 據點數量） ----
@@ -6298,6 +6380,31 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     }).map((c) => `#${c.no}`);
     assert(!out.length, `勢力據點的警戒範圍不超出自己的控制點（超出：${out.join('、') || '無'}）`);
     assert(bases.every((n) => CPC.cpAt(n.lat, n.lon)?.id === n.cp), '勢力據點建在自己的控制點裡');
+    // v15.4：NPC 探索中目標所在的控制點被玩家佔領：強制撤回
+    {
+      const nb = bases.find((n) => { n.trip = null; gq.npcs.launchExplore(n, Date.now()); return !!n.trip; });
+      assert(!!nb, '有 NPC 據點能派出探索隊（測試用）');
+      if (nb) {
+        const end0 = nb.trip.endAt;
+        const tp = gq.state.map.pois.find((p) => p.id === nb.trip.poiId);
+        const cpx = CPC.cpAt(tp.lat, tp.lon);
+        await gq.shared.update(CPC.CP_KIND, cpx.id, () => ({ data: { owners: [{ p: 'X', n: 'X' }], guards: [], faction: null } }));
+        gq.npcs.recallLostTrips(nb.trip.startAt + 1000);
+        assert(nb.trip.recalled && nb.trip.endAt < end0, 'NPC 探索中控制點被佔領：強制撤回（提早回據點、沒有收穫）');
+        nb.trip = null;
+        await gq.shared.update(CPC.CP_KIND, cpx.id, () => ({ data: { owners: [], guards: [], faction: nb.faction } }));
+      }
+    }
+    // v15.4：深淵區控制點守軍約與 Lv35 勢力 NPC 據點同強度
+    if (bases[0]) {
+      const lv0 = bases[0].level;
+      bases[0].level = 35;
+      const ref = gq.npcs.displayPower(bases[0]);
+      bases[0].level = lv0;
+      const abyss = CPC.CONTROL_POINTS.find((c) => c.zone === 5);
+      const pw = gq.cp.defensePower(abyss.id);
+      assert(Math.abs(pw / ref - 1) < 0.1, `深淵區控制點守軍戰力約等於 Lv35 NPC 據點（${Math.round(pw)} / ${Math.round(ref)}）`);
+    }
     // v15.3：勢力控制點內有 NPC 據點時要先打掉據點
     if (bases[0]) {
       const c0 = gq.cp.canAttack(bases[0].cp, { reach: false });

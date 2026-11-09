@@ -79,7 +79,14 @@ export class AssistSystem {
     const b = g.shelter.primary();
     if (!b) return null;
     const dps = Math.round(g.siege.of(b.id).defenseDps({ towersOnly: true }) * COVER_DPS_SHARE);
-    return dps > 0 ? { r: this.coverRadius(b), dps: Math.min(MAX_ASSIST_DPS, dps) } : null;
+    if (dps <= 0) return null;
+    const r = this.coverRadius(b);
+    // v15.3.1：涵蓋到的好友（玩家攻打好友時，攻擊方據此算進協防火力）
+    const to = (g.world?.others || []).filter((p) => g.territory.relation(p.id) === 'friend').filter((p) => {
+      const h = p.bases?.find((x) => x.primary) || p.bases?.[0];
+      return h && haversine(h.lat, h.lon, b.lat, b.lon) <= r;
+    }).map((p) => String(p.id)).slice(0, 20);
+    return { r, dps: Math.min(MAX_ASSIST_DPS, dps), ...(to.length ? { to } : {}) };
   }
 
   /** 自己的防禦範圍是否涵蓋這個據點 */
@@ -437,7 +444,7 @@ export class AssistSystem {
       const key = `${player.id}|${night}`;
       if (this.notified.has(key)) return;
       this.notified.set(key, true);
-      const cover = this.covers(base) ? '，你的防禦範圍涵蓋那裡，防禦設施會自動協助' : '';
+      const cover = this.covers(base) ? '，你的防禦範圍涵蓋那裡，防禦設施會自動額外協助（自己的火力不會減少）' : '';
       g.log(`🧟 友好玩家「${player.name}」的「${base.name}」正遭到屍潮攻擊（第 ${base.siege.wave}/${base.siege.maxWaves} 波）${cover}`, 'danger');
     });
     this.friendRaids(now).forEach(({ player, base, raid }) => {

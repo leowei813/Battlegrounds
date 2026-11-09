@@ -559,7 +559,7 @@ export class MapPanel {
     ? `<span class="tag tag-green">🛡️ 你的協防隊${tripProgress(myAssist, now).phase === 'searching' ? '正在協防' : '在路上'}</span>${btn('召回協防隊', 'stopAssist', { id: myAssist.id }, { cls: 'btn-xs btn-ghost' })}`
     : btn('🛡️ 派隊協防', 'assist', {}, { cls: 'btn-xs btn-primary', disabled: !canAssist.ok, title: canAssist.reason || '' })}</div>
       ${!myAssist && !canAssist.ok && sieged.length ? `<small class="muted block">${escapeHtml(canAssist.reason)}</small>` : ''}
-      ${covered ? '<small class="pos block">🛡️ 你的屍潮防禦範圍涵蓋對方的據點：屍潮時防禦設施會自動分出一半火力協助</small>' : ''}`;
+      ${covered ? '<small class="pos block">🛡️ 你的防禦範圍涵蓋對方的據點：屍潮、NPC 或玩家來攻打時，你的防禦設施會自動額外協助（約你防禦火力的一半，自己的火力不會減少）</small>' : ''}`;
     const siegeHtml = sieged.map((b) => `<div class="card siege-card"><b>🧟 「${escapeHtml(b.name)}」正遭到屍潮攻擊</b>
         <small class="block">第 ${b.siege.wave}/${b.siege.maxWaves} 波・剩 ${b.siege.left} 隻・🧱 圍牆 ${b.siege.wallPct}%${b.siege.helpers ? `・🛡️ ${b.siege.helpers} 位玩家協防中` : ''}</small></div>`).join('');
     const raidHtml = rel === 'friend' ? p.bases.map((b) => {

@@ -431,8 +431,8 @@ export class MapService {
         const phase = this.game.exploration.progress(ex, now)?.phase;
         const ll = (pts) => pts.map((q) => [q.lat, q.lon]);
         const route = (latlngs, style) => L.polyline(latlngs, { pane: 'routePane', renderer: this.routeRenderer, ...style }).addTo(this.layers.routes);
-        const YELLOW = { color: '#ffd54f', weight: 3, opacity: 0.45, dashArray: '4 8', className: 'route-line' };
-        const HOME = { color: '#ffab40', weight: 2.5, opacity: 0.35, dashArray: '8 6', interactive: false };
+        const YELLOW = { color: '#ffd54f', weight: 3, opacity: 0.3, dashArray: '4 8', className: 'route-line' };
+        const HOME = { color: '#ffab40', weight: 2.5, opacity: 0.3, dashArray: '8 6', interactive: false };
         // 連續探索：已經走過的路線（避難所 → 搜索過的地點）以灰線保留
         if (Array.isArray(ex.trail) && ex.trail.length >= 2) {
           route(ll(ex.trail), { color: '#90a4ae', weight: 2, opacity: 0.2, interactive: false });

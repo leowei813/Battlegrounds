@@ -1,3 +1,4 @@
+import { FACTIONS } from '../config/controlPoints.js';
 import L from 'leaflet';
 import { WORLD } from '../systems/SiegeSystem.js';
 import { bus } from '../core/EventBus.js';
@@ -230,6 +231,13 @@ export const SiegeMapLayer = L.Layer.extend({
         const p = tripProgress(trip, now);
         this.drawTrip(ctx, size, p, `⚔️ ${r.npc || 'NPC'}・攻打${player.name}`, ['rgba(229,57,53,0.75)', '#b71c1c', '#ffebee', 'rgba(127,0,0,0.9)'], false);
       }));
+    });
+    // v15.4：勢力部隊前往控制點、大本營部隊前往探索點：和 NPC 掠奪隊攻打據點一樣畫出行軍路線與部隊
+    (this.game.cp?.marchView?.(now) || []).forEach((m) => {
+      const trip = { from: m.from, to: m.to, startAt: m.startAt, travelMs: m.arriveAt - m.startAt, searchMs: 0, endAt: m.arriveAt };
+      const p = tripProgress(trip, now);
+      const fname = FACTIONS[m.f]?.name || 'NPC';
+      this.drawTrip(ctx, size, p, `⚔️ ${fname}・攻打${m.label}`, ['rgba(229,57,53,0.75)', '#b71c1c', '#ffebee', 'rgba(127,0,0,0.9)'], false);
     });
     this.game.npcs.trips(now).forEach(({ npc, trip, p }) => {
       const raid = trip.kind === 'raid';

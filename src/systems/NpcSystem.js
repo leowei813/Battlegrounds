@@ -822,7 +822,7 @@ export class NpcSystem {
     n.trip = null;
     // 回到據點後先休息一段時間，不會一直外出
     n.nextExploreAt = Math.max(n.nextExploreAt || 0, now + rand(NPC_CONFIG.exploreEveryMs));
-    if (trip.kind === 'explore') {
+    if (trip.kind === 'explore' && !trip.recalled) {
       const poi = this.game.state.map.pois.find((p) => p.id === trip.poiId);
       const at = this.arriveAt(trip);
       // 探索途中遭遇殭屍：可能有人受傷，要治療（補回人手）後才能再外出
@@ -838,6 +838,34 @@ export class NpcSystem {
       this.game.poiShare.markNpc(poi, at + (trip.searchMs || 0), n.name);
       this.game.bus.emit('map:changed');
     }
+  }
+
+  /**
+   * v15.4：NPC 探索中，目標建築所在的控制點不再屬於自己的勢力時，強制撤回（從目前位置走回據點，沒有收穫）。
+   */
+  recallLostTrips(now = Date.now()) {
+    const g = this.game;
+    if (g.state.map?.source !== 'generated' || !g.cp) return 0;
+    let n0 = 0;
+    this.list.forEach((n) => {
+      const trip = n.trip;
+      if (!n.faction || trip?.kind !== 'explore' || trip.recalled || now >= trip.endAt) return;
+      const poi = g.state.map.pois.find((p) => p.id === trip.poiId);
+      const cp = poi && cpAt(poi.lat, poi.lon);
+      if (!cp || g.cp.factionOf(cp.id) === n.faction) return;
+      const travel = trip.travelMs || 0;
+      const search = trip.searchMs ?? 0;
+      const t = now - trip.startAt;
+      if (t >= travel + search) return; // 已經在回程
+      const r = travel > 0 ? Math.min(1, t / travel) : 1;
+      trip.searchMs = search;
+      trip.startAt = now - (travel + search + travel * (1 - r));
+      trip.endAt = now + travel * r;
+      trip.recalled = true;
+      n0 += 1;
+    });
+    if (n0) g.bus.emit('npcs:changed');
+    return n0;
   }
 
   /** NPC 掠奪隊抵達玩家據點 */
@@ -858,7 +886,8 @@ export class NpcSystem {
     const wallBefore = g.shelter.wallHp(base);
     // 友好玩家的協防隊：守城時一起射擊，圍牆被打破後一起迎戰
     const isHome = g.shelter.isPrimary(base);
-    const helpers = isHome ? g.assist.incoming().filter((h) => h.kind === 'team') : [];
+    // v15.3.1：防禦範圍涵蓋這裡的好友，防禦設施也會協助（kind cover）
+    const helpers = isHome ? g.assist.incoming().filter((h) => h.kind === 'team' || h.kind === 'cover') : [];
     const allies = isHome ? g.assist.allyUnits() : [];
     const helpDps = helpers.reduce((s, h) => s + (h.dps || 0), 0);
     const severeBefore = new Set(g.state.survivors.filter((sv) => sv.severe).map((sv) => sv.id));
