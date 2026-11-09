@@ -6150,7 +6150,10 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   A.combat.simulate = (team, foes, o) => { const r = sim(team, foes, { ...o, record: false }); r.victory = true; r.foes.forEach((f) => { f.down = true; }); return r; };
   const at = A.cp.attack(cp.id, [lead.id]);
   assert(at.ok, `派隊攻打控制點（${at.reason || ''}）`);
-  await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs + 1);
+  assert(at.exp.searchMs > 0, '攻打控制點有攻打倒數時間');
+  await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs + at.exp.searchMs - 1000);
+  assert(!at.exp.cpResult && A.cp.statusOf(cp.id) !== 'mine', '抵達後攻打倒數還沒結束：還沒佔領（不能駐防、地圖不會點亮）');
+  await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs + at.exp.searchMs + 1);
   A.combat.simulate = sim;
   await B.shared.poll(); await C.shared.poll();
   assert(A.cp.statusOf(cp.id) === 'mine' && B.cp.statusOf(cp.id) === 'mine' && C.cp.statusOf(cp.id) === 'other', '打下後：自己與好友是可探索，其他玩家不行');
