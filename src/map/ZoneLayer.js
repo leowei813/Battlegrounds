@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import { ZONES, zoneIndexAt } from '../config/zones.js';
-import { inWorld } from '../config/world.js';
-import { cpIndexAt } from '../config/controlPoints.js';
+import { inWorld, WORLD_BOUNDS } from '../config/world.js';
+import { cpIndexAt, FACTION_KEYS } from '../config/controlPoints.js';
 import { inNpcHome } from '../config/zones.js';
 
 /** 地圖範圍外（不計算、不繪製） */
@@ -28,6 +28,12 @@ export const ZONE_MODE_ORDER = ['light', 'faction', 'off'];
 export const FACTION_COLORS = {
   mine: '#4fc3f7', other: '#9e9e9e', hostile: '#9e9e9e', neutral: '#9e9e9e', free: '#4fc3f7', npcHome: '#5d4037',
   red: '#ef5350', black: '#ffb300', blue: '#7e57c2',
+};
+
+/** 勢力領地（右側安全區）南北均分給三大勢力：回傳 -10（赤月）、-11（黑曜）、-12（冥府） */
+const homeOf = (lat) => {
+  const y = (WORLD_BOUNDS.n - lat) / (WORLD_BOUNDS.n - WORLD_BOUNDS.s);
+  return -10 - Math.min(2, Math.max(0, Math.floor(y * 3)));
 };
 
 /**
@@ -73,8 +79,8 @@ export const ZoneLayer = L.Layer.extend({
     for (let y = 0; y < h; y += 1) {
       for (let x = 0; x < w; x += 1) {
         const ll = map.containerPointToLatLng([x * BLOCK, y * BLOCK]);
-        // -2＝地圖外、-3＝勢力領地、-1＝自由探索區、其他＝控制點
-        grid[y * w + x] = !inWorld(ll.lat, ll.lng) ? -2 : inNpcHome(ll.lat, ll.lng) ? -3 : cpIndexAt(ll.lat, ll.lng);
+        // -2＝地圖外、-10～-12＝三大勢力領地（南北均分：赤月、黑曜、冥府）、-1＝自由探索區、其他＝控制點
+        grid[y * w + x] = !inWorld(ll.lat, ll.lng) ? -2 : inNpcHome(ll.lat, ll.lng) ? homeOf(ll.lat) : cpIndexAt(ll.lat, ll.lng);
       }
     }
     this.low.width = w;
@@ -84,8 +90,8 @@ export const ZoneLayer = L.Layer.extend({
     const cache = new Map();
     const rgbaOf = (k) => {
       if (!cache.has(k)) {
-        const hex = k === -3 ? FACTION_COLORS.npcHome : k === -1 ? FACTION_COLORS.free : colorOf(k);
-        cache.set(k, [...rgb(hex), k === -1 ? 40 : 90]);
+        const hex = k <= -10 ? FACTION_COLORS[FACTION_KEYS[-10 - k]] : k === -1 ? FACTION_COLORS.free : colorOf(k);
+        cache.set(k, [...rgb(hex), k === -1 ? 40 : k <= -10 ? 70 : 90]);
       }
       return cache.get(k);
     };
@@ -105,7 +111,7 @@ export const ZoneLayer = L.Layer.extend({
     for (let y = 0; y < h; y += 1) {
       for (let x = 0; x < w; x += 1) {
         const a = grid[y * w + x];
-        if (a < 0) continue;
+        if (a < 0 && a > -10) continue;
         if ((x + 1 < w && grid[y * w + x + 1] !== a && grid[y * w + x + 1] !== -2) || (y + 1 < h && grid[(y + 1) * w + x] !== a && grid[(y + 1) * w + x] !== -2)) {
           ctx.fillRect(x * BLOCK + (BLOCK - dot) / 2 + 1, y * BLOCK + (BLOCK - dot) / 2 + 1, dot, dot);
         }
