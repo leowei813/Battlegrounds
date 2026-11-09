@@ -2,7 +2,7 @@
  * v13：固定的方形世界地圖（所有玩家共用同一張地圖）。
  * 範圍外不能建立據點、不會產生地點、NPC、屍群與重度感染據點。
  */
-export const WORLD_BOUNDS = { n: 25.0427, s: 25.0204, w: 121.5557, e: 121.5845 };
+export const WORLD_BOUNDS = { n: 25.0427, s: 25.0254, w: 121.5557, e: 121.5798 };
 
 export const WORLD_CENTER = {
   lat: (WORLD_BOUNDS.n + WORLD_BOUNDS.s) / 2,

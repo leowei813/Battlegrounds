@@ -566,6 +566,13 @@ export class SaveManager {
       if ((data.bases || []).length) data.freeRelocate = true;
       data.guideSeen = 0;
     }
+    // v15：地圖縮小並重劃（左安全區→右深淵區，最右側勢力領地）：再給一次免費重新選擇避難所（沒用掉的不重複增加），並顯示新說明
+    if (v < 35) {
+      if ((data.bases || []).length) data.freeRelocate = true;
+      data.guideSeen = 0;
+      const c = data.map?.center;
+      if (data.map && (!c || !inWorld(c.lat, c.lon))) data.map.center = { ...WORLD_CENTER };
+    }
     data.version = SAVE_VERSION;
     return data;
   }

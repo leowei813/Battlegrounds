@@ -6,8 +6,12 @@ import { zoneIndexAt, zoneSide } from './zones.js';
  * 規則見 docs/v14-plan.md。
  */
 
+/** 共用資料的種類（v15 地圖重劃後控制點位置改變，換新的種類讓所有控制點重新開始） */
+export const CP_KIND = 'cpx';
+export const CP_TURN_KIND = 'cpxturn';
+
 /** 控制點中心（地圖上的相對位置：x 0＝最西、1＝最東；y 0＝最北、1＝最南） */
-const COLS = [0.27, 0.36, 0.45, 0.55, 0.64, 0.73];
+const COLS = [0.3, 0.405, 0.51, 0.615, 0.72, 0.825];
 function seedsOf() {
   let s = 7;
   const r = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
@@ -30,7 +34,7 @@ const edge = (y) => Math.sin(y * 23) * 0.012 + Math.sin(y * 9 + 1) * 0.01;
 /** 座標所在的控制點索引（不在任何控制點範圍內回傳 -1） */
 export function cpIndexAt(lat, lon) {
   const { x, y } = toXY(lat, lon);
-  if (x < 0.205 + edge(y) || x > 0.795 - edge(y) || y < 0 || y > 1) return -1;
+  if (x < 0.245 + edge(y) || x > 0.885 - edge(y) || y < 0 || y > 1) return -1;
   let best = -1;
   let bd = Infinity;
   SEEDS.forEach(([sx, sy], i) => {
@@ -73,7 +77,7 @@ export const CP_INCOME_HOUR = 6;
 export const CONTROL_POINTS = SEEDS.map(([x, y], i) => {
   const { lat, lon } = toLatLon(x, y);
   const zone = Math.max(2, Math.min(5, zoneIndexAt(lat, lon)));
-  const side = zone === 5 ? 'mid' : zoneSide(lat, lon);
+  const side = zoneSide(lat, lon);
   const g = GARRISON[side === 'npc' ? 'npc' : 'player'][zone];
   return {
     id: `cp${i + 1}`, no: i + 1, lat, lon, zone, side, garrison: g,
@@ -119,9 +123,9 @@ export function cpNeighbors(id) {
  * hour：每天進攻的遊戲時間；hq：大本營位置（地圖相對位置）。
  */
 export const FACTIONS = {
-  red: { name: '赤月', color: '#ef5350', hour: 8, hq: [0.93, 0.17] },
-  black: { name: '黑曜', color: '#ffb300', hour: 12, hq: [0.93, 0.5] },
-  blue: { name: '冥府', color: '#7e57c2', hour: 16, hq: [0.93, 0.83] },
+  red: { name: '赤月', color: '#ef5350', hour: 8, hq: [0.95, 0.17] },
+  black: { name: '黑曜', color: '#ffb300', hour: 12, hq: [0.95, 0.5] },
+  blue: { name: '冥府', color: '#7e57c2', hour: 16, hq: [0.95, 0.83] },
 };
 export const FACTION_KEYS = Object.keys(FACTIONS);
 /** 大本營位置（經緯度） */
@@ -133,14 +137,15 @@ export const FACTION_SLOW_AT = 8;
 
 /** 一開始（沒有共用資料時）各勢力擁有的控制點：東側（勢力側）依南北位置分給最近的大本營 */
 export function defaultFaction(cp) {
-  if (!cp || cp.side !== 'npc') return null;
-  const { y } = toXY(cp.lat, cp.lon);
+  if (!cp) return null;
+  const { x, y } = toXY(cp.lat, cp.lon);
+  if (x < 0.67) return null; // 最東側兩排（深淵區）一開始屬於三大勢力
   return y < 1 / 3 ? 'red' : y < 2 / 3 ? 'black' : 'blue';
 }
 
 /** 和大本營相鄰的控制點（最東側那一排）：勢力沒有控制點時可以從這裡開始進攻 */
 export function hqNeighbors(f) {
-  const east = CONTROL_POINTS.filter((c) => toXY(c.lat, c.lon).x > 0.7);
+  const east = CONTROL_POINTS.filter((c) => toXY(c.lat, c.lon).x > 0.78);
   const hy = FACTIONS[f].hq[1];
   return east.filter((c) => Math.abs(toXY(c.lat, c.lon).y - hy) < 0.34).map((c) => c.id);
 }

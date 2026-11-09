@@ -1,5 +1,5 @@
 import { POI_TYPES } from '../config/poiTypes.js';
-import { zoneIndexAt } from '../config/zones.js';
+import { zoneIndexAt, inNpcHome } from '../config/zones.js';
 import { WORLD_CENTER, WORLD_HALF_DIAG_M, inWorld } from '../config/world.js';
 
 /**
@@ -49,6 +49,8 @@ export function poiAtCell(r, c) {
   const lonStep = lonStepOf(r);
   const lat = (r + 0.1 + 0.8 * hash(c, r, 2)) * LAT_STEP;
   const lon = (c + 0.1 + 0.8 * hash(c, r, 3)) * lonStep;
+  // v15：最右側三大勢力領地沒有可探索的建築
+  if (inNpcHome(lat, lon)) return null;
   const z = zoneIndexAt(lat, lon);
   let type = null;
   if (z === ABYSS && hash(c, r, 6) < WORLD_GEN.militaryInAbyss) type = 'military';

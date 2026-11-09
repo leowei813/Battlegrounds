@@ -1,5 +1,5 @@
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START,
+  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND,
 } from '../config/controlPoints.js';
 import { inNpcHome } from '../config/zones.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
@@ -31,7 +31,7 @@ export class ControlPointSystem {
   constructor(game) {
     this.game = game;
     this.busy = new Set();
-    game.shared?.watch('cp', 5);
+    game.shared?.watch(CP_KIND, 5);
   }
 
   get st() {
@@ -50,7 +50,7 @@ export class ControlPointSystem {
 
   /** 共用資料（沒有＝中立、守軍滿員） */
   data(id) {
-    return this.game.shared?.get('cp', id) || null;
+    return this.game.shared?.get(CP_KIND, id) || null;
   }
 
   /** 佔領的勢力（沒有共用資料時：東側控制點屬於最近的大本營） */
@@ -228,7 +228,7 @@ export class ControlPointSystem {
         if (this.busy.has(exp.id)) continue;
         this.busy.add(exp.id);
         const units = g.rally.units(exp.memberIds);
-        const r = await g.shared.update('cp', exp.cpId, (x) => {
+        const r = await g.shared.update(CP_KIND, exp.cpId, (x) => {
           const data = x || { owners: [], guards: [] };
           if (!(data.owners || []).some((o) => this.isAlly(o.p))) return { fail: '控制點已經不是你或好友的' };
           data.guards = [...(data.guards || []).filter((h) => h.e !== exp.id), { p: me, n: name, e: exp.id, units, at: now }];
@@ -247,7 +247,7 @@ export class ControlPointSystem {
   }
 
   async removeGuard(id, expId) {
-    return this.game.shared.update('cp', id, (x) => {
+    return this.game.shared.update(CP_KIND, id, (x) => {
       if (!x) return { fail: 'none' };
       x.guards = (x.guards || []).filter((h) => h.e !== expId);
       return { data: x };
@@ -285,7 +285,7 @@ export class ControlPointSystem {
     const killed = result.foes.filter((f) => f.down).length;
     const events = [`⚔️ 控制點 #${cp.no}：守軍 ${before} 人，擊倒 ${killed} 人`];
     if (result.victory) {
-      const r = await g.shared.update('cp', id, (x) => ({
+      const r = await g.shared.update(CP_KIND, id, (x) => ({
         data: { ...(x || {}), owners: [{ p: me, n: name }], faction: null, guards: [], lost: cp.garrison.count, lostAt: at, takenAt: at },
       }), { lat: cp.lat, lon: cp.lon });
       events.push(r.ok ? `🏆 佔領控制點 #${cp.no}！這個區域的建築現在可以探索了` : `⚠️ 佔領失敗：${r.reason}`);
@@ -294,7 +294,7 @@ export class ControlPointSystem {
     }
     // 沒打下：守軍損失保留（NPC 守軍每小時補回；駐防隊員倒下的從名單移除）
     const downIds = new Set(result.foes.filter((f) => f.down).map((f) => f.ally?.player).filter(Boolean));
-    await g.shared.update('cp', id, (x) => {
+    await g.shared.update(CP_KIND, id, (x) => {
       const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
       if (data.owners?.length && !data.faction) data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
       else { data.lost = Math.min(cp.garrison.count, (cp.garrison.count - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
@@ -418,7 +418,7 @@ export class ControlPointSystem {
       if (this.busy.has(`h:${cp.id}`)) continue;
       this.busy.add(`h:${cp.id}`);
       // eslint-disable-next-line no-await-in-loop
-      const r = await g.shared.update('cp', cp.id, (x) => ({ data: { ...(x || {}), owners: [], guards: [], faction: null, lost: cp.garrison.count, lostAt: now } }), { lat: cp.lat, lon: cp.lon });
+      const r = await g.shared.update(CP_KIND, cp.id, (x) => ({ data: { ...(x || {}), owners: [], guards: [], faction: null, lost: cp.garrison.count, lostAt: now } }), { lat: cp.lat, lon: cp.lon });
       this.busy.delete(`h:${cp.id}`);
       if (r.ok) g.log(`🚩 控制點 #${cp.no} 的共同佔領者變成敵對，控制點回到中立`, 'danger');
     }
@@ -487,7 +487,7 @@ export class ControlPointSystem {
       this.busy.add(`turn:${f}`);
       try {
         // eslint-disable-next-line no-await-in-loop
-        const lock = await g.shared.update('cpturn', f, (x) => (x?.day === day ? { fail: 'done' } : { data: { day, at: now } }));
+        const lock = await g.shared.update(CP_TURN_KIND, f, (x) => (x?.day === day ? { fail: 'done' } : { data: { day, at: now } }));
         this.lastTurn = { ...(this.lastTurn || {}), [f]: day };
         if (!lock.ok) continue;
         const target = this.pickTarget(f, at);
@@ -509,7 +509,7 @@ export class ControlPointSystem {
     const win = !!r.victory || !foes.length;
     const killed = r.foes.filter((x) => x.down).length;
     const downIds = new Set(r.foes.filter((x) => x.down).map((x) => x.ally?.player).filter(Boolean));
-    const res = await g.shared.update('cp', id, (x) => {
+    const res = await g.shared.update(CP_KIND, id, (x) => {
       const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
       if (win) {
         // 打下後留守：守軍約為進攻部隊的一半（之後每小時補回）

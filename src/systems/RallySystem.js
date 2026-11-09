@@ -4,7 +4,7 @@ import { uid, pick, randInt } from '../utils/math.js';
 import { haversine, formatDuration } from '../utils/math.js';
 import { NPC_REWARD_MUL, RALLY_SHARE_FLOOR } from '../config/npcs.js';
 import { AUTO_HOME_LABEL } from './AutoHomeSystem.js';
-import { cpById } from '../config/controlPoints.js';
+import { cpById, CP_KIND } from '../config/controlPoints.js';
 
 /** 集結：出發倒數可選的分鐘數 */
 export const RALLY_DELAYS = [5, 10, 15, 20];
@@ -647,10 +647,10 @@ export class RallySystem {
       res.victory = !!result.victory;
       if (res.victory) {
         const owners = teams.map((t) => ({ p: t.player, n: t.name }));
-        await g.shared.update('cp', cp.id, (x) => ({ data: { ...(x || {}), owners, faction: null, guards: [], lost: cp.garrison.count, lostAt: now, takenAt: now } }), { lat: cp.lat, lon: cp.lon });
+        await g.shared.update(CP_KIND, cp.id, (x) => ({ data: { ...(x || {}), owners, faction: null, guards: [], lost: cp.garrison.count, lostAt: now, takenAt: now } }), { lat: cp.lat, lon: cp.lon });
         res.summary = `🏆 集結佔領控制點 #${cp.no}（${teams.length} 位玩家共同擁有）`;
       } else {
-        await g.shared.update('cp', cp.id, (x) => {
+        await g.shared.update(CP_KIND, cp.id, (x) => {
           const data = x || { owners: [], guards: [] };
           if (!data.owners?.length || data.faction) { data.lost = Math.min(cp.garrison.count, (cp.garrison.count - g.cp.garrisonCount(cp.id, now)) + killed); data.lostAt = now; }
           return { data };
