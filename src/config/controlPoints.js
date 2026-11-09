@@ -47,6 +47,8 @@ const GARRISON = {
 };
 /** 守軍強度倍率（生命、攻擊） */
 export const CP_GARRISON_MUL = 3;
+/** 玩家側（西側警戒～致死區）的控制點守軍再減弱一半 */
+export const CP_PLAYER_SIDE_MUL = 0.5;
 /** 被打下後每小時補回的守軍人數 */
 export const CP_REFILL_PER_HOUR = 1;
 /** 每名玩家每個控制點最多駐防人數 */
