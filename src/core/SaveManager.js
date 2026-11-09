@@ -561,6 +561,11 @@ export class SaveManager {
     if (v < 33) data.renameLegacy = true;
     // v14：地下感染區資訊框改為預設展開（列出全部副本）；舊版收起的設定重設一次
     if (v < 34 && data.settings) delete data.settings.dgHudOpen;
+    // v14：地圖重新規劃，已有避難所的玩家可以免費重新選擇一次（只能選安全區），並顯示新玩法說明
+    if (v < 34) {
+      if ((data.bases || []).length) data.freeRelocate = true;
+      data.guideSeen = 0;
+    }
     data.version = SAVE_VERSION;
     return data;
   }

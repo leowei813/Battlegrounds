@@ -355,7 +355,7 @@ export class MapPanel {
     const has = this.game.shelter.hasShelter();
     const src = { overpass: 'OpenStreetMap', generated: '隨機地圖', none: '—' }[st.map.source] || st.map.source;
     const html = `
-      ${has ? '' : '<div class="map-hint">👆 點選地圖上任一建築，將它設為你的<b>避難所</b></div>'}
+      ${has ? (st.freeRelocate ? '<div class="map-hint reloc">🏠 地圖已重新規劃：點<b>左側安全區</b>的建築可以<b>免費</b>重新選擇避難所（全部保留）</div>' : '') : '<div class="map-hint">👆 點選地圖<b>左側安全區</b>的建築，將它設為你的<b>避難所</b></div>'}
       <div class="map-tools">
         ${btn('🏰', 'gotoShelter', {}, { cls: 'btn-icon', disabled: !has, title: '回到避難所' })}
         ${btn(`🔔<small class="alert-lbl ${this.game.shelter.alert ? 'on' : ''}">${this.game.shelter.alert ? '警戒中' : '正常'}</small>`, 'mapAlert', {}, { cls: `btn-icon alert-btn ${this.game.shelter.alert ? 'on' : ''}`, disabled: !has, title: this.game.shelter.alert ? '警戒中：按一下解除警戒' : '按一下切換警戒（全部倖存者暫時防禦駐守）' })}
@@ -831,7 +831,7 @@ export class MapPanel {
     const actions = [];
     let establish = '';
     const z = g.shelter.sizeInfo(poi);
-    const sizeLine = `<small class="muted block"><span class="size-chip" style="--sc:${BASE_SIZES[z.id].color}">${BASE_SIZES[z.id].icon} ${z.name}</span>據點：防禦欄位 ${z.slots}・設施最高 Lv${BASE_SIZES[z.id].facMax}・屍潮 ×${BASE_SIZES[z.id].siegeMul}</small>`;
+    const sizeLine = `<small class="muted block"><span class="size-chip" style="--sc:${BASE_SIZES[z.id].color}">${BASE_SIZES[z.id].icon} ${z.name}</span>據點：屍潮 ×${BASE_SIZES[z.id].siegeMul}・警戒範圍 ${BASE_SIZES[z.id].alert} 公尺</small>`;
     if (base) {
       actions.push(btn('🏠 進入據點', 'enterShelter', {}, { cls: 'btn-primary' }));
       actions.push(btn(base.kind === 'outpost' ? '🏚️ 放棄' : '🚚 搬遷', 'abandon', {}, { cls: 'btn-ghost' }));
@@ -844,6 +844,13 @@ export class MapPanel {
         : '<small class="block pos">✅ 搬遷保留的設施都不會降級</small>') : ''}`;
     } else {
       { const ve = g.poiShare.view(poi); actions.push(btn(ve.empty ? '🕸️ 已搜空' : ve.left ? '🧭 繼續探索' : '🧭 派遣探索', 'explore', {}, { cls: 'btn-primary', disabled: ve.empty })); }
+      // v14：改版後一次免費重新選擇避難所（只能選左側安全區）
+      if (g.state.freeRelocate) {
+        const fm = g.shelter.canFreeMove(poi);
+        actions.push(btn('🏠 免費搬到這裡', 'freeMove', {}, { cls: 'btn-primary', disabled: !fm.ok, title: fm.reason || '' }));
+        if (!fm.ok) establish = `<small class="block muted">🏠 免費重選避難所：${escapeHtml(fm.reason)}</small>`;
+        else establish = '<small class="block pos">🏠 整座搬過來：設施、防禦建築、資源全部保留（只能使用一次）</small>';
+      }
     }
     return `
       <div class="poi-detail">
@@ -869,6 +876,15 @@ export class MapPanel {
       body: this.poiBody(poi),
       live: () => this.poiBody(poi),
       onAction: (action, data, m) => {
+        if (action === 'freeMove') {
+          const r = this.ui.result(this.game.shelter.freeMove(poi));
+          if (r.ok) {
+            m.close();
+            this.renderMap(true);
+            this.game.zombies.refresh();
+          }
+          return;
+        }
         if (action === 'setShelter') {
           const r = this.ui.result(this.game.shelter.establish(poi));
           if (r.ok) {

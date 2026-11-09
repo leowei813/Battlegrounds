@@ -164,6 +164,8 @@ export class Game {
     this.genMap();
     // v13：固定世界地圖，範圍外的避難所整座搬進範圍內
     this.shelter.moveIntoWorld();
+    // v14：所有避難所防禦欄位補足
+    this.shelter.ensureDefenseSlots();
     // v12：自己的倖存者不同名（舊版名單只有 30 個，可能有重複）
     this.survivors.dedupeNames();
     // v13.1：舊名單的倖存者換成新名單的名字（只做一次）

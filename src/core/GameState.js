@@ -38,7 +38,8 @@ export function createBase(poi, kind = 'shelter') {
     ),
     // 防禦建築欄位數依據點規模（小型 4～巨型 12）
     size: baseSizeOf(poi),
-    defenses: Array.from({ length: BASE_SIZES[baseSizeOf(poi)].slots }, (_, slot) => ({ slot, type: null, level: 0, garrisonId: null })),
+    // v14：避難所一律有最多的防禦欄位（建築規模只影響探索、屍潮與警戒範圍）
+    defenses: Array.from({ length: Math.max(...Object.values(BASE_SIZES).map((x) => x.slots)) }, (_, slot) => ({ slot, type: null, level: 0, garrisonId: null })),
     wallHp: null, // null = 滿血（首次計算時填入）
     buildQueue: [],
   };

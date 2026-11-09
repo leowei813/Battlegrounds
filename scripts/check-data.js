@@ -3473,17 +3473,15 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const hb = gc6.shelter.primary();
   hb.facilities.farm.level = gc6.shelter.facilityCap(hb);
   Object.keys(gc6.state.resources).forEach((k) => { gc6.state.resources[k] = 1e7; });
-  const up = gc6.shelter.canUpgradeFacility(hb, 'farm');
-  assert(!up.ok && /需要更大的據點/.test(up.reason), '設施達到據點規模上限時不能再升級');
+  // v14：所有避難所的設施都能升到最高等級；搬到小地點也不會降級
+  assert(gc6.shelter.facilityCap(hb) === 15, '避難所設施一律可升到 Lv15（v14）');
   hb.facilities.farm.level = 12;
   hb.facilities.workbench.level = 5;
   gc6.shelter.abandon(hb.id);
   const pv = gc6.shelter.relocationCapPreview(small);
-  assert(pv.changes.some((c) => c.id === 'farm' && c.from === 12 && c.to === 8) && !pv.changes.some((c) => c.id === 'workbench'), '搬遷前可預覽小地點會降級的設施');
-  const before6 = JSON.stringify(gc6.state.supplies) + JSON.stringify(gc6.state.resources);
+  assert(!pv.changes.length, '搬到小地點不會降級設施（v14）');
   const nb6 = gc6.shelter.establish(small).base;
-  assert(nb6.facilities.farm.level === 8 && nb6.facilities.workbench.level === 5, '搬到較小的地點：超過上限的設施降到上限，其他不變');
-  assert(JSON.stringify(gc6.state.supplies) + JSON.stringify(gc6.state.resources) !== before6, '降掉的等級退還建造材料');
+  assert(nb6.facilities.farm.level === 12 && nb6.defenses.length === 11, `搬到小地點：設施等級保留、防禦欄位一律 11 格（${nb6.facilities.farm.level}/${nb6.defenses.length}）`);
   // 舊存檔：超過上限的設施降級並退還
   const od = JSON.parse(JSON.stringify(gc6.state));
   od.version = 21;
@@ -6058,6 +6056,33 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const inj = gq.siege.of(bq.id).injureGuards();
   const top = [...gs].sort((a, b) => b.level - a.level).slice(0, 5).map((x) => x.name);
   assert(inj.filter((x) => x.cellar).map((x) => x.name).sort().join() === top.sort().join() && inj.filter((x) => x.cellar).every((x) => !x.severe && !x.light), `屍潮突破時等級最高的 5 位駐守者撤進地窖不受傷（Lv10 地窖）`);
+}
+
+// ---- v14：避難所只能建在左側安全區、改版後免費重選一次 ----
+{
+  const Z = await import('../src/config/zones.js');
+  const gf = Game.newGame({ playerName: 'F14', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gf.genMap();
+  const safe = gf.state.map.pois.filter((p) => Z.inPlayerSafe(p.lat, p.lon));
+  const abyss = gf.state.map.pois.find((p) => Z.zoneIndexAt(p.lat, p.lon) === 5);
+  assert(!gf.shelter.canEstablish(abyss).ok && gf.shelter.canEstablish(safe[0]).ok, '避難所只能建在左側安全區');
+  gf.shelter.establish(abyss); // 不能建
+  assert(!gf.shelter.primary(), '深淵區不能建立避難所');
+  // 舊玩家：避難所在深淵區（舊地圖），改版後可免費重選
+  const old = gf.shelter.establish({ ...safe[0] }).base;
+  Object.assign(old, { lat: abyss.lat, lon: abyss.lon, poiId: abyss.id, name: abyss.name, size: 'huge' });
+  old.facilities.farm.level = 14;
+  gf.state.resources.food = 777;
+  const mig = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 33 });
+  assert(mig.freeRelocate === true && mig.guideSeen === 0, '改版存檔：提供一次免費重選與顯示新玩法說明');
+  gf.state.freeRelocate = true;
+  assert(!gf.shelter.canFreeMove(abyss).ok, '免費重選只能選安全區');
+  const r = gf.shelter.freeMove(safe[1]);
+  const nb = gf.shelter.primary();
+  assert(r.ok && Z.inPlayerSafe(nb.lat, nb.lon) && nb.size === 'huge' && nb.facilities.farm.level === 14 && gf.state.resources.food === 777, '免費重選：整座搬到安全區，規模、設施、資源全部保留');
+  assert(!gf.state.freeRelocate && !gf.shelter.canFreeMove(safe[2]).ok, '免費重選只能用一次');
+  const { GUIDE_VERSION } = await import('../src/ui/GuideDialog.js');
+  assert(GUIDE_VERSION === 14, '遊戲說明版本 14');
 }
 
 if (failures) {
