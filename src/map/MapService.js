@@ -88,7 +88,25 @@ export class MapService {
     this.layers.others = L.layerGroup().addTo(this.map);
     this.layers.npcs = L.layerGroup().addTo(this.map);
     this.layers.infected = L.layerGroup().addTo(this.map);
+    // v14：控制點旗子畫在建築點下面（不擋住資源點）；點擊時建築優先，旁邊沒有建築才打開控制點
+    if (!this.map.getPane('cpPane')) {
+      const pane = this.map.createPane('cpPane');
+      pane.style.zIndex = 430;
+      pane.style.pointerEvents = 'none';
+    }
     this.layers.cps = L.layerGroup().addTo(this.map);
+    this.map.on('click', (e) => {
+      if (this.poiLayer?.hit?.(e.containerPoint) || this.poiLayer?.teamHit?.(e.containerPoint)) return;
+      const C = this.cpConfig?.CONTROL_POINTS || [];
+      let best = null;
+      let bd = 16;
+      C.forEach((c) => {
+        const pt = this.map.latLngToContainerPoint([c.lat, c.lon]);
+        const d = Math.hypot(pt.x - e.containerPoint.x, pt.y - 7 - e.containerPoint.y);
+        if (d < bd) { bd = d; best = c; }
+      });
+      if (best) bus.emit('ui:openCp', { id: best.id });
+    });
     this.layers.convoys = L.layerGroup().addTo(this.map);
     this.cpConfig = CP_CONFIG;
     this.layers.dungeons = L.layerGroup().addTo(this.map);
@@ -240,12 +258,10 @@ export class MapService {
       const s = game.cp.statusOf(c.id);
       const col = s === 'faction' ? FACTION_COLORS[game.cp.factionOf(c.id)] : cols[s];
       L.marker([c.lat, c.lon], {
+        pane: 'cpPane', interactive: false,
         // 旗子本身依佔領狀態上色（淡藍＝自己或好友、灰＝中立或其他玩家、勢力顏色）
-        icon: this.icon(`<div class="cp-pin"><svg viewBox="0 0 26 28" width="32" height="34" aria-hidden="true"><rect x="1.5" y="1" width="2.4" height="26" rx="1.2" fill="#eceff1" stroke="#111" stroke-width="0.6"/><path d="M3.9 1.5 H25 L20.5 8.5 L25 15.5 H3.9 Z" fill="${col || '#bdbdbd'}" stroke="#111" stroke-width="1"/><text x="13.6" y="11.6" text-anchor="middle" font-size="${c.no >= 10 ? 8.5 : 9.5}" font-weight="900" fill="#111">${c.no}</text></svg></div>`, 'shelter-icon', 34),
-        zIndexOffset: 850,
-      }).on('click', () => bus.emit('ui:openCp', { id: c.id }))
-        .bindTooltip(`🚩 控制點 #${c.no}・${game.cp.summary(c.id).label}`, { direction: 'top', offset: [0, -14] })
-        .addTo(this.layers.cps);
+        icon: this.icon(`<div class="cp-pin"><svg viewBox="0 0 26 28" width="24" height="26" aria-hidden="true"><rect x="1.5" y="1" width="2.4" height="26" rx="1.2" fill="#eceff1" stroke="#111" stroke-width="0.6"/><path d="M3.9 1.5 H25 L20.5 8.5 L25 15.5 H3.9 Z" fill="${col || '#bdbdbd'}" stroke="#111" stroke-width="1"/><text x="13.6" y="11.6" text-anchor="middle" font-size="${c.no >= 10 ? 8.5 : 9.5}" font-weight="900" fill="#111">${c.no}</text></svg></div>`, 'shelter-icon', 26),
+      }).addTo(this.layers.cps);
     });
     if (this.zoneLayer) {
       this.zoneLayer.factionColor = (i) => {
