@@ -1,4 +1,4 @@
-import { DAY_REAL_MS } from '../config/constants.js';
+import { TimeSystem } from './TimeSystem.js';
 
 /** 自動回家的時間（遊戲時間） */
 export const AUTO_HOME_HOUR = 19.5;
@@ -35,7 +35,7 @@ export class AutoHomeSystem {
   triggerAt(at) {
     const h = this.game.time.totalHours(at);
     const since = h - AUTO_HOME_HOUR - this.keyAt(at) * 24;
-    return Math.round(at - (since / 24) * DAY_REAL_MS);
+    return Math.round(at - (since / 24) * TimeSystem.dayMs(at));
   }
 
   /** 每次更新時檢查：跨過 19:30 就觸發一次 */

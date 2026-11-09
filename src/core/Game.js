@@ -18,7 +18,6 @@ import { CivilizationSystem } from '../systems/CivilizationSystem.js';
 import { VehicleSystem } from '../systems/VehicleSystem.js';
 import { NpcSystem } from '../systems/NpcSystem.js';
 import { TerritorySystem } from '../systems/TerritorySystem.js';
-import { GpsSystem } from '../systems/GpsSystem.js';
 import { grant } from '../systems/costUtils.js';
 import { isSupply } from '../config/supplies.js';
 import { generateWorldPois } from '../map/WorldGen.js';
@@ -28,7 +27,7 @@ import { DungeonSystem } from '../systems/DungeonSystem.js';
 import { AutoHomeSystem } from '../systems/AutoHomeSystem.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import { haversine } from '../utils/math.js';
-import { POI_THIN_VERSION } from '../config/constants.js';
+import { POI_THIN_VERSION, IDLE_SIEGE_THROTTLE } from '../config/constants.js';
 import { MarkerSystem } from '../systems/MarkerSystem.js';
 import { InterceptSystem } from '../systems/InterceptSystem.js';
 import { BlackMarketSystem } from '../systems/BlackMarketSystem.js';
@@ -76,7 +75,6 @@ export class Game {
     this.vehicles = new VehicleSystem(this);
     this.npcs = new NpcSystem(this);
     this.territory = new TerritorySystem(this);
-    this.gps = new GpsSystem(this);
     this.markers = new MarkerSystem(this);
     this.intercept = new InterceptSystem(this);
     this.blackMarket = new BlackMarketSystem(this);
@@ -217,8 +215,10 @@ export class Game {
       behind -= dt;
       if (dt > 0) this.siegeCatchUp(dt);
     };
+    // v15.7 省電：沒有屍潮時每秒推進一次就好（依經過時間補算，結果相同），有屍潮時才逐幀
+    let lastPump = 0;
     const loop = (t) => {
-      pump(t);
+      if (!(IDLE_SIEGE_THROTTLE || globalThis.__siegeThrottle) || t - lastPump >= 1000 || this.siege?.live?.()) { pump(t); lastPump = t; }
       this.siegeRaf = requestAnimationFrame(loop);
     };
     this.siegeRaf = requestAnimationFrame(loop);

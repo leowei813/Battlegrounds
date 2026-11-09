@@ -278,11 +278,11 @@ export class SurvivorSystem {
    * 重傷（生命歸零）：無法行動，並扣除經驗（可能降級）。
    * @param {string} reason 顯示原因
    */
-  becomeSevere(sv, reason = '', at = Date.now()) {
+  becomeSevere(sv, reason = '', at = Date.now(), xpPct = VITALS.xpPenaltyPct) {
     sv.hp = 0;
     if (sv.severe) return;
     sv.severe = true;
-    const lost = this.penalizeXp(sv);
+    const lost = this.penalizeXp(sv, xpPct);
     this.game.log(`🩸 ${sv.name} ${reason}重傷倒地，經驗 -${lost.xp}${lost.levelDown ? `，降為 Lv${sv.level}` : ''}`, 'danger');
     if (this.isStarving()) sv.zeroSince = sv.zeroSince || at;
   }
@@ -291,8 +291,8 @@ export class SurvivorSystem {
    * 重傷懲罰：扣除「目前等級升級所需經驗」的 10%；經驗不足時降一級並從上一級扣除。
    * @returns {{xp:number, levelDown:boolean}}
    */
-  penalizeXp(sv) {
-    const loss = Math.max(1, Math.round(xpToNext(sv.level) * VITALS.xpPenaltyPct));
+  penalizeXp(sv, pct = VITALS.xpPenaltyPct) {
+    const loss = Math.max(1, Math.round(xpToNext(sv.level) * pct));
     if (sv.xp >= loss) {
       sv.xp -= loss;
       return { xp: loss, levelDown: false };

@@ -8,6 +8,8 @@ import { zoneIndexAt, zoneSide, inNpcHome } from './zones.js';
 
 /** 共用資料的種類（v15 地圖重劃後控制點位置改變，換新的種類讓所有控制點重新開始） */
 export const CP_KIND = 'cpx';
+/** v15.7：駐防隊擋下勢力部隊：沒倒下的隊員獲得自己升級所需經驗的比例（倒下不扣） */
+export const CP_GUARD_XP_PCT = 0.03;
 export const CP_TURN_KIND = 'cpxturn';
 
 /** 控制點中心（地圖上的相對位置：x 0＝最西、1＝最東；y 0＝最北、1＝最南） */

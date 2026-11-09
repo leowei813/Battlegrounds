@@ -2,7 +2,7 @@
 export const MAX_MARKERS = 5;
 
 /**
- * 標記地點：GPS 只能偵測身邊 50 公尺的建築，走遠後就看不到了。
+ * 標記地點：
  * 把建築標記起來（最多 5 個），重新掃描或移動到別處後仍會保留在地圖上，方便日後在那裡建立避難所。
  */
 export class MarkerSystem {

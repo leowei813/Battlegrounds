@@ -2,7 +2,8 @@ import { AssistSystem, ASSIST_TRAVEL_MUL } from './AssistSystem.js';
 import { pathLength, pointAlong } from '../map/routing.js';
 import { uid, pick, randInt } from '../utils/math.js';
 import { haversine, formatDuration } from '../utils/math.js';
-import { NPC_REWARD_MUL, RALLY_SHARE_FLOOR } from '../config/npcs.js';
+import { NPC_REWARD_MUL, RALLY_SHARE_FLOOR, RALLY_XP } from '../config/npcs.js';
+import { xpToNext } from '../config/survivors.js';
 import { AUTO_HOME_LABEL } from './AutoHomeSystem.js';
 import { cpById, CP_KIND } from '../config/controlPoints.js';
 
@@ -736,19 +737,26 @@ export class RallySystem {
     // 集結戰鬥的經驗（倒下的人沒有經驗，和一般戰鬥相同）；研究「經驗加成」也適用
     const xpEach = Math.round((r.xpEach || 0) * (1 + g.research.bonus('xpPct')));
     let xpGot = 0;
+    const winXp = [];
     (r.units || []).forEach((u) => {
       const sv = g.survivors.get(exp.memberIds[u.i]);
       if (!sv) return;
       if (u.meds > 0) g.combat.consumeMeds(sv, { medsUsed: Math.floor(u.meds) });
-      if (u.down) g.survivors.becomeSevere(sv, '在集結戰鬥中', exp.endAt);
+      // v15.7：集結倒下的經驗懲罰較輕（RALLY_XP.downPct）
+      if (u.down) g.survivors.becomeSevere(sv, '在集結戰鬥中', exp.endAt, RALLY_XP.downPct);
       else {
         g.survivors.setHp(sv, Math.max(1, u.hp));
-        if (xpEach > 0) { g.survivors.gainXp(sv, xpEach); xpGot += xpEach; }
+        // v15.7：打贏時另外獲得自己升級所需經驗的 RALLY_XP.winPct（依等級成長，和倒下的懲罰同一個基準）
+        const bonus = exp.rallyVictory ? Math.round(xpToNext(sv.level) * RALLY_XP.winPct) : 0;
+        const amt = Math.max(0, xpEach) + bonus;
+        if (amt > 0) { g.survivors.gainXp(sv, amt); xpGot += amt; }
+        if (bonus) winXp.push(`${sv.name} +${bonus.toLocaleString()}`);
       }
     });
     if (xpGot) {
       report.xp += xpGot;
       report.events.push(`⭐ 集結戰鬥經驗：每人 +${xpEach}（倒下的隊員沒有經驗）`);
+      if (winXp.length) report.events.push(`🏆 集結勝利經驗：${winXp.join('、')}`);
     }
     // v15.6.1：比照一般戰鬥：戰後生命低於 70% 的人從藥品欄吃藥補血，藥品欄再從隊伍背包補滿
     const alive = members.filter((m) => !m.severe);

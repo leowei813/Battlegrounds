@@ -6,6 +6,7 @@ import { EXP_PHASES, phaseIcon, phaseName, AMBUSH_RADIUS_M, tripProgress } from 
 import { RallySystem } from '../systems/RallySystem.js';
 import { rallyTripView } from '../multiplayer/WorldSync.js';
 import { formatDuration } from '../utils/math.js';
+import { IDLE_LOW_FPS, MAP_FPS_OPTIONS, MAP_FPS_DEFAULT } from '../config/constants.js';
 
 /** 停在目的地時的狀態名稱（不是探索） */
 const STAY_NAMES = { assist: '🛡️ 協防中', cpGuard: '🛡️ 駐防中' };
@@ -67,7 +68,8 @@ export const SiegeMapLayer = L.Layer.extend({
     this.canvas.style.height = `${size.y}px`;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     L.DomUtil.setPosition(this.canvas, this.map.containerPointToLayerPoint([0, 0]));
-    if (!this.running) this.draw(0);
+    // 改變大小會清空畫布：一律立刻重畫（拖曳地圖時不會出現空白或錯位）
+    this.draw(0);
   },
 
   start() {
@@ -76,11 +78,20 @@ export const SiegeMapLayer = L.Layer.extend({
     this.lastT = performance.now();
     const loop = (t) => {
       if (!this.running) return;
-      this.draw(Math.min(0.1, (t - this.lastT) / 1000));
-      this.lastT = t;
+      // v15.7 省電：沒有屍潮、射擊特效時依設定「地圖更新頻率」重畫（預設每秒 10 次），有屍潮時一律每幀繪製
+      if (!IDLE_LOW_FPS || this.fx.length || this.pulses.length || this.game.siege?.live?.() || t - this.lastT >= this.idleMs()) {
+        this.draw(Math.min(0.1, (t - this.lastT) / 1000));
+        this.lastT = t;
+      }
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
+  },
+
+  /** 沒有屍潮時的重畫間隔（毫秒）：設定「地圖更新頻率」10／30／60 次 */
+  idleMs() {
+    const fps = MAP_FPS_OPTIONS.includes(this.game.state.settings?.mapFps) ? this.game.state.settings.mapFps : MAP_FPS_DEFAULT;
+    return fps >= 60 ? 0 : 1000 / fps - 4;
   },
 
   stop() {

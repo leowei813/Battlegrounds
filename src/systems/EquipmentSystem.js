@@ -423,7 +423,31 @@ export class EquipmentSystem {
   }
 
   equip(survivorId, itemId) {
-    return this.keepHpPct(() => this.equipRaw(survivorId, itemId));
+    const r = this.keepHpPct(() => this.equipRaw(survivorId, itemId));
+    if (r.ok && this.getItem(itemId)?.slot === 'weapon') { r.ammo = this.stowAmmo(survivorId); if (r.ammo) r.msg = `🔫 換下的子彈：${r.ammo}`; }
+    return r;
+  }
+
+  /**
+   * v15.7：換槍或卸下槍械時，彈藥欄裡用不到的子彈直接放回倉庫（倉庫滿了放進自己的背包）。
+   * 換上的槍用的子彈相同時不動。
+   * @returns {string|null} 說明
+   */
+  stowAmmo(survivorId) {
+    const g = this.game;
+    const sv = g.survivors.get(survivorId);
+    const lo = sv && g.survivors.loadout(sv);
+    if (!lo?.ammo) return null;
+    const need = g.survivors.ammoNeed(sv);
+    if (need && need.ammo === lo.ammo.key) return null;
+    const { key, qty } = lo.ammo;
+    const toStore = g.survivors.atShelter(sv) ? Math.min(qty, g.survivors.storeRoom(key)) : 0;
+    if (toStore > 0) g.state.supplies[key] = (g.state.supplies[key] || 0) + toStore;
+    const toBag = qty - toStore;
+    if (toBag > 0) { sv.bag = sv.bag || {}; sv.bag[key] = (sv.bag[key] || 0) + toBag; }
+    lo.ammo = null;
+    const name = SUPPLIES[key]?.name || key;
+    return [toStore ? `${name}×${toStore} 放回倉庫` : '', toBag ? `${name}×${toBag} 放進背包` : ''].filter(Boolean).join('、');
   }
 
   equipRaw(survivorId, itemId) {
@@ -584,7 +608,9 @@ export class EquipmentSystem {
 
   /** 卸下：放回倉庫，倉庫滿了放進自己的背包 */
   unequip(survivorId, slot) {
-    return this.keepHpPct(() => this.unequipRaw(survivorId, slot));
+    const r = this.keepHpPct(() => this.unequipRaw(survivorId, slot));
+    if (r.ok && slot === 'weapon') { r.ammo = this.stowAmmo(survivorId); if (r.ammo) r.msg = `🔫 卸下的子彈：${r.ammo}`; }
+    return r;
   }
 
   unequipRaw(survivorId, slot) {

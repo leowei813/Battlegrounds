@@ -1,9 +1,11 @@
+import { TimeSystem } from './TimeSystem.js';
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND,
+  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT,
 } from '../config/controlPoints.js';
-import { inNpcHome } from '../config/zones.js';
+import { inNpcHome, ZONES } from '../config/zones.js';
+import { xpToNext } from '../config/survivors.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
-import { DAY_REAL_MS, RAID_TRAVEL } from '../config/constants.js';
+import { RAID_TRAVEL } from '../config/constants.js';
 import { NPC_CONFIG } from '../config/npcs.js';
 import { HQ_AMBUSH, hqFactionOf } from './ExplorationSystem.js';
 import {
@@ -14,11 +16,9 @@ import { balanceMultipliers } from './MaterialBalance.js';
 import { baseSupplyWeight } from './LootStock.js';
 
 /** 駐防隊在控制點最多停留的時間（之後自動回家） */
-/** 離線期間的每日收益最多補發幾次（遊戲一天＝現實 1 小時，24 次約現實 1 天） */
+/** 離線期間的每日收益最多補發幾次（遊戲一天＝現實 90 分鐘，24 次約現實 1.5 天） */
 export const CP_OFFLINE_INCOME_MAX = 24;
 const GUARD_STAY_MS = 7 * 24 * 3600000;
-/** 運輸隊的移動速度（公尺／秒） */
-const CONVOY_SPEED = 1.4;
 /** 中立控制點的感染者守軍種類 */
 const NEUTRAL_TYPES = ['walker', 'infected', 'berserker', 'mutant'];
 
@@ -32,6 +32,8 @@ const NEUTRAL_TYPES = ['walker', 'infected', 'berserker', 'mutant'];
  *  lost    守軍已損失的人數（每小時補回 CP_REFILL_PER_HOUR，即現實每 10 分鐘 1 人）；lostAt 損失時間
  */
 /** 地圖提示用：探索隊的目的地名稱 */
+/** 物資清單文字 */
+const goodsText = (got) => Object.entries(got || {}).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || { food: '食物', wood: '木材', fuel: '燃料' }[k] || k} ×${v}`).join('、');
 const g0name = (g, e) => `「${g.exploration.poi(e.poiId)?.name || '探索點'}」`;
 
 export class ControlPointSystem {
@@ -65,6 +67,11 @@ export class ControlPointSystem {
     const d = this.data(id);
     if (d) return d.faction || null;
     return defaultFaction(cpById(id));
+  }
+
+  /** v15.7：勢力是否已經佔領最西側一排（CP_START）的控制點：佔領到之後才會攻打玩家據點 */
+  factionReachedWest(f) {
+    return CP_START.some((id) => this.factionOf(id) === f);
   }
 
   /** 勢力擁有的控制點 */
@@ -133,10 +140,23 @@ export class ControlPointSystem {
     return list;
   }
 
+  /**
+   * v15.7：已經抵達的駐防隊（出發時就寫進共用資料並記下抵達時間 arr，玩家離線時抵達也算數）。
+   * 舊資料沒有 arr：視為已抵達。
+   */
+  guardsAt(id, at = Date.now()) {
+    return (this.data(id)?.guards || []).filter((h) => !(h.arr > at));
+  }
+
   /** 防守方：玩家佔領的是駐防隊員，其他是 NPC／感染者守軍 */
   defenders(id, now = Date.now()) {
     if (this.owners(id).length && !this.factionOf(id)) {
-      return (this.data(id)?.guards || []).flatMap((h) => (h.units || []).slice(0, CP_GUARD_MAX).map((u) => AssistSystem.unitOf({ id: h.p, name: h.n }, u)));
+      // 記下是哪一支駐防隊（h.e）的第幾位，交戰後依此判斷誰倒下、誰拿防守經驗
+      return this.guardsAt(id, now).flatMap((h) => (h.units || []).slice(0, CP_GUARD_MAX).map((u) => {
+        const x = AssistSystem.unitOf({ id: h.p, name: h.n }, u);
+        x.ally.e = h.e;
+        return x;
+      }));
     }
     return this.npcGarrison(id, now);
   }
@@ -314,6 +334,8 @@ export class ControlPointSystem {
     exp.cpId = id;
     exp.searchMs = GUARD_STAY_MS;
     exp.endAt = exp.startAt + exp.travelMs * 2 + exp.searchMs;
+    // v15.7：出發時就寫進共用資料（含抵達時間）：抵達時玩家離線，交戰時也算得到這支駐防隊
+    this.listGuard(exp).catch(() => {});
     return { ok: true, exp, msg: `隊伍出發駐防控制點 #${cpById(id).no}，約 ${Math.max(1, Math.round(exp.travelMs / 60000))} 分鐘後抵達` };
   }
 
@@ -341,8 +363,6 @@ export class ControlPointSystem {
   /** 已抵達的駐防隊（寫入共用資料，讓攻打方能讀到守軍） */
   async syncGuards(now = Date.now()) {
     const g = this.game;
-    const me = this.myId();
-    const name = g.state.player.name || '倖存者';
     for (const exp of g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId)) {
       const arrived = now >= exp.startAt + exp.travelMs;
       const d = this.data(exp.cpId);
@@ -351,28 +371,41 @@ export class ControlPointSystem {
         if (listed) await this.removeGuard(exp.cpId, exp.id);
         continue;
       }
-      if (!arrived) continue;
       if (!exp.cpListed) {
-        if (this.busy.has(exp.id)) continue;
-        this.busy.add(exp.id);
-        // v15.6：科技「據點駐防」：自己派出的駐防隊生命與攻擊提升（寫進共用資料，攻打方讀到的就是強化後的數值）
-        const bon = g.research.bonus('cpGuardPct');
-        const units = g.rally.units(exp.memberIds).map((u) => (bon > 0 ? { ...u, hp: Math.round(u.hp * (1 + bon)), maxHp: Math.round(u.maxHp * (1 + bon)), atk: Math.round(u.atk * (1 + bon)) } : u));
-        const r = await g.shared.update(CP_KIND, exp.cpId, (x) => {
-          const data = x || { owners: [], guards: [] };
-          if (!(data.owners || []).some((o) => this.isAlly(o.p))) return { fail: '控制點已經不是你或好友的' };
-          data.guards = [...(data.guards || []).filter((h) => h.e !== exp.id), { p: me, n: name, e: exp.id, units, at: now }];
-          return { data };
-        }, { lat: cpById(exp.cpId).lat, lon: cpById(exp.cpId).lon });
-        this.busy.delete(exp.id);
-        if (r.ok) exp.cpListed = true;
-        else { exp.cpListed = false; g.exploration.recall(exp.id, now); }
-      } else if (d && !listed) {
+        // 出發時沒寫成功（例如離線）：抵達前持續重試；抵達時控制點已經不是自己或好友的就撤回
+        const r = await this.listGuard(exp, now);
+        if (r && !r.ok && arrived && r.reason !== 'busy') { exp.cpListed = false; g.exploration.recall(exp.id, now); }
+      } else if (arrived && d && !listed) {
         // 駐防隊被擊退（從共用資料中移除）：受傷回家
         exp.defeated = true;
         g.log(`🚩 控制點 #${cpById(exp.cpId).no} 的駐防隊被擊退，正在撤回避難所`, 'danger');
         g.exploration.recall(exp.id, now);
       }
+    }
+  }
+
+  /** 把駐防隊寫進共用資料（含抵達時間 arr） */
+  async listGuard(exp, now = Date.now()) {
+    const g = this.game;
+    if (this.busy.has(exp.id)) return { ok: false, reason: 'busy' };
+    this.busy.add(exp.id);
+    try {
+      const me = this.myId();
+      const name = g.state.player.name || '倖存者';
+      // v15.6：科技「據點駐防」：自己派出的駐防隊生命與攻擊提升（寫進共用資料，攻打方讀到的就是強化後的數值）
+      const bon = g.research.bonus('cpGuardPct');
+      const units = g.rally.units(exp.memberIds).map((u) => (bon > 0 ? { ...u, hp: Math.round(u.hp * (1 + bon)), maxHp: Math.round(u.maxHp * (1 + bon)), atk: Math.round(u.atk * (1 + bon)) } : u));
+      const arr = exp.startAt + (exp.travelMs || 0);
+      const r = await g.shared.update(CP_KIND, exp.cpId, (x) => {
+        const data = x || { owners: [], guards: [] };
+        if (!(data.owners || []).some((o) => this.isAlly(o.p))) return { fail: '控制點已經不是你或好友的' };
+        data.guards = [...(data.guards || []).filter((h) => h.e !== exp.id), { p: me, n: name, e: exp.id, units, at: now, arr }];
+        return { data };
+      }, { lat: cpById(exp.cpId).lat, lon: cpById(exp.cpId).lon });
+      if (r.ok) exp.cpListed = true;
+      return r;
+    } finally {
+      this.busy.delete(exp.id);
     }
   }
 
@@ -465,7 +498,7 @@ export class ControlPointSystem {
     const t = this.game.time;
     const h = t.totalHours(now);
     const day0 = Math.floor(h / 24) * 24;
-    return now - ((h - day0 - CP_INCOME_HOUR) / 24) * DAY_REAL_MS;
+    return now - ((h - day0 - CP_INCOME_HOUR) / 24) * TimeSystem.dayMs(now);
   }
 
   /** 收益內容（食物、木材、燃料＋隨機零件：階級越高機率越低、數量越少） */
@@ -492,27 +525,37 @@ export class ControlPointSystem {
     return CONTROL_POINTS.filter((cp) => {
       const d = this.data(cp.id);
       if (!d || d.faction) return false;
-      return (d.owners || []).some((o) => o.p === me) || (d.guards || []).some((h) => h.p === me);
+      return (d.owners || []).some((o) => o.p === me) || this.guardsAt(cp.id).some((h) => h.p === me);
     });
   }
 
-  /** 每天 06:00：每個控制點派運輸隊把收益送回避難所 */
+  /**
+   * 每天 06:00：控制點收益直接入庫（v15.7：不再派運輸隊），跳出視窗告知來自哪些控制點、各多少。
+   * @returns {{list:object[], total:object, text:string}|null}
+   */
   startConvoys(now = Date.now()) {
     const g = this.game;
     const sh = g.shelter.primary();
-    if (!sh) return;
+    if (!sh) return null;
     const day = g.time.day(now);
     const at = this.incomeTime(now);
-    if (now < at || this.st.incomeDay === day) return;
+    if (now < at || this.st.incomeDay === day) return null;
     this.st.incomeDay = day;
-    this.incomeSources().forEach((cp) => {
-      const dist = haversine(this.markerSpot(cp.id).lat, this.markerSpot(cp.id).lon, sh.lat, sh.lon);
-      const travel = Math.round((dist / CONVOY_SPEED) * 1000);
-      this.st.convoys.push({
-        id: uid('cv'), cp: cp.id, from: { ...this.markerSpot(cp.id) }, to: { lat: sh.lat, lon: sh.lon }, startAt: at, endAt: at + travel, goods: this.rollIncome(cp),
-      });
+    const me = this.myId();
+    const total = {};
+    const list = this.incomeSources().map((cp) => {
+      const d = this.data(cp.id) || {};
+      const own = (d.owners || []).some((o) => o.p === me);
+      const guard = (d.guards || []).some((h) => h.p === me);
+      const got = g.grant(this.rollIncome(cp));
+      Object.entries(got).forEach(([k, v]) => { if (v > 0) total[k] = (total[k] || 0) + v; });
+      return { id: cp.id, no: cp.no, zone: ZONES[cp.zone]?.name || '', role: own && guard ? '佔領・駐防' : own ? '佔領' : '駐防', goods: got, text: goodsText(got) };
     });
-    if (this.st.convoys.length) g.log(`🚚 控制點運輸隊出發：${this.st.convoys.length} 支，正把收益送回避難所`, 'info');
+    if (!list.length) return null;
+    const res = { list, total, text: goodsText(total) };
+    g.log(`🚚 06:00 控制點物資送達（${list.length} 個控制點）：${res.text || '沒有東西'}`, 'loot');
+    g.bus.emit('cp:dailyIncome', res);
+    return res;
   }
 
   /**
@@ -537,7 +580,7 @@ export class ControlPointSystem {
       sources.forEach((cp) => Object.entries(this.rollIncome(cp)).forEach(([k, v]) => { goods[k] = (goods[k] || 0) + v; }));
     }
     const got = g.grant(goods);
-    const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || { food: '食物', wood: '木材', fuel: '燃料' }[k] || k} ×${v}`).join('、');
+    const text = goodsText(got);
     g.log(`🚚 離線期間的控制點收益（${times} 次${missed > times ? `，最多補 ${CP_OFFLINE_INCOME_MAX} 次` : ''}）：${text}`, 'loot');
     const res = { times, missed, goods: got, text, cps: sources.length };
     this.lastCatchUp = res;
@@ -545,25 +588,21 @@ export class ControlPointSystem {
     return res;
   }
 
-  /** 運輸隊抵達：收益入庫 */
-  deliverConvoys(now = Date.now()) {
+  /** 舊版存檔裡還在路上的運輸隊：直接入庫（v15.7 起不再有運輸隊動畫） */
+  deliverConvoys() {
     const g = this.game;
-    const done = this.st.convoys.filter((c) => now >= c.endAt);
+    const done = this.st.convoys || [];
     if (!done.length) return;
-    this.st.convoys = this.st.convoys.filter((c) => now < c.endAt);
+    this.st.convoys = [];
     done.forEach((c) => {
       const got = g.grant(c.goods);
-      const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || { food: '食物', wood: '木材', fuel: '燃料' }[k] || k} ×${v}`).join('、');
-      g.log(`🚚 控制點 #${cpById(c.cp)?.no} 的運輸隊抵達：${text || '沒有東西'}`, 'loot');
+      g.log(`🚚 控制點 #${cpById(c.cp)?.no} 的物資送達：${goodsText(got) || '沒有東西'}`, 'loot');
     });
   }
 
-  /** 地圖顯示：運輸隊目前位置 */
-  convoyView(now = Date.now()) {
-    return this.st.convoys.map((c) => {
-      const p = Math.max(0, Math.min(1, (now - c.startAt) / Math.max(1, c.endAt - c.startAt)));
-      return { ...c, lat: c.from.lat + (c.to.lat - c.from.lat) * p, lon: c.from.lon + (c.to.lon - c.from.lon) * p, left: Math.max(0, c.endAt - now) };
-    });
+  /** 地圖顯示：v15.7 起沒有運輸隊 */
+  convoyView() {
+    return [];
   }
 
   // ================= 敵對：共同擁有者變成敵對時回到中立 =================
@@ -591,7 +630,7 @@ export class ControlPointSystem {
     const t = this.game.time;
     const h = t.totalHours(now);
     const day0 = Math.floor(h / 24) * 24;
-    return now - ((h - day0 - FACTIONS[f].hour) / 24) * DAY_REAL_MS;
+    return now - ((h - day0 - FACTIONS[f].hour) / 24) * TimeSystem.dayMs(now);
   }
 
   /**
@@ -605,7 +644,7 @@ export class ControlPointSystem {
     const hq = this.hqLatLon(f);
     const list = [...near].map((id) => {
       const cp = cpById(id);
-      const guarded = this.owners(id).length > 0 && !this.factionOf(id) && (this.data(id)?.guards || []).length > 0;
+      const guarded = this.owners(id).length > 0 && !this.factionOf(id) && this.guardsAt(id, now).length > 0;
       return { id, guarded, power: this.defensePower(id, now), dist: haversine(cp.lat, cp.lon, hq.lat, hq.lon) };
     });
     if (!list.length) return null;
@@ -707,6 +746,31 @@ export class ControlPointSystem {
     }
   }
 
+  /**
+   * v15.7：地圖左上角的紅色威脅訊息（同 NPC 攻打避難所）：
+   * 勢力部隊正前往自己佔領／駐防的控制點、大本營部隊正前往自己的探索隊。
+   * @returns {{text:string, at:number, lat:number, lon:number}[]}
+   */
+  incoming(now = Date.now()) {
+    const out = [];
+    const me = this.myId();
+    CONTROL_POINTS.forEach((cp) => {
+      const m = this.data(cp.id)?.march;
+      if (!m || now >= m.arriveAt) return;
+      const owner = this.owners(cp.id).some((o) => o.p === me);
+      const guard = (this.data(cp.id)?.guards || []).some((h) => h.p === me);
+      if (!owner && !guard) return;
+      const at = this.markerSpot(cp.id);
+      out.push({ text: `勢力「${FACTIONS[m.f]?.name || ''}」部隊 → 控制點 #${cp.no}`, at: m.arriveAt, lat: at.lat, lon: at.lon });
+    });
+    this.game.state.expeditions.forEach((e) => {
+      const a = e.hqAmbush;
+      if (!a || a.done || e.recalled || now >= a.hitAt) return;
+      out.push({ text: `${FACTIONS[a.f]?.name || ''}大本營部隊 → 探索點「${this.game.exploration.poi(e.poiId)?.name || ''}」`, at: a.hitAt, lat: a.to.lat, lon: a.to.lon });
+    });
+    return out.sort((a, b) => a.at - b.at);
+  }
+
   /** 前往自己（或好友）控制點的進攻部隊：提醒一次 */
   warnMarches(now = Date.now()) {
     this.warned = this.warned || new Set();
@@ -797,8 +861,11 @@ export class ControlPointSystem {
       // v15.6：交戰結果記在共用資料，佔領者與駐防者（不在線也一樣）之後都會收到戰報
       const fight = {
         f, at, win, lost: killed, total: foes.length, atk: attackers.length, atkDown: (r.team || []).filter((u) => u.down).length,
-        owners: (data.owners || []).map((o) => o.p), guards: [...new Set((data.guards || []).map((h) => h.p))],
+        owners: (data.owners || []).map((o) => o.p), guards: [...new Set((data.guards || []).filter((h) => !(h.arr > at)).map((h) => h.p))],
         down: [...downIds],
+        // v15.7：倒下的駐防隊員（駐防隊 id:第幾位），沒倒下的人防守成功時拿經驗
+        downU: r.foes.filter((x) => x.down && x.ally?.e).map((x) => `${x.ally.e}:${x.ally.i}`).slice(0, 60),
+        ge: [...new Set((data.guards || []).filter((h) => !(h.arr > at)).map((h) => h.e).filter(Boolean))].slice(0, 30),
       };
       if (win) {
         // 打下後留守：守軍約為進攻部隊的一半（之後每小時補回）
@@ -833,7 +900,29 @@ export class ControlPointSystem {
         : `🛡️ ${role}控制點 #${cp.no} 擊退了「${fname}」的部隊（${ft.atk} 人）：擊倒 ${ft.atkDown || 0} 人，守軍倒下 ${ft.lost || 0} 人${(ft.down || []).includes(me) ? '（你的駐防隊有人倒下，撤回避難所）' : ''}`;
       g.log(msg, ft.win ? 'danger' : 'success');
       g.toast?.(msg, ft.win ? 'danger' : 'success');
+      if (!ft.win && guard) this.guardXp(cp, ft);
     });
+  }
+
+  /** v15.7：防守成功：沒倒下的駐防隊員獲得自己升級所需經驗的 CP_GUARD_XP_PCT（倒下的人不扣經驗） */
+  guardXp(cp, ft) {
+    const g = this.game;
+    const down = new Set(ft.downU || []);
+    const got = [];
+    // 參戰的駐防隊（交戰時在共用資料裡的隊伍）
+    const fought = (e) => (Array.isArray(ft.ge) ? ft.ge.includes(e.id) : e.startAt + (e.travelMs || 0) <= ft.at);
+    g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === cp.id && fought(e)).forEach((e) => {
+      e.memberIds.forEach((sid, i) => {
+        const sv = g.survivors.get(sid);
+        if (!sv || sv.severe || down.has(`${e.id}:${i}`)) return;
+        const amt = Math.round(xpToNext(sv.level) * CP_GUARD_XP_PCT);
+        if (amt <= 0) return;
+        g.survivors.gainXp(sv, amt);
+        got.push(`${sv.name} +${amt.toLocaleString()}`);
+      });
+    });
+    if (got.length) g.log(`⭐ 控制點 #${cp.no} 防守成功經驗：${got.join('、')}`, 'success');
+    return got.length;
   }
 
   /** 每 2 秒 */
@@ -893,12 +982,12 @@ export class ControlPointSystem {
     const cp = cpById(id);
     const s = this.statusOf(id);
     const own = this.owners(id);
-    const guards = this.data(id)?.guards || [];
+    const guards = this.guardsAt(id, now);
     const fac = this.factionOf(id);
     const label = { mine: '你與好友可探索', hostile: '敵對玩家佔領・不可探索', other: '其他玩家佔領・不可探索', faction: `${FACTIONS[fac]?.name || ''}勢力佔領・不可探索`, neutral: '中立（感染者佔據）・不可探索' }[s];
     return {
       cp, status: s, label, owners: own, guards, garrison: s === 'neutral' || s === 'faction' ? this.garrisonCount(id, now) : guards.reduce((a, h) => a + (h.units || []).length, 0),
-      nextIncome: formatDuration(Math.max(0, this.incomeTime(now) + (now >= this.incomeTime(now) ? DAY_REAL_MS : 0) - now)),
+      nextIncome: formatDuration(Math.max(0, this.incomeTime(now) + (now >= this.incomeTime(now) ? TimeSystem.dayMs(now) : 0) - now)),
     };
   }
 }

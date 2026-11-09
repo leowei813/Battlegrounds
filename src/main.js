@@ -16,7 +16,7 @@ import { showWhatsNew, markVersionSeen } from './ui/ChangelogView.js';
 import { showGuideIfNeeded, openGuide } from './ui/GuideDialog.js';
 import { WorldSync } from './multiplayer/WorldSync.js';
 import { gainsHtml } from './ui/components.js';
-import { $ } from './utils/dom.js';
+import { $, escapeHtml } from './utils/dom.js';
 import { formatDuration } from './utils/math.js';
 
 /**
@@ -91,6 +91,34 @@ function showOfflineReport(ui, report) {
  * 登入帳號並讀取雲端進度（遊戲進度只存在雲端）。
  * @returns {Promise<{state:object|null, meta?:object, legacy?:object}>}
  */
+/**
+ * v15.7：每天 06:00 控制點物資直接入庫後跳出視窗：預設只顯示合計，展開才列出各控制點。
+ * 正在顯示其他視窗（例如離線收益）時，等它關掉再跳。
+ */
+function watchDailyIncome(ui) {
+  const queue = [];
+  const nameRow = (x) => `<div class="cpi-row"><b>控制點 #${x.no}</b><span class="muted">${escapeHtml(x.zone)}</span><span class="cpi-tag">${escapeHtml(x.role)}</span><div class="cpi-g">${escapeHtml(x.text || '沒有東西')}</div></div>`;
+  const show = (res) => {
+    let open = false;
+    const body = () => `<p class="muted">今天 ${res.list.length} 個控制點的收益已經直接存進倉庫。</p>
+      <div class="cpi-sum"><small class="muted">合計</small><div>${escapeHtml(res.text || '沒有東西')}</div></div>
+      <button class="btn-link cpi-fold" data-action="fold">${open ? '▾ 收起' : '▸ 展開'}各控制點（${res.list.length}）</button>
+      ${open ? `<div class="cpi-list">${res.list.map(nameRow).join('')}</div>` : ''}
+      <div class="btn-row end"><button class="btn btn-primary" data-action="close">好</button></div>`;
+    ui.modal.open({
+      title: '🚚 06:00 控制點物資送達',
+      body: body(),
+      onAction: (action, _d, m) => { if (action === 'fold') { open = !open; m.update(body()); } },
+    });
+  };
+  const pump = () => {
+    if (!queue.length || ui.modal.current) return;
+    show(queue.shift());
+  };
+  ui.game.bus.on('cp:dailyIncome', (res) => { queue.push(res); pump(); });
+  setInterval(pump, 1000);
+}
+
 /** 每 5 分鐘檢查網站是否有新版本；有的話提醒重新整理 */
 function watchForUpdate(ui) {
   let told = false;
@@ -195,6 +223,7 @@ async function boot() {
   const report = game.start();
   const ui = new UIManager(game, phaser, cloud);
   watchForUpdate(ui);
+  watchDailyIncome(ui);
   ui.init();
   game.save();
   cloud.attach(game);

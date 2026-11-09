@@ -56,7 +56,7 @@ h4 { margin: 14px 0 6px; font-size: 14px; color: #c5e1a5; }
 .res b { font-variant-numeric: tabular-nums; }
 .res small { color: #9ccc65; font-size: 10px; }
 .res.full { border-color: var(--accent); }
-.res.empty { border-color: var(--danger); animation: pulse 1s infinite; padding: 2px 6px; line-height: normal; text-align: left; }
+.res.empty { border-color: var(--danger); padding: 2px 6px; line-height: normal; text-align: left; }
 .res.cur b { color: var(--accent); }
 
 /* ---------- Stage ---------- */
@@ -204,15 +204,15 @@ h4 { margin: 14px 0 6px; font-size: 14px; color: #c5e1a5; }
 .map-tools { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .map-tools .btn { background: #1d2118ee; }
 .map-info { position: absolute; left: 10px; bottom: 22px; font-size: 11px; background: #000a; padding: 4px 8px; border-radius: 6px; }
-.map-hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: #b71c1cee; padding: 10px 16px; border-radius: 10px; font-size: 14px; animation: pulse 1.6s infinite; width: max-content; max-width: calc(100% - 80px); }
+.map-hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: #b71c1cee; padding: 10px 16px; border-radius: 10px; font-size: 14px; width: max-content; max-width: calc(100% - 80px); }
 .poi-icon, .zombie-icon, .shelter-icon { background: none; border: 0; }
 .poi-pin { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 17px; border-radius: 50%; background: #111c; border: 2px solid var(--c); box-shadow: 0 0 8px #0009; }
 .poi-pin.sm { width: 30px; height: 30px; flex: 0 0 30px; }
-.zombie-pin { position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 15px; border-radius: 50%; background: #7f0000cc; border: 2px solid #ff5252; animation: pulse 1.5s infinite; }
+.zombie-pin { position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 15px; border-radius: 50%; background: #7f0000cc; border: 2px solid #ff5252; }
 .zombie-pin span { position: absolute; bottom: -4px; right: -6px; font-size: 10px; background: #000; color: #fff; border-radius: 6px; padding: 0 3px; }
 .zombie-pin.elite { border-color: #ffd54f; }
 .zombie-pin.boss { width: 40px; height: 40px; font-size: 22px; border-color: #e040fb; background: #4a148ccc; }
-.route-line { animation: dash 1s linear infinite; }
+.route-line { }
 .legend-row { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
 .danger { color: #ef5350; letter-spacing: -1px; }
 .poi-detail { display: flex; gap: 12px; align-items: flex-start; line-height: 1.7; }
@@ -362,7 +362,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .cloud-badge { align-self: flex-start; border: 1px solid var(--line); background: #0006; color: var(--text); border-radius: 8px; padding: 2px 6px; font-size: 12px; cursor: pointer; }
 .cloud-badge.st-offline, .cloud-badge.st-error { border-color: var(--danger); }
 .cloud-badge.st-synced { border-color: #558b2f; }
-.cloud-badge.st-syncing { animation: pulse 1s infinite; }
+.cloud-badge.st-syncing { }
 .sync-code { font-family: ui-monospace, monospace; font-size: 17px; letter-spacing: 1px; padding: 10px; background: #0007; border: 1px dashed var(--accent); border-radius: 8px; text-align: center; word-break: break-all; user-select: all; }
 .sync-code.big { font-size: 20px; color: var(--accent); }
 @media (max-width: 600px) {
@@ -394,7 +394,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .poi-icon .poi-pin.sm { width: 24px; height: 24px; flex: 0 0 24px; font-size: 13px; border-width: 1.5px; }
 .siege-banner { position: absolute; top: 10px; left: 56px; right: 64px; display: flex; flex-wrap: wrap; gap: 4px; pointer-events: none; }
 .siege-chip { pointer-events: auto; border: 1px solid #ff5252; background: #7f0000dd; color: #fff; border-radius: 14px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
-.siege-chip.danger { animation: pulse 1s infinite; background: #b71c1c; }
+.siege-chip.danger { background: #b71c1c; }
 .siege-chip b { color: #ffe082; }
 .siege-chip.wait { border-color: #90a4ae; background: #263238dd; }
 .siege-chip.lull { border-color: #ffb74d; background: #5d3a00dd; }
@@ -413,13 +413,13 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .exp-steps .step.on { background: #1565c0; color: #fff; box-shadow: 0 0 0 1px #ffd54f; }
 .exp-steps .arrow { color: var(--muted); }
 .exp-stats { font-size: 12px; margin: 4px 0; }
-.scan-progress { position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%); background: #0d47a1ee; color: #fff; padding: 8px 14px; border-radius: 16px; font-size: 13px; animation: pulse 1.4s infinite; }
+.scan-progress { position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%); background: #0d47a1ee; color: #fff; padding: 8px 14px; border-radius: 16px; font-size: 13px; }
 
 /* ---------- Rarity frames ---------- */
 .item-card { border: 2px solid var(--rc); border-left-width: 2px; background: linear-gradient(135deg, color-mix(in srgb, var(--rc) 12%, var(--card)), var(--card) 55%); }
 .item-card.r-rare { box-shadow: 0 0 6px color-mix(in srgb, var(--rc) 45%, transparent); }
 .item-card.r-epic { box-shadow: 0 0 10px color-mix(in srgb, var(--rc) 60%, transparent); }
-.item-card.r-legendary { box-shadow: 0 0 14px color-mix(in srgb, var(--rc) 75%, transparent); animation: legendary-glow 2.4s ease-in-out infinite; }
+.item-card.r-legendary { box-shadow: 0 0 14px color-mix(in srgb, var(--rc) 75%, transparent); }
 .item-card.r-poor .item-title b { color: #bdbdbd; }
 @keyframes legendary-glow { 50% { box-shadow: 0 0 22px color-mix(in srgb, var(--rc) 90%, transparent); } }
 .rarity.r-common { color: #212121; background: var(--rc); }
@@ -456,13 +456,13 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .sv-card.severe { background: linear-gradient(135deg, #b71c1c33, var(--card) 60%); }
 .sv-card .tags, .sv-detail .tags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
 .bar.hp .bar-fill { background: linear-gradient(90deg, #c62828, #ef5350); }
-.blink { animation: pulse 1s infinite; }
-.starve-badge { border: 1px solid #ef5350; background: #b71c1c; color: #fff; border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; align-self: flex-start; animation: pulse 1s infinite; }
+.blink { }
+.starve-badge { border: 1px solid #ef5350; background: #b71c1c; color: #fff; border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; align-self: flex-start; }
 @media (max-width: 600px) { .hud-left .starve-badge { align-self: center; } }
 
 /* ---------- Multiplayer ---------- */
 .world-chip { position: absolute; left: 10px; bottom: 48px; border: 1px solid #4dd0e1; background: #004d40e6; color: #e0f7fa; border-radius: 14px; padding: 5px 12px; font: inherit; font-size: 12px; cursor: pointer; max-width: calc(100% - 20px); }
-.world-chip.invite { animation: pulse 1.6s infinite; }
+.world-chip.invite { }
 .hud-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .hud-badges > * { align-self: center !important; }
 .sv-status { margin: 4px 0 2px; }
@@ -527,8 +527,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .slot-ctrl { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .slot-ctrl input { width: 64px; padding: 3px 6px; font: inherit; color: var(--text); background: #0008; border: 1px solid var(--line); border-radius: 6px; text-align: center; }
 .btn-icon.on { box-shadow: 0 0 0 2px #29b6f6, 0 0 12px #29b6f6aa; }
-.gps-chip { bottom: 92px; border-color: #29b6f6; }
-.trade-chip { bottom: 136px; border-color: #66bb6a; background: #1b5e20f0; color: #e8f5e9; font-weight: bold; animation: siege-pulse 1.4s ease-in-out infinite; }
+.trade-chip { bottom: 136px; border-color: #66bb6a; background: #1b5e20f0; color: #e8f5e9; font-weight: bold; }
 
 /* v8：材料物品（零件、布料、藥品、彈藥） */
 .supply-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
@@ -650,17 +649,16 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 /* ---- 據點遭到威脅：紅框與閃爍標籤 ---- */
 .threat-alert { display: none; }
 .threat-alert.on { display: block; }
-.threat-frame { position: fixed; inset: 0; border: 4px solid #e53935; box-shadow: inset 0 0 24px rgba(229, 57, 53, 0.55); pointer-events: none; z-index: 9000; animation: threat-pulse 1.2s ease-in-out infinite; }
+.threat-frame { position: fixed; inset: 0; border: 4px solid #e53935; box-shadow: inset 0 0 24px rgba(229, 57, 53, 0.55); pointer-events: none; z-index: 9000; opacity: 0.8; }
 .threat-label { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 6px); left: 50%; transform: translateX(-50%); z-index: 9001; pointer-events: none;
-  color: #ff5252; font-size: 12px; font-weight: 700; letter-spacing: 1px; padding: 2px 10px; border-radius: 10px; background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(229, 57, 53, 0.7);
-  animation: threat-blink 0.9s steps(2, start) infinite; }
+  color: #ff5252; font-size: 12px; font-weight: 700; letter-spacing: 1px; padding: 2px 10px; border-radius: 10px; background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(229, 57, 53, 0.7); }
 @keyframes threat-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 @keyframes threat-blink { to { visibility: hidden; } }
 
 /* ---- 交易所收購圖示 ---- */
 .demand-badge span { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: #2e7d32; border: 2px solid #c8e6c9; font-size: 14px; box-shadow: 0 0 6px rgba(102, 187, 106, 0.8); position: relative; cursor: pointer; }
 .demand-badge i { position: absolute; right: -6px; top: -6px; font-style: normal; font-size: 10px; background: #e53935; color: #fff; border-radius: 8px; padding: 0 4px; }
-.siege-badge span { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: #b71c1c; border: 2px solid #ffcdd2; font-size: 14px; cursor: pointer; animation: siege-pulse 1.2s ease-in-out infinite; }
+.siege-badge span { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: #b71c1c; border: 2px solid #ffcdd2; font-size: 14px; cursor: pointer; box-shadow: 0 0 8px rgba(229, 57, 53, 0.9); }
 @keyframes siege-pulse { 0%, 100% { box-shadow: 0 0 4px rgba(229, 57, 53, 0.6); } 50% { box-shadow: 0 0 14px rgba(229, 57, 53, 1); } }
 .siege-card { border-color: #e53935; background: rgba(229, 57, 53, 0.08); }
 .demand-form select { padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; max-width: 180px; }
@@ -689,7 +687,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .alert-on { border-color: #e53935; background: rgba(229,57,53,0.12); }
 .map-feed { position: absolute; top: 48px; left: 56px; max-width: min(70%, 420px); display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
 .feed-chip { pointer-events: auto; text-align: left; border: 1px solid #546e7a; background: #102027e6; color: #eceff1; border-radius: 12px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.feed-chip.danger { border-color: #ff5252; background: #7f0000e6; animation: pulse 1.2s infinite; }
+.feed-chip.danger { border-color: #ff5252; background: #7f0000e6; }
 .feed-chip.friend { border-color: #66bb6a; background: #1b5e20e6; }
 .feed-chip.rally { border-color: #ffb300; background: #4e3400e6; }
 .feed-chip.team { border-color: #ffd54f; }
@@ -818,7 +816,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .sv-recruit-chip .n { background: #1e4f86; color: #e3f2fd; border-radius: 9px; padding: 0 6px; font-size: 12px; }
 .sv-recruit-chip.on { background: #1e4f86; color: #e3f2fd; border-color: #64b5f6; }
 .sv-recruit-chip.on .n { background: #e3f2fd; color: #0d2a4a; }
-.sv-recruit-chip.legend { background: linear-gradient(135deg, #5d4300, #8d6e00); border-color: #ffca28; color: #ffe082; box-shadow: 0 0 8px #ffca2880; animation: recruit-legend-glow 2.4s ease-in-out infinite; }
+.sv-recruit-chip.legend { background: linear-gradient(135deg, #5d4300, #8d6e00); border-color: #ffca28; color: #ffe082; box-shadow: 0 0 8px #ffca2880; }
 .sv-recruit-chip.legend .n { background: #ffca28; color: #3e2c00; }
 .sv-recruit-chip.legend.on { border-color: #fff3c4; }
 @keyframes recruit-legend-glow { 50% { box-shadow: 0 0 16px #ffca28cc; } }
@@ -1061,7 +1059,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 /* 地圖快速切換警戒 */
 .map-tools .alert-btn .alert-lbl { position: absolute; right: 48px; top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 11px; font-weight: 800; border-radius: 8px; padding: 1px 7px; background: #1b5e20; color: #c8e6c9; pointer-events: none; }
 .map-tools .alert-btn .alert-lbl.on { background: #c62828; color: #fff; }
-.map-tools .btn.alert-btn.on { background: #c62828; border-color: #ff8a80; box-shadow: 0 0 0 4px #e5393544, 0 0 14px #e53935aa; animation: alert-pulse 1.6s ease-in-out infinite; }
+.map-tools .btn.alert-btn.on { background: #c62828; border-color: #ff8a80; box-shadow: 0 0 0 4px #e5393544, 0 0 14px #e53935aa; }
 @keyframes alert-pulse { 50% { box-shadow: 0 0 0 7px #e5393522, 0 0 18px #e53935cc; } }
 .map-overlay.alerting { box-shadow: inset 0 0 0 3px #e53935aa; }
 .map-alert-banner { position: absolute; top: 10px; left: 56px; right: 64px; background: #b71c1cdd; color: #fff; border-radius: 10px; padding: 5px 10px; font-size: 13px; font-weight: 700; pointer-events: none; text-align: center; }
@@ -1280,8 +1278,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .bmx-sum .bmx-go { text-align: left; margin-top: 8px; }
 .bmx-sum .bmx-go .btn { min-width: 120px; }
 /* 導覽列呼吸光：市場（黑市換新未看過）藍色、倖存者（傳說候選人）金色 */
-.nav-btn.glow-bm { color: #b3e5fc; animation: nav-glow-bm 2.2s ease-in-out infinite; }
-.nav-btn.glow-legend { color: #ffe082; animation: nav-glow-legend 2.2s ease-in-out infinite; }
+.nav-btn.glow-bm { color: #b3e5fc; }
+.nav-btn.glow-legend { color: #ffe082; }
 @keyframes nav-glow-bm {
   0%, 100% { background: radial-gradient(ellipse at center, #29b6f61a 0%, transparent 70%); box-shadow: inset 0 -3px 0 #4fc3f766; }
   50% { background: radial-gradient(ellipse at center, #29b6f655 0%, #29b6f61a 55%, transparent 75%); box-shadow: inset 0 -3px 0 #4fc3f7; }
@@ -1360,8 +1358,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 /* ---------- 報告：特殊道具（就是要鎖你）發亮 ---------- */
 @keyframes spGlow { 0%, 100% { box-shadow: 0 0 6px #ce93d888; } 50% { box-shadow: 0 0 16px #e1bee7; } }
 .card.report.has-sp { border-color: #ce93d8; box-shadow: 0 0 0 1px #ce93d855, 0 0 18px #ba68c855; }
-.sp-badge { margin-left: 6px; font-size: 11.5px; font-weight: 800; color: #fff; background: linear-gradient(90deg, #7b1fa2, #ab47bc); border-radius: 10px; padding: 1px 8px; animation: spGlow 1.6s ease-in-out infinite; vertical-align: middle; }
-.sp-chip { display: inline-block; background: linear-gradient(90deg, #4a148c, #7b1fa2); border: 1px solid #e1bee7; color: #fff; font-weight: 800; border-radius: 8px; padding: 1px 8px; margin: 0 4px 4px 0; animation: spGlow 1.6s ease-in-out infinite; white-space: nowrap; }
+.sp-badge { margin-left: 6px; font-size: 11.5px; font-weight: 800; color: #fff; background: linear-gradient(90deg, #7b1fa2, #ab47bc); border-radius: 10px; padding: 1px 8px; vertical-align: middle; }
+.sp-chip { display: inline-block; background: linear-gradient(90deg, #4a148c, #7b1fa2); border: 1px solid #e1bee7; color: #fff; font-weight: 800; border-radius: 8px; padding: 1px 8px; margin: 0 4px 4px 0; white-space: nowrap; }
 .event-list li.sp-line { list-style: none; margin-left: -18px; background: linear-gradient(90deg, #4a148c99, transparent); border-left: 3px solid #ce93d8; border-radius: 6px; padding: 3px 8px; color: #f3e5f5; font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .sp-badge, .sp-chip { animation: none; } }
 
@@ -1399,7 +1397,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 
 /* ---- 副本（地下感染區）：綠色呼吸光 ---- */
 @keyframes dg-breathe { 0%, 100% { box-shadow: 0 0 12px #66bb6a99; } 50% { box-shadow: 0 0 4px #66bb6a44; } }
-.dg-glow, .fac-card2.dg-bp, .card.dg-bp { border-color: #66bb6a !important; animation: dg-breathe 2.4s ease-in-out infinite; }
+.dg-glow, .fac-card2.dg-bp, .card.dg-bp { border-color: #66bb6a !important; }
 .dg-name { color: #69f0ae; }
 .dg-tag { background: #1b5e20; color: #e8f5e9; border: 1px solid #66bb6a; border-radius: 8px; padding: 0 8px; font-size: 12px; font-weight: 700; margin-left: auto; }
 .bp-acts .btn-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
@@ -1407,7 +1405,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 /* 地圖：副本入口 */
 .dg-pin-wrap { background: none; border: 0; }
 .dg-pin { display: flex; flex-direction: column; align-items: center; }
-.dg-pin-ic { width: 56px; height: 46px; display: block; filter: drop-shadow(0 0 6px #ff1744); animation: dg-pulse 1.8s ease-in-out infinite; }
+.dg-pin-ic { width: 56px; height: 46px; display: block; filter: drop-shadow(0 0 6px #ff1744); }
 @keyframes dg-pulse { 50% { filter: drop-shadow(0 0 2px #ff174466); } }
 .dg-pin-lb { font-style: normal; margin-top: -4px; background: #000c; color: #ffcdd2; border-radius: 6px; padding: 0 6px; font-size: 11px; white-space: nowrap; }
 /* 地圖左上角資訊框 */
@@ -1457,7 +1455,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .dg-item .need { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 5px; margin-top: 4px; }
 .dg-item .need span { background: #ffffff0a; border-radius: 8px; padding: 2px 7px; font-size: 12px; } .dg-item .need .lack { color: #ef9a9a; background: #ef535014; }
 .dg-item .set { font-size: 12px; margin-top: 8px; border-top: 1px dashed #ffffff22; padding-top: 6px; } .dg-item .set .i { color: #90a4ae; }
-.rarity[style*="#69f0ae"], .item-card.r-dungeon { animation: dg-breathe 2.4s ease-in-out infinite; }
+.rarity[style*="#69f0ae"], .item-card.r-dungeon { }
 @media (max-width: 560px) {
   .dg-mvp { grid-template-columns: repeat(2, 1fr); }
   .dg-tbl .hide-m { display: none; }
@@ -1667,7 +1665,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .bm-gear.bm-mine .bm-row { border-color: #66bb6a; background: #1f2e1a; }
 .bm-gear.sold-out .bm-row { opacity: .55; }
 /* v12.2.1 地圖左上角集結資訊：淡藍色呼吸光 */
-.feed-chip.rally { border-color: #81d4fa; background: #0d2f45e6; color: #e1f5fe; animation: rally-glow 2.2s ease-in-out infinite; }
+.feed-chip.rally { border-color: #81d4fa; background: #0d2f45e6; color: #e1f5fe; }
 @keyframes rally-glow { 0%, 100% { box-shadow: 0 0 3px #81d4fa55; } 50% { box-shadow: 0 0 12px #81d4facc, 0 0 2px #b3e5fc; } }
 .setup-world { margin: 10px 0 4px; background: #1b5e2033; border: 1px dashed #66bb6a; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: #c8e6c9; line-height: 1.6; }
 /* 探索遇到的倖存者：留下品級（一行） */
@@ -1689,7 +1687,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .cp-lock { margin-top: 8px; padding: 6px 10px; border-radius: 8px; background: #ffb30014; border: 1px solid #ffb30055; color: #ffcc80; font-size: 12.5px; }
 .cp-pin svg { flex: none; }
 .cp-pin { width: max-content; }
-.cp-dot { width: var(--s); height: var(--s); border-radius: 50%; background: var(--c); border: 2px solid #fff; box-sizing: border-box; display: flex; align-items: center; justify-content: center; animation: cp-breathe 3s ease-in-out infinite; }
+.cp-dot { width: var(--s); height: var(--s); border-radius: 50%; background: var(--c); border: 2px solid #fff; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .cp-dot svg { width: 62%; height: 62%; }
 .cp-dot { position: relative; } .cp-dot .cp-guard { position: absolute; right: -14px; bottom: -8px; font-style: normal; font-size: 10.5px; font-weight: 700; background: #0d47a1e6; color: #fff; border: 1px solid #90caf9; border-radius: 8px; padding: 0 4px; white-space: nowrap; line-height: 15px; }
 @keyframes cp-breathe { 0%, 100% { box-shadow: 0 0 0 1px #111, 0 0 2px 0 color-mix(in srgb, var(--c) 40%, transparent); } 50% { box-shadow: 0 0 0 1px #111, 0 0 9px 3px color-mix(in srgb, var(--c) 70%, transparent); } }
@@ -1697,3 +1695,38 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .hq-pin { display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
 .hq-pin b { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font-size: 28px; background: #1b1b1b; border: 3px solid var(--c); box-shadow: 0 0 0 3px #0007, 0 0 14px var(--c); }
 .hq-pin span { font: 700 12px system-ui, sans-serif; color: #fff; background: #000c; border: 1px solid var(--c); border-radius: 8px; padding: 1px 7px; white-space: nowrap; }
+
+/* v15.7：06:00 控制點物資視窗 */
+.cpi-sum { border: 1px solid #4caf50; border-radius: 10px; padding: 8px 12px; background: #1b2e17; }
+.cpi-sum div { color: var(--primary); font-weight: 700; font-size: 15px; line-height: 1.6; margin-top: 2px; }
+.cpi-fold { display: block; margin: 10px 0 6px; background: none; border: 0; padding: 0; color: #90caf9; font: inherit; font-size: 13px; cursor: pointer; }
+.cpi-row { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+.cpi-row b { color: #ffd54f; margin-right: 6px; }
+.cpi-tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 6px; background: #33402c; margin-left: 6px; }
+.cpi-g { font-size: 13px; margin-top: 4px; line-height: 1.6; }
+
+/* v15.7：設定「✨ 畫面特效」打開時才有的動畫（預設關閉：全部靜態、較省電） */
+body.fx-on .res.empty, body.fx-on .blink, body.fx-on .starve-badge, body.fx-on .cloud-badge.st-syncing, body.fx-on .siege-chip.danger { animation: pulse 1s infinite; }
+body.fx-on .map-hint, body.fx-on .world-chip.invite { animation: pulse 1.6s infinite; }
+body.fx-on .zombie-pin { animation: pulse 1.5s infinite; }
+body.fx-on .scan-progress { animation: pulse 1.4s infinite; }
+body.fx-on .feed-chip.danger { animation: pulse 1.2s infinite; }
+body.fx-on .route-line { animation: dash 1s linear infinite; }
+body.fx-on .item-card.r-legendary { animation: legendary-glow 2.4s ease-in-out infinite; }
+body.fx-on .trade-chip { animation: siege-pulse 1.4s ease-in-out infinite; }
+body.fx-on .siege-badge span { animation: siege-pulse 1.2s ease-in-out infinite; }
+body.fx-on .threat-frame { animation: threat-pulse 1.2s ease-in-out infinite; }
+body.fx-on .threat-label { animation: threat-blink 0.9s steps(2, start) infinite; }
+body.fx-on .sv-recruit-chip.legend { animation: recruit-legend-glow 2.4s ease-in-out infinite; }
+body.fx-on .map-tools .btn.alert-btn.on { animation: alert-pulse 1.6s ease-in-out infinite; }
+body.fx-on .sp-badge, body.fx-on .sp-chip { animation: spGlow 1.6s ease-in-out infinite; }
+body.fx-on .dg-glow, body.fx-on .fac-card2.dg-bp, body.fx-on .card.dg-bp, body.fx-on .rarity[style*="#69f0ae"], body.fx-on .item-card.r-dungeon { animation: dg-breathe 2.4s ease-in-out infinite; }
+body.fx-on .dg-pin-ic { animation: dg-pulse 1.8s ease-in-out infinite; }
+body.fx-on .feed-chip.rally { animation: rally-glow 2.2s ease-in-out infinite; }
+body.fx-on .cp-dot { animation: cp-breathe 3s ease-in-out infinite; }
+body.fx-on .nav-btn.glow-bm { animation: nav-glow-bm 2.2s ease-in-out infinite; }
+body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out infinite; }
+.setting-note { margin: 2px 0 8px 26px; }
+.map-fps-row + .setting-note { margin-left: 0; }
+.map-fps-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 2px; }
+.map-fps-row .chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }

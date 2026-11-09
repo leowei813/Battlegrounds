@@ -206,13 +206,6 @@ export class UIManager {
     bus.on('trader:changed', () => this.refresh(true));
     bus.on('shared:changed', () => this.panels.map.renderMap());
     bus.on('relations:changed', () => this.panels.map.onWorld(this.game.world?.others || []));
-    bus.on('gps:update', (gps) => {
-      this.panels.map.service?.renderGps(gps);
-      this.panels.map.lastOverlay = '';
-      if (this.tab === 'map') this.panels.map.renderOverlay();
-    });
-    // GPS 偵測已移除：舊存檔開著的也關閉
-    if (this.game.gps.enabled) this.game.gps.setEnabled(false);
     bus.on(WORLD_EVT, (players) => this.panels.map.onWorld(players));
     bus.on(EVT.MAP_CHANGED, () => this.panels.map.renderMap(true));
     bus.on('expedition:done', () => this.panels.map.renderMap(true));
@@ -286,6 +279,8 @@ export class UIManager {
 
   /** 據點被當成攻擊目標時：螢幕外圍紅框＋上方閃爍「威脅接近中」 */
   renderThreat() {
+    // v15.7：設定「畫面特效」（預設關閉）
+    document.body.classList.toggle('fx-on', !!this.game.state.settings?.fx);
     const list = this.game.threats();
     if (!this.threatEl) {
       this.threatEl = document.createElement('div');

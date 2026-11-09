@@ -268,7 +268,9 @@ export class SaveManager {
       if (b.facilities && !b.facilities.itemStore) b.facilities.itemStore = { level: b.kind === 'outpost' ? 0 : Math.max(1, b.facilities.warehouse?.level || 1) };
     });
     data.map = data.map || {};
-    data.map.detected = data.map.detected || {};
+    // v15.7：GPS 功能移除
+    delete data.map.detected;
+    if (data.settings) delete data.settings.gps;
     // v10：物品位置（倉庫或隊員背包）
     (data.inventory?.items || []).forEach((it) => { if (!it.loc) it.loc = 'store'; });
     // v8：隨機結果種子

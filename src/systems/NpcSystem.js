@@ -778,6 +778,8 @@ export class NpcSystem {
     if (!this.allowConcurrentRaid(now)) return;
     // 等級差太大不出手：避免高等 NPC 一面倒地掠奪等級低很多的玩家
     if (n.level > this.raidLevelCap()) return;
+    // v15.7：勢力的控制點還沒推進到最西側一排（緊鄰玩家）時，只攻打控制點、不攻打玩家據點
+    if (n.faction && !this.game.cp?.factionReachedWest?.(n.faction)) return;
     const base = pick(bases);
     const t = this.tripTimes(n, base, 0, base.id);
     // 掠奪避難所的移動時間較長，讓玩家有時間準備防守
