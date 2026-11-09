@@ -24,7 +24,10 @@ export const WORLD = {
 const MAX_ZOMBIES = 45;
 /** 屍潮一波一波來襲：入夜後第一波的延遲、波與波之間的間隔（秒）、同一波殭屍的出現間隔 */
 const FIRST_WAVE_DELAY = 8;
-const WAVE_LULL = 40;
+/** v15.7：波與波之間的等待秒數（原本 40 秒） */
+const WAVE_LULL = 15;
+/** 每波殭屍數量的計算基準（維持原本 40 秒，改等待時間不影響每波數量） */
+const WAVE_SIZE_SECS = 40;
 const WAVE_SPAWN_GAP = 0.45;
 const MAX_FX = 250;
 const BREACH_GRACE = 90;
@@ -310,7 +313,7 @@ export class BaseSiege {
   /** 每波殭屍數：讓整晚的平均強度等同「每 spawnInterval 秒一隻」 */
   waveSize() {
     // 文明度越低每波越少（新手只有一小波）
-    const n = (WAVE_LULL / this.spawnInterval()) * (1 + Math.min(0.6, this.wave * (SIEGE_SCALING.waveGrowth ?? 0.08))) * this.game.civilization.waveSizeMul();
+    const n = (WAVE_SIZE_SECS / this.spawnInterval()) * (1 + Math.min(0.6, this.wave * (SIEGE_SCALING.waveGrowth ?? 0.08))) * this.game.civilization.waveSizeMul();
     return Math.max(2, Math.round(n * randFloat(0.85, 1.15)));
   }
 

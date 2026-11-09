@@ -6792,6 +6792,16 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(gq.cp.countOf('X') === 1, '玩家資訊顯示佔領的控制點數');
 }
 
+// ---- v15.7：屍潮波次間隔約 15 秒（每波數量不變） ----
+{
+  const gw = Game.newGame({ playerName: 'W', classId: 'warrior', lat: 25, lon: 121 });
+  gw.state.map.pois = fillPois([], 25, 121);
+  gw.shelter.establish(gw.state.map.pois.find((p) => gw.shelter.canEstablish(p).ok));
+  const sg = gw.siege.of(gw.state.bases[0].id);
+  const lulls = Array.from({ length: 20 }, () => { sg.startWave(); return sg.lull; });
+  assert(lulls.every((x) => x >= 12 && x <= 18), `屍潮每波間隔約 15 秒（${Math.min(...lulls).toFixed(1)}～${Math.max(...lulls).toFixed(1)}）`);
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);
