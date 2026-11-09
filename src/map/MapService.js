@@ -1,3 +1,4 @@
+import { formatDuration } from '../utils/math.js';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ALL_ENEMIES } from '../config/enemies.js';
@@ -88,6 +89,7 @@ export class MapService {
     this.layers.npcs = L.layerGroup().addTo(this.map);
     this.layers.infected = L.layerGroup().addTo(this.map);
     this.layers.cps = L.layerGroup().addTo(this.map);
+    this.layers.convoys = L.layerGroup().addTo(this.map);
     this.cpConfig = CP_CONFIG;
     this.layers.dungeons = L.layerGroup().addTo(this.map);
     this.layers.gps = L.layerGroup().addTo(this.map);
@@ -252,6 +254,31 @@ export class MapService {
       };
       if (this.zoneLayer.mode === 'faction') this.zoneLayer.redraw();
     }
+  }
+
+  /** v14 控制點運輸隊（乙：發光物資箱＋小字倒數，淡金色虛線路線）；每秒更新位置 */
+  renderConvoys(list = []) {
+    if (!this.map || !this.layers.convoys) return;
+    const ids = list.map((c) => c.id).join('|');
+    if (ids !== this.convoyIds) {
+      this.convoyIds = ids;
+      this.layers.convoys.clearLayers();
+      this.convoyMarks = new Map();
+      list.forEach((c) => {
+        L.polyline([[c.from.lat, c.from.lon], [c.to.lat, c.to.lon]], { color: '#ffd54f', weight: 1.5, dashArray: '2 6', opacity: 0.7, interactive: false }).addTo(this.layers.convoys);
+        const mk = L.marker([c.lat, c.lon], { icon: this.icon('<div class="convoy-pin">📦<i></i></div>', 'shelter-icon', 24), zIndexOffset: 870 })
+          .on('click', () => bus.emit('ui:openConvoy', { id: c.id }))
+          .addTo(this.layers.convoys);
+        this.convoyMarks.set(c.id, mk);
+      });
+    }
+    list.forEach((c) => {
+      const mk = this.convoyMarks?.get(c.id);
+      if (!mk) return;
+      mk.setLatLng([c.lat, c.lon]);
+      const el = mk.getElement()?.querySelector('.convoy-pin i');
+      if (el) el.textContent = formatDuration(c.left);
+    });
   }
 
   renderInfected(list = [], pin = 48) {

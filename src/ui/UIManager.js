@@ -191,6 +191,7 @@ export class UIManager {
     bus.on('ui:openNpc', ({ npcId }) => this.panels.map.openNpc(npcId));
     bus.on('ui:openInfected', ({ id }) => this.panels.map.openInfected(id));
     bus.on('ui:openCp', ({ id }) => this.panels.map.openCp(id));
+    bus.on('ui:openConvoy', ({ id }) => this.panels.map.openConvoy(id));
     bus.on('ui:openDungeon', ({ id }) => openDungeon(this, id));
     bus.on('ui:openTeam', (team) => this.panels.map.openTeam(team));
     // 點避難所畫面上的設施：展開管理面板的「設施」分頁

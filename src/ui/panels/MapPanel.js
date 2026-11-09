@@ -60,6 +60,7 @@ export class MapPanel {
     // 重度感染據點會避開玩家據點：其他玩家的據點更新後重新計算位置
     this.service.renderInfected(this.game.infected.list(), INFECTED.pin);
     this.service.renderCps(this.game);
+    this.service.renderConvoys(this.game.cp.convoyView());
     this.renderDungeons();
     this.lastOverlay = '';
     if (this.ui.tab === 'map') this.renderOverlay();
@@ -279,6 +280,16 @@ export class MapPanel {
       <div class="btn-row">${btns.join('')}</div>`;
   }
 
+  /** 運輸隊內容 */
+  openConvoy(id) {
+    const g = this.game;
+    const c = g.cp.convoyView().find((x) => x.id === id);
+    if (!c) return;
+    const names = { food: '食物', wood: '木材', fuel: '燃料' };
+    const goods = Object.entries(c.goods || {}).map(([k, v]) => `${names[k] || SUPPLIES[k]?.name || k} ${v}`).join('、');
+    this.ui.toastEl.show(`📦 控制點 #${cpById(c.cp)?.no} 的收益：${goods}・剩 ${formatDuration(c.left)}`, 'info', 5000);
+  }
+
   openCp(id) {
     const g = this.game;
     const cp = cpById(id);
@@ -428,6 +439,7 @@ export class MapPanel {
   renderOverlay() {
     if (Date.now() - this.lastRender > 5000) this.renderMap(true);
     this.service.renderCps(this.game);
+    this.service.renderConvoys(this.game.cp.convoyView());
     this.ui.mapRoot.dataset.phase = this.game.time.phaseId(); // 地圖依日夜變暗
     const st = this.game.state;
     const has = this.game.shelter.hasShelter();
