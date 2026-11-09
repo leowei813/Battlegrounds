@@ -15,7 +15,7 @@ import { BASE_SIZES, FACILITY_COUNT } from '../../config/civilization.js';
 import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
 import { POI_SHARE } from '../../systems/PoiShareSystem.js';
-import { EXP_PHASES, tripProgress } from '../../systems/ExplorationSystem.js';
+import { EXP_PHASES, phaseIcon, tripProgress } from '../../systems/ExplorationSystem.js';
 import {
   btn, costHtml, metaOf, itemCard, progressBar,
   rallyFlag,
@@ -714,7 +714,7 @@ export class MapPanel {
     g.state.expeditions.filter((ex) => ex.kind !== 'rally').forEach((ex) => {
       // 隊伍標籤：狀態圖示＋隊員＋總剩餘時間（含佇列與回程）＋佇列數
       const it = g.exploration.itinerary(ex, now);
-      const icon = ex.defeated ? '🏳️' : ex.recalled ? '↩️' : EXP_PHASES[it.phase]?.icon || '🚶';
+      const icon = ex.defeated ? '🏳️' : ex.recalled ? '↩️' : phaseIcon(ex, it.phase);
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean);
       const who = names.length <= 2 ? names.join('、') : `${names[0]}等 ${names.length} 人`;
       const time = it.phase === 'returning' ? `⏱ 返程 ${formatDuration(it.totalMs)}` : `⏱ 總計 ${formatDuration(it.totalMs)}`;

@@ -120,6 +120,23 @@ export const EXP_PHASES = {
   returning: { name: '返程中', icon: '🏃' },
 };
 
+/** 抵達後是交戰的行動（攻打控制點、NPC 據點、玩家、感染據點、攔截、獵殺） */
+const FIGHT_KINDS = ['cp', 'raid', 'pvp', 'infect', 'intercept', 'hunt'];
+
+/** 隊伍狀態圖示：交戰中改為兩把交叉劍 */
+export function phaseIcon(exp, phase) {
+  if (phase === 'searching' && FIGHT_KINDS.includes(exp?.kind)) return '⚔️';
+  if (phase === 'searching' && (exp?.kind === 'cpGuard' || exp?.kind === 'assist')) return '🛡️';
+  return EXP_PHASES[phase]?.icon || '🚶';
+}
+
+/** 隊伍狀態名稱：交戰中 */
+export function phaseName(exp, phase) {
+  if (phase === 'searching' && FIGHT_KINDS.includes(exp?.kind)) return '戰鬥中';
+  if (phase === 'searching' && exp?.kind === 'cpGuard') return '駐防中';
+  return EXP_PHASES[phase]?.name || '';
+}
+
 const SPECIAL_EVENTS = [
   { id: 'cache', text: '發現一個隱藏的物資箱！', reward: () => ({ coins: randInt(20, 60), parts: chance(0.5) ? 1 : 0 }) },
   { id: 'trader', text: '遇到一名流浪商人，用雜物換到了金錢。', reward: () => ({ coins: randInt(30, 90) }) },
@@ -729,8 +746,9 @@ export class ExplorationSystem {
     const dist = route?.length > 1 ? pathLength(route) : haversine(p.pos.lat, p.pos.lon, home.lat, home.lon);
     // 移動速度（毫秒/公尺）：取這趟去程或回程的速度；連續探索在同一地點再搜索時去程距離為 0，
     // 以前用去程換算會得到 0 而瞬間回家
-    const rate = exp.distanceM > 0 && exp.travelMs > 0 ? exp.travelMs / exp.distanceM
-      : exp.backDistanceM > 0 && exp.backMs > 0 ? exp.backMs / exp.backDistanceM
+    // 去程只有幾公尺時（同一地點再搜索）換算誤差很大，改用回程或步行速度
+    const rate = exp.distanceM >= 50 && exp.travelMs > 0 ? exp.travelMs / exp.distanceM
+      : exp.backDistanceM >= 50 && exp.backMs > 0 ? exp.backMs / exp.backDistanceM
         : this.walkRate(exp, now);
     const travelMs = Math.round(dist * rate);
     const back = route?.length > 1 ? [...route].reverse() : [{ lat: home.lat, lon: home.lon }, p.pos];

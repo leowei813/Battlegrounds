@@ -240,7 +240,8 @@ export class MapService {
     if (!CONTROL_POINTS) return;
     const cols = { mine: '#4fc3f7', other: '#9e9e9e', hostile: '#ef9a9a', neutral: '#bdbdbd', faction: '#ef5350' };
     const z = this.map.getZoom();
-    const st = `${z}|${CONTROL_POINTS.map((c) => `${c.id}:${game.cp.statusOf(c.id)}:${game.cp.factionOf(c.id) || ''}`).join('|')}`;
+    const guardsOf = (id) => (game.cp.data(id)?.guards || []).reduce((n, h) => n + ((h.units || []).length || 1), 0);
+    const st = `${z}|${CONTROL_POINTS.map((c) => `${c.id}:${game.cp.statusOf(c.id)}:${game.cp.factionOf(c.id) || ''}:${guardsOf(c.id)}`).join('|')}`;
     if (st === this.cpKey) return;
     this.cpKey = st;
     this.layers.cps.clearLayers();
@@ -251,7 +252,7 @@ export class MapService {
       const size = Math.max(10, Math.round((this.poiLayer?.radius?.() || 6) * 1.25 * 2) + 4);
       const spot = game.cp.markerSpot(c.id);
       L.marker([spot.lat, spot.lon], {
-        icon: this.icon(`<div class="cp-dot" style="--c:${col || '#bdbdbd'};--s:${size}px">${CP_ICON}</div>`, 'shelter-icon', size),
+        icon: this.icon(`<div class="cp-dot" style="--c:${col || '#bdbdbd'};--s:${size}px">${CP_ICON}${guardsOf(c.id) ? `<i class="cp-guard">🛡️${guardsOf(c.id)}</i>` : ''}</div>`, 'shelter-icon', size),
         zIndexOffset: 850,
       }).on('click', () => bus.emit('ui:openCp', { id: c.id }))
         .bindTooltip(`🚩 控制點・${game.cp.summary(c.id).label}`, { direction: 'top', offset: [0, -size / 2] })

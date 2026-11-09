@@ -2,13 +2,13 @@ import { FACTIONS } from '../config/controlPoints.js';
 import L from 'leaflet';
 import { WORLD } from '../systems/SiegeSystem.js';
 import { bus } from '../core/EventBus.js';
-import { EXP_PHASES, AMBUSH_RADIUS_M, tripProgress } from '../systems/ExplorationSystem.js';
+import { EXP_PHASES, phaseIcon, phaseName, AMBUSH_RADIUS_M, tripProgress } from '../systems/ExplorationSystem.js';
 import { RallySystem } from '../systems/RallySystem.js';
 import { rallyTripView } from '../multiplayer/WorldSync.js';
 import { formatDuration } from '../utils/math.js';
 
 /** 停在目的地時的狀態名稱（不是探索） */
-const STAY_NAMES = { assist: '🛡️ 協防中' };
+const STAY_NAMES = { assist: '🛡️ 協防中', cpGuard: '🛡️ 駐防中' };
 
 /** 屍潮世界座標 1 單位 = 1.5 公尺（出生圈半徑 150 → 約 225 公尺） */
 export const METERS_PER_UNIT = 1.5;
@@ -468,7 +468,7 @@ export const SiegeMapLayer = L.Layer.extend({
       }
 
       // 隊伍標記
-      const ph = EXP_PHASES[p.phase];
+      const ph = { icon: phaseIcon(exp, p.phase), name: phaseName(exp, p.phase) };
       const bob = p.phase === 'searching' ? 0 : Math.sin(now / 150) * 1.5;
       ctx.beginPath();
       ctx.arc(m.x, m.y + bob, 13, 0, Math.PI * 2);
