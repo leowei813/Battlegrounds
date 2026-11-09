@@ -241,7 +241,7 @@ export class MapService {
       const col = s === 'faction' ? FACTION_COLORS[game.cp.factionOf(c.id)] : cols[s];
       L.marker([c.lat, c.lon], {
         // 旗子本身依佔領狀態上色（淡藍＝自己或好友、灰＝中立或其他玩家、勢力顏色）
-        icon: this.icon(`<div class="cp-pin" style="--c:${col || '#bdbdbd'}"><svg viewBox="0 0 20 22" width="22" height="24" aria-hidden="true"><rect x="1.5" y="1" width="2.2" height="20" rx="1" fill="#eceff1"/><path d="M3.5 1.5 H19 L15 7.5 L19 13.5 H3.5 Z" fill="${col || '#bdbdbd'}" stroke="#111" stroke-width="1"/></svg><b>${c.no}</b></div>`, 'shelter-icon', 46),
+        icon: this.icon(`<div class="cp-pin"><svg viewBox="0 0 26 28" width="32" height="34" aria-hidden="true"><rect x="1.5" y="1" width="2.4" height="26" rx="1.2" fill="#eceff1" stroke="#111" stroke-width="0.6"/><path d="M3.9 1.5 H25 L20.5 8.5 L25 15.5 H3.9 Z" fill="${col || '#bdbdbd'}" stroke="#111" stroke-width="1"/><text x="13.6" y="11.6" text-anchor="middle" font-size="${c.no >= 10 ? 8.5 : 9.5}" font-weight="900" fill="#111">${c.no}</text></svg></div>`, 'shelter-icon', 34),
         zIndexOffset: 850,
       }).on('click', () => bus.emit('ui:openCp', { id: c.id }))
         .bindTooltip(`🚩 控制點 #${c.no}・${game.cp.summary(c.id).label}`, { direction: 'top', offset: [0, -14] })
