@@ -19,7 +19,7 @@ import {
 } from '../utils/math.js';
 import { seeded, cellOf as gridCell, cellBox } from '../multiplayer/worldGrid.js';
 import { inWorld } from '../config/world.js';
-import { FACTIONS, FACTION_KEYS, FACTION_BASE, cpById } from '../config/controlPoints.js';
+import { FACTIONS, FACTION_KEYS, FACTION_BASE, cpById, factionHq } from '../config/controlPoints.js';
 
 /**
  * 共用 NPC：位置、名稱、基礎等級由「格子＋世代」決定（所有玩家相同）；
@@ -195,7 +195,10 @@ export class NpcSystem {
   factionSlot(f, slot, now = Date.now()) {
     const cps = this.game.cp?.factionCps(f) || [];
     const count = Math.min(FACTION_BASE.max, Math.floor(cps.length / FACTION_BASE.perCps));
-    if (slot >= count || !FACTIONS[f]) return null;
+    if (!FACTIONS[f]) return null;
+    // 沒有任何據點時，改由大本營出兵（大本營不能攻打、不會探索）
+    if (!count) return slot === 0 ? this.factionHqNpc(f) : null;
+    if (slot >= count) return null;
     const sid = `fx:${f}:${slot}`;
     const gen = 0;
     const d = this.sharedOf(sid, gen);
@@ -222,6 +225,17 @@ export class NpcSystem {
     });
     npc.baseLevel = Math.max(npc.baseLevel, FACTION_BASE.level);
     return npc;
+  }
+
+  /** 大本營出兵用的 NPC（地圖上顯示為大本營，不能攻打） */
+  factionHqNpc(f) {
+    const sid = `fx:${f}:hq`;
+    const hq = factionHq(f);
+    return {
+      sid, ident: `${sid}:0:0`, gen: 0, dc: 0, cell: `fx:${f}`, lat: hq.lat, lon: hq.lon, bornAt: SHARED_NPC.freezeAt, baseLevel: FACTION_BASE.hqLevel,
+      faction: f, hq: true, name: `${FACTIONS[f].name}大本營`,
+      resources: { food: 0, wood: 0, fuel: 0 }, coins: 0,
+    };
   }
 
   /** 最低等級：被攻陷後重生的據點至少 respawnMinLevel 級，其餘 1 級 */
@@ -393,6 +407,7 @@ export class NpcSystem {
   static uniqueNames(list) {
     const used = new Set();
     [...list].sort((a, b) => String(a.sid).localeCompare(String(b.sid))).forEach((s) => {
+      if (s.hq) return; // 大本營用固定名稱
       let idx = Math.max(0, NPC_NAMES.indexOf(s.name));
       let h = 0;
       for (const ch of String(s.sid)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -415,6 +430,7 @@ export class NpcSystem {
       sid: s.sid,
       ident: s.ident,
       ...(s.faction ? { faction: s.faction, cp: s.cp } : {}),
+      ...(s.hq ? { hq: true } : {}),
       gen: s.gen,
       dc: s.dc,
       name: s.name,
@@ -699,6 +715,7 @@ export class NpcSystem {
 
   launchExplore(n, now) {
     n.nextExploreAt = now + rand(NPC_CONFIG.exploreEveryMs);
+    if (n.hq) return; // 大本營只出兵掠奪，不探索
     const targets = this.game.state.map.pois.filter((p) => !this.game.shelter.baseAtPoi(p.id)
       && !this.list.some((m) => m.poiId === p.id)
       && POI_TYPES[p.type] && !this.game.poiShare.view(p, now).empty
@@ -850,7 +867,7 @@ export class NpcSystem {
       });
       g.toast(`🛡️「${base.name}」擊退了「${n.name}」的掠奪隊！`, 'success');
       g.bus.emit('raid:result', entry);
-      this.levelDown(n);
+      if (!n.hq) this.levelDown(n);
       g.bus.emit('npc:raid', { npcId: n.id, baseId: base.id, victory: true });
       return;
     }

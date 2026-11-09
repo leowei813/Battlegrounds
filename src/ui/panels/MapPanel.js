@@ -22,7 +22,7 @@ import {
 } from '../components.js';
 import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { INFECTED } from '../../systems/InfectedSystem.js';
-import { cpById, cpAt, CP_INCOME, FACTIONS } from '../../config/controlPoints.js';
+import { cpById, cpAt, CP_INCOME, FACTIONS, FACTION_SLOW_AT, FACTION_BASE } from '../../config/controlPoints.js';
 import { RALLY_DELAYS, RallySystem } from '../../systems/RallySystem.js';
 import { AUTO_HOME_LABEL } from '../../systems/AutoHomeSystem.js';
 import { PLASTIC_SPOTS } from '../../systems/LootStock.js';
@@ -264,8 +264,8 @@ export class MapPanel {
     const inc = CP_INCOME[cp.zone];
     const tagCol = sm.status === 'mine' ? '#4fc3f7' : sm.status === 'faction' ? '#ef5350' : '#9e9e9e';
     const btns = [];
-    if (atk.ok) {
-      btns.push(btn('⚔️ 派隊攻打', 'cpAttack', {}, { cls: 'btn-danger' }));
+    if (atk.ok || atk.locked) {
+      btns.push(btn('⚔️ 派隊攻打', 'cpAttack', {}, { cls: 'btn-danger', disabled: !atk.ok, title: atk.reason || '' }));
       btns.push(btn(`${rallyFlag(16)} 發起集結`, 'cpRally', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' }));
     }
     if (sm.status === 'mine') btns.push(btn('🛡️ 派人駐防', 'cpGuard', {}, { cls: 'btn-primary', disabled: !gd.ok, title: gd.reason || '' }));
@@ -276,8 +276,9 @@ export class MapPanel {
         ${npc ? `<div><b>守軍</b> ${sm.status === 'faction' ? 'NPC' : '感染者'} ${sm.garrison}/${cp.garrison.count} 人（Lv${cp.garrison.level}）・戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}</div>` : `<div><b>駐防</b> ${guardTxt}</div>`}
         <div><b>每日收益</b> 06:00 運輸隊送回：食物 ${inc.food}、木材 ${inc.wood}、燃料 ${inc.fuel}＋隨機零件 ${inc.parts[0]}～${inc.parts[1]} 種</div>
         ${sm.status === 'mine' ? `<div class="muted">下一次收益約 ${sm.nextIncome} 後出發・每名玩家最多駐防 2 人</div>` : ''}
-        ${!atk.ok && sm.status !== 'mine' ? `<div class="muted">${escapeHtml(atk.reason)}</div>` : ''}
+        ${!atk.ok && !atk.locked && sm.status !== 'mine' ? `<div class="muted">${escapeHtml(atk.reason)}</div>` : ''}
       </div>
+      ${atk.locked ? `<div class="cp-lock">🔒 ${escapeHtml(atk.reason)}</div>` : ''}
       <div class="btn-row">${btns.join('')}</div>`;
   }
 
@@ -296,13 +297,14 @@ export class MapPanel {
     const cp = cpById(id);
     if (!cp) return;
     const sh = g.shelter.primary();
+    const at = g.cp.markerSpot(id);
     this.ui.modal.open({
       title: `🚩 控制點 #${cp.no}`,
       body: this.cpBody(id),
       live: () => this.cpBody(id),
       onAction: (action, _d, m) => {
         if (action === 'cpRally') {
-          this.openRallySetup({ kind: 'cp', id, name: `控制點 #${cp.no}`, lat: cp.lat, lon: cp.lon });
+          this.openRallySetup({ kind: 'cp', id, name: `控制點 #${cp.no}`, lat: at.lat, lon: at.lon });
           return;
         }
         if (action === 'cpRecall') {
@@ -319,7 +321,7 @@ export class MapPanel {
             : `<p class="muted">守軍戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}。打下後這個區域的建築就能探索。</p>`,
           vehicles: true,
           maxPick: guard ? Math.max(1, 2 - g.cp.myGuards(id)) : undefined,
-          distanceM: sh ? haversine(sh.lat, sh.lon, cp.lat, cp.lon) : 0,
+          distanceM: sh ? haversine(sh.lat, sh.lon, at.lat, at.lon) : 0,
           trip: { poi: g.cp.asPoi(`cp:${id}`), searchMin: guard ? 0 : 2, searchLabel: guard ? '駐防' : '攻打' },
           confirmLabel: guard ? '出發駐防' : '進攻！',
           onConfirm: (ids, _dur, _auto, vids, opts) => {
@@ -397,6 +399,27 @@ export class MapPanel {
     const c = g.rally.canStart({ kind: 'npc', id: n.id });
     return btn(`${rallyFlag(16)} 發起集結`, 'rallyNpc', {}, { cls: 'btn-primary', disabled: !c.ok || !n.sid, title: c.reason || (n.sid ? '' : '這個據點不能集結') });
   })()}</div>`;
+  }
+
+  /** 三大勢力大本營資訊（不能攻打） */
+  openHq(f) {
+    const g = this.game;
+    const F = FACTIONS[f];
+    if (!F) return;
+    const body = () => {
+      const cps = g.cp.factionCps(f);
+      const bases = g.npcs.list.filter((n) => n.faction === f && !n.hq);
+      const hq = g.npcs.list.find((n) => n.faction === f && n.hq);
+      const slow = cps.length >= FACTION_SLOW_AT ? '（控制點較多，隔天進攻一次）' : '';
+      return `<p><span class="tag" style="color:${F.color};border:1px solid ${F.color}">🏯 ${F.name}勢力大本營・不能攻打</span></p>
+        <div class="kv-list">
+          <div><b>控制點</b> ${cps.length} 個${cps.length ? `（${cps.map((id) => `#${cpById(id).no}`).join('、')}）` : ''}</div>
+          <div><b>NPC 據點</b> ${bases.length} 座</div>
+          <div><b>進攻控制點</b> 每天 ${String(F.hour).padStart(2, '0')}:00（遊戲時間）${slow}</div>
+          <div><b>攻打玩家</b> ${bases.length || Math.floor(cps.length / FACTION_BASE.perCps) ? '由 NPC 據點出兵' : `沒有 NPC 據點，由大本營出兵${hq ? `（Lv${hq.level}）` : ''}`}</div>
+        </div>`;
+    };
+    this.ui.modal.open({ title: `🏯 ${F.name}大本營`, body: body(), live: body });
   }
 
   openNpc(npcId) {

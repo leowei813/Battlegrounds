@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import { ZONES, zoneIndexAt } from '../config/zones.js';
-import { inWorld } from '../config/world.js';
-import { cpIndexAt } from '../config/controlPoints.js';
+import { inWorld, WORLD_BOUNDS } from '../config/world.js';
+import { cpIndexAt, FACTION_KEYS } from '../config/controlPoints.js';
 import { inNpcHome } from '../config/zones.js';
 
 /** 地圖範圍外（不計算、不繪製） */
@@ -28,6 +28,12 @@ export const ZONE_MODE_ORDER = ['light', 'faction', 'off'];
 export const FACTION_COLORS = {
   mine: '#4fc3f7', other: '#9e9e9e', hostile: '#9e9e9e', neutral: '#9e9e9e', free: '#4fc3f7', npcHome: '#5d4037',
   red: '#ef5350', black: '#ffb300', blue: '#7e57c2',
+};
+
+/** 勢力領地（右側安全區）南北均分給三大勢力：回傳 -10（赤月）、-11（黑曜）、-12（冥府） */
+const homeOf = (lat) => {
+  const y = (WORLD_BOUNDS.n - lat) / (WORLD_BOUNDS.n - WORLD_BOUNDS.s);
+  return -10 - Math.min(2, Math.max(0, Math.floor(y * 3)));
 };
 
 /**
@@ -73,8 +79,8 @@ export const ZoneLayer = L.Layer.extend({
     for (let y = 0; y < h; y += 1) {
       for (let x = 0; x < w; x += 1) {
         const ll = map.containerPointToLatLng([x * BLOCK, y * BLOCK]);
-        // -2＝地圖外、-3＝勢力領地、-1＝自由探索區、其他＝控制點
-        grid[y * w + x] = !inWorld(ll.lat, ll.lng) ? -2 : inNpcHome(ll.lat, ll.lng) ? -3 : cpIndexAt(ll.lat, ll.lng);
+        // -2＝地圖外、-10～-12＝三大勢力領地（南北均分：赤月、黑曜、冥府）、-1＝自由探索區、其他＝控制點
+        grid[y * w + x] = !inWorld(ll.lat, ll.lng) ? -2 : inNpcHome(ll.lat, ll.lng) ? homeOf(ll.lat) : cpIndexAt(ll.lat, ll.lng);
       }
     }
     this.low.width = w;
@@ -84,8 +90,8 @@ export const ZoneLayer = L.Layer.extend({
     const cache = new Map();
     const rgbaOf = (k) => {
       if (!cache.has(k)) {
-        const hex = k === -3 ? FACTION_COLORS.npcHome : k === -1 ? FACTION_COLORS.free : colorOf(k);
-        cache.set(k, [...rgb(hex), k === -1 ? 40 : 90]);
+        const hex = k <= -10 ? FACTION_COLORS[FACTION_KEYS[-10 - k]] : k === -1 ? FACTION_COLORS.free : colorOf(k);
+        cache.set(k, [...rgb(hex), k === -1 ? 40 : k <= -10 ? 70 : 90]);
       }
       return cache.get(k);
     };
@@ -96,13 +102,21 @@ export const ZoneLayer = L.Layer.extend({
     lctx.putImageData(img, 0, 0);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(this.low, 0, 0, w * BLOCK, h * BLOCK);
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    this.cpEdges(ctx, grid, w, h, m.border, 0.75);
+  },
+
+  /** 控制點邊界（點狀線）：grid 為每個方塊的控制點索引（-2＝地圖外） */
+  cpEdges(ctx, grid, w, h, dot, alpha, color = '255,255,255') {
+    // color：固定 'r,g,b'，或依方塊回傳 'r,g,b' 的函式（危險度圖層：邊界用勢力顏色）
+    const fill = (k) => `rgba(${typeof color === 'function' ? color(k) : color},${alpha})`;
+    ctx.fillStyle = fill(null);
     for (let y = 0; y < h; y += 1) {
       for (let x = 0; x < w; x += 1) {
         const a = grid[y * w + x];
-        if (a < 0) continue;
+        if (a < 0 && a > -10) continue;
         if ((x + 1 < w && grid[y * w + x + 1] !== a && grid[y * w + x + 1] !== -2) || (y + 1 < h && grid[(y + 1) * w + x] !== a && grid[(y + 1) * w + x] !== -2)) {
-          ctx.fillRect(x * BLOCK + BLOCK / 2, y * BLOCK + BLOCK / 2, m.border, m.border);
+          if (typeof color === 'function') ctx.fillStyle = fill(a);
+          ctx.fillRect(x * BLOCK + (BLOCK - dot) / 2 + 1, y * BLOCK + (BLOCK - dot) / 2 + 1, dot, dot);
         }
       }
     }
@@ -127,11 +141,14 @@ export const ZoneLayer = L.Layer.extend({
     const w = Math.ceil(size.x / BLOCK) + 1;
     const h = Math.ceil(size.y / BLOCK) + 1;
     const grid = new Uint8Array(w * h);
+    const cps = new Int16Array(w * h);
     for (let y = 0; y < h; y += 1) {
       for (let x = 0; x < w; x += 1) {
         const ll = map.containerPointToLatLng([x * BLOCK, y * BLOCK]);
         // v13：只計算固定地圖範圍內
-        grid[y * w + x] = inWorld(ll.lat, ll.lng) ? zoneIndexAt(ll.lat, ll.lng) : OUT;
+        const inside = inWorld(ll.lat, ll.lng);
+        grid[y * w + x] = inside ? zoneIndexAt(ll.lat, ll.lng) : OUT;
+        cps[y * w + x] = !inside ? -2 : inNpcHome(ll.lat, ll.lng) ? homeOf(ll.lat) : cpIndexAt(ll.lat, ll.lng);
       }
     }
 
@@ -183,5 +200,15 @@ export const ZoneLayer = L.Layer.extend({
       }
       ctx.stroke();
     });
+
+    // 4. v14：控制點邊界用佔領狀態／勢力顏色（和勢力圖相同），外圈淡白底讓線在地圖上看得清楚
+    const colorOf = this.factionColor || (() => FACTION_COLORS.neutral);
+    const tone = new Map();
+    const toneOf = (k) => {
+      if (!tone.has(k)) tone.set(k, rgb(k <= -10 ? FACTION_COLORS[FACTION_KEYS[-10 - k]] : colorOf(k)).join(','));
+      return tone.get(k);
+    };
+    this.cpEdges(ctx, cps, w, h, m.border + 3, 0.5, '255,255,255');
+    this.cpEdges(ctx, cps, w, h, m.border + 1, 0.95, toneOf);
   },
 });

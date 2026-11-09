@@ -81,7 +81,7 @@ export class RallySystem {
     if (this.targetGone(t)) return null;
     if (t.kind === 'npc') return g.npcs.get(t.id) || g.npcs.byIdent?.(t.ident) || null;
     if (t.kind === 'inf') return g.infected.get(t.id) || g.infected.byId?.(t.id) || null;
-    if (t.kind === 'cp') return cpById(t.id);
+    if (t.kind === 'cp') { const c = cpById(t.id); return c && { ...c, ...g.cp.markerSpot(c.id) }; }
     return null;
   }
 
@@ -125,6 +125,7 @@ export class RallySystem {
     }
     if (target && !['npc', 'inf', 'cp'].includes(target.kind)) return { ok: false, reason: '只能對 NPC 據點、控制點發起集結' };
     if (target?.kind === 'cp') { const c = g.cp.canAttack(target.id); if (!c.ok) return c; }
+    if (target?.kind === 'npc' && g.npcs.get(target.id)?.hq) return { ok: false, reason: '大本營不能攻打' };
     return { ok: true };
   }
 

@@ -106,7 +106,7 @@ export class TerritorySystem {
 
   /** 所有其他據點的警戒範圍 */
   zones() {
-    const out = this.game.npcs.list.map((n) => ({
+    const out = this.game.npcs.list.filter((n) => !n.hq).map((n) => ({
       id: n.id, kind: 'npc', name: n.name, baseName: n.name, lat: n.lat, lon: n.lon, r: npcAlert(n),
       relation: 'hostile', guards: this.game.npcs.garrison(n).length, level: n.level,
     }));
