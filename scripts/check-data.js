@@ -6298,6 +6298,15 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     }).map((c) => `#${c.no}`);
     assert(!out.length, `勢力據點的警戒範圍不超出自己的控制點（超出：${out.join('、') || '無'}）`);
     assert(bases.every((n) => CPC.cpAt(n.lat, n.lon)?.id === n.cp), '勢力據點建在自己的控制點裡');
+    // v15.3：勢力控制點內有 NPC 據點時要先打掉據點
+    if (bases[0]) {
+      const c0 = gq.cp.canAttack(bases[0].cp, { reach: false });
+      assert(!c0.ok && c0.locked && c0.reason.includes(bases[0].name), `控制點內有 NPC 據點時不能進攻（${c0.reason}）`);
+      const keepList = gq.npcs.state.list;
+      gq.npcs.state.list = keepList.filter((n) => n !== bases[0]);
+      assert(!/NPC 據點/.test(gq.cp.canAttack(bases[0].cp, { reach: false }).reason || ''), '打掉 NPC 據點後就不再被擋下');
+      gq.npcs.state.list = keepList;
+    }
     // v15：勢力據點只探索自己勢力控制點內的建築
     const trips = [];
     bases.forEach((n) => { for (let i = 0; i < 30; i += 1) { n.trip = null; gq.npcs.launchExplore(n, Date.now()); if (n.trip) trips.push([n, n.trip.poiId]); } n.trip = null; });
