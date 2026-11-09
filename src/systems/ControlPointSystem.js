@@ -69,6 +69,11 @@ export class ControlPointSystem {
     return defaultFaction(cpById(id));
   }
 
+  /** v15.7：勢力是否已經佔領最西側一排（CP_START）的控制點：佔領到之後才會攻打玩家據點 */
+  factionReachedWest(f) {
+    return CP_START.some((id) => this.factionOf(id) === f);
+  }
+
   /** 勢力擁有的控制點 */
   factionCps(f) {
     return CONTROL_POINTS.filter((c) => this.factionOf(c.id) === f).map((c) => c.id);

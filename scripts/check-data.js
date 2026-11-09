@@ -6775,6 +6775,24 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     bases.forEach((n) => { for (let i = 0; i < 30; i += 1) { n.trip = null; gq.npcs.launchExplore(n, Date.now()); if (n.trip) trips.push([n, n.trip.poiId]); } n.trip = null; });
     const wrong = trips.filter(([n, id]) => { const p = gq.state.map.pois.find((x) => x.id === id); return gq.cp.factionOf(CPC.cpAt(p.lat, p.lon)?.id) !== n.faction; });
     assert(!wrong.length, `勢力據點只探索自己控制點內的建築（${trips.length} 次中有 ${wrong.length} 次超出）`);
+    {
+      // v15.7：勢力還沒佔領最西側一排控制點時，只攻打控制點、不攻打玩家據點
+      const n = bases[0];
+      const W = CPC.CP_START[0];
+      const fo = gq.cp.factionOf.bind(gq.cp);
+      const keep = { lvl: n.level, cap: gq.npcs.raidLevelCap, con: gq.npcs.allowConcurrentRaid, ph: gq.time.phase };
+      gq.npcs.raidLevelCap = () => 99; gq.npcs.allowConcurrentRaid = () => true;
+      const P = keep.ph.bind(gq.time); gq.time.phase = (at) => ({ ...P(at), zombies: false });
+      gq.cp.factionOf = (id) => (CPC.CP_START.includes(id) ? null : fo(id));
+      n.trip = null; gq.npcs.launchRaid(n, Date.now());
+      const noRaid = n.trip?.kind !== 'raid';
+      gq.cp.factionOf = (id) => (id === W ? n.faction : fo(id));
+      n.trip = null; gq.npcs.launchRaid(n, Date.now());
+      const raid = n.trip?.kind === 'raid';
+      n.trip = null;
+      gq.cp.factionOf = fo; gq.npcs.raidLevelCap = keep.cap; gq.npcs.allowConcurrentRaid = keep.con; gq.time.phase = keep.ph;
+      assert(noRaid && raid, `勢力沒佔領到最西側一排前不攻打玩家據點，佔領後才會（${noRaid}/${raid}）`);
+    }
   }
   // 沒有 NPC 據點的勢力由大本營出兵（Lv40 起、不能攻打、不探索）
   const noBase = CPC.FACTION_KEYS.filter((f) => Math.floor(gq.cp.factionCps(f).length / 3) === 0);
