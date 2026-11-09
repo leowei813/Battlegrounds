@@ -154,8 +154,10 @@ export class ControlPointSystem {
   asPoi(id) {
     const m = /^cp(?:guard)?:(cp\d+)$/.exec(String(id));
     const cp = m && cpById(m[1]);
-    return cp && {
-      id, name: `🚩 控制點 #${cp.no}`, lat: cp.lat, lon: cp.lon, type: 'military', icon: '🚩', cp: cp.id,
+    if (!cp) return null;
+    const at = this.markerSpot(cp.id); // 隊伍前往地圖上的控制點圈圈
+    return {
+      id, name: `🚩 控制點 #${cp.no}`, lat: at.lat, lon: at.lon, type: 'military', icon: '🚩', cp: cp.id,
     };
   }
 
@@ -360,10 +362,10 @@ export class ControlPointSystem {
     if (now < at || this.st.incomeDay === day) return;
     this.st.incomeDay = day;
     this.incomeSources().forEach((cp) => {
-      const dist = haversine(cp.lat, cp.lon, sh.lat, sh.lon);
+      const dist = haversine(this.markerSpot(cp.id).lat, this.markerSpot(cp.id).lon, sh.lat, sh.lon);
       const travel = Math.round((dist / CONVOY_SPEED) * 1000);
       this.st.convoys.push({
-        id: uid('cv'), cp: cp.id, from: { lat: cp.lat, lon: cp.lon }, to: { lat: sh.lat, lon: sh.lon }, startAt: at, endAt: at + travel, goods: this.rollIncome(cp),
+        id: uid('cv'), cp: cp.id, from: { ...this.markerSpot(cp.id) }, to: { lat: sh.lat, lon: sh.lon }, startAt: at, endAt: at + travel, goods: this.rollIncome(cp),
       });
     });
     if (this.st.convoys.length) g.log(`🚚 控制點運輸隊出發：${this.st.convoys.length} 支，正把收益送回避難所`, 'info');

@@ -81,7 +81,7 @@ export class RallySystem {
     if (this.targetGone(t)) return null;
     if (t.kind === 'npc') return g.npcs.get(t.id) || g.npcs.byIdent?.(t.ident) || null;
     if (t.kind === 'inf') return g.infected.get(t.id) || g.infected.byId?.(t.id) || null;
-    if (t.kind === 'cp') return cpById(t.id);
+    if (t.kind === 'cp') { const c = cpById(t.id); return c && { ...c, ...g.cp.markerSpot(c.id) }; }
     return null;
   }
 

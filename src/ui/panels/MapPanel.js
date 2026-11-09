@@ -296,13 +296,14 @@ export class MapPanel {
     const cp = cpById(id);
     if (!cp) return;
     const sh = g.shelter.primary();
+    const at = g.cp.markerSpot(id);
     this.ui.modal.open({
       title: `🚩 控制點 #${cp.no}`,
       body: this.cpBody(id),
       live: () => this.cpBody(id),
       onAction: (action, _d, m) => {
         if (action === 'cpRally') {
-          this.openRallySetup({ kind: 'cp', id, name: `控制點 #${cp.no}`, lat: cp.lat, lon: cp.lon });
+          this.openRallySetup({ kind: 'cp', id, name: `控制點 #${cp.no}`, lat: at.lat, lon: at.lon });
           return;
         }
         if (action === 'cpRecall') {
@@ -319,7 +320,7 @@ export class MapPanel {
             : `<p class="muted">守軍戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}。打下後這個區域的建築就能探索。</p>`,
           vehicles: true,
           maxPick: guard ? Math.max(1, 2 - g.cp.myGuards(id)) : undefined,
-          distanceM: sh ? haversine(sh.lat, sh.lon, cp.lat, cp.lon) : 0,
+          distanceM: sh ? haversine(sh.lat, sh.lon, at.lat, at.lon) : 0,
           trip: { poi: g.cp.asPoi(`cp:${id}`), searchMin: guard ? 0 : 2, searchLabel: guard ? '駐防' : '攻打' },
           confirmLabel: guard ? '出發駐防' : '進攻！',
           onConfirm: (ids, _dur, _auto, vids, opts) => {
