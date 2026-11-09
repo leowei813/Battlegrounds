@@ -10,6 +10,9 @@ const OUT = 255;
 /** 每個取樣方塊的像素大小（低解析度取樣後放大；邊界線依同樣的方塊描繪） */
 const BLOCK = 6;
 
+/** v15：不可探索區域的黑色遮罩 */
+const FOG = [8, 10, 14, 220];
+
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 
 /**
@@ -201,7 +204,17 @@ export const ZoneLayer = L.Layer.extend({
       ctx.stroke();
     });
 
-    // 4. v14：控制點邊界用佔領狀態／勢力顏色（和勢力圖相同），外圈淡白底讓線在地圖上看得清楚
+    // 4. v15：不可探索的區域（未佔領的控制點、勢力領地）變黑
+    if (this.cpLocked) {
+      const dark = new Uint8Array(w * h);
+      for (let i = 0; i < cps.length; i += 1) { const k = cps[i]; dark[i] = k <= -10 || (k >= 0 && this.cpLocked(k)) ? 1 : 0; }
+      const fimg = lctx.createImageData(w, h);
+      for (let i = 0; i < dark.length; i += 1) if (dark[i]) fimg.data.set(FOG, i * 4);
+      lctx.putImageData(fimg, 0, 0);
+      ctx.drawImage(this.low, 0, 0, w * BLOCK, h * BLOCK);
+    }
+
+    // 5. v14：控制點邊界用佔領狀態／勢力顏色（和勢力圖相同），外圈淡白底讓線在地圖上看得清楚
     const colorOf = this.factionColor || (() => FACTION_COLORS.neutral);
     const tone = new Map();
     const toneOf = (k) => {

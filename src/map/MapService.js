@@ -139,10 +139,13 @@ export class MapService {
     // v10：地點狀態（有人探索中、搜過一部分、已搜空）由共用紀錄決定
     const ps = this.game?.poiShare;
     const npcTrips = (this.game?.npcs?.list || []).filter((n) => n.trip?.kind === 'explore').map((n) => n.trip.poiId).join(',');
-    const poiKey = `${state.map.fetchedAt}|${pois.length}|${[...basePoiIds].join(',')}|${Object.keys(detected).length}|${[...marked].join(',')}|${ps?.signature() || ''}|${npcTrips}`;
+    // v15：不可探索的區域（未佔領的控制點、勢力領地）不顯示建築，地圖上變黑、只顯示控制點
+    const cpSys = state.map.source === 'generated' ? this.game?.cp : null;
+    const cpSig = cpSys ? (this.cpConfig?.CONTROL_POINTS || []).map((c) => (cpSys.statusOf(c.id) === 'mine' ? 1 : 0)).join('') : '';
+    const poiKey = `${state.map.fetchedAt}|${pois.length}|${[...basePoiIds].join(',')}|${Object.keys(detected).length}|${[...marked].join(',')}|${ps?.signature() || ''}|${npcTrips}|${cpSig}`;
     if (poiKey !== this.poiKey) {
       this.poiKey = poiKey;
-      this.poiLayer.setData(pois.filter((p) => !basePoiIds.has(p.id)), detected, { marked, statusOf: ps ? (p) => ps.view(p) : null });
+      this.poiLayer.setData(pois.filter((p) => !basePoiIds.has(p.id) && (!cpSys || cpSys.canExplore(p).ok)), detected, { marked, statusOf: ps ? (p) => ps.view(p) : null });
     }
 
     const zombieKey = zombieGroups.map((g) => `${g.id}:${g.count}`).join(',');
@@ -266,6 +269,8 @@ export class MapService {
       });
     }
     if (this.zoneLayer) {
+      // v15：危險度圖層把不可探索的控制點區域塗黑
+      this.zoneLayer.cpLocked = game.state.map?.source === 'generated' ? (i) => { const c = CONTROL_POINTS[i]; return !!c && game.cp.statusOf(c.id) !== 'mine'; } : null;
       this.zoneLayer.factionColor = (i) => {
         const c = CONTROL_POINTS[i];
         const s = c ? game.cp.statusOf(c.id) : 'neutral';
