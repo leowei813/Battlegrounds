@@ -6,7 +6,7 @@ import { EXP_PHASES, phaseIcon, phaseName, AMBUSH_RADIUS_M, tripProgress } from 
 import { RallySystem } from '../systems/RallySystem.js';
 import { rallyTripView } from '../multiplayer/WorldSync.js';
 import { formatDuration } from '../utils/math.js';
-import { IDLE_LOW_FPS } from '../config/constants.js';
+import { IDLE_LOW_FPS, MAP_FPS_OPTIONS, MAP_FPS_DEFAULT } from '../config/constants.js';
 
 /** 停在目的地時的狀態名稱（不是探索） */
 const STAY_NAMES = { assist: '🛡️ 協防中', cpGuard: '🛡️ 駐防中' };
@@ -15,8 +15,6 @@ const STAY_NAMES = { assist: '🛡️ 協防中', cpGuard: '🛡️ 駐防中' }
 export const METERS_PER_UNIT = 1.5;
 const M_PER_LAT = 111320;
 const MAX_FX = 600;
-/** 沒有屍潮時的重繪間隔（毫秒） */
-const IDLE_FRAME_MS = 100;
 
 const css = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
 const FX_COLORS = {
@@ -80,14 +78,20 @@ export const SiegeMapLayer = L.Layer.extend({
     this.lastT = performance.now();
     const loop = (t) => {
       if (!this.running) return;
-      // v15.7 省電：沒有屍潮、射擊特效時每秒畫 10 次（隊伍移動很慢，看起來一樣），有屍潮時才每幀繪製
-      if (!(IDLE_LOW_FPS || window.__lowFps) || window.__fullFps || this.fx.length || this.pulses.length || this.game.siege?.live?.() || t - this.lastT >= (window.__idleMs || IDLE_FRAME_MS)) {
+      // v15.7 省電：沒有屍潮、射擊特效時依設定「地圖更新頻率」重畫（預設每秒 10 次），有屍潮時一律每幀繪製
+      if (!IDLE_LOW_FPS || this.fx.length || this.pulses.length || this.game.siege?.live?.() || t - this.lastT >= this.idleMs()) {
         this.draw(Math.min(0.1, (t - this.lastT) / 1000));
         this.lastT = t;
       }
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
+  },
+
+  /** 沒有屍潮時的重畫間隔（毫秒）：設定「地圖更新頻率」10／30／60 次 */
+  idleMs() {
+    const fps = MAP_FPS_OPTIONS.includes(this.game.state.settings?.mapFps) ? this.game.state.settings.mapFps : MAP_FPS_DEFAULT;
+    return fps >= 60 ? 0 : 1000 / fps - 4;
   },
 
   stop() {

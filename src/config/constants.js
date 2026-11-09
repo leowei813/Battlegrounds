@@ -7,6 +7,9 @@ export const SAVE_VERSION = 35;
 export const TICK_MS = 1000;
 /** v15.7 省電：沒有屍潮時地圖圖層每秒畫 10 次（有屍潮時逐幀） */
 export const IDLE_LOW_FPS = true;
+/** 設定「地圖更新頻率」可選的每秒次數與預設值 */
+export const MAP_FPS_OPTIONS = [10, 30, 60];
+export const MAP_FPS_DEFAULT = 10;
 /** v15.7 省電：沒有屍潮時屍潮模擬每秒推進一次（依經過時間補算，結果相同） */
 export const IDLE_SIEGE_THROTTLE = true;
 export const AUTOSAVE_MS = 30 * 1000;

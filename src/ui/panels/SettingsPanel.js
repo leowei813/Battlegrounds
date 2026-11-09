@@ -1,5 +1,5 @@
 import { openGuide } from '../GuideDialog.js';
-import { GAME_TITLE } from '../../config/constants.js';
+import { GAME_TITLE, MAP_FPS_OPTIONS, MAP_FPS_DEFAULT } from '../../config/constants.js';
 import { escapeHtml } from '../../utils/dom.js';
 import { formatNumber } from '../../utils/math.js';
 import { btn } from '../components.js';
@@ -121,6 +121,10 @@ export class SettingsPanel {
       ${this.renderCloud()}
       <h3>顯示</h3>
       <label class="toggle"><input type="checkbox" data-setting="showDamage" ${st.settings.showDamage ? 'checked' : ''}> 顯示傷害數字</label>
+      <label class="toggle"><input type="checkbox" data-setting="fx" ${st.settings.fx ? 'checked' : ''}> ✨ 畫面特效</label>
+      <small class="muted block setting-note">閃爍、呼吸光、按鈕發光、路線流動。預設關閉（全部靜態、較省電）；打開後恢復全部特效，較耗電。</small>
+      <div class="map-fps-row">🗺️ 地圖更新頻率 <span class="chips">${MAP_FPS_OPTIONS.map((f) => `<button class="chip ${(st.settings.mapFps || MAP_FPS_DEFAULT) === f ? 'active' : ''}" data-action="mapFps" data-fps="${f}">每秒 ${f} 次${f === MAP_FPS_DEFAULT ? '（省電）' : f === 60 ? '（流暢）' : ''}</button>`).join('')}</span></div>
+      <small class="muted block setting-note">地圖上隊伍移動、屍潮圖層的重畫次數。有屍潮或射擊特效時一律每秒 60 次。</small>
       <h3>統計</h3>
       <div class="stat-grid">${stats}</div>
       ${accessGateEnabled() ? `<h3>通行碼</h3><div class="btn-row">${btn('🔒 鎖定此裝置（下次需重新輸入通行碼）', 'lockDevice', {}, { cls: 'btn-ghost' })}</div>` : ''}
@@ -137,6 +141,7 @@ export class SettingsPanel {
     root.querySelectorAll('[data-setting]').forEach((el) => {
       el.addEventListener('change', () => {
         this.game.state.settings[el.dataset.setting] = el.checked;
+        if (el.dataset.setting === 'fx') document.body.classList.toggle('fx-on', el.checked);
         this.game.changed();
       });
     });
@@ -145,6 +150,11 @@ export class SettingsPanel {
   onAction(action, data = {}) {
     const g = this.game;
     if (action === 'guide') { openGuide(this.ui); return; }
+    if (action === 'mapFps') {
+      const f = Number(data.fps);
+      if (MAP_FPS_OPTIONS.includes(f)) { g.state.settings.mapFps = f; g.changed(); this.ui.refresh?.(true); }
+      return;
+    }
     if (action === 'changelog') {
       showChangelog(this.ui);
       return;

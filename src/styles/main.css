@@ -1279,8 +1279,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .bmx-sum .bmx-go { text-align: left; margin-top: 8px; }
 .bmx-sum .bmx-go .btn { min-width: 120px; }
 /* 導覽列呼吸光：市場（黑市換新未看過）藍色、倖存者（傳說候選人）金色 */
-.nav-btn.glow-bm { color: #b3e5fc; animation: nav-glow-bm 2.2s ease-in-out infinite; }
-.nav-btn.glow-legend { color: #ffe082; animation: nav-glow-legend 2.2s ease-in-out infinite; }
+.nav-btn.glow-bm { color: #b3e5fc; }
+.nav-btn.glow-legend { color: #ffe082; }
 @keyframes nav-glow-bm {
   0%, 100% { background: radial-gradient(ellipse at center, #29b6f61a 0%, transparent 70%); box-shadow: inset 0 -3px 0 #4fc3f766; }
   50% { background: radial-gradient(ellipse at center, #29b6f655 0%, #29b6f61a 55%, transparent 75%); box-shadow: inset 0 -3px 0 #4fc3f7; }
@@ -1705,3 +1705,29 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .cpi-row b { color: #ffd54f; margin-right: 6px; }
 .cpi-tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 6px; background: #33402c; margin-left: 6px; }
 .cpi-g { font-size: 13px; margin-top: 4px; line-height: 1.6; }
+
+/* v15.7：設定「✨ 畫面特效」打開時才有的動畫（預設關閉：全部靜態、較省電） */
+body.fx-on .res.empty, body.fx-on .blink, body.fx-on .starve-badge, body.fx-on .cloud-badge.st-syncing, body.fx-on .siege-chip.danger { animation: pulse 1s infinite; }
+body.fx-on .map-hint, body.fx-on .world-chip.invite { animation: pulse 1.6s infinite; }
+body.fx-on .zombie-pin { animation: pulse 1.5s infinite; }
+body.fx-on .scan-progress { animation: pulse 1.4s infinite; }
+body.fx-on .feed-chip.danger { animation: pulse 1.2s infinite; }
+body.fx-on .route-line { animation: dash 1s linear infinite; }
+body.fx-on .item-card.r-legendary { animation: legendary-glow 2.4s ease-in-out infinite; }
+body.fx-on .trade-chip { animation: siege-pulse 1.4s ease-in-out infinite; }
+body.fx-on .siege-badge span { animation: siege-pulse 1.2s ease-in-out infinite; }
+body.fx-on .threat-frame { animation: threat-pulse 1.2s ease-in-out infinite; }
+body.fx-on .threat-label { animation: threat-blink 0.9s steps(2, start) infinite; }
+body.fx-on .sv-recruit-chip.legend { animation: recruit-legend-glow 2.4s ease-in-out infinite; }
+body.fx-on .map-tools .btn.alert-btn.on { animation: alert-pulse 1.6s ease-in-out infinite; }
+body.fx-on .sp-badge, body.fx-on .sp-chip { animation: spGlow 1.6s ease-in-out infinite; }
+body.fx-on .dg-glow, body.fx-on .fac-card2.dg-bp, body.fx-on .card.dg-bp, body.fx-on .rarity[style*="#69f0ae"], body.fx-on .item-card.r-dungeon { animation: dg-breathe 2.4s ease-in-out infinite; }
+body.fx-on .dg-pin-ic { animation: dg-pulse 1.8s ease-in-out infinite; }
+body.fx-on .feed-chip.rally { animation: rally-glow 2.2s ease-in-out infinite; }
+body.fx-on .cp-dot { animation: cp-breathe 3s ease-in-out infinite; }
+body.fx-on .nav-btn.glow-bm { animation: nav-glow-bm 2.2s ease-in-out infinite; }
+body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out infinite; }
+.setting-note { margin: 2px 0 8px 26px; }
+.map-fps-row + .setting-note { margin-left: 0; }
+.map-fps-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 2px; }
+.map-fps-row .chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }

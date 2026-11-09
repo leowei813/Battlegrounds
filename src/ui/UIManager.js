@@ -286,6 +286,8 @@ export class UIManager {
 
   /** 據點被當成攻擊目標時：螢幕外圍紅框＋上方閃爍「威脅接近中」 */
   renderThreat() {
+    // v15.7：設定「畫面特效」（預設關閉）
+    document.body.classList.toggle('fx-on', !!this.game.state.settings?.fx);
     const list = this.game.threats();
     if (!this.threatEl) {
       this.threatEl = document.createElement('div');
