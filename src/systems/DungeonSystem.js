@@ -156,7 +156,7 @@ export class DungeonSystem {
     if (!DUNGEONS[dg]) return { ok: false, reason: '找不到副本' };
     if (!g.shelter.hasShelter()) return { ok: false, reason: '請先建立避難所' };
     const ph = DungeonSystem.phase(now);
-    if (ph === 'before') return { ok: false, reason: '每天 07:00 開放報名' };
+    if (ph === 'before') return { ok: false, reason: '每天 00:00 換日後開放報名' };
     if (ph !== 'signup') return { ok: false, reason: '今天的報名已經截止（17:40）' };
     const sv = g.survivors.get(svId);
     if (!sv) return { ok: false, reason: '找不到倖存者' };

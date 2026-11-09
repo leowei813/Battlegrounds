@@ -1,6 +1,6 @@
 import { RESOURCE_KEYS } from '../config/constants.js';
 import {
-  storageCap, FARM_FOOD, LUMBER_WOOD, WORKBENCH, dormFoodReduce,
+  storageCap, cellarStoragePct, FARM_FOOD, LUMBER_WOOD, WORKBENCH, dormFoodReduce,
 } from '../config/facilities.js';
 import {
   JOBS, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE, foodLevelMul,
@@ -19,7 +19,9 @@ export class ResourceSystem {
   /** 資源上限：所有據點倉庫容量加總 */
   storageCap() {
     const sum = this.game.state.bases.reduce((s, b) => s + (b.facilities.warehouse.level > 0 ? storageCap(b.facilities.warehouse.level) : 0), 0);
-    return Math.round(Math.max(storageCap(0), sum) * (1 + this.game.research.bonus('storagePct')));
+    // 地窖每級 +2%（與研究「倉儲」加成相加）
+    const cellar = cellarStoragePct(this.game.shelter?.maxLevel?.('cellar') || 0);
+    return Math.round(Math.max(storageCap(0), sum) * (1 + this.game.research.bonus('storagePct') + cellar));
   }
 
   /** 發電機是否有燃料可運作 */

@@ -1674,3 +1674,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .keep-row { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; margin: 2px 0 8px; font-size: 13px; white-space: nowrap; }
 .keep-row small { overflow: hidden; text-overflow: ellipsis; }
 .keep-min { background: #0b1418; color: #eceff1; border: 1px solid #546e7a; border-radius: 8px; padding: 3px 6px; font: inherit; font-size: 13px; }
+/* v13.2：地下感染區資訊框列出全部地下城 */
+.tag.t-none { background: transparent; color: #90a4ae; border: 1px solid #546e7a; }
+.dg-cnt.zero { color: #78909c; font-weight: 700; }
+.dg-hud.multi .row.mine { background: #ffffff08; }

@@ -76,7 +76,7 @@ function recordDetailHtml(e) {
       <small class="muted block">評價依城牆剩餘：≥80% 優秀 ×1.5・50～80% 良好 ×1.2・20～50% 普通 ×1.0・&lt;20% 勉強 ×0.7</small>
     </div>`;
   }
-  const hurt = (s.injuries || []).map((x) => `${escapeHtml(x.name)} ${x.severe ? '<span class="neg">重傷</span>' : x.light ? '<span class="neg">輕傷</span>' : '<span class="muted">無傷</span>'}`).join('・');
+  const hurt = (s.injuries || []).map((x) => `${escapeHtml(x.name)} ${x.severe ? '<span class="neg">重傷</span>' : x.light ? '<span class="neg">輕傷</span>' : x.cellar ? '<span class="muted">🕳️ 躲進地窖・無傷</span>' : '<span class="muted">無傷</span>'}`).join('・');
   return `<div class="sr-groups">
     ${groupRow(`📉 資源 −${s.lossPct}%`, null, plainList(e.lost, '−') || '（沒有可損失的資源）')}
     ${groupRow('🧰 材料', sum(s.materials), plainList(s.materials, '−'))}
@@ -133,7 +133,7 @@ export function siegeDetailHtml(e, compact = false) {
     ${mats.length ? `<div class="sr-sec">🧰 材料損失（部分零件、布料被奪走或損壞）</div><div class="sr-items">${mats.join('')}</div>` : ''}
     ${recoveredChips(s) ? `<div class="sr-sec">🥉 戰後回收</div><div class="sr-items">${recoveredChips(s)}</div>` : ''}
     ${e.damaged?.length ? `<div class="sr-sec">🏚️ 防禦設施</div>${e.damaged.map((d) => `<div class="sr-row"><span class="neg">${escapeHtml(d)}</span></div>`).join('')}` : ''}
-    ${s.injuries?.length ? `<div class="sr-sec">🩹 駐守人員傷勢</div>${s.injuries.map((x) => `<div class="sr-row"><span>${escapeHtml(x.name)}</span><span class="${x.ok ? 'muted' : 'neg'}">${x.severe ? '重傷（需醫療站治療）' : x.light ? '輕傷（生命 −30%）' : '無傷'}</span></div>`).join('')}` : ''}
+    ${s.injuries?.length ? `<div class="sr-sec">🩹 駐守人員傷勢</div>${s.injuries.map((x) => `<div class="sr-row"><span>${escapeHtml(x.name)}</span><span class="${x.ok ? 'muted' : 'neg'}">${x.severe ? '重傷（需醫療站治療）' : x.light ? '輕傷（生命 −30%）' : x.cellar ? '🕳️ 躲進地窖・無傷' : '無傷'}</span></div>`).join('')}` : ''}
     ${bossHtml(s.boss)}`;
 }
 

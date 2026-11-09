@@ -5269,7 +5269,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     assert(gq.npcs.list.length > 0 && !near.length && NPCC, `NPC 據點不會出現在副本入口 ${DGC.DG_CLEAR_M} 公尺內`);
   }
   assert(DungeonSystem.dayKey(day0) === '20261112' && new Date(T.start).getUTCHours() === 10 && T.end - T.start === 3 * 3600 * 1000, '副本時程：台灣時間 18:00 開打、20 層共 3 小時');
-  assert(DungeonSystem.phase(T.open - 1) === 'before' && DungeonSystem.phase(T.open) === 'signup' && DungeonSystem.phase(T.close) === 'closed' && DungeonSystem.phase(T.lock) === 'locked' && DungeonSystem.phase(T.depart) === 'gather' && DungeonSystem.phase(T.start) === 'run' && DungeonSystem.phase(T.end) === 'after', '副本各階段：07:00 報名、17:40 截止、17:50 鎖定、17:55 集結、18:00 開打');
+  assert(DungeonSystem.phase(T.open - 1) === 'after' && DungeonSystem.phase(T.open) === 'signup' && DungeonSystem.phase(T.close) === 'closed' && DungeonSystem.phase(T.lock) === 'locked' && DungeonSystem.phase(T.depart) === 'gather' && DungeonSystem.phase(T.start) === 'run' && DungeonSystem.phase(T.end) === 'after', '副本各階段：00:00 換日後報名、17:40 截止、17:50 鎖定、17:55 集結、18:00 開打');
   // 分團：依報名先後平均分配，每團 3～8 人
   const fakeList = (n) => ({ list: Array.from({ length: n }, (_, i) => ({ p: `p${i}`, s: `s${i}`, c: 'warrior', at: 1000 - i, u: { maxHp: 100 } })) });
   const sizes = (n) => DungeonSystem.groupsOf(fakeList(n)).groups.map((x) => x.length).join('+');
@@ -6003,6 +6003,27 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(gk.survivors.keepMin() === 'poor' && gk.survivors.keeps({ rarity: 'poor' }), '預設全部留下');
   assert(gk.survivors.setKeepMin('rare').ok && !gk.survivors.keeps({ rarity: 'uncommon' }) && gk.survivors.keeps({ rarity: 'rare' }) && gk.survivors.keeps({ rarity: 'legendary' }), '設定精良以上：精良含以上留下，優良以下婉拒');
   assert(!gk.survivors.setKeepMin('xx').ok, '不能設定不存在的品級');
+}
+
+// ---- v13.2：地窖提高倉庫上限、屍潮突破時駐守者撤進地窖 ----
+{
+  const { cellarShelter, cellarStoragePct } = await import('../src/config/facilities.js');
+  assert([1, 5, 10, 15].map(cellarShelter).join() === '1,3,5,8' && cellarShelter(0) === 0, '地窖可躲人數：Lv1 1 人、Lv5 3 人、Lv10 5 人、Lv15 8 人');
+  assert(Math.abs(cellarStoragePct(10) - 0.2) < 1e-9 && cellarStoragePct(0) === 0, '地窖每級倉庫上限 +2%');
+  const gq = Game.newGame({ playerName: 'Q', classId: 'warrior', lat: 25, lon: 121 });
+  gq.state.map.pois = fillPois([], 25, 121);
+  gq.shelter.establish(gq.state.map.pois.find((p) => gq.shelter.canEstablish(p).ok));
+  const bq = gq.shelter.primary();
+  const cap0 = gq.resources.storageCap();
+  bq.facilities.cellar.level = 10;
+  const cap1 = gq.resources.storageCap();
+  assert(Math.abs(cap1 / cap0 - 1.2) < 0.01, `地窖 Lv10 倉庫上限 +20%（${cap0} → ${cap1}）`);
+  // 駐守者：等級高的優先撤進地窖
+  const gs = [0, 1, 2, 3, 4, 5, 6].map((i) => { const c = gq.survivors.makeCandidate(3); c.level = 10 + i; c.job = 'guard'; c.status = 'idle'; gq.state.survivors.push(c); return c; });
+  gq.state.survivors.forEach((x) => { if (!gs.includes(x)) x.job = 'idle'; });
+  const inj = gq.siege.of(bq.id).injureGuards();
+  const top = [...gs].sort((a, b) => b.level - a.level).slice(0, 5).map((x) => x.name);
+  assert(inj.filter((x) => x.cellar).map((x) => x.name).sort().join() === top.sort().join() && inj.filter((x) => x.cellar).every((x) => !x.severe && !x.light), `屍潮突破時等級最高的 5 位駐守者撤進地窖不受傷（Lv10 地窖）`);
 }
 
 if (failures) {
