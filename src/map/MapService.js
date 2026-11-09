@@ -430,6 +430,8 @@ export class MapService {
         if (!p) return;
         const from = ex.from || sh;
         const phase = this.game.exploration.progress(ex, now)?.phase;
+        // 駐防隊抵達控制點後不再畫路線（撤回時才畫回程）
+        if (ex.kind === 'cpGuard' && phase === 'searching' && !ex.recalled && !ex.defeated) return;
         const ll = (pts) => pts.map((q) => [q.lat, q.lon]);
         const route = (latlngs, style) => L.polyline(latlngs, { pane: 'routePane', renderer: this.routeRenderer, ...style }).addTo(this.layers.routes);
         const YELLOW = { color: '#ffd54f', weight: 3, opacity: 0.3, dashArray: '4 8', className: 'route-line' };
