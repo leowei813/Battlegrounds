@@ -1,5 +1,5 @@
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND,
+  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND,
 } from '../config/controlPoints.js';
 import { inNpcHome } from '../config/zones.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
@@ -125,7 +125,7 @@ export class ControlPointSystem {
     // 感染者守軍校正成同等級掠奪者的強度，再乘上控制點倍率（強度表見 docs/v14-plan.md）
     const ref = unitPower(cb.createEnemy('raider', cp.garrison.level));
     list.forEach((e) => {
-      const k = (fac ? 1 : ref / Math.max(1, unitPower(e))) * CP_GARRISON_MUL * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
+      const k = (fac ? 1 : ref / Math.max(1, unitPower(e))) * CP_GARRISON_MUL * (CP_ZONE_MUL[cp.zone] ?? 1) * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
       e.maxHp = Math.round(e.maxHp * k); e.hp = e.maxHp; e.atk = Math.round(e.atk * k);
     });
     return list;
@@ -509,7 +509,7 @@ export class ControlPointSystem {
     const n = Math.round(cp.garrison.count * 1.2);
     return Array.from({ length: n }, (_, i) => {
       const e = cb.createEnemy(i === 0 ? 'raiderChief' : 'raider', cp.garrison.level);
-      const k = CP_GARRISON_MUL * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
+      const k = CP_GARRISON_MUL * (CP_ZONE_MUL[cp.zone] ?? 1) * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
       return {
         id: `fx:${f}:${i}`, ally: { player: `npc:${f}`, i }, name: `${FACTIONS[f].name}${e.name}`,
         maxHp: Math.round(e.maxHp * k), hp: Math.round(e.maxHp * k), atk: Math.round(e.atk * k), def: e.def || 0,

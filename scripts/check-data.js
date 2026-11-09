@@ -6395,6 +6395,16 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
         await gq.shared.update(CPC.CP_KIND, cpx.id, () => ({ data: { owners: [], guards: [], faction: nb.faction } }));
       }
     }
+    // v15.4：深淵區控制點守軍約與 Lv35 勢力 NPC 據點同強度
+    if (bases[0]) {
+      const lv0 = bases[0].level;
+      bases[0].level = 35;
+      const ref = gq.npcs.displayPower(bases[0]);
+      bases[0].level = lv0;
+      const abyss = CPC.CONTROL_POINTS.find((c) => c.zone === 5);
+      const pw = gq.cp.defensePower(abyss.id);
+      assert(Math.abs(pw / ref - 1) < 0.1, `深淵區控制點守軍戰力約等於 Lv35 NPC 據點（${Math.round(pw)} / ${Math.round(ref)}）`);
+    }
     // v15.3：勢力控制點內有 NPC 據點時要先打掉據點
     if (bases[0]) {
       const c0 = gq.cp.canAttack(bases[0].cp, { reach: false });
