@@ -6085,6 +6085,80 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(GUIDE_VERSION === 14, '遊戲說明版本 14');
 }
 
+// ---- v14 第 2 批：控制點（佔領後才能探索、好友可探索與駐防、06:00 運輸收益、敵對回到中立） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const CPC = await import('../src/config/controlPoints.js');
+  const Z = await import('../src/config/zones.js');
+  assert(CPC.CONTROL_POINTS.length === 21, '控制點共 21 個');
+  assert(CPC.CONTROL_POINTS.every((c) => c.zone >= 2), '控制點只在警戒區～深淵區');
+  assert(CPC.cpNeighbors('cp1').length > 0 && CPC.cpNeighbors('cp13').length >= 3, '控制點有相鄰關係');
+  const store = new MemoryObjects();
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.03, lon: 121.56 });
+    gx.genMap();
+    gx.shelter.establish(gx.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gx.shelter.canEstablish(p).ok));
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    setHour(gx, 10);
+    return gx;
+  };
+  const A = mk('A');
+  const B = mk('B');
+  const C = mk('C');
+  A.state.relations.players = { B: { status: 'friend' }, C: { status: 'neutral' } };
+  B.state.relations.players = { A: { status: 'friend' } };
+  const cp = CPC.CONTROL_POINTS[0];
+  const inCp = A.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === cp.id);
+  const free = A.state.map.pois.find((p) => !CPC.cpAt(p.lat, p.lon) && Z.zoneSide(p.lat, p.lon) === 'player' && Z.zoneIndexAt(p.lat, p.lon) === 1);
+  const npcHome = A.state.map.pois.find((p) => Z.inNpcHome(p.lat, p.lon));
+  assert(!A.cp.canExplore(inCp).ok && A.cp.canExplore(free).ok && !A.cp.canExplore(npcHome).ok, '中立控制點區域、勢力領地不能探索；左側一般區可以');
+  const lead = A.survivors.leader();
+  assert(!A.exploration.start(inCp.id, [lead.id], 5).ok, '派遣探索未佔領的控制點區域會被擋下');
+  assert(A.cp.garrisonCount(cp.id) === cp.garrison.count && A.cp.npcGarrison(cp.id).length === cp.garrison.count, `中立控制點有感染者守軍（${cp.garrison.count} 人）`);
+  // 攻打（測試用：必勝）
+  const sim = A.combat.simulate.bind(A.combat);
+  A.combat.simulate = (team, foes, o) => { const r = sim(team, foes, { ...o, record: false }); r.victory = true; r.foes.forEach((f) => { f.down = true; }); return r; };
+  const at = A.cp.attack(cp.id, [lead.id]);
+  assert(at.ok, `派隊攻打控制點（${at.reason || ''}）`);
+  await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs + 1);
+  A.combat.simulate = sim;
+  await B.shared.poll(); await C.shared.poll();
+  assert(A.cp.statusOf(cp.id) === 'mine' && B.cp.statusOf(cp.id) === 'mine' && C.cp.statusOf(cp.id) === 'other', '打下後：自己與好友是可探索，其他玩家不行');
+  assert(A.cp.canExplore(inCp).ok && B.cp.canExplore(inCp).ok && !C.cp.canExplore(inCp).ok, '佔領後該區域：佔領者與好友可以探索，其他玩家不行');
+  assert(!C.cp.canAttack(cp.id).ok, '非敵對的其他玩家不能攻打');
+  C.state.relations.players = { A: { status: 'hostile' } };
+  assert(C.cp.canAttack(cp.id).ok, '敵對玩家可以攻打');
+  // 好友駐防（每人最多 2 人）
+  A.exploration.update(at.exp.endAt + 1, { silent: true });
+  const bl = B.survivors.leader();
+  const gd = B.cp.guard(cp.id, [bl.id]);
+  assert(gd.ok, `佔領者的好友可以駐防（${gd.reason || ''}）`);
+  assert(!B.cp.canGuard(cp.id, 2).ok, '每名玩家每個控制點最多駐防 2 人');
+  await B.cp.syncGuards(gd.exp.startAt + gd.exp.travelMs + 1);
+  await A.shared.poll();
+  assert((A.cp.data(cp.id)?.guards || []).some((h) => h.p === 'B'), '駐防隊寫入控制點，攻打方會遇到');
+  // 每日收益：佔領者與駐守者都能拿，同一人只一份
+  assert(A.cp.incomeSources().length === 1 && B.cp.incomeSources().length === 1, '佔領者與駐守者都有收益');
+  const inc = A.cp.rollIncome(cp);
+  assert(inc.food === CPC.CP_INCOME[cp.zone].food && Object.keys(inc).length > 3, `收益：少量資源＋隨機零件（${JSON.stringify(inc)}）`);
+  const t6 = A.cp.incomeTime(Date.now());
+  A.cp.startConvoys(t6 + 1000);
+  const cv = A.cp.st.convoys[0];
+  assert(A.cp.st.convoys.length === 1 && cv.endAt > cv.startAt, '06:00 運輸隊從控制點出發');
+  A.cp.startConvoys(t6 + 2000);
+  assert(A.cp.st.convoys.length === 1, '同一天只送一次');
+  const f0 = A.state.resources.food;
+  A.cp.deliverConvoys(cv.endAt + 1);
+  assert(A.state.resources.food > f0 && !A.cp.st.convoys.length, '運輸隊抵達避難所後收益入庫');
+  // 共同佔領者變成敵對：回到中立
+  await A.shared.update('cp', cp.id, (x) => ({ data: { ...x, owners: [{ p: 'A', n: 'A' }, { p: 'C', n: 'C' }] } }));
+  A.state.relations.players.C = { status: 'hostile' };
+  await A.cp.checkHostileOwners(Date.now());
+  assert(A.cp.statusOf(cp.id) === 'neutral', '共同佔領者變成敵對時，控制點回到中立');
+  assert(A.cp.garrisonCount(cp.id) < cp.garrison.count, '回到中立後守軍慢慢補回');
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

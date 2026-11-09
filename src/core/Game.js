@@ -36,6 +36,7 @@ import { SharedWorld } from '../multiplayer/SharedWorld.js';
 import { MarketSystem } from '../systems/MarketSystem.js';
 import { InfectedSystem } from '../systems/InfectedSystem.js';
 import { RallySystem } from '../systems/RallySystem.js';
+import { ControlPointSystem } from '../systems/ControlPointSystem.js';
 import { RebirthSystem } from '../systems/RebirthSystem.js';
 import { AssistSystem } from '../systems/AssistSystem.js';
 import { ChatSystem } from '../multiplayer/Chat.js';
@@ -82,6 +83,7 @@ export class Game {
     this.market = new MarketSystem(this);
     this.infected = new InfectedSystem(this);
     this.rally = new RallySystem(this);
+    this.cp = new ControlPointSystem(this);
     this.assist = new AssistSystem(this);
     this.rebirth = new RebirthSystem(this);
 
@@ -276,6 +278,7 @@ export class Game {
     this.shared.tick(now);
     if (!silent) this.chat.tick(now);
     this.rally.update(now);
+    this.cp.update(now);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();
