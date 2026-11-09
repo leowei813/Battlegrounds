@@ -792,16 +792,46 @@ export class ControlPointSystem {
     const downIds = new Set(r.foes.filter((x) => x.down).map((x) => x.ally?.player).filter(Boolean));
     const res = await g.shared.update(CP_KIND, id, (x) => {
       const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
+      // v15.6：交戰結果記在共用資料，佔領者與駐防者（不在線也一樣）之後都會收到戰報
+      const fight = {
+        f, at, win, lost: killed, total: foes.length, atk: attackers.length, atkDown: (r.team || []).filter((u) => u.down).length,
+        owners: (data.owners || []).map((o) => o.p), guards: [...new Set((data.guards || []).map((h) => h.p))],
+        down: [...downIds],
+      };
       if (win) {
         // 打下後留守：守軍約為進攻部隊的一半（之後每小時補回）
-        return { data: { owners: [], guards: [], faction: f, lost: Math.ceil(cp.garrison.count / 2), lostAt: at, takenAt: at, by: f } };
+        return { data: { owners: [], guards: [], faction: f, lost: Math.ceil(cp.garrison.count / 2), lostAt: at, takenAt: at, by: f, fight } };
       }
+      data.fight = fight;
       if (data.owners?.length && !data.faction) data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
       else { data.lost = Math.min(cp.garrison.count, (cp.garrison.count - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
       return { data };
     }, { lat: cp.lat, lon: cp.lon });
     if (res.ok && win) g.log(`🏴 勢力「${FACTIONS[f].name}」佔領了控制點 #${cp.no}`, 'danger');
     return { win, ok: res.ok };
+  }
+
+  /** v15.6：勢力進攻控制點的交戰結果：佔領者與駐防者各收到一則（同一人只一則） */
+  reportFights() {
+    const g = this.game;
+    if (!this.ready()) return;
+    const me = this.myId();
+    this.st.fightSeen = this.st.fightSeen || {};
+    CONTROL_POINTS.forEach((cp) => {
+      const ft = this.data(cp.id)?.fight;
+      if (!ft || (this.st.fightSeen[cp.id] || 0) >= ft.at) return;
+      this.st.fightSeen[cp.id] = ft.at;
+      const owner = (ft.owners || []).includes(me);
+      const guard = (ft.guards || []).includes(me);
+      if (!owner && !guard) return;
+      const fname = FACTIONS[ft.f]?.name || '勢力';
+      const role = owner && guard ? '你佔領並駐防的' : owner ? '你佔領的' : '你駐防的';
+      const msg = ft.win
+        ? `🏴 「${fname}」的部隊（${ft.atk} 人）攻下了${role}控制點 #${cp.no}${ft.total ? `：守軍 ${ft.total} 人全數被擊倒` : '（沒有駐防）'}`
+        : `🛡️ ${role}控制點 #${cp.no} 擊退了「${fname}」的部隊（${ft.atk} 人）：擊倒 ${ft.atkDown || 0} 人，守軍倒下 ${ft.lost || 0} 人${(ft.down || []).includes(me) ? '（你的駐防隊有人倒下，撤回避難所）' : ''}`;
+      g.log(msg, ft.win ? 'danger' : 'success');
+      g.toast?.(msg, ft.win ? 'danger' : 'success');
+    });
   }
 
   /** 每 2 秒 */
@@ -816,6 +846,7 @@ export class ControlPointSystem {
     this.npcTurns(now).catch(() => {});
     this.resolveMarches(now).catch(() => {});
     this.warnMarches(now);
+    this.reportFights();
     this.hqAmbushes(now);
     this.recallLostExplores(now);
     this.game.npcs?.recallLostTrips?.(now);

@@ -6313,6 +6313,13 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     await A.cp.resolveMarches(Date.now());
     A.combat.simulate = sim0;
     assert(!A.cp.factionOf(cp.id) && A.cp.owners(cp.id).some((o) => o.p === 'A') && !A.cp.data(cp.id)?.march, '部隊被擊退：控制點維持原本的佔領者');
+    // v15.6：交戰結果：佔領者與駐防者都收到戰報（同一人只一則、不重複）
+    A.cp.reportFights(); A.cp.reportFights();
+    const fa = A.state.log.filter((l) => /擊退了「/.test(l.msg) && l.msg.includes(`#${cp.no}`));
+    assert(fa.length === 1 && /你佔領的/.test(fa[0].msg), `佔領者收到一則交戰戰報（${fa[0]?.msg || ''}）`);
+    await B.shared.poll();
+    B.cp.reportFights();
+    assert(B.state.log.some((l) => /你駐防的控制點/.test(l.msg) && /擊退了「/.test(l.msg)), '駐防者也收到交戰戰報');
     await A.shared.update(CPC.CP_KIND, cp.id, () => ({ data: { ...snap, march: null } }));
     await A.shared.update(CPC.CP_KIND, tgt2.id, () => ({ data: { owners: [], guards: [], faction: null } }));
     await B.shared.poll();
