@@ -4759,22 +4759,42 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(spots.supermarket > 0 && spots.residential > 0 && spots.school > 0, '超市、住宅、學校有機會找到塑膠外殼');
 }
 
-// ---- 110. 黑市交換：同價值 10 換 1、跨階 ×2、只能同階或低一階、★5 不開放、不到 1 個不換 ----
+// ---- 110. 黑市交換：同價值 5 換 1（v13.3）、跨階 ×2、只能同階或低一階、★5 不開放、不到 1 個不換 ----
 {
+  const { EXCHANGE: EX } = await import('../src/systems/BlackMarketSystem.js');
   const gx = Game.newGame({ playerName: 'X110', classId: 'warrior', lat: 25, lon: 121 });
   const bm = gx.blackMarket;
-  gx.state.supplies = { steelPlate: 40, spring: 100, nail: 500, hinge: 3 };
-  const q1 = bm.exchangeQuote('steelPlate', 'valve', 40);
-  assert(q1.ok && q1.get === 2 && q1.used === 34, `同階：鋼板 40 → 閥門 2，只用掉 34（${q1.get}/${q1.used}）`);
-  const q2 = bm.exchangeQuote('spring', 'valve', 100);
-  assert(q2.ok && q2.get === 2 && q2.used === 80, `低一階：彈簧 100 → 閥門 2（每個 40）（${q2.get}/${q2.used}）`);
+  assert(EX.rate === 5, '黑市交換：同價值 5 換 1');
+  const V = EX.value;
+  const per1 = (V.valve / V.steelPlate) * 5;
+  const per2 = (V.valve / V.spring) * 5 * 2;
+  gx.state.supplies = { steelPlate: 400, spring: 1000, nail: 500, hinge: 1 };
+  const q1 = bm.exchangeQuote('steelPlate', 'valve', 400);
+  assert(q1.ok && q1.get === Math.floor(400 / per1 + 1e-9) && Math.abs(q1.per - per1) < 1e-9, `同階：依價值換算（鋼板 400 → 閥門 ${q1.get}，每個 ${per1}）`);
+  const q2 = bm.exchangeQuote('spring', 'valve', 1000);
+  assert(q2.ok && Math.abs(q2.per - per2) < 1e-9, `低一階：再 ×2（彈簧每 ${per2} 個換 1 個閥門）`);
   assert(!bm.exchangeQuote('nail', 'valve', 500).ok, '不能用低兩階的材料交換');
   assert(!bm.exchangeQuote('valve', 'spring', 10).ok, '不能用高階換低階');
   assert(!bm.exchangeable('precision') && !bm.exchangeable('kevlar'), '★5 最高階不開放');
   assert(!bm.exchangeQuote('nail', 'cotton', 100).ok, '零件與布料不能互換');
-  assert(!bm.exchangeQuote('hinge', 'spring', 3).ok, '不到 1 個不能換');
-  const r = bm.exchange('steelPlate', 'valve', 40);
-  assert(r.ok && gx.state.supplies.valve === 2 && gx.state.supplies.steelPlate === 6, `交換後倉庫正確（閥門 ${gx.state.supplies.valve}，鋼板 ${gx.state.supplies.steelPlate}）`);
+  assert(!bm.exchangeQuote('hinge', 'spring', 1).ok, '不到 1 個不能換');
+  const r = bm.exchange('steelPlate', 'valve', 400);
+  assert(r.ok && gx.state.supplies.valve === q1.get && gx.state.supplies.steelPlate === 400 - q1.used, `交換後倉庫正確（閥門 ${gx.state.supplies.valve}，鋼板 ${gx.state.supplies.steelPlate}）`);
+  // 依配比表：比較缺的材料價值較高
+  assert(V.valve > V.steelPipe && V.rubber > V.ironWire, `交換價值參考材料需求與掉落配比表（閥門 ${V.valve} > 鋼管 ${V.steelPipe}、橡膠 ${V.rubber} > 鐵絲 ${V.ironWire}）`);
+}
+
+// ---- v13.3：材料需求與掉落配比 ----
+{
+  const MB = await import('../src/systems/MaterialBalance.js');
+  const { baseSupplyWeight: bw } = await import('../src/systems/LootStock.js');
+  const mul = MB.balanceMultipliers(bw);
+  const keep = new Set(MB.consumableMaterials());
+  assert(Object.values(mul).every((m) => m >= MB.BALANCE.min - 1e-9 && m <= MB.BALANCE.max + 1e-9), '掉落倍率在 ×0.6～×2 之間');
+  assert([...keep].every((k) => mul[k] >= 1 - 1e-9) && keep.has('plastic') && keep.has('nail'), '消耗品材料（子彈、藥品、修牆用）不會被降低');
+  assert(mul.valve > 1.5 && mul.ironPlate < 0.8 && mul.sensor < 0.8, `需求高的材料掉落提高、需求低的降低（閥門 ×${mul.valve.toFixed(2)}、鐵板 ×${mul.ironPlate.toFixed(2)}、感測器 ×${mul.sensor.toFixed(2)}）`);
+  const sc = MB.scarcity(bw);
+  assert(sc.valve < 2.71 && sc.valve >= 1, `調整後閥門稀缺度下降（${sc.valve.toFixed(2)}）`);
 }
 
 // ---- 111. 快速換裝不會降低戰力；材料節約也套用到彈藥與藥品 ----
