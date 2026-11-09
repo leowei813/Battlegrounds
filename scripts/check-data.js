@@ -6352,7 +6352,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, march: null, guards: (x.guards || []).filter((h) => h.p !== 'A') } }));
     // 完整流程：部隊抵達 → 交戰 → 打贏佔領（只結算一次）；打輸控制點維持原狀
     const sim0 = A.combat.simulate;
-    const forceWin = (win) => { A.combat.simulate = (team, foes, o) => { const r = sim0.call(A.combat, team, foes, { ...o, record: false }); r.victory = win; if (win) r.foes.forEach((f) => { f.down = true; }); return r; }; };
+    const forceWin = (win) => { A.combat.simulate = (team, foes, o) => { const r = sim0.call(A.combat, team, foes, { ...o, record: false }); r.victory = win; r.foes.forEach((f) => { f.down = win; }); return r; }; };
     const tgt2 = CPC.CONTROL_POINTS.find((c) => c.id !== cp.id && !A.cp.factionOf(c.id) && !A.cp.owners(c.id).length);
     const past = Date.now() - 6 * 3600000;
     await A.cp.launchMarch('red', tgt2.id, past);
@@ -6380,8 +6380,18 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const fa = A.state.log.filter((l) => /擊退了「/.test(l.msg) && l.msg.includes(`#${cp.no}`));
     assert(fa.length === 1 && /你佔領的/.test(fa[0].msg), `佔領者收到一則交戰戰報（${fa[0]?.msg || ''}）`);
     await B.shared.poll();
+    const gsv = B.survivors.get(gd.exp.memberIds[0]);
+    const gxp0 = gsv.xp; const glv0 = gsv.level;
     B.cp.reportFights();
     assert(B.state.log.some((l) => /你駐防的控制點/.test(l.msg) && /擊退了「/.test(l.msg)), '駐防者也收到交戰戰報');
+    // v15.7：防守成功：沒倒下的駐防隊員獲得升級所需經驗的 3%（佔領者沒駐防不拿）
+    assert((gsv.level > glv0 || gsv.xp > gxp0) && B.state.log.some((l) => /防守成功經驗/.test(l.msg)), `駐防隊防守成功：沒倒下的隊員獲得經驗（${B.state.log.find((l) => /防守成功經驗/.test(l.msg))?.msg || ''}）`);
+    assert(!A.state.log.some((l) => /防守成功經驗/.test(l.msg)), '只佔領、沒有駐防的人不拿防守經驗');
+    const nb = B.state.log.filter((l) => /防守成功經驗/.test(l.msg)).length;
+    B.cp.reportFights();
+    assert(B.state.log.filter((l) => /防守成功經驗/.test(l.msg)).length === nb, '同一場防守經驗只拿一次');
+    const gx1 = gsv.xp;
+    assert(B.cp.guardXp(cp, { at: Date.now(), ge: [gd.exp.id], downU: [`${gd.exp.id}:0`] }) === 0 && gsv.xp === gx1, '倒下的駐防隊員沒有防守經驗、也不扣經驗');
     await A.shared.update(CPC.CP_KIND, cp.id, () => ({ data: { ...snap, march: null } }));
     await A.shared.update(CPC.CP_KIND, tgt2.id, () => ({ data: { owners: [], guards: [], faction: null } }));
     await B.shared.poll();

@@ -1,7 +1,8 @@
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND,
+  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT,
 } from '../config/controlPoints.js';
 import { inNpcHome } from '../config/zones.js';
+import { xpToNext } from '../config/survivors.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { DAY_REAL_MS, RAID_TRAVEL } from '../config/constants.js';
 import { NPC_CONFIG } from '../config/npcs.js';
@@ -136,7 +137,12 @@ export class ControlPointSystem {
   /** 防守方：玩家佔領的是駐防隊員，其他是 NPC／感染者守軍 */
   defenders(id, now = Date.now()) {
     if (this.owners(id).length && !this.factionOf(id)) {
-      return (this.data(id)?.guards || []).flatMap((h) => (h.units || []).slice(0, CP_GUARD_MAX).map((u) => AssistSystem.unitOf({ id: h.p, name: h.n }, u)));
+      // 記下是哪一支駐防隊（h.e）的第幾位，交戰後依此判斷誰倒下、誰拿防守經驗
+      return (this.data(id)?.guards || []).flatMap((h) => (h.units || []).slice(0, CP_GUARD_MAX).map((u) => {
+        const x = AssistSystem.unitOf({ id: h.p, name: h.n }, u);
+        x.ally.e = h.e;
+        return x;
+      }));
     }
     return this.npcGarrison(id, now);
   }
@@ -824,6 +830,9 @@ export class ControlPointSystem {
         f, at, win, lost: killed, total: foes.length, atk: attackers.length, atkDown: (r.team || []).filter((u) => u.down).length,
         owners: (data.owners || []).map((o) => o.p), guards: [...new Set((data.guards || []).map((h) => h.p))],
         down: [...downIds],
+        // v15.7：倒下的駐防隊員（駐防隊 id:第幾位），沒倒下的人防守成功時拿經驗
+        downU: r.foes.filter((x) => x.down && x.ally?.e).map((x) => `${x.ally.e}:${x.ally.i}`).slice(0, 60),
+        ge: [...new Set((data.guards || []).map((h) => h.e).filter(Boolean))].slice(0, 30),
       };
       if (win) {
         // 打下後留守：守軍約為進攻部隊的一半（之後每小時補回）
@@ -858,7 +867,29 @@ export class ControlPointSystem {
         : `🛡️ ${role}控制點 #${cp.no} 擊退了「${fname}」的部隊（${ft.atk} 人）：擊倒 ${ft.atkDown || 0} 人，守軍倒下 ${ft.lost || 0} 人${(ft.down || []).includes(me) ? '（你的駐防隊有人倒下，撤回避難所）' : ''}`;
       g.log(msg, ft.win ? 'danger' : 'success');
       g.toast?.(msg, ft.win ? 'danger' : 'success');
+      if (!ft.win && guard) this.guardXp(cp, ft);
     });
+  }
+
+  /** v15.7：防守成功：沒倒下的駐防隊員獲得自己升級所需經驗的 CP_GUARD_XP_PCT（倒下的人不扣經驗） */
+  guardXp(cp, ft) {
+    const g = this.game;
+    const down = new Set(ft.downU || []);
+    const got = [];
+    // 參戰的駐防隊（交戰時在共用資料裡的隊伍）
+    const fought = (e) => (Array.isArray(ft.ge) ? ft.ge.includes(e.id) : e.startAt + (e.travelMs || 0) <= ft.at);
+    g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === cp.id && fought(e)).forEach((e) => {
+      e.memberIds.forEach((sid, i) => {
+        const sv = g.survivors.get(sid);
+        if (!sv || sv.severe || down.has(`${e.id}:${i}`)) return;
+        const amt = Math.round(xpToNext(sv.level) * CP_GUARD_XP_PCT);
+        if (amt <= 0) return;
+        g.survivors.gainXp(sv, amt);
+        got.push(`${sv.name} +${amt.toLocaleString()}`);
+      });
+    });
+    if (got.length) g.log(`⭐ 控制點 #${cp.no} 防守成功經驗：${got.join('、')}`, 'success');
+    return got.length;
   }
 
   /** 每 2 秒 */
