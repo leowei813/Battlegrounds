@@ -22,7 +22,7 @@ import {
 } from '../components.js';
 import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { INFECTED } from '../../systems/InfectedSystem.js';
-import { cpById, cpAt, CP_INCOME } from '../../config/controlPoints.js';
+import { cpById, cpAt, CP_INCOME, FACTIONS } from '../../config/controlPoints.js';
 import { RALLY_DELAYS, RallySystem } from '../../systems/RallySystem.js';
 import { AUTO_HOME_LABEL } from '../../systems/AutoHomeSystem.js';
 import { PLASTIC_SPOTS } from '../../systems/LootStock.js';
@@ -253,7 +253,8 @@ export class MapPanel {
     const sm = g.cp.summary(id);
     const { cp } = sm;
     const zone = ZONES[cp.zone];
-    const ownTxt = sm.owners.length ? sm.owners.map((o) => escapeHtml(o.n)).join('、') : '—';
+    const fac = g.cp.factionOf(id);
+    const ownTxt = fac ? `🏴 ${FACTIONS[fac].name}勢力` : sm.owners.length ? sm.owners.map((o) => escapeHtml(o.n)).join('、') : '—';
     const guardTxt = sm.guards.length ? sm.guards.map((h) => `${escapeHtml(h.n)} ${(h.units || []).length} 人`).join('・') : '沒有駐防';
     const npc = sm.status === 'neutral' || sm.status === 'faction';
     const atk = g.cp.canAttack(id);
@@ -390,7 +391,7 @@ export class MapPanel {
       ${v.nextRaid != null ? `<p class="muted">🏴‍☠️ 下次掠奪約在 ${formatDuration(v.nextRaid)} 後（夜晚不出動）</p>` : ''}
       <p class="muted">積極度 ${Math.round(aggr * 100)}%（你的文明度越高，NPC 越常來掠奪）。夜晚屍潮期間 NPC 不會出動。</p>
       ${trip ? `<p class="${trip.kind === 'raid' ? 'neg' : 'muted'}">${trip.kind === 'raid' ? `⚔️ 掠奪隊正前往「${escapeHtml(trip.target)}」` : `🔍 正在搜刮「${escapeHtml(trip.target)}」`}・剩 ${formatDuration(trip.endAt - now)}</p>` : ''}
-      <p class="muted">攻陷後可搶走據點的物資與金錢（受隊伍運載量限制），據點會被摧毀，隔天中午 12:00 重新出現（至少 Lv${NPC_CONFIG.respawnMinLevel}）。</p>
+      <p class="muted">攻陷後可搶走據點的物資與金錢（受隊伍運載量限制），據點會被摧毀，36 小時後重新出現（至少 Lv${NPC_CONFIG.respawnMinLevel}；三大勢力的據點會建在勢力的控制點附近）。</p>
       <div class="sp-hint">✨ <b>特殊物品</b>：攻陷時 ${Math.round(LOCK_ITEM.npcChance * 100)}% 機率在保險箱找到 🔒「${LOCK_ITEM.name}」×1（集結時每支隊伍各抽一次）</div>
       <div class="btn-row">${btn('⚔️ 派隊攻打', 'attackNpc', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${(() => {
     const c = g.rally.canStart({ kind: 'npc', id: n.id });
