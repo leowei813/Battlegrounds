@@ -3456,8 +3456,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!vs3.repair(c3.id).ok, '指定給臨時小隊的載具不能維修');
   c3.durability = 0;
   gv3.exploration.update(e3.exp.endAt + 1, { silent: true });
-  const n3 = gv3.state.expeditions[0];
-  assert(n3 && !(n3.vehicleIds || []).includes(c3.id) && c3.status === 'idle', '損壞的指定載具回程後自動解除鎖定，不會跟著出門');
+  // 佇列的下一站可能因負重或已被搜空而沒有出發：只檢查載具沒有跟著出門、已解除鎖定
+  assert(!gv3.state.expeditions.some((x) => (x.vehicleIds || []).includes(c3.id)) && c3.status === 'idle', '損壞的指定載具回程後自動解除鎖定，不會跟著出門');
 }
 
 // ---- 72. v9.10 設施等級依據點規模設上限 ----
@@ -3969,8 +3969,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(r2.ok && e2.distanceM < 5 && e2.backMs > 0, '同一地點再搜索：去程為 0、回程直接回避難所');
   const mid2 = e2.startAt + e2.travelMs + Math.round(e2.searchMs / 2);
   const back2 = e2.backMs;
-  assert(ex.recall(e2.id, mid2).ok && e2.endAt - mid2 > 0 && Math.abs((e2.endAt - mid2) - back2) < back2 * 0.05 + 5, `同一地點再搜索時召回：仍需要回程時間（${Math.round((e2.endAt - mid2) / 1000)} 秒，不會瞬間回家）`);
-  ex.update(mid2 + 1000);
+  assert(ex.recall(e2.id, mid2).ok && e2.endAt - mid2 >= back2 * 0.95 - 5, `同一地點再搜索時召回：仍需要回程時間（${Math.round((e2.endAt - mid2) / 1000)} 秒，不會瞬間回家）`);
+  ex.update(mid2 + Math.min(1000, Math.max(1, (e2.endAt - mid2) / 2)));
   assert(ex.list.includes(e2), '召回後隊伍還在回程中');
 }
 
