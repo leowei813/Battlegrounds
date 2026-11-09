@@ -1,5 +1,5 @@
 import { WORLD_BOUNDS } from './world.js';
-import { zoneIndexAt, zoneSide } from './zones.js';
+import { zoneIndexAt, zoneSide, inNpcHome } from './zones.js';
 
 /**
  * v14 控制點：分布在警戒區～深淵區（跨到一般區的部分保留），共 21 個，範圍不規則（所有玩家相同）。
@@ -34,7 +34,8 @@ const edge = (y) => Math.sin(y * 23) * 0.012 + Math.sin(y * 9 + 1) * 0.01;
 /** 座標所在的控制點索引（不在任何控制點範圍內回傳 -1） */
 export function cpIndexAt(lat, lon) {
   const { x, y } = toXY(lat, lon);
-  if (x < 0.245 + edge(y) || x > 0.885 - edge(y) || y < 0 || y > 1) return -1;
+  // v15：東側一路延伸到勢力領地邊界（中間不留可自由探索的空隙）
+  if (x < 0.245 + edge(y) || y < 0 || y > 1 || inNpcHome(lat, lon)) return -1;
   let best = -1;
   let bd = Infinity;
   SEEDS.forEach(([sx, sy], i) => {

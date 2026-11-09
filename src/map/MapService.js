@@ -191,7 +191,7 @@ export class MapService {
     }).addTo(this.layers.gps);
   }
 
-  /** 切換圖層：危險度 → 勢力圖 → 關閉 */
+  /** 切換圖層：危險度 ⇄ 勢力圖 */
   cycleZoneMode() {
     const cur = this.zoneLayer?.mode || savedZoneMode();
     const next = ZONE_MODE_ORDER[(ZONE_MODE_ORDER.indexOf(cur) + 1) % ZONE_MODE_ORDER.length];
