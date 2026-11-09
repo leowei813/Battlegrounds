@@ -336,8 +336,8 @@ export class MapService {
     this.layers.dungeons.clearLayers();
     list.forEach((d) => {
       L.marker([d.lat, d.lon], {
-        // v15.7：只有攻略中、即將開打才有呼吸光（今日休息、已結束、報名中都不閃）
-        icon: L.divIcon({ html: `<div class="dg-pin"><span class="dg-pin-ic${/攻略中|即將開打/.test(d.label) ? ' live' : ''}">${svg}</span><i class="dg-pin-lb">${escapeHtml(d.label)}</i></div>`, className: 'dg-pin-wrap', iconSize: [58, 48], iconAnchor: [29, 24] }),
+        // v15.7 省電：入口圖示不發呼吸光
+        icon: L.divIcon({ html: `<div class="dg-pin"><span class="dg-pin-ic">${svg}</span><i class="dg-pin-lb">${escapeHtml(d.label)}</i></div>`, className: 'dg-pin-wrap', iconSize: [58, 48], iconAnchor: [29, 24] }),
         zIndexOffset: 870,
       }).on('click', () => bus.emit('ui:openDungeon', { id: d.id }))
         .bindTooltip(`🕳️ 地下感染區「${escapeHtml(d.name)}」・${escapeHtml(d.label)}`, { direction: 'top', offset: [0, -24] })

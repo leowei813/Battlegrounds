@@ -6437,14 +6437,19 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const inc = A.cp.rollIncome(cp);
   assert(inc.food === CPC.CP_INCOME[cp.zone].food && Object.keys(inc).length > 3, `收益：少量資源＋隨機零件（${JSON.stringify(inc)}）`);
   const t6 = A.cp.incomeTime(Date.now());
-  A.cp.startConvoys(t6 + 1000);
-  const cv = A.cp.st.convoys[0];
-  assert(A.cp.st.convoys.length === 1 && cv.endAt > cv.startAt, '06:00 運輸隊從控制點出發');
-  A.cp.startConvoys(t6 + 2000);
-  assert(A.cp.st.convoys.length === 1, '同一天只送一次');
+  // v15.7：06:00 收益直接入庫，並發出視窗用的事件（合計＋各控制點）
   const f0 = A.state.resources.food;
-  A.cp.deliverConvoys(cv.endAt + 1);
-  assert(A.state.resources.food > f0 && !A.cp.st.convoys.length, '運輸隊抵達避難所後收益入庫');
+  let evt = null; const off = A.bus.on('cp:dailyIncome', (x) => { evt = x; });
+  const inc6 = A.cp.startConvoys(t6 + 1000);
+  off?.();
+  assert(inc6 && A.state.resources.food > f0 && !A.cp.st.convoys.length && !A.cp.convoyView().length, '06:00 控制點收益直接入庫，沒有運輸隊');
+  assert(evt && evt.list.length === 1 && evt.list[0].no === cp.no && evt.list[0].zone && /佔領/.test(evt.list[0].role) && evt.text, `跳出視窗：合計與各控制點（${evt?.text} / #${evt?.list[0]?.no} ${evt?.list[0]?.zone} ${evt?.list[0]?.role}）`);
+  assert(!A.cp.startConvoys(t6 + 2000), '同一天只送一次');
+  // 舊存檔裡還在路上的運輸隊：直接入庫
+  A.cp.st.convoys = [{ id: 'old', cp: cp.id, from: { lat: 0, lon: 0 }, to: { lat: 0, lon: 0 }, startAt: 0, endAt: Date.now() + 9e6, goods: { food: 3 } }];
+  const f1 = A.state.resources.food;
+  A.cp.deliverConvoys();
+  assert(A.state.resources.food === f1 + 3 && !A.cp.st.convoys.length, '舊存檔還在路上的運輸隊直接入庫');
   {
     // v15.5：離線期間錯過的每日收益：上線時補發（最多 24 次），今天的照常由運輸隊送回
     const CPS = await import('../src/systems/ControlPointSystem.js');

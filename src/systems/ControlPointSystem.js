@@ -2,7 +2,7 @@ import { TimeSystem } from './TimeSystem.js';
 import {
   CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT,
 } from '../config/controlPoints.js';
-import { inNpcHome } from '../config/zones.js';
+import { inNpcHome, ZONES } from '../config/zones.js';
 import { xpToNext } from '../config/survivors.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { RAID_TRAVEL } from '../config/constants.js';
@@ -19,8 +19,6 @@ import { baseSupplyWeight } from './LootStock.js';
 /** 離線期間的每日收益最多補發幾次（遊戲一天＝現實 90 分鐘，24 次約現實 1.5 天） */
 export const CP_OFFLINE_INCOME_MAX = 24;
 const GUARD_STAY_MS = 7 * 24 * 3600000;
-/** 運輸隊的移動速度（公尺／秒） */
-const CONVOY_SPEED = 1.4;
 /** 中立控制點的感染者守軍種類 */
 const NEUTRAL_TYPES = ['walker', 'infected', 'berserker', 'mutant'];
 
@@ -34,6 +32,8 @@ const NEUTRAL_TYPES = ['walker', 'infected', 'berserker', 'mutant'];
  *  lost    守軍已損失的人數（每小時補回 CP_REFILL_PER_HOUR，即現實每 10 分鐘 1 人）；lostAt 損失時間
  */
 /** 地圖提示用：探索隊的目的地名稱 */
+/** 物資清單文字 */
+const goodsText = (got) => Object.entries(got || {}).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || { food: '食物', wood: '木材', fuel: '燃料' }[k] || k} ×${v}`).join('、');
 const g0name = (g, e) => `「${g.exploration.poi(e.poiId)?.name || '探索點'}」`;
 
 export class ControlPointSystem {
@@ -503,23 +503,33 @@ export class ControlPointSystem {
     });
   }
 
-  /** 每天 06:00：每個控制點派運輸隊把收益送回避難所 */
+  /**
+   * 每天 06:00：控制點收益直接入庫（v15.7：不再派運輸隊），跳出視窗告知來自哪些控制點、各多少。
+   * @returns {{list:object[], total:object, text:string}|null}
+   */
   startConvoys(now = Date.now()) {
     const g = this.game;
     const sh = g.shelter.primary();
-    if (!sh) return;
+    if (!sh) return null;
     const day = g.time.day(now);
     const at = this.incomeTime(now);
-    if (now < at || this.st.incomeDay === day) return;
+    if (now < at || this.st.incomeDay === day) return null;
     this.st.incomeDay = day;
-    this.incomeSources().forEach((cp) => {
-      const dist = haversine(this.markerSpot(cp.id).lat, this.markerSpot(cp.id).lon, sh.lat, sh.lon);
-      const travel = Math.round((dist / CONVOY_SPEED) * 1000);
-      this.st.convoys.push({
-        id: uid('cv'), cp: cp.id, from: { ...this.markerSpot(cp.id) }, to: { lat: sh.lat, lon: sh.lon }, startAt: at, endAt: at + travel, goods: this.rollIncome(cp),
-      });
+    const me = this.myId();
+    const total = {};
+    const list = this.incomeSources().map((cp) => {
+      const d = this.data(cp.id) || {};
+      const own = (d.owners || []).some((o) => o.p === me);
+      const guard = (d.guards || []).some((h) => h.p === me);
+      const got = g.grant(this.rollIncome(cp));
+      Object.entries(got).forEach(([k, v]) => { if (v > 0) total[k] = (total[k] || 0) + v; });
+      return { id: cp.id, no: cp.no, zone: ZONES[cp.zone]?.name || '', role: own && guard ? '佔領・駐防' : own ? '佔領' : '駐防', goods: got, text: goodsText(got) };
     });
-    if (this.st.convoys.length) g.log(`🚚 控制點運輸隊出發：${this.st.convoys.length} 支，正把收益送回避難所`, 'info');
+    if (!list.length) return null;
+    const res = { list, total, text: goodsText(total) };
+    g.log(`🚚 06:00 控制點物資送達（${list.length} 個控制點）：${res.text || '沒有東西'}`, 'loot');
+    g.bus.emit('cp:dailyIncome', res);
+    return res;
   }
 
   /**
@@ -544,7 +554,7 @@ export class ControlPointSystem {
       sources.forEach((cp) => Object.entries(this.rollIncome(cp)).forEach(([k, v]) => { goods[k] = (goods[k] || 0) + v; }));
     }
     const got = g.grant(goods);
-    const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || { food: '食物', wood: '木材', fuel: '燃料' }[k] || k} ×${v}`).join('、');
+    const text = goodsText(got);
     g.log(`🚚 離線期間的控制點收益（${times} 次${missed > times ? `，最多補 ${CP_OFFLINE_INCOME_MAX} 次` : ''}）：${text}`, 'loot');
     const res = { times, missed, goods: got, text, cps: sources.length };
     this.lastCatchUp = res;
@@ -552,25 +562,21 @@ export class ControlPointSystem {
     return res;
   }
 
-  /** 運輸隊抵達：收益入庫 */
-  deliverConvoys(now = Date.now()) {
+  /** 舊版存檔裡還在路上的運輸隊：直接入庫（v15.7 起不再有運輸隊動畫） */
+  deliverConvoys() {
     const g = this.game;
-    const done = this.st.convoys.filter((c) => now >= c.endAt);
+    const done = this.st.convoys || [];
     if (!done.length) return;
-    this.st.convoys = this.st.convoys.filter((c) => now < c.endAt);
+    this.st.convoys = [];
     done.forEach((c) => {
       const got = g.grant(c.goods);
-      const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || { food: '食物', wood: '木材', fuel: '燃料' }[k] || k} ×${v}`).join('、');
-      g.log(`🚚 控制點 #${cpById(c.cp)?.no} 的運輸隊抵達：${text || '沒有東西'}`, 'loot');
+      g.log(`🚚 控制點 #${cpById(c.cp)?.no} 的物資送達：${goodsText(got) || '沒有東西'}`, 'loot');
     });
   }
 
-  /** 地圖顯示：運輸隊目前位置 */
-  convoyView(now = Date.now()) {
-    return this.st.convoys.map((c) => {
-      const p = Math.max(0, Math.min(1, (now - c.startAt) / Math.max(1, c.endAt - c.startAt)));
-      return { ...c, lat: c.from.lat + (c.to.lat - c.from.lat) * p, lon: c.from.lon + (c.to.lon - c.from.lon) * p, left: Math.max(0, c.endAt - now) };
-    });
+  /** 地圖顯示：v15.7 起沒有運輸隊 */
+  convoyView() {
+    return [];
   }
 
   // ================= 敵對：共同擁有者變成敵對時回到中立 =================
