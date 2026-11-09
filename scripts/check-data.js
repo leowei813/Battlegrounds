@@ -53,6 +53,8 @@ const { InfectedSystem: InfSys } = await import('../src/systems/InfectedSystem.j
 const { RallySystem: RallySys } = await import('../src/systems/RallySystem.js');
 const { tripProgress } = await import('../src/systems/ExplorationSystem.js');
 const realBlocking = InfSys.prototype.blocking;
+// v14：重度感染據點已停用；測試仍檢查原本的機制
+{ const { INFECTED: INF0 } = await import('../src/systems/InfectedSystem.js'); INF0.disabled = false; }
 InfSys.prototype.blocking = function blocking(...a) { return this.game.testInfBlock ? realBlocking.apply(this, a) : null; };
 let failures = 0;
 const assert = (cond, msg) => {
@@ -396,10 +398,10 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gv.state.resources.food = 1;
   gv.resources.apply(60 * 60000);
   assert(gv.state.starving && gv.resources.lastStarvingMs > 0, `人數多、食物見底時進入飢餓（淨收入 ${gv.resources.rates().net.food.toFixed(1)}/時）`);
-  // 人員上限：依領袖等級與據點等級提高，最多 10 人
+  // 人員上限：依領袖等級與據點等級提高，最多 12 人（v14）
   leader.level = 50;
   gv.state.bases[0].facilities = Object.fromEntries(Object.keys(gv.state.bases[0].facilities).map((k) => [k, { level: 10 }]));
-  assert(sv.housing() === 10, `人員上限最多 10 人（目前 ${sv.housing()}）`);
+  assert(sv.housing() === 12, `人員上限最多 12 人（目前 ${sv.housing()}）`);
   // 品級越高成長越多
   const a = gv.survivors.makeCandidate(30);
   const b = { ...a, id: 'x', rarity: 'legendary' };
@@ -411,7 +413,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 據點規模：巨型據點可建 20 棟建築
   const base = gv.shelter.primary();
   assert(gv.shelter.sizeInfo(base).total === 20 && base.defenses.length === 11, '最大（巨型）據點可建造 20 棟建築');
-  const small = gv.shelter.sizeInfo(gv.state.map.pois.find((p) => p.type === 'gasStation'));
+  const small = gv.shelter.sizeInfo({ id: 'ph', type: 'pharmacy', name: 'x', lat: 25.03, lon: 121.556 });
   assert(small.total < 20, `其他規模可建造數較少（${small.name} ${small.total} 棟）`);
   // 突破：第 1 波就被突破損失 55% 資源，建築可能降級或被拆毀，當晚不再來襲
   Object.keys(gv.state.resources).forEach((k) => { gv.state.resources[k] = 1000; });
@@ -454,14 +456,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const { ZONES, zoneIndexAt, zoneAt } = await import('../src/config/zones.js');
   const { stockOf } = await import('../src/systems/LootStock.js');
   const counts = ZONES.map(() => 0);
-  for (let i = 0; i < 20000; i += 1) counts[zoneIndexAt(25 + (i % 141) * 0.0011, 121 + Math.floor(i / 141) * 0.0011)] += 1;
+  for (let i = 0; i < 20000; i += 1) counts[zoneIndexAt(25.0204 + (i % 141) * 0.00016, 121.5557 + Math.floor(i / 141) * 0.0002)] += 1;
   assert(counts.every((c) => c > 0), `六種區域都會出現（${counts.join('/')}）`);
   assert(zoneIndexAt(25.01, 121.52) === zoneIndexAt(25.01, 121.52), '同一座標的區域固定（所有玩家相同）');
   // 找一棟安全區與一棟深淵區的建築比較物資
   const find = (idx) => {
     for (let i = 0; i < 40000; i += 1) {
-      const lat = 25 + (i % 200) * 0.0009;
-      const lon = 121 + Math.floor(i / 200) * 0.0009;
+      const lat = 25.0204 + (i % 200) * 0.0001;
+      const lon = 121.5557 + Math.floor(i / 200) * 0.00015;
       if (zoneIndexAt(lat, lon) === idx) return { lat, lon };
     }
     return null;
@@ -4228,17 +4230,17 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gd.state.map.pois = fillPois([], 25, 121);
   gd.shelter.establish(gd.state.map.pois.find((p) => gd.shelter.canEstablish(p).ok));
   const dorm = gd.shelter.primary().facilities.dormitory;
-  dorm.level = 7;
+  dorm.level = 9; // v14：宿舍 Lv9 住滿 12 人
   const cap7 = gd.survivors.dormCap(); const mul7 = gd.survivors.regenMul(); const food7 = gd.resources.rates().upkeep.food; const board7 = gd.survivors.boardSize();
   dorm.level = 15;
   const cap15 = gd.survivors.dormCap(); const mul15 = gd.survivors.regenMul(); const food15 = gd.resources.rates().upkeep.food; const board15 = gd.survivors.boardSize();
   dorm.level = 10;
   const board10 = gd.survivors.boardSize();
-  assert(cap7 === 10 && cap15 === 10 && fac.dormCap(3) === 6, `宿舍 Lv7 住滿 10 人，之後不再增加（${cap7}/${cap15}）`);
+  assert(cap7 === 12 && cap15 === 12 && fac.dormCap(3) === 6, `宿舍 Lv9 住滿 12 人，之後不再增加（${cap7}/${cap15}）`);
   assert(Math.abs(mul15 - mul7 - 0.48) < 1e-9, `宿舍 Lv15 休息回復 +48%（${mul7.toFixed(2)} → ${mul15.toFixed(2)}）`);
   assert(Math.abs(food15 / food7 - 0.84) < 0.001, `宿舍 Lv15 食物消耗 −16%（${food7.toFixed(2)} → ${food15.toFixed(2)}）`);
   assert(board10 === board7 + 1 && board15 === board7 + 2, `宿舍 Lv10、Lv15 招募候選人各 +1（${board7} → ${board10} → ${board15}）`);
-  assert(fac.FACILITIES.dormitory.effectText(12).includes('休息回復 +30%') && fac.FACILITIES.dormitory.effectText(5).includes('8 人'), '宿舍效果說明顯示對應等級的效果');
+  assert(fac.FACILITIES.dormitory.effectText(12).includes('休息回復 +24%') && fac.FACILITIES.dormitory.effectText(5).includes('8 人'), '宿舍效果說明顯示對應等級的效果');
 }
 
 // ---- 94. 探索遇到的倖存者：等級依自己隊伍的平均等級，不會因建築殭屍等級過高 ----
@@ -4491,7 +4493,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(vC.left && vC.left.done === 1 && vC.left.total === A.exploration.checkpointCount(T), `探索到一半離開：其他玩家看到剩下的檢核點（${vC.left?.done}/${vC.left?.total}）`);
   assert(!vC.occ.some((x) => x.n === 'B101' && x.l > Date.now() + 60000), '離開後移除自己的佔用紀錄');
   // C 接著探索：從第 2 個檢核點繼續，搜索時間較短
-  const fullMin = C.exploration.searchMinutes({ ...T, id: 'fresh-copy' });
+  // 同規模的另一棟（v14：規模依區域與建築 ID 決定）
+  const { baseSizeOf: bso } = await import('../src/config/civilization.js');
+  let copyId = 'fresh-copy';
+  for (let k = 0; k < 200 && bso({ ...T, id: copyId }) !== bso(T); k += 1) copyId = `fresh-copy-${k}`;
+  const fullMin = C.exploration.searchMinutes({ ...T, id: copyId });
   assert(C.exploration.searchMinutes(T) < fullMin, '接續探索只需剩餘的搜索時間');
   const rc = C.exploration.start(T.id, ['leader'], 1, false, Date.now());
   assert(rc.ok, `C 繼續探索（${rc.reason || ''}）`);
@@ -5967,11 +5973,19 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const r = W.randomInWorld();
     if (!W.inWorld(r.lat, r.lon)) { assert(false, '隨機起點在範圍內'); break; }
   }
-  Z.ABYSS_SPOTS.forEach((a) => {
-    assert(Z.zoneIndexAt(a.lat, a.lon) === 5 && Z.zoneAt(a.lat, a.lon).id === 'abyss', `指定的深淵區：${a.name}`);
-    const near = Z.zoneIndexAt(a.lat + (a.r + 60) / 111320, a.lon);
-    assert(near >= 4, `深淵區外圍一圈為致死區以上（${a.name}：${near}）`);
-  });
+  // v14：中間深淵、往兩側擴散；左側安全區是玩家據點區，右側是勢力領地
+  {
+    const B = W.WORLD_BOUNDS;
+    const mid = (B.n + B.s) / 2;
+    const at = (x) => Z.zoneIndexAt(mid, B.w + (B.e - B.w) * x);
+    assert(at(0.5) === 5 && at(0.03) === 0 && at(0.97) === 0, `中間是深淵區、兩側是安全區（${at(0.03)}/${at(0.5)}/${at(0.97)}）`);
+    assert(Z.inPlayerSafe(mid, B.w + (B.e - B.w) * 0.03) && !Z.inPlayerSafe(mid, B.w + (B.e - B.w) * 0.97) && Z.inNpcHome(mid, B.w + (B.e - B.w) * 0.95), '左側安全區是玩家據點區、右側是勢力領地');
+    const { baseSizeOf: bso } = await import('../src/config/civilization.js');
+    const wp2 = generateWorldPois();
+    const hugeLow = wp2.filter((p) => Z.zoneIndexAt(p.lat, p.lon) <= 3 && bso(p) === 'huge').length;
+    const hugeAbyss = wp2.filter((p) => Z.zoneIndexAt(p.lat, p.lon) === 5 && bso(p) === 'huge').length;
+    assert(hugeLow === 0 && hugeAbyss > 50, `巨型建築只在致死區與深淵區（危險區以下 ${hugeLow} 棟、深淵區 ${hugeAbyss} 棟）`);
+  }
   // 範圍外的避難所：整座搬進範圍內，設施保留
   const gm = Game.newGame({ playerName: 'M13', classId: 'warrior', lat: 24.1, lon: 120.6 });
   gm.state.map.pois = fillPoisAt([], 24.1, 120.6);

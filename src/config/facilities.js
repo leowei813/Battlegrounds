@@ -160,10 +160,10 @@ export const cellarMatCap = (lv) => (lv > 0 ? 4 * lv + Math.floor((lv * lv) / 3)
 /** 宿舍可住人數（含領袖）：沒有宿舍最多 3 人，每升一級 +1 */
 export const dormCap = (lv) => Math.min(DORM_FULL_CAP, 3 + Math.max(0, lv));
 /** 宿舍住滿的等級：之後升級改為提升居住品質 */
-export const DORM_FULL_CAP = 10;
+export const DORM_FULL_CAP = 12; // v14：最多 12 人（宿舍 Lv9 住滿）
 export const DORM_FULL_LV = DORM_FULL_CAP - 3;
-/** 宿舍住滿之後（Lv8～15）的居住品質：休息回復加快、食物消耗減少、Lv10／Lv15 招募候選人 +1 */
-export const DORM_COMFORT = { regenPerLv: 0.06, foodPerLv: 0.02, boardLevels: [10, 15] };
+/** 宿舍住滿之後（Lv10～15）的居住品質：休息回復加快、食物消耗減少、Lv10／Lv15 招募候選人 +1（滿級效果與 v13 相同） */
+export const DORM_COMFORT = { regenPerLv: 0.08, foodPerLv: 0.16 / 6, boardLevels: [10, 15] };
 const comfortLv = (lv) => Math.max(0, lv - DORM_FULL_LV);
 export const dormRegenBonus = (lv) => comfortLv(lv) * DORM_COMFORT.regenPerLv;
 export const dormFoodReduce = (lv) => comfortLv(lv) * DORM_COMFORT.foodPerLv;
