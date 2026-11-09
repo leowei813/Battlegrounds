@@ -431,11 +431,11 @@ export class MapService {
         const phase = this.game.exploration.progress(ex, now)?.phase;
         const ll = (pts) => pts.map((q) => [q.lat, q.lon]);
         const route = (latlngs, style) => L.polyline(latlngs, { pane: 'routePane', renderer: this.routeRenderer, ...style }).addTo(this.layers.routes);
-        const YELLOW = { color: '#ffd54f', weight: 3, dashArray: '4 8', className: 'route-line' };
-        const HOME = { color: '#ffab40', weight: 2.5, opacity: 0.8, dashArray: '8 6', interactive: false };
+        const YELLOW = { color: '#ffd54f', weight: 3, opacity: 0.45, dashArray: '4 8', className: 'route-line' };
+        const HOME = { color: '#ffab40', weight: 2.5, opacity: 0.35, dashArray: '8 6', interactive: false };
         // 連續探索：已經走過的路線（避難所 → 搜索過的地點）以灰線保留
         if (Array.isArray(ex.trail) && ex.trail.length >= 2) {
-          route(ll(ex.trail), { color: '#90a4ae', weight: 2, opacity: 0.3, interactive: false });
+          route(ll(ex.trail), { color: '#90a4ae', weight: 2, opacity: 0.2, interactive: false });
         }
         const outPath = ex.path ? ll(ex.path) : [[from.lat, from.lon], [p.lat, p.lon]];
         // 連續探索的回程是另一條路線（從這個地點直接回避難所）
@@ -462,7 +462,7 @@ export class MapService {
           const seg = this.plannedRoute(pts[i], pts[i + 1]);
           (i ? seg.slice(1) : seg).forEach((q) => line.push([q.lat, q.lon]));
         }
-        route(line, { color: '#8fc3ff', weight: 3, opacity: 0.9, dashArray: '2 7', interactive: false });
+        route(line, { color: '#8fc3ff', weight: 3, opacity: 0.5, dashArray: '2 7', interactive: false });
         // 連續探索：預計回家路線從佇列最後一個地點畫回避難所
         if (chainOn) route(ll(this.plannedRoute(queued[queued.length - 1], sh)), HOME);
         queued.forEach((q, i) => {
