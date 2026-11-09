@@ -5420,6 +5420,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     gd2.dungeon.pushEntry = () => {};
     gd2.dungeon.lock(rec2, T.lock);
     assert(!gexp.recalled && gd2.state.expeditions.includes(gexp) && rec2.excluded === 'guard', '副本鎖定時不叫回駐防中的倖存者（這次副本不能參加）');
+    const sv3 = gd2.state.survivors.find((x) => !x.isLeader) || (() => { const x = { ...sv2, id: 'svx', isLeader: false }; gd2.state.survivors.push(x); return x; })();
+    gexp.memberIds = [sv3.id];
+    gd2.shelter.establish(gd2.state.map.pois.find((p) => gd2.shelter.canEstablish(p).ok) || { id: 'p', lat: 25.03, lon: 121.56, type: 'residential', name: 'x' });
+    const cs = gd2.dungeon.canSignup('lab', sv3.id, T.lock - 3600000);
+    assert(!cs.ok && /駐防/.test(cs.reason || ''), `駐防中的倖存者報名副本時就擋下（${cs.reason || ''}）`);
   }
   // 集結、開打、結算
   for (const t of [T.depart + 1000, T.start + 1000, T.start + 60 * 60e3]) {
