@@ -519,7 +519,7 @@ export class ControlPointSystem {
     return {
       id: uid('rp'), poiName: `🚩 控制點 #${cp?.no ?? '?'}`, poiType: 'military', at: exp.endAt,
       events: [...(exp.travelEvents || []), ...r.events], resources: {}, items: [], blueprints: [],
-      kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: !!r.victory, members: members.map((m) => m.name),
+      kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: !!r.victory, members: members.map((m) => m.name), cp: true,
     };
   }
 
@@ -530,7 +530,7 @@ export class ControlPointSystem {
     return {
       id: uid('rp'), poiName: `🛡️ 駐防控制點 #${cp?.no ?? '?'}`, poiType: 'military', at: exp.endAt,
       events: [...(exp.travelEvents || []), exp.defeated ? '💀 駐防隊被擊退' : exp.recalled ? '🏠 駐防隊撤回避難所' : '🛡️ 駐防結束，回到避難所'], resources: {}, items: [], blueprints: [],
-      kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: !exp.defeated && !exp.recalled, members: members.map((m) => m.name),
+      kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: !exp.defeated && !exp.recalled, members: members.map((m) => m.name), cp: true,
     };
   }
 
@@ -935,6 +935,8 @@ export class ControlPointSystem {
       const text = !owner && !guard ? this.lostReason(mine.find((e) => !this.guardFought(e, ft))) : msg;
       g.log(text, ft.win ? 'danger' : 'success');
       g.toast?.(text, ft.win ? 'danger' : 'success');
+      // v15.9：控制點交戰戰報另外記在「消息 → 🚩 控制點」
+      g.state.cpLog = [{ id: `cpf:${cp.id}:${ft.at}`, at: ft.at, no: cp.no, win: !!ft.win, text }, ...(g.state.cpLog || [])].slice(0, 30);
       // v15.8：交戰經過也寫進駐防隊的探索報告（回到避難所時看得到）
       mine.forEach((e) => {
         const line = ft.win ? this.lostReason(e) : this.guardFought(e, ft) ? msg : null;

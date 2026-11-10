@@ -1730,3 +1730,6 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 .map-fps-row + .setting-note { margin-left: 0; }
 .map-fps-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 2px; }
 .map-fps-row .chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+
+/* v15.9：消息「🚩 控制點」分頁的交戰戰報卡片 */
+.report .cp-fight { margin: 6px 0 0; line-height: 1.5; }

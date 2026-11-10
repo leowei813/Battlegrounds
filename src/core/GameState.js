@@ -123,6 +123,7 @@ export function createInitialState({ playerName, classId, lat, lon }) {
     expeditions: [],
     reports: [],
     defenseLog: [], // 據點遭襲紀錄（屍潮、NPC、其他玩家）
+    cpLog: [], // v15.9：控制點交戰戰報（勢力或玩家攻打自己佔領／駐防的控制點）
     vehicles: [], // 車庫（見 VehicleSystem）
     rng: newSeeds(), // 製作、招募、探索、戰鬥的隨機種子（重新讀檔結果不變）
     npcs: { list: [], nextSpawnAt: 0 }, // NPC 據點（見 NpcSystem）

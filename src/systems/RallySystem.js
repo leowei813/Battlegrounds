@@ -724,6 +724,7 @@ export class RallySystem {
       id: uid('rp'), poiName: `🚩 集結：${exp.rallyTarget?.name || ''}`, poiType: 'military', at: exp.endAt,
       events: [...(exp.travelEvents || [])], resources: {}, items: [], blueprints: [],
       kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: !!exp.rallyVictory, members: members.map((m) => m.name),
+      ...(exp.rallyTarget?.kind === 'cp' ? { cp: true } : {}),
     };
     (exp.rallyDetail || []).forEach((line) => report.events.push(String(line).slice(0, 200)));
     (r.units || []).forEach((u) => {
