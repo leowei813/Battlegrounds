@@ -6,7 +6,7 @@ import { inNpcHome, ZONES } from '../config/zones.js';
 import { xpToNext } from '../config/survivors.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { RAID_TRAVEL } from '../config/constants.js';
-import { NPC_CONFIG } from '../config/npcs.js';
+import { NPC_CONFIG, npcQuietAt, npcQuietSpan } from '../config/npcs.js';
 import { HQ_AMBUSH, hqFactionOf } from './ExplorationSystem.js';
 import {
   uid, haversine, chance, randInt, weightedPick, formatDuration, unitPower,
@@ -683,6 +683,8 @@ export class ControlPointSystem {
       const own = this.factionCps(f);
       if (own.length >= FACTION_SLOW_AT && day % 2) continue; // 控制點多的勢力隔天才進攻
       if ((this.lastTurn || {})[f] === day) continue;
+      // v15.8：現實凌晨（台灣時間 00:00～08:00）勢力不進攻，這一天直接略過（所有玩家依同一規則判斷）
+      if (npcQuietAt(at)) { this.lastTurn = { ...(this.lastTurn || {}), [f]: day }; continue; }
       this.busy.add(`turn:${f}`);
       try {
         // eslint-disable-next-line no-await-in-loop
@@ -691,6 +693,9 @@ export class ControlPointSystem {
         if (!lock.ok) continue;
         const target = this.pickTarget(f, at);
         if (!target) continue;
+        // 抵達時間落在凌晨休息時段的也不出發
+        const to = this.markerSpot(target);
+        if (npcQuietSpan(at, at + ControlPointSystem.marchMs(this.marchFrom(f, to), to))) continue;
         // v15.4：部隊從勢力據點（沒有時從大本營）出發，移動時間比照攻打玩家避難所，讓玩家有時間反應
         // eslint-disable-next-line no-await-in-loop
         await this.launchMarch(f, target, at);

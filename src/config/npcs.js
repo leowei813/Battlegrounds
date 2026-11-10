@@ -72,3 +72,18 @@ export const NPC_NAMES = NPC_NAME_PREFIX.flatMap((p) => NPC_NAME_SUFFIX.map((x) 
  * @param {number} civ 文明度
  */
 export const npcAggression = (civ) => Math.min(1, Math.max(0.1, civ / 200));
+
+/** v15.8：現實凌晨（台灣時間 00:00～08:00）NPC 停止掠奪玩家據點、勢力停止進攻控制點；抵達時間落在這段時間的部隊也不出發 */
+export const NPC_QUIET = { from: 0, to: 8, tzHours: 8 };
+/** 某個時刻是否在 NPC 休息時段（以台灣時間計） */
+export const npcQuietAt = (t) => {
+  const h = new Date(t + NPC_QUIET.tzHours * 3600000).getUTCHours();
+  return h >= NPC_QUIET.from && h < NPC_QUIET.to;
+};
+/** 從 start 出發、end 抵達的行動是否碰到休息時段（出發或抵達在時段內，或整段跨過時段） */
+export const npcQuietSpan = (start, end) => {
+  if (npcQuietAt(start) || npcQuietAt(end)) return true;
+  // 長途跨過整段休息時段：檢查中間每小時
+  for (let t = start + 3600000; t < end; t += 3600000) if (npcQuietAt(t)) return true;
+  return false;
+};

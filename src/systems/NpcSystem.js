@@ -1,7 +1,7 @@
 import { unitPower } from '../utils/math.js';
 import { DUNGEONS, DG_CLEAR_M } from '../config/dungeons.js';
 import { AssistSystem } from './AssistSystem.js';
-import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL } from '../config/npcs.js';
+import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL, npcQuietSpan } from '../config/npcs.js';
 import { xpToNext } from '../config/survivors.js';
 import {
   RESOURCE_KEYS, RAID_TRAVEL,
@@ -784,6 +784,8 @@ export class NpcSystem {
     const t = this.tripTimes(n, base, 0, base.id);
     // 掠奪避難所的移動時間較長，讓玩家有時間準備防守
     t.travelMs = Math.round(Math.max(t.travelMs * RAID_TRAVEL.npcMul, RAID_TRAVEL.minMin * 60000));
+    // v15.8：現實凌晨（台灣時間 00:00～08:00）不掠奪，抵達時間落在這段時間的也不出發
+    if (npcQuietSpan(now, now + t.travelMs)) return;
     // 抵達時若已入夜（屍潮），NPC 會放棄這次掠奪
     n.trip = {
       kind: 'raid', baseId: base.id, target: base.name, from: { lat: n.lat, lon: n.lon }, to: { lat: base.lat, lon: base.lon },

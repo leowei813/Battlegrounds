@@ -26,6 +26,9 @@ import {
 const { TimeSystem: TimeSysT } = await import('../src/systems/TimeSystem.js');
 const SWITCH_REAL = TimeSysT.switchAt;
 TimeSysT.switchAt = WORLD_EPOCH_MS;
+// 測試在任何時刻都要能跑：先關閉凌晨休息時段，專門的測試再打開
+const { NPC_QUIET: NQ, npcQuietAt: NQAt, npcQuietSpan: NQSpan } = await import('../src/config/npcs.js');
+const NQ0 = { ...NQ }; NQ.to = NQ.from;
 
 /** 把遊戲時鐘調到指定時刻（建檔時間往前推） */
 const setHour = (game, hour) => {
@@ -6817,6 +6820,44 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const sg = gw.siege.of(gw.state.bases[0].id);
   const lulls = Array.from({ length: 20 }, () => { sg.startWave(); return sg.lull; });
   assert(lulls.every((x) => x >= 12 && x <= 18), `屍潮每波間隔約 15 秒（${Math.min(...lulls).toFixed(1)}～${Math.max(...lulls).toFixed(1)}）`);
+}
+
+// ---- v15.8：現實凌晨（台灣時間 00:00～08:00）NPC 不掠奪、勢力不進攻 ----
+{
+  Object.assign(NQ, NQ0);
+  const tw = (h, m = 0) => Date.UTC(2026, 10, 10, h - 8, m); // 台灣時間 11/10 h:m
+  assert(NQAt(tw(0)) && NQAt(tw(7, 59)) && !NQAt(tw(8)) && !NQAt(tw(23, 59)) && !NQAt(tw(12)), '休息時段為台灣時間 00:00～08:00');
+  assert(NQSpan(tw(23, 30), tw(0, 30)) && NQSpan(tw(7, 30), tw(8, 30)) && !NQSpan(tw(8), tw(9)) && NQSpan(tw(23), tw(32)), '抵達時間或途中落在休息時段也不出發');
+  const gz = Game.newGame({ playerName: 'Z', classId: 'warrior', lat: 25, lon: 121 });
+  gz.state.map.pois = fillPois([], 25, 121);
+  gz.shelter.establish(gz.state.map.pois.find((p) => gz.shelter.canEstablish(p).ok));
+  gz.time.phase = () => ({ zombies: false });
+  gz.npcs.allowConcurrentRaid = () => true;
+  gz.npcs.raidLevelCap = () => 99;
+  const nz = gz.npcs.spawnAt(gz.state.map.pois.filter((p) => !gz.shelter.baseAtPoi(p.id))[1], 'q', Date.now(), true);
+  {
+    nz.faction = null; nz.trip = null; gz.npcs.launchRaid(nz, tw(3));
+    const night = nz.trip;
+    nz.trip = null; gz.npcs.launchRaid(nz, tw(12));
+    assert(!night && nz.trip?.kind === 'raid', 'NPC 凌晨不掠奪、白天照常');
+    nz.trip = null; gz.npcs.launchRaid(nz, tw(7, 58));
+    assert(!nz.trip, '抵達時間會落在凌晨的掠奪不出發');
+  }
+  // 勢力進攻：凌晨的進攻時間直接略過
+  const turns = [];
+  gz.state.map.source = 'generated';
+  gz.shared = { update: async () => ({ ok: true }), get: () => null, list: () => [] };
+  gz.cp.turnTime = () => tw(3);
+  gz.cp.pickTarget = () => null;
+  gz.cp.launchMarch = async (f) => { turns.push(f); };
+  const picked = [];
+  gz.cp.pickTarget = (f) => { picked.push(f); return null; };
+  await gz.cp.npcTurns(tw(3, 5));
+  const nightPicked = picked.length;
+  gz.cp.lastTurn = {}; gz.cp.turnTime = () => tw(12);
+  await gz.cp.npcTurns(tw(12, 5));
+  assert(nightPicked === 0 && picked.length > 0, `勢力凌晨不進攻、白天照常（凌晨 ${nightPicked}、白天 ${picked.length}）`);
+  NQ.to = NQ.from;
 }
 
 if (failures) {
