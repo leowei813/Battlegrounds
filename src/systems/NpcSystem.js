@@ -1,7 +1,7 @@
 import { unitPower } from '../utils/math.js';
 import { DUNGEONS, DG_CLEAR_M } from '../config/dungeons.js';
 import { AssistSystem } from './AssistSystem.js';
-import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL, npcQuietSpan, NPC_DAY_SLOW } from '../config/npcs.js';
+import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL, npcQuietSpan, NPC_DAY_SLOW, RALLY_XP } from '../config/npcs.js';
 import { xpToNext } from '../config/survivors.js';
 import {
   RESOURCE_KEYS, RAID_TRAVEL,
@@ -1039,7 +1039,7 @@ export class NpcSystem {
     const attackers = members.map((m) => ({ sv: m, maxHp: Math.max(1, g.survivors.hpOf(m)), atk: g.survivors.stats(m).atk }));
     const as = g.combat.wallAssault(attackers, df.wall, df.dps);
     attackers.forEach((a) => {
-      if (!as.alive.includes(a)) g.survivors.becomeSevere(a.sv, '在攻打 NPC 據點時被防禦火力擊倒', exp.endAt);
+      if (!as.alive.includes(a)) g.survivors.becomeSevere(a.sv, '在攻打 NPC 據點時被防禦火力擊倒', exp.endAt, RALLY_XP.downPct);
       else g.survivors.setHp(a.sv, a.hp);
     });
     report.events.push(`🧱 攻擊圍牆 ${as.sec} 秒（耐久 ${df.wall}）${as.killed ? `，${as.killed} 名隊員被防禦火力擊倒` : ''}`);
@@ -1051,9 +1051,10 @@ export class NpcSystem {
     }
     // 2. 破牆後與守軍交戰
     const result = g.combat.simulate(fighters, enemies, { title: `⚔️ 攻打 NPC「${n.name}」（Lv${n.level}）` });
-    g.combat.applyOutcome(fighters, result, exp.endAt);
+    g.combat.applyOutcome(fighters, result, exp.endAt, { attackXp: RALLY_XP });
     report.kills += result.kills.length;
     report.xp += result.xp;
+    if (result.winBonus?.length) report.events.push(`🏆 勝利經驗：${result.winBonus.join('、')}`);
     if (!result.victory) {
       g.state.stats.battlesLost += 1;
       this.assaultWound(n, result.kills.length, exp.endAt);

@@ -6,10 +6,9 @@ import { inNpcHome, ZONES } from '../config/zones.js';
 import { xpToNext } from '../config/survivors.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { RAID_TRAVEL } from '../config/constants.js';
-import { NPC_CONFIG, npcQuietAt, npcQuietSpan, NPC_DAY_SLOW } from '../config/npcs.js';
-import { HQ_AMBUSH, hqFactionOf } from './ExplorationSystem.js';
+import { NPC_CONFIG, npcQuietAt, npcQuietSpan, NPC_DAY_SLOW, RALLY_XP } from '../config/npcs.js';
 import {
-  uid, haversine, chance, randInt, weightedPick, formatDuration, unitPower,
+  uid, haversine, randInt, weightedPick, formatDuration, unitPower,
 } from '../utils/math.js';
 import { AssistSystem } from './AssistSystem.js';
 import { balanceMultipliers } from './MaterialBalance.js';
@@ -472,11 +471,12 @@ export class ControlPointSystem {
     const foes = this.defenders(id, at);
     const before = foes.length;
     const result = g.combat.simulate(members, foes, { title: `🚩 攻打控制點 #${cp.no}` });
-    g.combat.applyOutcome(members, result, at);
+    g.combat.applyOutcome(members, result, at, { attackXp: RALLY_XP });
     const me = this.myId();
     const name = g.state.player.name || '倖存者';
     const killed = result.foes.filter((f) => f.down).length;
     const events = [`⚔️ 控制點 #${cp.no}：守軍 ${before} 人，擊倒 ${killed} 人`];
+    if (result.winBonus?.length) events.push(`🏆 勝利經驗：${result.winBonus.join('、')}`);
     // v15.8：玩家攻打有人佔領的控制點也留下交戰紀錄，佔領者與駐防者會收到戰報、駐防隊報告寫出原因
     const fightOf = (x, win) => {
       if (!(x?.owners || []).length) return x?.fight;
@@ -849,40 +849,16 @@ export class ControlPointSystem {
   }
 
   /**
-   * v15.4：探索點在鄰接大本營的控制點：隊伍開始搜索時擲一次（HQ_AMBUSH.chance），被盯上時大本營派出部隊，
+   * （v15.4～v15.8：探索點在鄰接大本營的控制點時，大本營可能派部隊襲擊；v15.8.1 移除）
    * 移動時間比照攻打玩家避難所；部隊抵達時隊伍還在那裡搜索才交戰（先撤回就能躲開）。
    */
-  hqAmbushes(now = Date.now()) {
-    const g = this.game;
-    if (g.state.map?.source !== 'generated') return;
-    g.state.expeditions.filter((e) => e.kind === 'explore' && !e.recalled && !e.defeated).forEach((e) => {
-      const arrive = e.startAt + (e.travelMs || 0);
-      const searchEnd = arrive + (e.searchMs || 0);
-      const poi = g.exploration.poi(e.poiId);
-      if (!e.hqRoll && now >= arrive && now < searchEnd) {
-        e.hqRoll = true;
-        const f = hqFactionOf(poi);
-        if (f && chance(HQ_AMBUSH.chance)) {
-          const from = factionHq(f);
-          const hitAt = now + ControlPointSystem.marchMs(from, poi);
-          e.hqAmbush = { f, from, to: { lat: poi.lat, lon: poi.lon }, at: now, hitAt };
-          const min = Math.max(1, Math.round((hitAt - now) / 60000));
-          const msg = `🏯 ${FACTIONS[f].name}大本營派出部隊前往「${poi.name}」（約 ${min} 分鐘後抵達），可以先召回隊伍`;
-          e.travelEvents = [...(e.travelEvents || []), msg];
-          g.log(msg, 'danger');
-          g.toast?.(msg, 'danger');
-        }
-      }
-      const a = e.hqAmbush;
-      if (a && !a.done && now >= a.hitAt) {
-        a.done = true;
-        // 部隊抵達時隊伍已經搜完離開：撲空
-        if (a.hitAt >= searchEnd) return;
-        g.exploration.runCheckpoints(e, a.hitAt);
-        g.exploration.hqAmbushFight(e, poi, a);
-      }
+  hqAmbushes() {
+    // v15.8.1：移除大本營伏擊探索隊：不再派出部隊；舊版本已派出、還沒抵達的部隊直接取消
+    this.game.state.expeditions.forEach((e) => {
+      if (e.hqAmbush && !e.hqAmbush.done) e.hqAmbush = null;
     });
   }
+
 
   /** 移動中的部隊（地圖顯示：控制點進攻部隊、襲擊探索點的大本營部隊） */
   marchView(now = Date.now()) {

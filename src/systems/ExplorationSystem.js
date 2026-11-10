@@ -302,13 +302,28 @@ export class ExplorationSystem {
     const remaining = p ? p.remainingMs : Math.max(0, exp.endAt - now);
     const phase = exp.defeated || exp.recalled ? 'returning' : p?.phase || 'searching';
     const queue = (exp.queue || []).map((id) => this.poi(id)).filter(Boolean);
-    // 返程中、召回、或沒有佇列：剩餘時間就是到家的時間
-    if (phase === 'returning' || !queue.length || exp.kind !== 'explore') {
-      return { phase, currentMs: remaining, stops: [], backMs: phase === 'returning' ? remaining : 0, totalMs: remaining, endAt: now + remaining, queueOnHold: phase === 'returning' && queue.length > 0 };
-    }
-    const currentMs = Math.max(0, exp.startAt + (exp.travelMs || 0) + (exp.searchMs || 0) - now);
     const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
     const vehicles = (exp.vehicleIds || []).map((id) => this.game.vehicles.get(id)).filter(Boolean);
+    // v15.8.1：背包滿了先回家、回家後接著跑佇列：總計＝返程＋之後每一站（從避難所出發）＋最後回家
+    if (phase === 'returning' && queue.length && exp.kind === 'explore' && !exp.recalled && !exp.defeated) {
+      let from = null;
+      let t = now + remaining;
+      let backMs = 0;
+      const stops = queue.map((poi) => {
+        const pl = this.plan(poi, members, this.searchMinutes(poi), t, vehicles, from ? { from: { lat: from.lat, lon: from.lon } } : {});
+        t += pl.travelMs + pl.searchMs;
+        backMs = pl.backMs ?? pl.travelMs;
+        from = poi;
+        return { poi, travelMs: pl.travelMs, searchMs: pl.searchMs, totalMs: pl.travelMs + pl.searchMs };
+      });
+      const totalMs = remaining + stops.reduce((sum, x) => sum + x.totalMs, 0) + backMs;
+      return { phase, currentMs: remaining, stops: [], holdStops: stops, backMs, totalMs, endAt: now + totalMs, queueOnHold: true };
+    }
+    // 返程中、召回、或沒有佇列：剩餘時間就是到家的時間
+    if (phase === 'returning' || !queue.length || exp.kind !== 'explore') {
+      return { phase, currentMs: remaining, stops: [], backMs: phase === 'returning' ? remaining : 0, totalMs: remaining, endAt: now + remaining, queueOnHold: false };
+    }
+    const currentMs = Math.max(0, exp.startAt + (exp.travelMs || 0) + (exp.searchMs || 0) - now);
     let from = this.poi(exp.poiId);
     let t = now + currentMs;
     let backMs = 0;
