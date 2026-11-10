@@ -578,6 +578,7 @@ export class DungeonSystem {
     Object.entries(this.state.sign).forEach(([id, rec]) => {
       if (rec.settled) {
         if (now - rec.day0 > 3 * DAY_MS) delete this.state.sign[id];
+        else this.recover(rec, now);
         return;
       }
       const t = DungeonSystem.times(rec.day0);
@@ -654,19 +655,38 @@ export class DungeonSystem {
   /** 開打後：等結果算出來，結束時結算 */
   progress(rec, now) {
     const g = this.game;
-    if (!g.shared.listedAt?.dg && g.shared.online && now - rec.day0 < DAY_MS) return; // 還沒同步到報名資料
+    // v15.9.1：還沒連線、還沒同步到報名資料或還沒有玩家身分時先等（以前剛打開遊戲還沒連線就結算，會誤判「沒有分配到隊伍」）
+    if (now - rec.day0 < 2 * DAY_MS && (!g.shared.online || !g.shared.listedAt?.dg || this.myId() === 'local')) return;
     const mine = this.myRun(rec);
     if (!mine) {
       // 共用資料已經不在（例如很久沒上線）：直接結束
-      if (now - rec.day0 > 2 * DAY_MS || !g.shared.online) this.settle(rec, null, now);
+      if (now - rec.day0 > 2 * DAY_MS) this.settle(rec, null, now);
       return;
     }
+    // 找不到自己（資料可能還沒更新）：等到當天副本全部結束才判定沒有分配到隊伍
+    if (mine.missing && now < DungeonSystem.times(rec.day0).end && now - rec.day0 < 2 * DAY_MS) return;
     if (mine.cancelled || mine.out || mine.missing) {
       this.settle(rec, mine, now);
       return;
     }
     rec.group = mine.run.group;
     if (now >= mine.run.endAt) this.settle(rec, mine, now);
+  }
+
+  /**
+   * v15.9.1：先前誤判「沒有分配到隊伍」而提早結算的報名：找到自己的團、該團打完時補發獎勵與正式報告。
+   * 舊版本結算的紀錄沒有標記，從「沒有分配到隊伍」的副本報告判斷（只補一次）。
+   */
+  recover(rec, now) {
+    const g = this.game;
+    if (rec.paid || rec.cancelled || rec.excluded) return;
+    const wrong = rec.noRun || (g.state.reports || []).some((r) => r.kind === 'dungeon' && r.dg === rec.dg && r.day === rec.day && r.status === 'out' && r.why === '沒有分配到隊伍');
+    if (!wrong || !g.shared.online || !g.shared.listedAt?.dg || this.myId() === 'local') return;
+    const mine = this.myRun(rec);
+    if (!mine?.run || now < mine.run.endAt) return;
+    rec.noRun = true;
+    this.settle(rec, mine, now);
+    g.log(`🕳️ 「${DUNGEONS[rec.dg].name}」補發副本結果（先前誤判為沒有分配到隊伍）`, 'info');
   }
 
   /** 結算：發放獎勵、倖存者回家、寫副本報告 */
@@ -685,6 +705,7 @@ export class DungeonSystem {
     };
     if (!mine?.run) {
       release();
+      if (!mine?.cancelled && !mine?.out) rec.noRun = true; // 之後找到自己的團時補發（v15.9.1）
       const why = mine?.cancelled ? `報名人數不足（至少 ${DG_TEAM.min} 人）` : mine?.out || rec.excluded === 'nomed' ? '鎖定時重傷且藥品不足，無法出擊' : '沒有分配到隊伍';
       this.pushReport({
         kind: 'dungeon', dg: rec.dg, day: rec.day, status: mine?.cancelled ? 'cancel' : 'out', why, svName: rec.svName, at: now,
@@ -694,6 +715,14 @@ export class DungeonSystem {
       return;
     }
     const { run, i } = mine;
+    rec.paid = true;
+    const recovering = !!rec.noRun;
+    // 先前誤判「沒有分配到隊伍」的報告換成正式報告
+    if (rec.noRun) {
+      const st = g.state;
+      st.reports = (st.reports || []).filter((r) => !(r.kind === 'dungeon' && r.dg === rec.dg && r.day === rec.day && r.status === 'out'));
+      delete rec.noRun;
+    }
     const rw = run.rewards[i];
     const fin = run.final[i];
     // 經驗、金錢、材料、核心材料、圖紙
@@ -702,7 +731,8 @@ export class DungeonSystem {
       release();
       // 副本中重傷不扣經驗
       g.survivors.gainXp(sv, rw.xp);
-      if (fin.sev) {
+      // 補發時倖存者早就回到避難所（可能已經外出）：只補經驗與獎勵，不改生命
+      if (recovering) { /* 不改生命 */ } else if (fin.sev) {
         sv.severe = true;
         g.survivors.setHp(sv, 0);
       } else g.survivors.setHp(sv, Math.max(1, Math.round(g.survivors.maxHp(sv) * fin.hp)));

@@ -5541,8 +5541,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const run = a.g.dungeon.results('lab', day).runs[0];
   assert(run.floors.length === run.endFloor && run.floors.every((f) => f.obs.length >= 1 && f.obs.length <= 3), '每層 1～3 個障礙並記錄每一層');
   assert(run.floors.every((f) => f.waves.length >= 1) && run.mvp && run.stat.length === 5, '每層戰報、每人輸出／承傷／治療／障礙與 MVP');
+  {
+    // v15.9.1：開打後剛打開遊戲、還沒連線：不會誤判「沒有分配到隊伍」而提早結算
+    const q = ps[1].g;
+    const be = q.shared.backend; const pv = q.world.provider;
+    q.shared.backend = null; q.world.provider = undefined;
+    q.dungeon.update(T.start + 61 * 60e3);
+    assert(!q.dungeon.record('lab', T.start).settled && ps[1].sv.dungeon && !q.state.reports.some((r) => r.kind === 'dungeon' && r.status === 'out'), '還沒連線時先等，不會誤判沒有分配到隊伍');
+    q.shared.backend = be; q.world.provider = pv;
+    // 舊版本已經誤判結算的：該團打完時補發獎勵、換成正式報告
+    const w = ps[3].g;
+    w.dungeon.settle(w.dungeon.record('lab', T.start), null, T.start + 62 * 60e3);
+    const rw = w.dungeon.record('lab', T.start);
+    delete rw.noRun; // 舊版本沒有這個標記：從報告判斷
+    assert(w.state.reports.some((r) => r.kind === 'dungeon' && r.why === '沒有分配到隊伍') && !ps[3].sv.dungeon, '（模擬舊版本）誤判沒有分配到隊伍');
+  }
   const coins0 = ps.map((p) => p.g.state.player.coins);
   for (const p of ps) { await p.g.shared.list('dg', 5); p.g.dungeon.update(T.end + 1000); }
+  assert(!ps[3].g.state.reports.some((r) => r.kind === 'dungeon' && r.status === 'out') && ps[3].g.state.player.coins > coins0[3] && ps[3].g.state.log.some((l) => /補發副本結果/.test(l.msg)), '誤判的副本在該團打完時補發獎勵與正式報告');
   assert(ps.every((p) => p.g.dungeon.record('lab', T.start).settled && p.g.state.reports[0]?.kind === 'dungeon'), '結束時每位參加者各自結算並收到副本報告');
   assert(ps.every((p, i) => p.g.state.player.coins > coins0[i] && !p.sv.dungeon && (p.sv.status === 'idle' || p.g.state.expeditions.some((e) => e.memberIds.includes(p.sv.id)))), '結算後拿到金錢、倖存者回家');
   const coins1 = ps.map((p) => p.g.state.player.coins);
@@ -6577,6 +6593,32 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(r2.exp.recalled && !r2.exp.queue.length, '探索中控制點被佔領：隊伍強制撤回、佇列取消');
   assert(!fakeQ.queue.length && !fakeQ.recalled, '控制點被佔領：其他隊伍佇列中（自動探索預定）在那裡的地點也一併取消');
   gr.state.expeditions = gr.state.expeditions.filter((e) => e !== fakeQ);
+  // v15.9.1：控制點被佔領、佇列中還有可以探索的地點：直接改去下一站（不先回家）
+  {
+    await own(X.id);
+    const { createSurvivor: mkS } = await import('../src/core/GameState.js');
+    const s2 = mkS('改道', 'scout', 10, 'common');
+    gr.state.survivors.push(s2);
+    const safeP = gr.state.map.pois.filter((p) => Z.inPlayerSafe(p.lat, p.lon) && !gr.shelter.baseAtPoi(p.id)).slice(0, 2);
+    const r3 = gr.exploration.start(target.id, [s2.id], 5);
+    assert(r3.ok, `派隊到控制點內探索（${r3.reason || ''}）`);
+    r3.exp.queue = [target.id, safeP[0].id, safeP[1].id];
+    const at3 = r3.exp.startAt + Math.round(r3.exp.travelMs / 2);
+    const pos3 = gr.exploration.progress(r3.exp, at3).pos;
+    await gr.shared.update(CPC.CP_KIND, X.id, () => ({ data: { owners: [], guards: [], faction: 'red' } }));
+    gr.exploration.pendingReports = [];
+    gr.cp.recallLostExplores(at3);
+    const ne = gr.state.expeditions.find((e) => e.memberIds.includes(s2.id));
+    assert(ne && ne !== r3.exp && ne.poiId === safeP[0].id && !ne.recalled && ne.queue.length === 1 && ne.queue[0] === safeP[1].id, `控制點被佔領：改去佇列中還能探索的下一站（${ne?.poiId === safeP[0].id ? '下一站' : ne?.poiId}，佇列剩 ${ne?.queue?.length}）`);
+    assert(Math.abs(ne.from.lat - pos3.lat) < 1e-6 && Math.abs(ne.from.lon - pos3.lon) < 1e-6 && ne.startAt === at3, '從目前位置直接出發、不先回家');
+    const rep = gr.exploration.pendingReports[0];
+    assert(rep && rep.events.some((x) => /被佔領/.test(x)) && rep.events.some((x) => /改為直接前往/.test(x)) && !rep.events.some((x) => /回到避難所|強制撤回/.test(x)), `這一站的報告寫出改道（${rep?.events?.join(' / ')}）`);
+    const reps = gr.exploration.update(at3 + 1, { silent: true });
+    assert(reps.some((x) => x === rep) && !gr.exploration.pendingReports.length, '改道的報告在下一次更新時加入報告');
+    gr.exploration.free(ne);
+    gr.state.expeditions = gr.state.expeditions.filter((e) => e !== ne);
+    gr.state.survivors = gr.state.survivors.filter((x) => x !== s2);
+  }
   // v15.4：探索點在鄰接大本營的控制點：有機會被大本營的部隊襲擊
   {
     const EX = await import('../src/systems/ExplorationSystem.js');

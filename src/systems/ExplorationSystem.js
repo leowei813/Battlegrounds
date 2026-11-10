@@ -895,6 +895,59 @@ export class ExplorationSystem {
    * 連續探索：搜索完一個地點時，背包還有空間（負重未達 90%）且佇列還有地點，就直接從這裡前往下一個地點。
    * @returns {object[]} 這次產生的報告
    */
+  /**
+   * v15.9.1：目前的地點不能再探索（所在控制點被佔領），佇列中還有可以探索的地點：
+   * 從目前位置直接改去佇列的下一個地點（已找到的物資繼續背著），不先回家。
+   * @returns {object|null} 這一站的報告；沒有可前往的地點時回傳 null（照原本撤回）
+   */
+  redirect(exp, at, note) {
+    if (exp.kind !== 'explore' || exp.recalled || exp.defeated) return null;
+    const poi = this.poi(exp.poiId);
+    const p = this.progress(exp, at);
+    if (!poi || !p?.pos || p.phase === 'returning') return null;
+    const members = exp.memberIds.map((id) => this.game.survivors.get(id));
+    if (members.some((m) => !m || m.severe)) return null;
+    this.runCheckpoints(exp, at);
+    const queue = [...(exp.queue || [])];
+    members.forEach((m) => { if (!m.dungeon) m.status = 'idle'; });
+    let idx = -1;
+    for (let i = 0; i < queue.length && idx < 0; i += 1) if (this.validate(queue[i], exp.memberIds).ok) idx = i;
+    if (idx < 0) {
+      members.forEach((m) => { m.status = 'exploring'; });
+      return null;
+    }
+    const nextId = queue[idx];
+    members.forEach((m) => { m.status = 'exploring'; });
+    exp.travelEvents = [...(exp.travelEvents || []), note];
+    const report = this.finishExplore(exp, { carry: true });
+    report.at = at;
+    report.recalled = !report.success;
+    // 隊伍沒有回家：拿掉「回到避難所」的結尾
+    report.events = report.events.filter((x) => !/^🏠 隊伍回到避難所/.test(String(x)));
+    this.list.splice(this.list.indexOf(exp), 1);
+    members.forEach((m) => { if (!m.dungeon) m.status = 'idle'; });
+    this.game.vehicles.release(exp.vehicleIds || []);
+    const r = this.start(nextId, exp.memberIds, exp.durationMin, exp.auto, at, {
+      vehicleIds: (exp.vehicleIds || []).filter((id) => { const v = this.game.vehicles.get(id); return v && !this.game.vehicles.isBroken(v); }),
+      avoidHostile: exp.avoidHostile, from: { lat: p.pos.lat, lon: p.pos.lon }, carried: exp.carried,
+    });
+    if (!r.ok) {
+      members.forEach((m) => { if (!m.dungeon) m.status = 'idle'; });
+      report.carried = false;
+      this.game.grant(exp.carried?.gained || {});
+      report.events.push(`⏭️ 無法前往下一個地點（${r.reason}），物資已帶回避難所`);
+    } else {
+      r.exp.queue = queue.slice(idx + 1);
+      r.exp.nextVehicleIds = exp.nextVehicleIds;
+      r.exp.trail = [...(exp.trail || []), ...((Array.isArray(exp.path) ? exp.path : []).map((q) => ({ lat: q.lat, lon: q.lon }))), { lat: p.pos.lat, lon: p.pos.lon }].slice(-300);
+      r.exp.stops = [...(exp.stops || [])];
+      report.events.push(`➡️ 改為直接前往佇列中的「${this.poi(nextId)?.name || ''}」${r.exp.queue.length ? `（佇列還有 ${r.exp.queue.length} 個）` : ''}`);
+    }
+    this.tagZone(report, exp);
+    this.attachXp(report, exp);
+    return report;
+  }
+
   chainHops(now) {
     const out = [];
     for (const exp of [...this.list]) {
@@ -984,6 +1037,8 @@ export class ExplorationSystem {
     const reports = [];
     // v15.5：結算前先檢查探索中的控制點是否已被佔領（離線回來時也一樣），被佔領的隊伍從那一刻起撤回
     this.game.cp?.recallLostExplores?.(now);
+    // v15.9.1：改道前往佇列下一站的隊伍，這一站的報告
+    if (this.pendingReports?.length) reports.push(...this.pendingReports.splice(0));
     let guard = 0;
     // 連續探索：一次處理到目前時間為止的所有轉站（離線時可能連續好幾站）
     for (let k = 0; k < 20; k += 1) {
