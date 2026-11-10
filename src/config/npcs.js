@@ -30,7 +30,7 @@ export const NPC_CONFIG = {
   lateGarrison: { from: 28, step: 2 },
   /** 擊退 NPC 掠奪隊的獎勵：賞金（擊倒人數 × NPC 等級 × bounty）、遺落裝備（首領／每名掠奪者的機率）、參與防守的人獲得升級所需經驗的 xpPct */
   raidReward: { bounty: 0.5, chiefGear: 0.3, raiderGear: 0.05, xpPct: 0.03 },
-  woundHealMs: 20000, // NPC 傷亡人員每隔多久補回 1 人（攻打據點時守軍為 2 倍，等於每 10 秒補回 1 名守軍；v10.13.1 由每分鐘 1 名加快）
+  woundHealMs: 20000, // v15.8：攻打據點時的守軍每 20 秒補回 1 名（傷亡以「份」計，1 份＝攻打時 NPC_ASSAULT.count 名守軍，每次補回 1/count 份）
   /** 同時有其他 NPC 正在掠奪玩家時，再發動掠奪的機率（文明度達到 concurrentCiv 後才逐漸提高） */
   concurrentChance: 0.05,
   concurrentCiv: 350,
@@ -72,3 +72,20 @@ export const NPC_NAMES = NPC_NAME_PREFIX.flatMap((p) => NPC_NAME_SUFFIX.map((x) 
  * @param {number} civ 文明度
  */
 export const npcAggression = (civ) => Math.min(1, Math.max(0.1, civ / 200));
+
+/** v15.8：現實凌晨（台灣時間 00:00～08:00）NPC 停止掠奪玩家據點、勢力停止進攻控制點；抵達時間落在這段時間的部隊也不出發 */
+export const NPC_QUIET = { from: 0, to: 8, tzHours: 8 };
+/** v15.8：其他時段（台灣時間 08:00～00:00）NPC 掠奪據點與勢力進攻控制點的頻率倍率（2＝間隔加倍、次數減半） */
+export const NPC_DAY_SLOW = 2;
+/** 某個時刻是否在 NPC 休息時段（以台灣時間計） */
+export const npcQuietAt = (t) => {
+  const h = new Date(t + NPC_QUIET.tzHours * 3600000).getUTCHours();
+  return h >= NPC_QUIET.from && h < NPC_QUIET.to;
+};
+/** 從 start 出發、end 抵達的行動是否碰到休息時段（出發或抵達在時段內，或整段跨過時段） */
+export const npcQuietSpan = (start, end) => {
+  if (npcQuietAt(start) || npcQuietAt(end)) return true;
+  // 長途跨過整段休息時段：檢查中間每小時
+  for (let t = start + 3600000; t < end; t += 3600000) if (npcQuietAt(t)) return true;
+  return false;
+};

@@ -1,7 +1,7 @@
 import { unitPower } from '../utils/math.js';
 import { DUNGEONS, DG_CLEAR_M } from '../config/dungeons.js';
 import { AssistSystem } from './AssistSystem.js';
-import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL } from '../config/npcs.js';
+import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL, npcQuietSpan, NPC_DAY_SLOW } from '../config/npcs.js';
 import { xpToNext } from '../config/survivors.js';
 import {
   RESOURCE_KEYS, RAID_TRAVEL,
@@ -107,7 +107,7 @@ export class NpcSystem {
    */
   garrison(n, { assault = false } = {}) {
     const base = Math.max(0, this.fullCount(n) - (n.wounded || 0));
-    const count = assault ? Math.round(base * NPC_ASSAULT.count) : base;
+    const count = assault ? Math.round(base * NPC_ASSAULT.count) : Math.floor(base);
     const enemies = Array.from({ length: count }, () => this.game.combat.createEnemy('raider', n.level));
     enemies.push(this.game.combat.createEnemy('raiderChief', n.level));
     if (assault) enemies.forEach((e) => { e.maxHp = Math.round(e.maxHp * NPC_ASSAULT.hp); e.atk = Math.round(e.atk * NPC_ASSAULT.atk); });
@@ -364,10 +364,13 @@ export class NpcSystem {
     list.forEach((run) => run());
   }
 
+  /** v15.8：每次補回的傷亡份數（攻打據點時的 1 名守軍） */
+  static get HEAL_STEP() { return 1 / NPC_ASSAULT.count; }
+
   /** 共用 NPC：傷亡隨時間補回 */
   static healTo(d, now, full) {
     while (d.wounded > 0 && d.healAt && now >= d.healAt) {
-      d.wounded -= 1;
+      d.wounded = Math.max(0, d.wounded - NpcSystem.HEAL_STEP);
       d.healAt += NPC_CONFIG.woundHealMs;
     }
     if (!(d.wounded > 0)) {
@@ -548,7 +551,8 @@ export class NpcSystem {
   /** 下一次掠奪的間隔：積極度越高越頻繁 */
   raidDelay() {
     const crowd = Math.max(1, this.list.length / 3);
-    return (NPC_CONFIG.raidBaseMs * crowd / (0.3 + this.aggression())) * randFloat(0.7, 1.3);
+    // v15.8：白天（台灣時間 08:00～00:00）掠奪次數減半（凌晨完全不掠奪）
+    return (NPC_CONFIG.raidBaseMs * NPC_DAY_SLOW * crowd / (0.3 + this.aggression())) * randFloat(0.7, 1.3);
   }
 
   // ---------- 更新 ----------
@@ -576,7 +580,7 @@ export class NpcSystem {
       if (n.wounded > 0) {
         n.healAt = n.healAt || now + NPC_CONFIG.woundHealMs;
         while (n.wounded > 0 && now >= n.healAt) {
-          n.wounded -= 1;
+          n.wounded = Math.max(0, n.wounded - NpcSystem.HEAL_STEP);
           n.healAt += NPC_CONFIG.woundHealMs;
         }
         if (!n.wounded) n.healAt = 0;
@@ -613,7 +617,7 @@ export class NpcSystem {
    * 擊倒幾名守軍，下次攻打就只少幾名（不再加倍扣除）。
    */
   assaultWound(n, kills, now = Date.now()) {
-    return this.wound(n, Math.min(Math.ceil(kills / NPC_ASSAULT.count), this.fullCount(n)), now);
+    return this.wound(n, Math.min(kills / NPC_ASSAULT.count, this.fullCount(n)), now);
   }
 
   /** NPC 人員傷亡（依 woundHealMs 逐一補回） */
@@ -678,7 +682,7 @@ export class NpcSystem {
     if (lv >= 3) {
       const g = this.garrison(n);
       view.garrison = g;
-      view.wounded = n.wounded || 0;
+      view.wounded = Math.round((n.wounded || 0) * NPC_ASSAULT.count); // 攻打據點時的守軍傷亡人數
     }
     if (lv >= 5) {
       view.resources = Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => [k, lv >= 7 ? `${Math.floor(v)}` : approx(v, 50)]);
@@ -784,6 +788,8 @@ export class NpcSystem {
     const t = this.tripTimes(n, base, 0, base.id);
     // 掠奪避難所的移動時間較長，讓玩家有時間準備防守
     t.travelMs = Math.round(Math.max(t.travelMs * RAID_TRAVEL.npcMul, RAID_TRAVEL.minMin * 60000));
+    // v15.8：現實凌晨（台灣時間 00:00～08:00）不掠奪，抵達時間落在這段時間的也不出發
+    if (npcQuietSpan(now, now + t.travelMs)) return;
     // 抵達時若已入夜（屍潮），NPC 會放棄這次掠奪
     n.trip = {
       kind: 'raid', baseId: base.id, target: base.name, from: { lat: n.lat, lon: n.lon }, to: { lat: base.lat, lon: base.lon },

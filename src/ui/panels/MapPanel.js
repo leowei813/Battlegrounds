@@ -386,7 +386,7 @@ export class MapPanel {
     const aggr = g.npcs.aggression();
     const unknown = '<span class="muted">？？？（需提升偵查）</span>';
     const garrison = v.garrison
-      ? `${v.garrison.map((e) => `${e.icon}${e.name}`).join('、')}${v.wounded ? `<span class="neg">（${v.wounded} 人傷亡中，約 ${formatDuration(Math.max(0, (n.healAt || now) - now))} 後補回 1 人）</span>` : ''}`
+      ? `${v.garrison.map((e) => `${e.icon}${e.name}`).join('、')}${v.wounded ? `<span class="neg">（${v.wounded} 名守軍傷亡中，約 ${formatDuration(Math.max(0, (n.healAt || now) - now))} 後補回 1 名）</span>` : ''}`
       : unknown;
     const loot = v.resources ? `💰${v.coins} ${v.resources.map(([k, x]) => `${metaOf(k).icon}${x}`).join(' ')}` : unknown;
     return `

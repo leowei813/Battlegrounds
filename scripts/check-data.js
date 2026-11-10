@@ -26,6 +26,9 @@ import {
 const { TimeSystem: TimeSysT } = await import('../src/systems/TimeSystem.js');
 const SWITCH_REAL = TimeSysT.switchAt;
 TimeSysT.switchAt = WORLD_EPOCH_MS;
+// 測試在任何時刻都要能跑：先關閉凌晨休息時段，專門的測試再打開
+const { NPC_QUIET: NQ, npcQuietAt: NQAt, npcQuietSpan: NQSpan } = await import('../src/config/npcs.js');
+const NQ0 = { ...NQ }; NQ.to = NQ.from;
 
 /** 把遊戲時鐘調到指定時刻（建檔時間往前推） */
 const setHour = (game, hour) => {
@@ -4866,7 +4869,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(hs.ok, `飢餓時一樣可以治療（${hs.msg || hs.reason}）`);
 }
 
-// ---- 108. 攻打 NPC 失敗：擊倒幾名守軍就只少幾名，每分鐘補回 1 名；攻陷獎勵 ×4 ----
+// ---- 108. 攻打 NPC 失敗：擊倒幾名守軍就只少幾名，每 20 秒補回 1 名；攻陷獎勵 ×4 ----
 {
   const { NPC_CONFIG, NPC_ASSAULT, NPC_REWARD_MUL } = await import('../src/config/npcs.js');
   const gn = Game.newGame({ playerName: 'N108', classId: 'warrior', lat: 25, lon: 121 });
@@ -4876,7 +4879,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gn.npcs.assaultWound(n, 10, t0);
   const after = gn.npcs.garrison(n, { assault: true }).length;
   assert(full - after === 10, `擊倒 10 名守軍，下次攻打只少 10 名（${full}→${after}）`);
-  assert(n.healAt - t0 === NPC_CONFIG.woundHealMs && NPC_CONFIG.woundHealMs / NPC_ASSAULT.count === 10000, '守軍每 10 秒補回 1 名');
+  // v15.8：守軍每 20 秒補回 1 名
+  const NS = gn.npcs.constructor;
+  const healed = (ms) => { const d = { wounded: n.wounded, healAt: n.healAt }; NS.healTo(d, t0 + ms, 99); return gn.npcs.garrison({ ...n, ...d }, { assault: true }).length; };
+  assert(n.healAt - t0 === NPC_CONFIG.woundHealMs && NPC_CONFIG.woundHealMs === 20000 && healed(19999) === after && healed(20000) === after + 1 && healed(60000) === after + 3 && healed(200000) === full,
+    `守軍每 20 秒補回 1 名（${after}→${healed(20000)}→${healed(60000)}→${healed(200000)}／${full}）`);
+  const n2 = { id: 'npc108b', level: 33, wounded: 0, healAt: 0 };
+  gn.npcs.assaultWound(n2, 9, t0);
+  assert(full - gn.npcs.garrison(n2, { assault: true }).length === 9, '擊倒奇數名守軍也只少那幾名');
   assert(NPC_REWARD_MUL === 4, '攻陷獎勵為 4 倍');
 }
 
@@ -6817,6 +6827,289 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const sg = gw.siege.of(gw.state.bases[0].id);
   const lulls = Array.from({ length: 20 }, () => { sg.startWave(); return sg.lull; });
   assert(lulls.every((x) => x >= 12 && x <= 18), `屍潮每波間隔約 15 秒（${Math.min(...lulls).toFixed(1)}～${Math.max(...lulls).toFixed(1)}）`);
+}
+
+// ---- v15.8：現實凌晨（台灣時間 00:00～08:00）NPC 不掠奪、勢力不進攻 ----
+{
+  Object.assign(NQ, NQ0);
+  const tw = (h, m = 0) => Date.UTC(2026, 10, 10, h - 8, m); // 台灣時間 11/10 h:m
+  assert(NQAt(tw(0)) && NQAt(tw(7, 59)) && !NQAt(tw(8)) && !NQAt(tw(23, 59)) && !NQAt(tw(12)), '休息時段為台灣時間 00:00～08:00');
+  assert(NQSpan(tw(23, 30), tw(0, 30)) && NQSpan(tw(7, 30), tw(8, 30)) && !NQSpan(tw(8), tw(9)) && NQSpan(tw(23), tw(32)), '抵達時間或途中落在休息時段也不出發');
+  const gz = Game.newGame({ playerName: 'Z', classId: 'warrior', lat: 25, lon: 121 });
+  gz.state.map.pois = fillPois([], 25, 121);
+  gz.shelter.establish(gz.state.map.pois.find((p) => gz.shelter.canEstablish(p).ok));
+  gz.time.phase = () => ({ zombies: false });
+  gz.npcs.allowConcurrentRaid = () => true;
+  gz.npcs.raidLevelCap = () => 99;
+  const nz = gz.npcs.spawnAt(gz.state.map.pois.filter((p) => !gz.shelter.baseAtPoi(p.id))[1], 'q', Date.now(), true);
+  {
+    nz.faction = null; nz.trip = null; gz.npcs.launchRaid(nz, tw(3));
+    const night = nz.trip;
+    nz.trip = null; gz.npcs.launchRaid(nz, tw(12));
+    assert(!night && nz.trip?.kind === 'raid', 'NPC 凌晨不掠奪、白天照常');
+    nz.trip = null; gz.npcs.launchRaid(nz, tw(7, 58));
+    assert(!nz.trip, '抵達時間會落在凌晨的掠奪不出發');
+  }
+  // 勢力進攻：凌晨的進攻時間直接略過
+  const turns = [];
+  gz.state.map.source = 'generated';
+  gz.shared = { update: async () => ({ ok: true }), get: () => null, list: () => [] };
+  gz.cp.turnTime = () => tw(3);
+  gz.cp.pickTarget = () => null;
+  gz.cp.launchMarch = async (f) => { turns.push(f); };
+  const picked = [];
+  gz.cp.pickTarget = (f) => { picked.push(f); return null; };
+  await gz.cp.npcTurns(tw(3, 5));
+  const nightPicked = picked.length;
+  gz.cp.lastTurn = {}; gz.cp.turnTime = () => tw(12);
+  await gz.cp.npcTurns(tw(12, 5));
+  assert(nightPicked === 0 && picked.length > 0, `勢力凌晨不進攻、白天照常（凌晨 ${nightPicked}、白天 ${picked.length}）`);
+  NQ.to = NQ.from;
+}
+
+// ---- v15.8：控制點被勢力攻下：駐防隊的報告寫出交戰經過（已參戰／還在路上） ----
+{
+  const { CONTROL_POINTS: CPS8 } = await import('../src/config/controlPoints.js');
+  const gk = Game.newGame({ playerName: 'K', classId: 'warrior', lat: 25, lon: 121 });
+  const cp8 = CPS8[0];
+  const t0 = Date.now() - 600000;
+  const fought = { id: 'gA', kind: 'cpGuard', cpId: cp8.id, startAt: t0, travelMs: 60000, memberIds: [], travelEvents: [] };
+  const late = { id: 'gB', kind: 'cpGuard', cpId: cp8.id, startAt: t0, travelMs: 3600000, memberIds: [], travelEvents: [] };
+  gk.state.expeditions.push(fought, late);
+  const ft = { f: 'red', at: t0 + 120000, win: true, total: 4, atk: 9, owners: ['someone'], guards: [gk.cp.myId()], ge: ['gA'], down: [] };
+  gk.cp.data = () => ({ owners: [], guards: [], faction: 'red', fight: ft });
+  gk.cp.ready = () => true;
+  assert(/被「.+」的部隊（9 人）攻下：守軍 4 人全數被擊倒/.test(gk.cp.lostReason(fought)), `參戰的駐防隊：撤回原因寫出被誰攻下（${gk.cp.lostReason(fought)}）`);
+  assert(/還沒抵達.*已被「.+」的部隊（9 人）攻下/.test(gk.cp.lostReason(late)), `還在路上的駐防隊：寫出抵達前已被攻下（${gk.cp.lostReason(late)}）`);
+  gk.cp.reportFights();
+  assert(fought.travelEvents.some((x) => /攻下/.test(x)) && late.travelEvents.some((x) => /還沒抵達/.test(x)), '交戰經過寫進駐防隊的探索報告');
+  // 撤回（先交戰後撤回、先撤回後交戰兩種順序）：報告裡同一句只出現一次
+  fought.travelEvents.push('↩️ 收到召回命令，隊伍折返避難所');
+  gk.cp.constructor.replaceRecallText(fought, gk.cp.lostReason(fought));
+  const other = { ...late, id: 'gC', travelEvents: ['↩️ 收到召回命令，隊伍折返避難所'] };
+  gk.cp.constructor.replaceRecallText(other, gk.cp.lostReason(other));
+  gk.state.expeditions.push(other); gk.cp.st.fightSeen = {}; gk.cp.reportFights();
+  assert(fought.travelEvents.length === 1 && other.travelEvents.length === 1 && late.travelEvents.length === 1, `撤回與交戰經過不重複（${fought.travelEvents.join(' / ')}｜${other.travelEvents.join(' / ')}）`);
+  gk.cp.data = () => ({ owners: [], guards: [] });
+  assert(/已不是你或好友的控制點/.test(gk.cp.lostReason({ ...fought })), '沒有交戰（佔領者放棄、解除好友）時維持原本說明');
+}
+
+// ---- v15.8：駐防與攻擊的完整情境（雙方都照遊戲每 2 秒的更新流程跑） ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const CPC = await import('../src/config/controlPoints.js');
+  const Z = await import('../src/config/zones.js');
+  const { ControlPointSystem: CPSys } = await import('../src/systems/ControlPointSystem.js');
+  const store = new MemoryObjects();
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.03, lon: 121.56 });
+    gx.genMap();
+    gx.shelter.establish(gx.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gx.shelter.canEstablish(p).ok));
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    gx.cp.npcTurns = async () => {}; // 只測指定的進攻
+    setHour(gx, 10);
+    return gx;
+  };
+  const A = mk('A'); const B = mk('B'); const C = mk('C');
+  A.state.relations.players = { B: { status: 'friend' }, C: { status: 'hostile' } };
+  B.state.relations.players = { A: { status: 'friend' }, C: { status: 'hostile' } };
+  C.state.relations.players = { A: { status: 'hostile' }, B: { status: 'hostile' } };
+  const cp = CPC.CONTROL_POINTS.find((c) => CPC.CP_START.includes(c.id));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const pollAll = async () => { for (const G of [A, B, C]) await G.shared.poll(); };
+  const tick = async (G, t) => { G.cp.lastAt = 0; G.cp.update(t); await sleep(30); await pollAll(); G.cp.lastAt = 0; G.cp.update(t); await sleep(30); await pollAll(); };
+  const logs = (G, re) => G.state.log.filter((l) => re.test(l.msg));
+  const sims = new Map([[A, A.combat.simulate], [B, B.combat.simulate], [C, C.combat.simulate]]);
+  /** 指定交戰結果：win＝進攻方勝；downGuards＝駐防隊員倒下 */
+  const force = (G, win, downGuards = win) => {
+    const s0 = sims.get(G);
+    G.combat.simulate = (team, foes, o) => {
+      const r = s0.call(G.combat, team, foes, { ...o, record: false });
+      r.victory = win;
+      r.foes.forEach((f) => { f.down = f.ally?.e ? downGuards : win; });
+      return r;
+    };
+  };
+  const unforce = () => sims.forEach((s0, G) => { G.combat.simulate = s0; });
+  /** 重置：A 佔領控制點、清空隊伍 */
+  const reset = async () => {
+    unforce();
+    for (const G of [A, B, C]) {
+      G.state.expeditions.forEach((e) => G.exploration.free(e));
+      G.state.expeditions = [];
+      G.state.survivors.forEach((s) => { s.severe = false; s.hp = s.maxHp || s.hp || 100; s.status = 'idle'; });
+      G.state.log = [];
+      G.state.reports = [];
+    }
+    await A.shared.update(CPC.CP_KIND, cp.id, () => ({ data: { owners: [{ p: 'A', n: 'A' }], guards: [], faction: null } }));
+    await pollAll();
+  };
+  /** B 派駐防：arrived＝已抵達（出發時間往前推） */
+  const guard = async (arrived) => {
+    const sv = B.state.survivors.find((s) => B.survivors.isAvailable(s));
+    const gd = B.cp.guard(cp.id, [sv.id]);
+    assert(gd.ok, `駐防出發（${gd.reason || ''}）`);
+    // 已抵達：出發時間往前推過移動時間；在路上：出發了一段時間但還沒到
+    const back = arrived ? gd.exp.travelMs + 60000 : Math.min(120000, gd.exp.travelMs / 2);
+    gd.exp.startAt -= back;
+    gd.exp.endAt -= back;
+    await sleep(30);
+    await B.cp.listGuard(gd.exp);
+    await pollAll();
+    return gd.exp;
+  };
+  /** 勢力部隊剛抵達，由 who 結算 */
+  const march = async (who, win, downGuards) => {
+    const t0 = Date.now() - 3 * 3600000;
+    await A.cp.launchMarch('red', cp.id, t0);
+    await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, march: { ...x.march, arriveAt: Date.now() - 1000 } } }));
+    await pollAll();
+    force(who, win, downGuards);
+    await who.cp.resolveMarches(Date.now());
+    unforce();
+    assert(!who.cp.data(cp.id)?.march, '勢力部隊抵達後完成結算');
+    await pollAll();
+  };
+  /** 隊伍回到避難所：取得報告 */
+  const home = (G, e) => { G.exploration.update(e.endAt + 600000, { silent: true }); return (G.state.reports || []).find((r) => r.poiName.includes(`#${cp.no}`)); };
+
+  // 情境 1：駐防隊已抵達，擊退勢力（沒人倒下）→ 駐防者與佔領者都收到戰報、駐防隊拿經驗、繼續駐守
+  await reset();
+  {
+    const e = await guard(true);
+    const sv = B.survivors.get(e.memberIds[0]); const xp0 = sv.xp; const lv0 = sv.level;
+    await march(A, false, false);
+    await tick(B, Date.now()); await tick(A, Date.now());
+    assert(logs(B, /你駐防的控制點.*擊退了「/).length === 1 && logs(A, /你佔領的控制點.*擊退了「/).length === 1, `情境1：擊退勢力，駐防者與佔領者各收到一則戰報（${logs(B, /擊退/)[0]?.msg || ''}）`);
+    assert((sv.level > lv0 || sv.xp > xp0) && !e.recalled && !e.defeated && A.cp.guardsAt(cp.id, Date.now()).some((h) => h.e === e.id), '情境1：駐防隊拿到防守經驗、繼續駐守');
+    assert(e.travelEvents.some((x) => /擊退了「/.test(x)), '情境1：戰報寫進駐防隊的報告');
+  }
+  // 情境 2：擊退勢力，但駐防隊員倒下 → 駐防隊被擊退撤回，報告寫出交戰與被擊退
+  await reset();
+  {
+    const e = await guard(true);
+    await march(A, false, true);
+    await tick(B, Date.now());
+    assert(e.defeated && logs(B, /有人倒下/).length === 1, `情境2：駐防隊員倒下：被擊退撤回（${logs(B, /擊退/).map((l) => l.msg).join(' / ')}）`);
+    const r = home(B, e);
+    assert(r && /駐防控制點/.test(r.poiName) && r.events.some((x) => /擊退了「/.test(x)) && r.events.filter((x) => /駐防隊被擊退/.test(x)).length === 1 && !r.events.some((x) => /收到召回命令/.test(x)), `情境2：回家報告寫出交戰經過（${r?.events.join(' / ')}）`);
+  }
+  // 情境 3：駐防隊已抵達，勢力攻下控制點（駐防者沒在線、由佔領者結算）→ 駐防者上線後撤回，報告寫出被誰攻下
+  await reset();
+  {
+    const e = await guard(true);
+    await march(A, true);
+    await tick(A, Date.now());
+    assert(logs(A, /攻下了你佔領的控制點/).length === 1, `情境3：佔領者收到控制點被攻下的戰報（${logs(A, /攻下/)[0]?.msg || ''}）`);
+    await tick(B, Date.now());
+    assert(e.recalled && logs(B, /攻下/).length === 1 && !logs(B, /已不是你或好友/).length, `情境3：駐防者收到被攻下的說明，不是「已不是你或好友的控制點」（${logs(B, /攻下/).map((l) => l.msg).join(' / ')}）`);
+    const r = home(B, e);
+    assert(r && /駐防控制點/.test(r.poiName) && r.events.filter((x) => /攻下/.test(x)).length === 1 && r.events.some((x) => /全數被擊倒/.test(x)) && r.events.some((x) => /撤回避難所/.test(x)) && !r.events.some((x) => /沒有收穫|收到召回命令/.test(x)), `情境3：回家報告寫出被誰攻下、只寫一次（${r?.events.join(' / ')}）`);
+  }
+  // 情境 4：駐防隊還在路上，勢力攻下控制點 → 不參戰，撤回並說明「還沒抵達就被攻下」
+  await reset();
+  {
+    const e = await guard(false);
+    assert(!A.cp.defenders(cp.id, Date.now()).some((u) => u.ally?.e === e.id), '情境4：還在路上的駐防隊不參戰');
+    await march(A, true);
+    await tick(B, Date.now());
+    assert(e.recalled && logs(B, /還沒抵達/).length === 1 && logs(B, /攻下/).length === 1, `情境4：在路上的駐防隊收到提醒並撤回（${logs(B, /攻下/).map((l) => l.msg).join(' / ')}）`);
+    const r = home(B, e);
+    assert(r && r.events.filter((x) => /還沒抵達/.test(x)).length === 1 && !r.events.some((x) => /全數被擊倒/.test(x)), `情境4：回家報告寫「還沒抵達就被攻下」（${r?.events.join(' / ')}）`);
+  }
+  // 情境 5：先在路上、抵達後才交戰（玩家離線，沒有執行任何更新）→ 抵達時間一到就參戰
+  await reset();
+  {
+    const e = await guard(false);
+    const arr = e.startAt + e.travelMs;
+    assert(!A.cp.defenders(cp.id, arr - 1).some((u) => u.ally?.e === e.id) && A.cp.defenders(cp.id, arr + 1).some((u) => u.ally?.e === e.id), '情境5：抵達後（玩家離線）就算參戰');
+  }
+  // 情境 6：敵對玩家 C 攻下有駐防的控制點 → 駐防者撤回並說明「被玩家 C 的隊伍攻下」、佔領者收到戰報
+  await reset();
+  {
+    const e = await guard(true);
+    const cs = C.survivors.leader();
+    const at = C.cp.attack(cp.id, [cs.id]);
+    assert(at.ok, `情境6：敵對玩家可以攻打（${at.reason || ''}）`);
+    // 攻打時間設成剛剛結束（遊戲裡結算時間一定已經過去）
+    { const back = at.exp.travelMs + at.exp.searchMs + 2000; at.exp.startAt -= back; at.exp.endAt -= back; }
+    const t = at.exp.startAt + at.exp.travelMs + at.exp.searchMs + 1;
+    const foes = A.cp.defenders(cp.id, t);
+    assert(foes.some((u) => u.ally?.e === e.id), '情境6：玩家攻打時駐防隊參戰');
+    force(C, true);
+    await C.cp.resolveAttacks(t);
+    unforce();
+    await pollAll();
+    assert(at.exp.cpResult?.victory && C.cp.owners(cp.id).some((o) => o.p === 'C'), '情境6：C 打下控制點');
+    await tick(A, Date.now()); await tick(B, Date.now());
+    assert(logs(A, /玩家「C」的隊伍.*攻下了你佔領的控制點/).length === 1, `情境6：佔領者收到被玩家攻下的戰報（${logs(A, /攻下/)[0]?.msg || ''}）`);
+    assert(e.recalled && logs(B, /玩家「C」的隊伍/).length === 1 && !logs(B, /已不是你或好友/).length, `情境6：駐防者撤回並說明被玩家攻下（${logs(B, /攻下/).map((l) => l.msg).join(' / ')}）`);
+    const r = home(B, e);
+    assert(r && r.events.filter((x) => /玩家「C」的隊伍/.test(x)).length === 1, `情境6：回家報告寫出被玩家攻下（${r?.events.join(' / ')}）`);
+  }
+  // 情境 7：敵對玩家 C 攻打失敗 → 駐防者與佔領者收到「擊退了玩家 C」，駐防隊繼續駐守（不拿防守經驗：只限勢力）
+  await reset();
+  {
+    const e = await guard(true);
+    const sv = B.survivors.get(e.memberIds[0]); const xp0 = sv.xp; const lv0 = sv.level;
+    const at = C.cp.attack(cp.id, [C.state.survivors.find((s) => C.survivors.isAvailable(s)).id]);
+    // 攻打時間設成剛剛結束（遊戲裡結算時間一定已經過去）
+    { const back = at.exp.travelMs + at.exp.searchMs + 2000; at.exp.startAt -= back; at.exp.endAt -= back; }
+    const t = at.exp.startAt + at.exp.travelMs + at.exp.searchMs + 1;
+    force(C, false, false);
+    await C.cp.resolveAttacks(t);
+    unforce();
+    await pollAll();
+    await tick(A, Date.now()); await tick(B, Date.now());
+    assert(!at.exp.cpResult?.victory && A.cp.owners(cp.id).some((o) => o.p === 'A'), '情境7：C 沒打下，控制點維持原佔領者');
+    assert(logs(A, /擊退了玩家「C」/).length === 1 && logs(B, /擊退了玩家「C」/).length === 1, `情境7：佔領者與駐防者收到擊退玩家的戰報（${logs(B, /擊退/)[0]?.msg || ''}）`);
+    assert(!e.recalled && sv.level === lv0 && sv.xp === xp0, '情境7：駐防隊繼續駐守，擊退玩家不拿防守經驗');
+  }
+  // 情境 8：佔領者放棄（解除好友）→ 駐防隊撤回，維持原本說明
+  await reset();
+  {
+    const e = await guard(true);
+    B.state.relations.players.A = { status: 'neutral' };
+    await tick(B, Date.now());
+    assert(e.recalled && logs(B, /已不是你或好友的控制點/).length === 1, '情境8：解除好友：駐防隊撤回，說明控制點已不是你或好友的');
+    const r = home(B, e);
+    assert(r && /駐防控制點/.test(r.poiName) && r.events.some((x) => /撤回避難所/.test(x)), `情境8：回家報告（${r?.events.join(' / ')}）`);
+    B.state.relations.players.A = { status: 'friend' };
+  }
+  // 情境 9：手動召回駐防隊 → 報告寫「駐防隊撤回避難所」，不會被當成探索失敗
+  await reset();
+  {
+    const e = await guard(true);
+    B.exploration.recall(e.id);
+    await tick(B, Date.now());
+    assert(!(A.cp.data(cp.id)?.guards || []).some((h) => h.e === e.id), '情境9：手動召回後從控制點守軍名單移除');
+    const r = home(B, e);
+    assert(r && /駐防控制點/.test(r.poiName) && r.events.some((x) => /撤回避難所/.test(x)), `情境9：手動召回的報告（${r?.events.join(' / ')}）`);
+  }
+  // 情境 10：同一場戰報不重複（多次更新、重新整理）
+  await reset();
+  {
+    const e = await guard(true);
+    await march(B, false, false);
+    for (let i = 0; i < 3; i += 1) await tick(B, Date.now());
+    assert(logs(B, /擊退了「/).length === 1 && e.travelEvents.filter((x) => /擊退了「/.test(x)).length === 1, `情境10：駐防者自己結算、多次更新：戰報只出現一次（${logs(B, /擊退/).length}）`);
+  }
+  // 情境 11：勢力進攻日：每 2 個遊戲日一次、三個勢力錯開；控制點多的勢力再減半
+  {
+    const days = Array.from({ length: 12 }, (_, i) => i);
+    const cnt = (f, own) => days.filter((d) => CPSys.turnDay(f, d, own)).length;
+    assert(CPC.FACTION_KEYS.every((f) => cnt(f, 0) === 6 && cnt(f, CPC.FACTION_SLOW_AT) === 3), '情境11：勢力進攻次數減半，控制點多的再減半');
+    assert(days.some((d) => CPC.FACTION_KEYS.filter((f) => CPSys.turnDay(f, d, 0)).length < CPC.FACTION_KEYS.length), '情境11：三個勢力錯開進攻日');
+  }
+  // 情境 12：NPC 掠奪間隔加倍
+  {
+    const { NPC_CONFIG: NC8, NPC_DAY_SLOW } = await import('../src/config/npcs.js');
+    const ds = Array.from({ length: 50 }, () => A.npcs.raidDelay());
+    const crowd = Math.max(1, A.npcs.list.length / 3);
+    const base = NC8.raidBaseMs * crowd / (0.3 + A.npcs.aggression());
+    assert(NPC_DAY_SLOW === 2 && ds.every((d) => d >= base * 2 * 0.69 && d <= base * 2 * 1.31), '情境12：NPC 掠奪間隔加倍（次數減半）');
+  }
 }
 
 if (failures) {
