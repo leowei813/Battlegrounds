@@ -30,7 +30,7 @@ export const NPC_CONFIG = {
   lateGarrison: { from: 28, step: 2 },
   /** 擊退 NPC 掠奪隊的獎勵：賞金（擊倒人數 × NPC 等級 × bounty）、遺落裝備（首領／每名掠奪者的機率）、參與防守的人獲得升級所需經驗的 xpPct */
   raidReward: { bounty: 0.5, chiefGear: 0.3, raiderGear: 0.05, xpPct: 0.03 },
-  woundHealMs: 20000, // NPC 傷亡人員每隔多久補回 1 人（攻打據點時守軍為 2 倍，等於每 10 秒補回 1 名守軍；v10.13.1 由每分鐘 1 名加快）
+  woundHealMs: 20000, // v15.8：攻打據點時的守軍每 20 秒補回 1 名（傷亡以「份」計，1 份＝攻打時 NPC_ASSAULT.count 名守軍，每次補回 1/count 份）
   /** 同時有其他 NPC 正在掠奪玩家時，再發動掠奪的機率（文明度達到 concurrentCiv 後才逐漸提高） */
   concurrentChance: 0.05,
   concurrentCiv: 350,

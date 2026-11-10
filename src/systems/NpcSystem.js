@@ -107,7 +107,7 @@ export class NpcSystem {
    */
   garrison(n, { assault = false } = {}) {
     const base = Math.max(0, this.fullCount(n) - (n.wounded || 0));
-    const count = assault ? Math.round(base * NPC_ASSAULT.count) : base;
+    const count = assault ? Math.round(base * NPC_ASSAULT.count) : Math.floor(base);
     const enemies = Array.from({ length: count }, () => this.game.combat.createEnemy('raider', n.level));
     enemies.push(this.game.combat.createEnemy('raiderChief', n.level));
     if (assault) enemies.forEach((e) => { e.maxHp = Math.round(e.maxHp * NPC_ASSAULT.hp); e.atk = Math.round(e.atk * NPC_ASSAULT.atk); });
@@ -364,10 +364,13 @@ export class NpcSystem {
     list.forEach((run) => run());
   }
 
+  /** v15.8：每次補回的傷亡份數（攻打據點時的 1 名守軍） */
+  static get HEAL_STEP() { return 1 / NPC_ASSAULT.count; }
+
   /** 共用 NPC：傷亡隨時間補回 */
   static healTo(d, now, full) {
     while (d.wounded > 0 && d.healAt && now >= d.healAt) {
-      d.wounded -= 1;
+      d.wounded = Math.max(0, d.wounded - NpcSystem.HEAL_STEP);
       d.healAt += NPC_CONFIG.woundHealMs;
     }
     if (!(d.wounded > 0)) {
@@ -576,7 +579,7 @@ export class NpcSystem {
       if (n.wounded > 0) {
         n.healAt = n.healAt || now + NPC_CONFIG.woundHealMs;
         while (n.wounded > 0 && now >= n.healAt) {
-          n.wounded -= 1;
+          n.wounded = Math.max(0, n.wounded - NpcSystem.HEAL_STEP);
           n.healAt += NPC_CONFIG.woundHealMs;
         }
         if (!n.wounded) n.healAt = 0;
@@ -613,7 +616,7 @@ export class NpcSystem {
    * 擊倒幾名守軍，下次攻打就只少幾名（不再加倍扣除）。
    */
   assaultWound(n, kills, now = Date.now()) {
-    return this.wound(n, Math.min(Math.ceil(kills / NPC_ASSAULT.count), this.fullCount(n)), now);
+    return this.wound(n, Math.min(kills / NPC_ASSAULT.count, this.fullCount(n)), now);
   }
 
   /** NPC 人員傷亡（依 woundHealMs 逐一補回） */
@@ -678,7 +681,7 @@ export class NpcSystem {
     if (lv >= 3) {
       const g = this.garrison(n);
       view.garrison = g;
-      view.wounded = n.wounded || 0;
+      view.wounded = Math.round((n.wounded || 0) * NPC_ASSAULT.count); // 攻打據點時的守軍傷亡人數
     }
     if (lv >= 5) {
       view.resources = Object.entries(n.resources).filter(([, v]) => v > 0).map(([k, v]) => [k, lv >= 7 ? `${Math.floor(v)}` : approx(v, 50)]);

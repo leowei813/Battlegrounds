@@ -4869,7 +4869,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(hs.ok, `飢餓時一樣可以治療（${hs.msg || hs.reason}）`);
 }
 
-// ---- 108. 攻打 NPC 失敗：擊倒幾名守軍就只少幾名，每分鐘補回 1 名；攻陷獎勵 ×4 ----
+// ---- 108. 攻打 NPC 失敗：擊倒幾名守軍就只少幾名，每 20 秒補回 1 名；攻陷獎勵 ×4 ----
 {
   const { NPC_CONFIG, NPC_ASSAULT, NPC_REWARD_MUL } = await import('../src/config/npcs.js');
   const gn = Game.newGame({ playerName: 'N108', classId: 'warrior', lat: 25, lon: 121 });
@@ -4879,7 +4879,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gn.npcs.assaultWound(n, 10, t0);
   const after = gn.npcs.garrison(n, { assault: true }).length;
   assert(full - after === 10, `擊倒 10 名守軍，下次攻打只少 10 名（${full}→${after}）`);
-  assert(n.healAt - t0 === NPC_CONFIG.woundHealMs && NPC_CONFIG.woundHealMs / NPC_ASSAULT.count === 10000, '守軍每 10 秒補回 1 名');
+  // v15.8：守軍每 20 秒補回 1 名
+  const NS = gn.npcs.constructor;
+  const healed = (ms) => { const d = { wounded: n.wounded, healAt: n.healAt }; NS.healTo(d, t0 + ms, 99); return gn.npcs.garrison({ ...n, ...d }, { assault: true }).length; };
+  assert(n.healAt - t0 === NPC_CONFIG.woundHealMs && NPC_CONFIG.woundHealMs === 20000 && healed(19999) === after && healed(20000) === after + 1 && healed(60000) === after + 3 && healed(200000) === full,
+    `守軍每 20 秒補回 1 名（${after}→${healed(20000)}→${healed(60000)}→${healed(200000)}／${full}）`);
+  const n2 = { id: 'npc108b', level: 33, wounded: 0, healAt: 0 };
+  gn.npcs.assaultWound(n2, 9, t0);
+  assert(full - gn.npcs.garrison(n2, { assault: true }).length === 9, '擊倒奇數名守軍也只少那幾名');
   assert(NPC_REWARD_MUL === 4, '攻陷獎勵為 4 倍');
 }
 
