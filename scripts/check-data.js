@@ -6583,10 +6583,8 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const eastCp = CPC.CONTROL_POINTS.find((c) => CPC.FACTION_KEYS.some((f) => CPC.hqNeighbors(f).includes(c.id)));
     const ep = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === eastCp.id);
     const westP = gr.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon));
-    assert(EX.hqFactionOf(ep) && !EX.hqFactionOf(westP), '鄰接大本營的控制點才會被大本營襲擊');
-    // 大本營派出部隊：移動時間比照攻打玩家避難所；抵達時隊伍還在搜索才交戰，先撤回就能躲開
-    const c0 = EX.HQ_AMBUSH.chance;
-    EX.HQ_AMBUSH.chance = 1;
+    assert(EX.hqFactionOf(ep) && !EX.hqFactionOf(westP), '找到鄰接大本營的控制點');
+    // v15.8.1：移除大本營伏擊探索隊：不再派出部隊；舊版本已派出、還沒抵達的部隊取消
     const ce0 = gr.cp.canExplore;
     const so0 = gr.cp.statusOf;
     gr.cp.canExplore = () => ({ ok: true });
@@ -6597,24 +6595,19 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const ra = gr.exploration.start(ep.id, [weak.id], 5);
     assert(ra.ok, `派隊到鄰接大本營的控制點探索（${ra.reason || ''}）`);
     const e = ra.exp;
-    e.searchMs = 3600000; // 測試用：搜索很久，部隊抵達時還在
+    e.searchMs = 3600000;
     const arrive = e.startAt + e.travelMs + 1;
-    gr.cp.hqAmbushes(arrive);
-    const amb = e.hqAmbush;
-    const { RAID_TRAVEL: RT } = await import('../src/config/constants.js');
-    assert(amb && amb.hitAt - arrive >= RT.minMin * 60000 - 5, `大本營派出部隊、移動時間比照攻打避難所（約 ${Math.round((amb?.hitAt - arrive) / 60000)} 分鐘）`);
-    assert(gr.cp.marchView(arrive + 1000).some((m) => m.id === `ma:${e.id}`), '地圖上顯示前往探索點的大本營部隊');
-    assert(gr.cp.incoming(arrive + 1000).some((x) => /大本營部隊 → 探索點/.test(x.text)), '地圖左上角顯示大本營部隊前往探索點的紅色訊息');
-    e.cp = e.cp || { gained: {} };
-    e.cp.gained = { ...(e.cp.gained || {}), food: 10 };
-    gr.cp.hqAmbushes(amb.hitAt + 1);
-    assert(amb.done && (e.travelEvents || []).some((x) => /襲擊/.test(x)), `部隊抵達時隊伍還在：交戰（${(e.travelEvents || []).slice(-1)[0] || ''}）`);
-    gr.exploration.recall(e.id, amb.hitAt + 2);
+    for (let i = 0; i < 20; i += 1) gr.cp.hqAmbushes(arrive + i * 1000);
+    assert(!e.hqAmbush && !gr.cp.incoming(arrive + 1000).some((x) => /大本營部隊/.test(x.text)), '鄰接大本營的控制點探索：大本營不再派部隊襲擊');
+    e.hqAmbush = { f: 'red', from: CPC.factionHq('red'), to: { lat: ep.lat, lon: ep.lon }, at: arrive, hitAt: arrive + 600000 };
+    gr.cp.hqAmbushes(arrive + 1000);
+    gr.cp.hqAmbushes(arrive + 700000);
+    assert(!e.hqAmbush && !(e.travelEvents || []).some((x) => /襲擊/.test(x)) && !gr.cp.marchView(arrive + 2000).some((m) => m.id === `ma:${e.id}`), '舊版本已派出的大本營部隊取消、不交戰');
+    gr.exploration.recall(e.id, arrive + 2);
     gr.state.expeditions = gr.state.expeditions.filter((x) => x !== e);
     gr.state.survivors = gr.state.survivors.filter((x) => x !== weak);
     gr.cp.canExplore = ce0;
     gr.cp.statusOf = so0;
-    EX.HQ_AMBUSH.chance = c0;
   }
   // v15.5：離線期間控制點被佔領：回來結算時，從被佔領的那一刻起撤回（不會照常搜完帶回全部物資）
   {
@@ -7110,6 +7103,57 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const base = NC8.raidBaseMs * crowd / (0.3 + A.npcs.aggression());
     assert(NPC_DAY_SLOW === 2 && ds.every((d) => d >= base * 2 * 0.69 && d <= base * 2 * 1.31), '情境12：NPC 掠奪間隔加倍（次數減半）');
   }
+}
+
+// ---- v15.8.1：自己攻打控制點／NPC 據點：打贏沒倒下 +3%，倒下只扣 3% ----
+{
+  const { RALLY_XP: RX } = await import('../src/config/npcs.js');
+  const { xpToNext: x2n } = await import('../src/config/survivors.js');
+  const gx = Game.newGame({ playerName: 'X', classId: 'warrior', lat: 25, lon: 121 });
+  const sv = gx.survivors.leader();
+  sv.level = 20; sv.xp = Math.round(x2n(20) / 2);
+  const tot0 = gx.survivors.totalXp(sv);
+  const res = { kills: [], bossKills: 0, eliteKills: 0, xp: 0, coins: 0, parts: {}, victory: true, team: [{ id: sv.id, hp: 50, down: false }] };
+  gx.combat.applyOutcome([sv], res, Date.now(), { attackXp: RX });
+  const gain = gx.survivors.totalXp(sv) - tot0;
+  assert(Math.abs(gain - (5 + Math.round(x2n(20) * 0.03))) <= 2 && res.winBonus?.length === 1, `攻打打贏：沒倒下的隊員另得升級所需經驗的 3%（+${gain}）`);
+  const tot1 = gx.survivors.totalXp(sv);
+  gx.combat.applyOutcome([sv], { ...res, victory: false, winBonus: null, team: [{ id: sv.id, hp: 0, down: true }] }, Date.now(), { attackXp: RX });
+  const lost = tot1 - gx.survivors.totalXp(sv);
+  assert(Math.abs(lost - Math.round(x2n(20) * 0.03)) <= 2, `攻打倒下只扣升級所需經驗的 3%（-${lost}）`);
+  sv.severe = false;
+  const tot2 = gx.survivors.totalXp(sv);
+  gx.combat.applyOutcome([sv], { ...res, winBonus: null }, Date.now());
+  assert(gx.survivors.totalXp(sv) - tot2 === 5, '探索等其他戰鬥不加勝利經驗');
+}
+
+// ---- v15.8.1：背包滿了先回家：總計包含返程＋之後每一站＋最後回家 ----
+{
+  const gi = Game.newGame({ playerName: 'I', classId: 'warrior', lat: 25, lon: 121 });
+  gi.state.map.pois = fillPois([], 25, 121);
+  gi.shelter.establish(gi.state.map.pois.find((p) => gi.shelter.canEstablish(p).ok));
+  setHour(gi, 10);
+  const home = gi.shelter.primary();
+  const near = gi.state.map.pois.filter((p) => !gi.shelter.baseAtPoi(p.id) && !p.npc && haversine(p.lat, p.lon, home.lat, home.lon) < 900).slice(0, 3);
+  const r = gi.exploration.start(near[0].id, [gi.survivors.leader().id], 1, false, Date.now());
+  assert(r.ok, '派出探索');
+  const e = r.exp;
+  gi.exploration.enqueue(e.id, near[1].id);
+  gi.exploration.enqueue(e.id, near[2].id);
+  // 測試用：已經在返程（背包滿了：搜完時判定不前往下一站），佇列還在
+  e.chainChecked = true;
+  const now = e.startAt + e.travelMs + e.searchMs + Math.round(e.travelMs / 2);
+  const it = gi.exploration.itinerary(e, now);
+  const back = Math.max(0, e.endAt - now);
+  assert(it.phase === 'returning' && it.queueOnHold && it.holdStops.length === 2 && !it.stops.length, '返程中、佇列等回家後再前往');
+  const sum = back + it.holdStops.reduce((s, x) => s + x.totalMs, 0) + it.backMs;
+  assert(Math.abs(it.currentMs - back) < 50 && Math.abs(it.totalMs - sum) < 50 && it.totalMs > back + it.holdStops[0].travelMs && it.backMs > 0, `總計＝返程＋之後每一站＋最後回家（${Math.round(back / 1000)} 秒 → 總計 ${Math.round(it.totalMs / 1000)} 秒）`);
+  const p0 = gi.exploration.plan(near[1], [gi.survivors.leader()], gi.exploration.searchMinutes(near[1]), now + back);
+  assert(Math.abs(it.holdStops[0].travelMs - p0.travelMs) < 50, '回家後的第一站從避難所出發計算');
+  assert(Math.abs(it.endAt - (now + it.totalMs)) < 5, '預計回到避難所的時間＝最後一站回家');
+  e.recalled = true;
+  const itR = gi.exploration.itinerary(e, now);
+  assert(!itR.queueOnHold && Math.abs(itR.totalMs - back) < 50, '召回的隊伍回家後不再前往佇列：總計只算返程');
 }
 
 if (failures) {

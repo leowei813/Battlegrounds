@@ -3,6 +3,7 @@ import { ITEM_MODELS } from '../config/equipment.js';
 import { SUPPLIES, AMMO_RECOVER, recoverKeyOf, rollRecover } from '../config/supplies.js';
 import { ALL_ENEMIES, ELITE_MUL, defReduce, HOME_DEFENSE_DOWN } from '../config/enemies.js';
 import { chance, randFloat, pick, uid } from '../utils/math.js';
+import { xpToNext } from '../config/survivors.js';
 
 const STEP = 0.1; // 秒
 const MAX_TIME = 90;
@@ -442,7 +443,12 @@ export class CombatSystem {
    * @param {object} [opts]
    * @param {boolean} [opts.homeDefense] 據點防守戰：倒下的人只有部分重傷，其餘以低生命撐住
    */
-  applyOutcome(survivors, result, at = Date.now(), { homeDefense = false } = {}) {
+  /**
+   * @param {object} [opts]
+   * @param {boolean} [opts.homeDefense]
+   * @param {{winPct:number, downPct:number}} [opts.attackXp] v15.8：攻打控制點／NPC 據點：打贏時沒倒下的人另得升級所需經驗的 winPct，倒下只扣 downPct
+   */
+  applyOutcome(survivors, result, at = Date.now(), { homeDefense = false, attackXp = null } = {}) {
     const st = this.game.state.stats;
     st.kills += result.kills.length;
     st.bossKills += result.bossKills;
@@ -457,10 +463,12 @@ export class CombatSystem {
           this.game.survivors.setHp(sv, Math.max(1, this.game.survivors.maxHp(sv) * HOME_DEFENSE_DOWN.hpPct));
           return;
         }
-        this.game.survivors.becomeSevere(sv, '在戰鬥中', at);
+        this.game.survivors.becomeSevere(sv, '在戰鬥中', at, ...(attackXp ? [attackXp.downPct] : []));
         return;
       }
-      this.game.survivors.gainXp(sv, xpEach);
+      const bonus = attackXp && result.victory ? Math.round(xpToNext(sv.level) * attackXp.winPct) : 0;
+      if (bonus > 0) (result.winBonus = result.winBonus || []).push(`${sv.name} +${bonus.toLocaleString()}`);
+      this.game.survivors.gainXp(sv, xpEach + bonus);
       if (u) this.game.survivors.setHp(sv, u.hp);
     });
     this.game.grant({ coins: Math.round(result.coins * COIN_GAIN_MUL), parts: result.parts });

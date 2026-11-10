@@ -725,7 +725,7 @@ export class MapPanel {
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean);
       const who = names.length <= 2 ? names.join('、') : `${names[0]}等 ${names.length} 人`;
       const guarding = ex.kind === 'cpGuard' && it.phase === 'searching' && !ex.recalled && !ex.defeated;
-      const time = guarding ? `駐防控制點 #${cpById(ex.cpId)?.no || ''}` : it.phase === 'returning' ? `⏱ 返程 ${formatDuration(it.totalMs)}` : `⏱ 總計 ${formatDuration(it.totalMs)}`;
+      const time = guarding ? `駐防控制點 #${cpById(ex.cpId)?.no || ''}` : `⏱ 總計 ${formatDuration(it.totalMs)}`; // v15.8.1：返程也一律顯示總計（含之後的佇列）
       const queued = ex.kind === 'explore' && it.phase !== 'returning' ? `・佇列 ${(ex.queue || []).length}` : '';
       // 左側圖示：快速定位隊伍；文字：打開隊伍詳細
       rows.push(`<div class="feed-chip team split"><button class="feed-loc" data-action="feedLocate" data-id="${ex.id}" title="地圖移到隊伍位置">${icon}</button><button class="feed-txt" data-action="feedTeam" data-id="${ex.id}">${escapeHtml(who || '隊伍')}・${time}${queued}</button></div>`);
@@ -858,15 +858,16 @@ export class MapPanel {
       const guarding = ex.kind === 'cpGuard' && it.phase === 'searching' && !ex.recalled && !ex.defeated;
       const curRow = guarding
         ? `<div class="it-step now"><span class="no">▶</span><span><b>${escapeHtml(poi?.name || '控制點')}</b><small>🛡️ 駐防中・直到撤回或被打下</small></span><span class="t"></span></div>`
-        : `<div class="it-step now"><span class="no">▶</span><span><b>${escapeHtml(poi?.name || '未知地點')}</b><small>${status || ph}${it.phase === 'returning' ? '' : cpDone}</small></span><span class="t">剩 <b>${formatDuration(it.phase === 'returning' ? it.totalMs : it.currentMs)}</b></span></div>`;
+        : `<div class="it-step now"><span class="no">▶</span><span><b>${escapeHtml(poi?.name || '未知地點')}</b><small>${status || ph}${it.phase === 'returning' ? '' : cpDone}</small></span><span class="t">剩 <b>${formatDuration(it.currentMs)}</b></span></div>`;
       const stopRows = it.stops.map((x, i) => `<div class="it-step"><span class="no">${i + 1}</span><span><b>${escapeHtml(x.poi.name)}</b><small>🚶 移動 ${formatDuration(x.travelMs)}・🔍 搜索 ${formatDuration(x.searchMs)}</small></span><span class="t"><b>${formatDuration(x.totalMs)}</b>${btn('移除', 'dequeue', { i }, { cls: 'btn-xs btn-ghost' })}</span></div>`).join('');
-      const holdRows = it.queueOnHold ? (ex.queue || []).map((pid, i) => `<div class="it-step"><span class="no">${i + 1}</span><span><b>${escapeHtml(g.exploration.poi(pid)?.name || '地點')}</b><small>回到避難所後接著前往</small></span><span class="t">${btn('移除', 'dequeue', { i }, { cls: 'btn-xs btn-ghost' })}</span></div>`).join('') : '';
-      const homeRow = it.stops.length ? `<div class="it-step home"><span class="no">🏠</span><span><b>回到避難所</b><small>🏃 從最後一站回家</small></span><span class="t"><b>${formatDuration(it.backMs)}</b></span></div>` : '';
+      // v15.8.1：背包滿了先回家：之後的每一站從避難所出發，時間一起算進總計
+      const holdRows = it.queueOnHold ? (it.holdStops || []).map((x, i) => `<div class="it-step"><span class="no">${i + 1}</span><span><b>${escapeHtml(x.poi.name)}</b><small>回到避難所後接著前往・🚶 移動 ${formatDuration(x.travelMs)}・🔍 搜索 ${formatDuration(x.searchMs)}</small></span><span class="t"><b>${formatDuration(x.totalMs)}</b>${btn('移除', 'dequeue', { i }, { cls: 'btn-xs btn-ghost' })}</span></div>`).join('') : '';
+      const homeRow = it.stops.length || it.holdStops?.length ? `<div class="it-step home"><span class="no">🏠</span><span><b>回到避難所</b><small>🏃 從最後一站回家</small></span><span class="t"><b>${formatDuration(it.backMs)}</b></span></div>` : '';
       return `
       <p class="muted">👥 ${names || `${ex.memberIds.length} 人`}</p>
       <div class="it-sum">${guarding ? '<span>🛡️ 駐防中，撤回後才回到避難所</span>' : `<span>⏱ 總計 <b>${formatDuration(it.totalMs)}</b></span><span>🏠 預計 <b>${hm}</b> 回到避難所</span>`}${ex.kind === 'explore' ? `<span>🧭 佇列 <b>${qn}/${g.exploration.queueLimit()}</b></span>` : ''}</div>
       ${curRow}${stopRows}${holdRows}${homeRow}
-      ${it.stops.length ? '<small class="muted block">預估時間依隊員速度、載具與日夜計算；途中遇到戰鬥或背包裝滿提早回家時會有變動。</small>' : ''}
+      ${it.stops.length || it.holdStops?.length ? '<small class="muted block">預估時間依隊員速度、載具與日夜計算；途中遇到戰鬥或背包裝滿提早回家時會有變動。</small>' : ''}
       ${this.ui.panels.explore.checkpointHtml(ex)}
       ${this.chainHtml(ex)}
       ${canRecall ? `<p class="muted">${'召回後隊伍會從目前位置走回避難所（需要移動時間），只會帶回已經到過的檢核點找到的物資。'}</p>` : ''}
