@@ -6867,6 +6867,33 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   NQ.to = NQ.from;
 }
 
+// ---- v15.8：控制點被勢力攻下：駐防隊的報告寫出交戰經過（已參戰／還在路上） ----
+{
+  const { CONTROL_POINTS: CPS8 } = await import('../src/config/controlPoints.js');
+  const gk = Game.newGame({ playerName: 'K', classId: 'warrior', lat: 25, lon: 121 });
+  const cp8 = CPS8[0];
+  const t0 = Date.now() - 600000;
+  const fought = { id: 'gA', kind: 'cpGuard', cpId: cp8.id, startAt: t0, travelMs: 60000, memberIds: [], travelEvents: [] };
+  const late = { id: 'gB', kind: 'cpGuard', cpId: cp8.id, startAt: t0, travelMs: 3600000, memberIds: [], travelEvents: [] };
+  gk.state.expeditions.push(fought, late);
+  const ft = { f: 'red', at: t0 + 120000, win: true, total: 4, atk: 9, owners: ['someone'], guards: [gk.cp.myId()], ge: ['gA'], down: [] };
+  gk.cp.data = () => ({ owners: [], guards: [], faction: 'red', fight: ft });
+  gk.cp.ready = () => true;
+  assert(/被「.+」的部隊（9 人）攻下：守軍 4 人全數被擊倒/.test(gk.cp.lostReason(fought)), `參戰的駐防隊：撤回原因寫出被誰攻下（${gk.cp.lostReason(fought)}）`);
+  assert(/還沒抵達.*已被「.+」的部隊（9 人）攻下/.test(gk.cp.lostReason(late)), `還在路上的駐防隊：寫出抵達前已被攻下（${gk.cp.lostReason(late)}）`);
+  gk.cp.reportFights();
+  assert(fought.travelEvents.some((x) => /攻下/.test(x)) && late.travelEvents.some((x) => /還沒抵達/.test(x)), '交戰經過寫進駐防隊的探索報告');
+  // 撤回（先交戰後撤回、先撤回後交戰兩種順序）：報告裡同一句只出現一次
+  fought.travelEvents.push('↩️ 收到召回命令，隊伍折返避難所');
+  gk.cp.constructor.replaceRecallText(fought, gk.cp.lostReason(fought));
+  const other = { ...late, id: 'gC', travelEvents: ['↩️ 收到召回命令，隊伍折返避難所'] };
+  gk.cp.constructor.replaceRecallText(other, gk.cp.lostReason(other));
+  gk.state.expeditions.push(other); gk.cp.st.fightSeen = {}; gk.cp.reportFights();
+  assert(fought.travelEvents.length === 1 && other.travelEvents.length === 1 && late.travelEvents.length === 1, `撤回與交戰經過不重複（${fought.travelEvents.join(' / ')}｜${other.travelEvents.join(' / ')}）`);
+  gk.cp.data = () => ({ owners: [], guards: [] });
+  assert(/已不是你或好友的控制點/.test(gk.cp.lostReason({ ...fought })), '沒有交戰（佔領者放棄、解除好友）時維持原本說明');
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

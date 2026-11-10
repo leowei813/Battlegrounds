@@ -231,8 +231,9 @@ export class ControlPointSystem {
   static replaceRecallText(e, msg) {
     const list = e.travelEvents || [];
     const i = list.lastIndexOf('↩️ 收到召回命令，隊伍折返避難所');
-    if (i >= 0) list.splice(i, 1, msg);
-    else list.push(msg);
+    const dup = list.includes(msg); // 交戰經過已經寫進報告（v15.8）：不重複
+    if (i >= 0) list.splice(i, 1, ...(dup ? [] : [msg]));
+    else if (!dup) list.push(msg);
     e.travelEvents = list;
   }
 
@@ -339,6 +340,26 @@ export class ControlPointSystem {
     return { ok: true, exp, msg: `隊伍出發駐防控制點 #${cpById(id).no}，約 ${Math.max(1, Math.round(exp.travelMs / 60000))} 分鐘後抵達` };
   }
 
+  /**
+   * v15.8：駐防隊撤回的原因：控制點在駐防期間被勢力攻下時說明是誰攻下、駐防隊有沒有參戰；
+   * 其他情況（佔領者放棄、好友解除關係）維持原本的說明。
+   */
+  lostReason(e) {
+    const no = cpById(e.cpId)?.no || '';
+    const ft = this.data(e.cpId)?.fight;
+    if (ft?.win && ft.at >= e.startAt) {
+      const fname = FACTIONS[ft.f]?.name || '勢力';
+      if (this.guardFought(e, ft)) return `🏴 控制點 #${no} 被「${fname}」的部隊（${ft.atk} 人）攻下：守軍 ${ft.total} 人全數被擊倒，駐防隊撤回`;
+      return `🏴 駐防隊還沒抵達，控制點 #${no} 已被「${fname}」的部隊（${ft.atk} 人）攻下，駐防隊撤回`;
+    }
+    return `🛡️ 控制點 #${no}已不是你或好友的控制點，駐防隊撤回`;
+  }
+
+  /** 這支駐防隊有沒有參加這場交戰（交戰時已抵達並登記在共用資料） */
+  guardFought(e, ft) {
+    return Array.isArray(ft.ge) ? ft.ge.includes(e.id) : e.startAt + (e.travelMs || 0) <= ft.at;
+  }
+
   /** v15.4.1：駐防沒有期限（直到撤回或被打下）：快到期時自動延長 */
   extendGuards(now = Date.now()) {
     const g = this.game;
@@ -348,7 +369,7 @@ export class ControlPointSystem {
       if (!g.exploration.canRecall(e, now)) return;
       const r = g.exploration.recall(e.id, now);
       if (!r.ok) return;
-      const msg = `🛡️ 控制點 #${cpById(e.cpId)?.no || ''}已不是你或好友的控制點，駐防隊撤回`;
+      const msg = this.lostReason(e);
       ControlPointSystem.replaceRecallText(e, msg);
       g.log(msg, 'danger');
     });
@@ -897,14 +918,24 @@ export class ControlPointSystem {
       this.st.fightSeen[cp.id] = ft.at;
       const owner = (ft.owners || []).includes(me);
       const guard = (ft.guards || []).includes(me);
-      if (!owner && !guard) return;
+      // v15.8：交戰時還在路上的駐防隊也要知道控制點被攻下了
+      const mine = g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === cp.id && e.startAt <= ft.at && !e.defeated);
+      const enRoute = ft.win && mine.some((e) => !this.guardFought(e, ft));
+      if (!owner && !guard && !enRoute) return;
       const fname = FACTIONS[ft.f]?.name || '勢力';
       const role = owner && guard ? '你佔領並駐防的' : owner ? '你佔領的' : '你駐防的';
       const msg = ft.win
         ? `🏴 「${fname}」的部隊（${ft.atk} 人）攻下了${role}控制點 #${cp.no}${ft.total ? `：守軍 ${ft.total} 人全數被擊倒` : '（沒有駐防）'}`
         : `🛡️ ${role}控制點 #${cp.no} 擊退了「${fname}」的部隊（${ft.atk} 人）：擊倒 ${ft.atkDown || 0} 人，守軍倒下 ${ft.lost || 0} 人${(ft.down || []).includes(me) ? '（你的駐防隊有人倒下，撤回避難所）' : ''}`;
-      g.log(msg, ft.win ? 'danger' : 'success');
-      g.toast?.(msg, ft.win ? 'danger' : 'success');
+      const text = !owner && !guard ? this.lostReason(mine.find((e) => !this.guardFought(e, ft))) : msg;
+      g.log(text, ft.win ? 'danger' : 'success');
+      g.toast?.(text, ft.win ? 'danger' : 'success');
+      // v15.8：交戰經過也寫進駐防隊的探索報告（回到避難所時看得到）
+      mine.forEach((e) => {
+        const line = ft.win ? this.lostReason(e) : this.guardFought(e, ft) ? msg : null;
+        if (!line) return;
+        if (!(e.travelEvents || []).includes(line)) e.travelEvents = [...(e.travelEvents || []), line];
+      });
       if (!ft.win && guard) this.guardXp(cp, ft);
     });
   }
@@ -915,8 +946,7 @@ export class ControlPointSystem {
     const down = new Set(ft.downU || []);
     const got = [];
     // 參戰的駐防隊（交戰時在共用資料裡的隊伍）
-    const fought = (e) => (Array.isArray(ft.ge) ? ft.ge.includes(e.id) : e.startAt + (e.travelMs || 0) <= ft.at);
-    g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === cp.id && fought(e)).forEach((e) => {
+    g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === cp.id && this.guardFought(e, ft)).forEach((e) => {
       e.memberIds.forEach((sid, i) => {
         const sv = g.survivors.get(sid);
         if (!sv || sv.severe || down.has(`${e.id}:${i}`)) return;
