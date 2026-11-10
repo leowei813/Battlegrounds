@@ -467,6 +467,8 @@ export class ControlPointSystem {
       this.busy.add(exp.id);
       try {
         exp.cpResult = await this.fight(exp, at);
+        // v15.9.2：抵達就交戰（同集結），結果先通知，隊伍走回家後才收到報告
+        this.game.toast?.(`${exp.cpResult.victory ? '🏆' : '⚠️'} 攻打控制點 #${cpById(exp.cpId)?.no || ''}：${exp.cpResult.victory ? '佔領成功' : '沒能打下'}，隊伍返回避難所`, exp.cpResult.victory ? 'success' : 'danger');
       } finally {
         this.busy.delete(exp.id);
       }

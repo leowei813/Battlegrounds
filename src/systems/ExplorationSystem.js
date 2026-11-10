@@ -500,7 +500,7 @@ export class ExplorationSystem {
     if (!v.ok) return v;
     if (kind === 'raid' && this.game.npcs.get?.(poiId)?.hq) return { ok: false, reason: '大本營不能攻打' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' || kind === 'rally' || kind === 'cpGuard' ? 0 : kind === 'raid' || kind === 'pvp' || kind === 'infect' || kind === 'cp' ? 2 : this.searchMinutes(v.poi);
+    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' || kind === 'rally' || kind === 'cpGuard' ? 0 : kind === 'pvp' || kind === 'infect' ? 2 : kind === 'raid' || kind === 'cp' ? 0 : this.searchMinutes(v.poi); // v15.9.2：攻打 NPC 據點、控制點抵達就交戰（同集結）
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile, from });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
@@ -1046,6 +1046,12 @@ export class ExplorationSystem {
       if (!hops.length) break;
       reports.push(...hops);
     }
+    // v15.9.2：攻打 NPC 據點：抵達就交戰（同集結），結果先通知，隊伍走回家後才收到報告
+    this.list.filter((e) => e.kind === 'raid' && !e.raidReport && !e.recalled && !e.defeated && now >= e.startAt + (e.travelMs || 0) + (e.searchMs || 0) && now < e.endAt).forEach((e) => {
+      const at = e.startAt + (e.travelMs || 0) + (e.searchMs || 0);
+      e.raidReport = this.game.combat.within(e, () => this.game.npcs.resolveRaid(e, at));
+      if (!silent) this.game.toast(`${e.raidReport.success ? '✅' : '⚠️'} ${e.raidReport.poiName}：${e.raidReport.success ? '攻打成功' : '攻打失敗'}，隊伍返回避難所`, e.raidReport.success ? 'success' : 'danger');
+    });
     let due = this.list.filter((e) => e.endAt <= now);
     while (due.length && guard < 400) {
       guard += 1;
@@ -1065,7 +1071,7 @@ export class ExplorationSystem {
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)
-            : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
+            : exp.kind === 'raid' ? (exp.raidReport ? { ...exp.raidReport, at: exp.endAt } : this.game.npcs.resolveRaid(exp))
             : exp.kind === 'infect' ? this.game.infected.resolveAttack(exp)
             : exp.kind === 'cp' ? this.game.cp.report(exp)
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp)));

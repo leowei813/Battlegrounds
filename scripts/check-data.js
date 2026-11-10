@@ -6323,9 +6323,9 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   A.combat.simulate = (team, foes, o) => { const r = sim(team, foes, { ...o, record: false }); r.victory = true; r.foes.forEach((f) => { f.down = true; }); return r; };
   const at = A.cp.attack(cp.id, [lead.id]);
   assert(at.ok, `派隊攻打控制點（${at.reason || ''}）`);
-  assert(at.exp.searchMs > 0, '攻打控制點有攻打倒數時間');
-  await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs + at.exp.searchMs - 1000);
-  assert(!at.exp.cpResult && A.cp.statusOf(cp.id) !== 'mine', '抵達後攻打倒數還沒結束：還沒佔領（不能駐防、地圖不會點亮）');
+  assert(at.exp.searchMs === 0, 'v15.9.2：攻打控制點沒有攻打倒數（抵達就交戰，同集結）');
+  await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs - 1000);
+  assert(!at.exp.cpResult && A.cp.statusOf(cp.id) !== 'mine', '還沒抵達：還沒佔領（不能駐防、地圖不會點亮）');
   await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs + at.exp.searchMs + 1);
   A.combat.simulate = sim;
   await B.shared.poll(); await C.shared.poll();
@@ -7196,6 +7196,31 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   e.recalled = true;
   const itR = gi.exploration.itinerary(e, now);
   assert(!itR.queueOnHold && Math.abs(itR.totalMs - back) < 50, '召回的隊伍回家後不再前往佇列：總計只算返程');
+}
+
+// ---- v15.9.2：單人攻打 NPC 據點：沒有攻打倒數、抵達就交戰（同集結），走回家才收到報告 ----
+{
+  const gr2 = Game.newGame({ playerName: 'RA', classId: 'warrior', lat: 25, lon: 121 });
+  gr2.state.map.pois = fillPois([], 25, 121);
+  gr2.shelter.establish(gr2.state.map.pois.find((p) => gr2.shelter.canEstablish(p).ok));
+  setHour(gr2, 10);
+  const free = gr2.state.map.pois.filter((p) => !gr2.shelter.baseAtPoi(p.id));
+  const nn = gr2.npcs.spawnAt(free[3], 'ra', Date.now(), true);
+  const L2 = gr2.survivors.leader();
+  const st = gr2.exploration.start(nn.id, [L2.id], 5, false, Date.now(), { kind: 'raid' });
+  assert(st.ok && st.exp.searchMs === 0, `攻打 NPC 據點沒有攻打倒數（${st.reason || ''}）`);
+  let calls = 0;
+  const rr0 = gr2.npcs.resolveRaid.bind(gr2.npcs);
+  gr2.npcs.resolveRaid = (...a) => { calls += 1; return rr0(...a); };
+  const arr = st.exp.startAt + st.exp.travelMs;
+  gr2.exploration.update(arr - 1, { silent: true });
+  assert(!st.exp.raidReport && calls === 0, '還沒抵達不交戰');
+  gr2.exploration.update(arr + 1, { silent: true });
+  assert(st.exp.raidReport && calls === 1 && gr2.state.expeditions.includes(st.exp) && !(gr2.state.reports || []).some((r) => r === st.exp.raidReport), '抵達就交戰，隊伍還在回家路上（報告回家才收到）');
+  const n0 = (gr2.state.reports || []).length;
+  gr2.exploration.update(st.exp.endAt + 1, { silent: true });
+  const rep = gr2.state.reports[0];
+  assert(calls === 1 && gr2.state.reports.length === n0 + 1 && rep.poiName.includes(nn.name) && rep.at === st.exp.endAt, '回到避難所收到報告，交戰只結算一次');
 }
 
 if (failures) {

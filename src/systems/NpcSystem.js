@@ -1019,12 +1019,12 @@ export class NpcSystem {
   // ---------- 玩家攻打 ----------
 
   /** 探索系統結算「攻打 NPC 據點」 */
-  resolveRaid(exp) {
+  resolveRaid(exp, at = exp.endAt) {
     const g = this.game;
     const n = this.get(exp.poiId);
     const members = exp.memberIds.map((id) => g.survivors.get(id)).filter(Boolean);
     const report = {
-      id: uid('rp'), poiName: n ? `🏴‍☠️ ${n.name}` : 'NPC 據點', poiType: 'military', at: exp.endAt,
+      id: uid('rp'), poiName: n ? `🏴‍☠️ ${n.name}` : 'NPC 據點', poiType: 'military', at: at,
       events: [...(exp.travelEvents || [])], resources: {}, items: [], blueprints: [],
       kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: false, members: members.map((m) => m.name),
     };
@@ -1039,7 +1039,7 @@ export class NpcSystem {
     const attackers = members.map((m) => ({ sv: m, maxHp: Math.max(1, g.survivors.hpOf(m)), atk: g.survivors.stats(m).atk }));
     const as = g.combat.wallAssault(attackers, df.wall, df.dps);
     attackers.forEach((a) => {
-      if (!as.alive.includes(a)) g.survivors.becomeSevere(a.sv, '在攻打 NPC 據點時被防禦火力擊倒', exp.endAt, RALLY_XP.downPct);
+      if (!as.alive.includes(a)) g.survivors.becomeSevere(a.sv, '在攻打 NPC 據點時被防禦火力擊倒', at, RALLY_XP.downPct);
       else g.survivors.setHp(a.sv, a.hp);
     });
     report.events.push(`🧱 攻擊圍牆 ${as.sec} 秒（耐久 ${df.wall}）${as.killed ? `，${as.killed} 名隊員被防禦火力擊倒` : ''}`);
@@ -1051,13 +1051,13 @@ export class NpcSystem {
     }
     // 2. 破牆後與守軍交戰
     const result = g.combat.simulate(fighters, enemies, { title: `⚔️ 攻打 NPC「${n.name}」（Lv${n.level}）` });
-    g.combat.applyOutcome(fighters, result, exp.endAt, { attackXp: RALLY_XP });
+    g.combat.applyOutcome(fighters, result, at, { attackXp: RALLY_XP });
     report.kills += result.kills.length;
     report.xp += result.xp;
     if (result.winBonus?.length) report.events.push(`🏆 勝利經驗：${result.winBonus.join('、')}`);
     if (!result.victory) {
       g.state.stats.battlesLost += 1;
-      this.assaultWound(n, result.kills.length, exp.endAt);
+      this.assaultWound(n, result.kills.length, at);
       report.events.push(`💀 攻打失敗，隊伍撤退！${result.kills.length ? `（擊倒對方 ${result.kills.length} 人，對方需要時間補回人手）` : ''}`);
       return report;
     }
@@ -1085,7 +1085,7 @@ export class NpcSystem {
     }
     report.events.push(`🏆 攻陷「${n.name}」，據點被摧毀！`);
     g.log(`🏆 攻陷 NPC 據點「${n.name}」`, 'success');
-    this.destroy(n, exp.endAt);
+    this.destroy(n, at);
     return report;
   }
 
