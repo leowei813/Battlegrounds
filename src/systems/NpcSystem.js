@@ -1,7 +1,7 @@
 import { unitPower } from '../utils/math.js';
 import { DUNGEONS, DG_CLEAR_M } from '../config/dungeons.js';
 import { AssistSystem } from './AssistSystem.js';
-import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL, npcQuietSpan } from '../config/npcs.js';
+import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL, npcQuietSpan, NPC_DAY_SLOW } from '../config/npcs.js';
 import { xpToNext } from '../config/survivors.js';
 import {
   RESOURCE_KEYS, RAID_TRAVEL,
@@ -551,7 +551,8 @@ export class NpcSystem {
   /** 下一次掠奪的間隔：積極度越高越頻繁 */
   raidDelay() {
     const crowd = Math.max(1, this.list.length / 3);
-    return (NPC_CONFIG.raidBaseMs * crowd / (0.3 + this.aggression())) * randFloat(0.7, 1.3);
+    // v15.8：白天（台灣時間 08:00～00:00）掠奪次數減半（凌晨完全不掠奪）
+    return (NPC_CONFIG.raidBaseMs * NPC_DAY_SLOW * crowd / (0.3 + this.aggression())) * randFloat(0.7, 1.3);
   }
 
   // ---------- 更新 ----------

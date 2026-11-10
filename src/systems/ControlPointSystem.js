@@ -6,7 +6,7 @@ import { inNpcHome, ZONES } from '../config/zones.js';
 import { xpToNext } from '../config/survivors.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { RAID_TRAVEL } from '../config/constants.js';
-import { NPC_CONFIG, npcQuietAt, npcQuietSpan } from '../config/npcs.js';
+import { NPC_CONFIG, npcQuietAt, npcQuietSpan, NPC_DAY_SLOW } from '../config/npcs.js';
 import { HQ_AMBUSH, hqFactionOf } from './ExplorationSystem.js';
 import {
   uid, haversine, chance, randInt, weightedPick, formatDuration, unitPower,
@@ -348,11 +348,16 @@ export class ControlPointSystem {
     const no = cpById(e.cpId)?.no || '';
     const ft = this.data(e.cpId)?.fight;
     if (ft?.win && ft.at >= e.startAt) {
-      const fname = FACTIONS[ft.f]?.name || '勢力';
-      if (this.guardFought(e, ft)) return `🏴 控制點 #${no} 被「${fname}」的部隊（${ft.atk} 人）攻下：守軍 ${ft.total} 人全數被擊倒，駐防隊撤回`;
-      return `🏴 駐防隊還沒抵達，控制點 #${no} 已被「${fname}」的部隊（${ft.atk} 人）攻下，駐防隊撤回`;
+      const who = ControlPointSystem.fightWho(ft);
+      if (this.guardFought(e, ft)) return `🏴 控制點 #${no} 被${who}（${ft.atk} 人）攻下：守軍 ${ft.total} 人全數被擊倒，駐防隊撤回`;
+      return `🏴 駐防隊還沒抵達，控制點 #${no} 已被${who}（${ft.atk} 人）攻下，駐防隊撤回`;
     }
     return `🛡️ 控制點 #${no}已不是你或好友的控制點，駐防隊撤回`;
+  }
+
+  /** 交戰紀錄的進攻方：勢力部隊或玩家的隊伍（v15.8） */
+  static fightWho(ft) {
+    return ft.pn ? `玩家「${ft.pn}」的隊伍` : `「${FACTIONS[ft.f]?.name || '勢力'}」的部隊`;
   }
 
   /** 這支駐防隊有沒有參加這場交戰（交戰時已抵達並登記在共用資料） */
@@ -371,7 +376,8 @@ export class ControlPointSystem {
       if (!r.ok) return;
       const msg = this.lostReason(e);
       ControlPointSystem.replaceRecallText(e, msg);
-      g.log(msg, 'danger');
+      // 被攻下的戰報由 reportFights 發出（v15.8），這裡不重複
+      if (!/攻下/.test(msg)) g.log(msg, 'danger');
     });
     g.state.expeditions.filter((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated).forEach((e) => {
       const stayEnd = e.startAt + (e.travelMs || 0) + (e.searchMs || 0);
@@ -398,9 +404,12 @@ export class ControlPointSystem {
         if (r && !r.ok && arrived && r.reason !== 'busy') { exp.cpListed = false; g.exploration.recall(exp.id, now); }
       } else if (arrived && d && !listed) {
         // 駐防隊被擊退（從共用資料中移除）：受傷回家
+        // v15.8：先撤回再標記被擊退（被擊退的隊伍不能再召回，順序相反時隊伍會留在原地直到駐防時間結束）
+        const r = g.exploration.recall(exp.id, now);
+        // 報告結尾已經寫「駐防隊被擊退」：拿掉「收到召回命令」
+        if (r.ok) exp.travelEvents = (exp.travelEvents || []).filter((t) => t !== '↩️ 收到召回命令，隊伍折返避難所');
         exp.defeated = true;
         g.log(`🚩 控制點 #${cpById(exp.cpId).no} 的駐防隊被擊退，正在撤回避難所`, 'danger');
-        g.exploration.recall(exp.id, now);
       }
     }
   }
@@ -468,9 +477,21 @@ export class ControlPointSystem {
     const name = g.state.player.name || '倖存者';
     const killed = result.foes.filter((f) => f.down).length;
     const events = [`⚔️ 控制點 #${cp.no}：守軍 ${before} 人，擊倒 ${killed} 人`];
+    // v15.8：玩家攻打有人佔領的控制點也留下交戰紀錄，佔領者與駐防者會收到戰報、駐防隊報告寫出原因
+    const fightOf = (x, win) => {
+      if (!(x?.owners || []).length) return x?.fight;
+      const arrived = (x.guards || []).filter((h) => !(h.arr > at));
+      return {
+        p: me, pn: name, at, win, total: before, lost: killed, atk: members.length, atkDown: (result.team || []).filter((u) => u.down).length,
+        owners: x.owners.map((o) => o.p), guards: [...new Set(arrived.map((h) => h.p))],
+        down: [...new Set(result.foes.filter((f) => f.down).map((f) => f.ally?.player).filter(Boolean))],
+        downU: result.foes.filter((f) => f.down && f.ally?.e).map((f) => `${f.ally.e}:${f.ally.i}`).slice(0, 60),
+        ge: [...new Set(arrived.map((h) => h.e).filter(Boolean))].slice(0, 30),
+      };
+    };
     if (result.victory) {
       const r = await g.shared.update(CP_KIND, id, (x) => ({
-        data: { ...(x || {}), owners: [{ p: me, n: name }], faction: null, guards: [], lost: cp.garrison.count, lostAt: at, takenAt: at },
+        data: { ...(x || {}), owners: [{ p: me, n: name }], faction: null, guards: [], lost: cp.garrison.count, lostAt: at, takenAt: at, fight: fightOf(x, true) },
       }), { lat: cp.lat, lon: cp.lon });
       events.push(r.ok ? `🏆 佔領控制點 #${cp.no}！這個區域的建築現在可以探索了` : `⚠️ 佔領失敗：${r.reason}`);
       if (r.ok) g.log(`🚩 佔領控制點 #${cp.no}`, 'success');
@@ -480,6 +501,7 @@ export class ControlPointSystem {
     const downIds = new Set(result.foes.filter((f) => f.down).map((f) => f.ally?.player).filter(Boolean));
     await g.shared.update(CP_KIND, id, (x) => {
       const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
+      if (data.owners?.length && !data.faction) data.fight = fightOf(data, false);
       if (data.owners?.length && !data.faction) data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
       else { data.lost = Math.min(cp.garrison.count, (cp.garrison.count - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
       return { data };
@@ -507,8 +529,8 @@ export class ControlPointSystem {
     const members = exp.memberIds.map((x) => this.game.survivors.get(x)).filter(Boolean);
     return {
       id: uid('rp'), poiName: `🛡️ 駐防控制點 #${cp?.no ?? '?'}`, poiType: 'military', at: exp.endAt,
-      events: [...(exp.travelEvents || []), exp.defeated ? '💀 駐防隊被擊退' : '🛡️ 駐防結束，回到避難所'], resources: {}, items: [], blueprints: [],
-      kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: !exp.defeated, members: members.map((m) => m.name),
+      events: [...(exp.travelEvents || []), exp.defeated ? '💀 駐防隊被擊退' : exp.recalled ? '🏠 駐防隊撤回避難所' : '🛡️ 駐防結束，回到避難所'], resources: {}, items: [], blueprints: [],
+      kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: !exp.defeated && !exp.recalled, members: members.map((m) => m.name),
     };
   }
 
@@ -646,6 +668,12 @@ export class ControlPointSystem {
 
   // ================= 三大勢力的行動 =================
 
+  /** v15.8：這個遊戲日是不是這個勢力的進攻日（每 NPC_DAY_SLOW 天一次、勢力之間錯開；控制點多的勢力間隔再加倍） */
+  static turnDay(f, day, ownCount = 0) {
+    const every = NPC_DAY_SLOW * (ownCount >= FACTION_SLOW_AT ? 2 : 1);
+    return (day + FACTION_KEYS.indexOf(f)) % every === 0;
+  }
+
   /** 勢力今天的進攻時間（遊戲時間 hour 點） */
   turnTime(f, now = Date.now()) {
     const t = this.game.time;
@@ -702,7 +730,8 @@ export class ControlPointSystem {
       const at = this.turnTime(f, now);
       if (now < at || this.busy.has(`turn:${f}`)) continue;
       const own = this.factionCps(f);
-      if (own.length >= FACTION_SLOW_AT && day % 2) continue; // 控制點多的勢力隔天才進攻
+      // v15.8：進攻次數減半（每 NPC_DAY_SLOW 個遊戲日一次，三個勢力錯開）；控制點多的勢力再減半
+      if (!ControlPointSystem.turnDay(f, day, own.length)) continue;
       if ((this.lastTurn || {})[f] === day) continue;
       // v15.8：現實凌晨（台灣時間 00:00～08:00）勢力不進攻，這一天直接略過（所有玩家依同一規則判斷）
       if (npcQuietAt(at)) { this.lastTurn = { ...(this.lastTurn || {}), [f]: day }; continue; }
@@ -919,14 +948,14 @@ export class ControlPointSystem {
       const owner = (ft.owners || []).includes(me);
       const guard = (ft.guards || []).includes(me);
       // v15.8：交戰時還在路上的駐防隊也要知道控制點被攻下了
-      const mine = g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === cp.id && e.startAt <= ft.at && !e.defeated);
+      const mine = g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === cp.id && e.startAt <= ft.at);
       const enRoute = ft.win && mine.some((e) => !this.guardFought(e, ft));
       if (!owner && !guard && !enRoute) return;
-      const fname = FACTIONS[ft.f]?.name || '勢力';
+      const who = ControlPointSystem.fightWho(ft);
       const role = owner && guard ? '你佔領並駐防的' : owner ? '你佔領的' : '你駐防的';
       const msg = ft.win
-        ? `🏴 「${fname}」的部隊（${ft.atk} 人）攻下了${role}控制點 #${cp.no}${ft.total ? `：守軍 ${ft.total} 人全數被擊倒` : '（沒有駐防）'}`
-        : `🛡️ ${role}控制點 #${cp.no} 擊退了「${fname}」的部隊（${ft.atk} 人）：擊倒 ${ft.atkDown || 0} 人，守軍倒下 ${ft.lost || 0} 人${(ft.down || []).includes(me) ? '（你的駐防隊有人倒下，撤回避難所）' : ''}`;
+        ? `🏴 ${who}（${ft.atk} 人）攻下了${role}控制點 #${cp.no}${ft.total ? `：守軍 ${ft.total} 人全數被擊倒` : '（沒有駐防）'}`
+        : `🛡️ ${role}控制點 #${cp.no} 擊退了${who}（${ft.atk} 人）：擊倒 ${ft.atkDown || 0} 人，守軍倒下 ${ft.lost || 0} 人${(ft.down || []).includes(me) ? '（你的駐防隊有人倒下，撤回避難所）' : ''}`;
       const text = !owner && !guard ? this.lostReason(mine.find((e) => !this.guardFought(e, ft))) : msg;
       g.log(text, ft.win ? 'danger' : 'success');
       g.toast?.(text, ft.win ? 'danger' : 'success');
@@ -936,7 +965,7 @@ export class ControlPointSystem {
         if (!line) return;
         if (!(e.travelEvents || []).includes(line)) e.travelEvents = [...(e.travelEvents || []), line];
       });
-      if (!ft.win && guard) this.guardXp(cp, ft);
+      if (!ft.win && guard && ft.f) this.guardXp(cp, ft); // 防守經驗只限擊退勢力部隊（v15.7 規則）
     });
   }
 

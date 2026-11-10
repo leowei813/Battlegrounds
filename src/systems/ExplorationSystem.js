@@ -990,6 +990,7 @@ export class ExplorationSystem {
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
         const report = this.game.combat.within(exp, () => (exp.kind === 'rally' ? this.game.rally.report(exp)
           : exp.kind === 'assist' && !exp.defeated ? this.game.assist.report(exp)
+          : exp.kind === 'cpGuard' ? this.game.cp.guardReport(exp)
           : exp.recalled ? (exp.kind === 'explore' ? this.finishExplore(exp, { recalled: true }) : this.recalledReport(exp))
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)
@@ -997,7 +998,6 @@ export class ExplorationSystem {
             : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
             : exp.kind === 'infect' ? this.game.infected.resolveAttack(exp)
             : exp.kind === 'cp' ? this.game.cp.report(exp)
-            : exp.kind === 'cpGuard' ? this.game.cp.guardReport(exp)
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp)));
         // 召回（手動召回、自動回家、集結取消走回家）：標記為召回，不是探索失敗
         if (exp.recalled && !report.success && !exp.defeated) report.recalled = true;

@@ -75,6 +75,8 @@ export const npcAggression = (civ) => Math.min(1, Math.max(0.1, civ / 200));
 
 /** v15.8：現實凌晨（台灣時間 00:00～08:00）NPC 停止掠奪玩家據點、勢力停止進攻控制點；抵達時間落在這段時間的部隊也不出發 */
 export const NPC_QUIET = { from: 0, to: 8, tzHours: 8 };
+/** v15.8：其他時段（台灣時間 08:00～00:00）NPC 掠奪據點與勢力進攻控制點的頻率倍率（2＝間隔加倍、次數減半） */
+export const NPC_DAY_SLOW = 2;
 /** 某個時刻是否在 NPC 休息時段（以台灣時間計） */
 export const npcQuietAt = (t) => {
   const h = new Date(t + NPC_QUIET.tzHours * 3600000).getUTCHours();
