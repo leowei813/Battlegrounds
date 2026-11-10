@@ -241,6 +241,7 @@ export class ControlPointSystem {
     if (g.state.map?.source !== 'generated' || !this.ready()) return 0;
     let n = 0;
     let dropped = 0;
+    let redirected = 0;
     // 佇列中（自動探索預定前往）的地點：在不能再探索的區域裡的一併取消
     g.state.expeditions.filter((e) => e.kind === 'explore' && (e.queue || []).length).forEach((e) => {
       const keep = e.queue.filter((id) => { const p = g.exploration.poi(id); return !p || this.canExplore(p).ok; });
@@ -260,6 +261,16 @@ export class ControlPointSystem {
       const lostAt = d?.takenAt || d?.lostAt || now;
       const at = Math.max(e.startAt, Math.min(now, lostAt));
       if (!g.exploration.canRecall(e, at)) return;
+      const note = `🚩 控制點${cp ? ` #${cp.no}` : ''}被佔領，「${poi.name}」不能再探索`;
+      // v15.9.1：佇列中還有可以探索的地點：直接改去下一站，不先回家
+      if ((e.queue || []).length) {
+        const rep = g.exploration.redirect(e, at, note);
+        if (rep) {
+          g.exploration.pendingReports = [...(g.exploration.pendingReports || []), rep];
+          redirected += 1;
+          return;
+        }
+      }
       e.queue = [];
       e.auto = false;
       const r = g.exploration.recall(e.id, at);
@@ -267,6 +278,7 @@ export class ControlPointSystem {
       ControlPointSystem.replaceRecallText(e, `🚩 控制點${cp ? ` #${cp.no}` : ''}被佔領，「${poi.name}」不能再探索，隊伍強制撤回`);
       n += 1;
     });
+    if (redirected) g.log(`🚩 探索區域的控制點被佔領：${redirected} 支隊伍改去佇列中的下一個地點`, 'danger');
     if (n) {
       g.log(`🚩 探索區域的控制點被佔領：${n} 支隊伍強制撤回`, 'danger');
       g.toast?.(`🚩 探索區域的控制點被佔領，${n} 支隊伍強制撤回`, 'danger');
