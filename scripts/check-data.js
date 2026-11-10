@@ -5541,8 +5541,24 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const run = a.g.dungeon.results('lab', day).runs[0];
   assert(run.floors.length === run.endFloor && run.floors.every((f) => f.obs.length >= 1 && f.obs.length <= 3), '每層 1～3 個障礙並記錄每一層');
   assert(run.floors.every((f) => f.waves.length >= 1) && run.mvp && run.stat.length === 5, '每層戰報、每人輸出／承傷／治療／障礙與 MVP');
+  {
+    // v15.9.1：開打後剛打開遊戲、還沒連線：不會誤判「沒有分配到隊伍」而提早結算
+    const q = ps[1].g;
+    const be = q.shared.backend; const pv = q.world.provider;
+    q.shared.backend = null; q.world.provider = undefined;
+    q.dungeon.update(T.start + 61 * 60e3);
+    assert(!q.dungeon.record('lab', T.start).settled && ps[1].sv.dungeon && !q.state.reports.some((r) => r.kind === 'dungeon' && r.status === 'out'), '還沒連線時先等，不會誤判沒有分配到隊伍');
+    q.shared.backend = be; q.world.provider = pv;
+    // 舊版本已經誤判結算的：該團打完時補發獎勵、換成正式報告
+    const w = ps[3].g;
+    w.dungeon.settle(w.dungeon.record('lab', T.start), null, T.start + 62 * 60e3);
+    const rw = w.dungeon.record('lab', T.start);
+    delete rw.noRun; // 舊版本沒有這個標記：從報告判斷
+    assert(w.state.reports.some((r) => r.kind === 'dungeon' && r.why === '沒有分配到隊伍') && !ps[3].sv.dungeon, '（模擬舊版本）誤判沒有分配到隊伍');
+  }
   const coins0 = ps.map((p) => p.g.state.player.coins);
   for (const p of ps) { await p.g.shared.list('dg', 5); p.g.dungeon.update(T.end + 1000); }
+  assert(!ps[3].g.state.reports.some((r) => r.kind === 'dungeon' && r.status === 'out') && ps[3].g.state.player.coins > coins0[3] && ps[3].g.state.log.some((l) => /補發副本結果/.test(l.msg)), '誤判的副本在該團打完時補發獎勵與正式報告');
   assert(ps.every((p) => p.g.dungeon.record('lab', T.start).settled && p.g.state.reports[0]?.kind === 'dungeon'), '結束時每位參加者各自結算並收到副本報告');
   assert(ps.every((p, i) => p.g.state.player.coins > coins0[i] && !p.sv.dungeon && (p.sv.status === 'idle' || p.g.state.expeditions.some((e) => e.memberIds.includes(p.sv.id)))), '結算後拿到金錢、倖存者回家');
   const coins1 = ps.map((p) => p.g.state.player.coins);
