@@ -744,7 +744,7 @@ export class RallySystem {
       if (!sv) return;
       if (u.meds > 0) g.combat.consumeMeds(sv, { medsUsed: Math.floor(u.meds) });
       // v15.7：集結倒下的經驗懲罰較輕（RALLY_XP.downPct）
-      if (u.down) g.survivors.becomeSevere(sv, '在集結戰鬥中', exp.endAt, RALLY_XP.downPct);
+      if (u.down) g.survivors.battleDown(sv, '在集結戰鬥中', exp.endAt, RALLY_XP.downPct);
       else {
         g.survivors.setHp(sv, Math.max(1, u.hp));
         // v15.7：打贏時另外獲得自己升級所需經驗的 RALLY_XP.winPct（依等級成長，和倒下的懲罰同一個基準）

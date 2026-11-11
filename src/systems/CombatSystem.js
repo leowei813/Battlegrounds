@@ -464,7 +464,7 @@ export class CombatSystem {
           this.game.survivors.setHp(sv, Math.max(1, this.game.survivors.maxHp(sv) * HOME_DEFENSE_DOWN.hpPct));
           return;
         }
-        this.game.survivors.becomeSevere(sv, '在戰鬥中', at, ...(attackXp ? [attackXp.downPct] : []));
+        this.game.survivors.battleDown(sv, '在戰鬥中', at, ...(attackXp ? [attackXp.downPct] : []));
         return;
       }
       const bonus = attackXp && result.victory ? Math.round(xpToNext(sv.level) * attackXp.winPct) : 0;

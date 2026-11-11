@@ -365,7 +365,7 @@ export class SaveManager {
         b.facilities.dormitory = { level: b.kind === 'outpost' ? 0 : need };
       });
     }
-    // v16：新增診療室（休息回復需要診療室）。舊存檔的避難所贈送 Lv1，避免原本的回復突然消失
+    // v16：新增醫療站（休息回復需要醫療站）。舊存檔的避難所贈送 Lv1，避免原本的回復突然消失
     if (v < 16) {
       (data.bases || []).forEach((b) => {
         if (b.facilities && !b.facilities.clinic) b.facilities.clinic = { level: b.kind === 'outpost' ? 0 : 1 };
@@ -575,6 +575,8 @@ export class SaveManager {
       const c = data.map?.center;
       if (data.map && (!c || !inWorld(c.lat, c.lon))) data.map.center = { ...WORLD_CENTER };
     }
+    // v15.10.1（存檔 37）：地圖重劃已過一段時間，取消所有玩家的免費重新選擇避難所
+    if (v < 37) delete data.freeRelocate;
     data.version = SAVE_VERSION;
     return data;
   }

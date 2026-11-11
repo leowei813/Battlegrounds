@@ -887,12 +887,12 @@ export class EquipmentSystem {
 
   // ---- 彈藥與藥品製作 ----
 
-  /** 彈藥（工作台）或藥品（診療室）的配方 */
+  /** 彈藥（工作台）或藥品（醫療站）的配方 */
   recipeOf(key) {
     return AMMO_RECIPES[key] || MED_RECIPES[key] || null;
   }
 
-  /** 診療室等級（藥品製作） */
+  /** 醫療站等級（藥品製作） */
   clinicLevel() {
     return this.game.shelter.maxLevel('clinic');
   }
@@ -901,7 +901,7 @@ export class EquipmentSystem {
   canCraftAmmo(key) {
     const rc = this.recipeOf(key);
     if (!rc) return { ok: false, reason: '無法製作' };
-    if (rc.clinic && this.clinicLevel() < rc.clinic) return { ok: false, reason: this.clinicLevel() < 1 ? '需要建造診療室' : `需要診療室 Lv${rc.clinic}` };
+    if (rc.clinic && this.clinicLevel() < rc.clinic) return { ok: false, reason: this.clinicLevel() < 1 ? '需要建造醫療站' : `需要醫療站 Lv${rc.clinic}` };
     if (rc.bench > 0 && this.workbench() < rc.bench) return { ok: false, reason: this.workbench() < 1 ? '需要建造工作台' : `需要工作台 Lv${rc.bench}` };
     if (rc.gun && this.game.research.level('c_gun') < rc.gun) return { ok: false, reason: `需研究「槍械製造」Lv${rc.gun}` };
     return { ok: true };

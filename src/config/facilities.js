@@ -108,8 +108,8 @@ export const FACILITIES = {
     effectText: (lv) => `倉庫上限 +${Math.round(cellarStoragePct(lv) * 100)}%・屍潮突破時 ${cellarShelter(lv)} 位駐守者撤進地窖・食物、木材、燃料各藏 ${cellarCap(lv)}、金錢 ${cellarCoins(lv)}、零件與布料每種藏 ${cellarMatCap(lv)}`,
   },
   clinic: {
-    name: '診療室', icon: '🩺', startLevel: 0,
-    desc: '在據點內休息的倖存者會慢慢回復生命，等級越高回復越快。沒有診療室不會自然回復；主要還是要靠藥品治療。',
+    name: '醫療站', icon: '🏥', startLevel: 0,
+    desc: '在據點內休息的倖存者會慢慢回復生命，等級越高回復越快。沒有醫療站不會自然回復；主要還是要靠藥品治療。',
     cost: (lv) => mat('clinic', ['struct', 'elec'], { wood: 70, metal: 40, cloth: 50, medicine: 10 }, lv),
     effectText: (lv) => (lv > 0 ? `休息回復每分鐘 ${(clinicRegen(lv) * 100).toFixed(2)}% 生命（約 ${Math.round(1 / clinicRegen(lv))} 分鐘回滿）` : '尚未建造：不會自然回復'),
   },
@@ -177,5 +177,5 @@ export function dormEffectText(lv) {
   if (add) parts.push(`招募候選人 +${add}`);
   return parts.join('・');
 }
-/** 診療室：在據點休息時每分鐘回復最大生命的比例（沒有診療室不會自然回復） */
-export const clinicRegen = (lv) => (lv > 0 ? 0.002 + 0.0015 * (lv - 1) : 0);
+/** 醫療站：在據點休息時每分鐘回復最大生命的比例（沒有醫療站不會自然回復） */
+export const clinicRegen = (lv) => (lv > 0 ? (0.002 + 0.0015 * (lv - 1)) * 3 : 0); // v15.11：回復速度 ×3

@@ -98,8 +98,8 @@ export const RESEARCH = {
   m_def: r('medical', 2, '抗打擊', '全隊防禦提升', { defPct: 0.02 }, { req: [['m_hp', 2]] }),
   m_dodge: r('medical', 2, '反應訓練', '閃避率提升', { dodgeAdd: 0.004 }),
   m_med: r('medical', 2, '草藥學', '每小時產出紗布', { medicinePerHour: 0.2 }),
-  m_severe: r('medical', 3, '重傷護理', '重傷者回復加快', { severeRegenPct: 0.1 }, { req: [['m_regen', 3]] }),
-  m_starve: r('medical', 3, '耐飢體質', '飢餓時扣血變慢', { starveResist: 0.05 }, { req: [['m_hp', 3]] }),
+  m_severe: r('medical', 3, '重傷護理', '戰鬥中倒下有機率只受輕傷，重傷扣的經驗減少', { severeAvoid: 0.03, downXpReduce: 0.05 }, { req: [['m_regen', 3]] }), // v15.11：原「重傷者回復加快」
+  m_starve: r('survival', 3, '戰利品搜刮', '打贏殭屍群、NPC 據點時獲得的材料與金錢提升', { battleLootPct: 0.04 }, { req: [['s_loot', 3]] }), // v15.11：原醫療科技「耐飢體質」，改到生存科技
   // ---- 農業 ----
   a_food: r('agriculture', 1, '輪作', '農場食物產量提升', { foodPct: 0.04 }),
   a_lumber: r('agriculture', 1, '伐木技術', '伐木場木材產量提升', { lumberPct: 0.05 }),
@@ -114,6 +114,7 @@ export const RESEARCH = {
   i_shelves: r('industry', 1, '物品倉儲', '物品倉庫的格子增加', { storeSlots: 7 }),
   i_salvage: r('industry', 1, '拆解回收', '拆解裝備獲得的材料提升', { dismantlePct: 0.08 }),
   i_trade: r('trade', 1, '以物易物', '賣給黑市獲得的金錢提升', { sellPct: 0.05 }),
+  t_exchange: r('trade', 2, '黑市人脈', '黑市交換物資的倍率降低', { exchangeRateReduce: 0.03 }, { req: [['i_trade', 3]], max: 10 }),
   i_gen: r('industry', 2, '發電效率', '發電機的生產加成提升', { generatorPct: 0.05 }, { req: [['i_work', 2]] }),
   i_genfuel: r('industry', 2, '節能', '發電機耗油減少', { generatorFuelReduce: 0.05 }, { req: [['i_gen', 1]] }),
   i_build: r('industry', 2, '建築學', '建造與升級費用降低', { buildCostReduce: 0.02 }),
@@ -194,11 +195,11 @@ const LABELS = {
   repairPct: (v) => `修繕效率 +${pct(v)}`, towerDmgPct: (v) => `防禦塔傷害 +${pct(v)}`, towerRangePct: (v) => `防禦傷害 +${pct(v)}`,
   wallReduceAdd: (v) => `圍牆減傷 +${pct(v)}`, wallHardPct: (v) => `圍牆受到傷害 −${pct(v)}`, repairEffPct: (v) => `每單位材料修復量 +${pct(v)}`, guardDmgPct: (v) => `駐守傷害 +${pct(v)}`, raidDefensePct: (v) => `防禦 NPC +${pct(v)}`, cpGuardPct: (v) => `控制點駐防生命與攻擊 +${pct(v)}`,
   offlineDefPct: (v) => `離線擊殺 +${pct(v)}`, regenPct: (v) => `回復 +${pct(v)}`, healPct: (v) => `治療量 +${pct(v)}`,
-  healCostReduce: (v) => `不消耗藥品機率 ${pct(Math.min(0.5, v))}`, medicinePerHour: (v) => `紗布 +${v.toFixed(1)}/時`, severeRegenPct: (v) => `重傷回復 +${pct(v)}`,
+  healCostReduce: (v) => `不消耗藥品機率 ${pct(Math.min(0.5, v))}`, medicinePerHour: (v) => `紗布 +${v.toFixed(1)}/時`, severeRegenPct: (v) => `重傷回復 +${pct(v)}`, severeAvoid: (v) => `倒下只受輕傷 ${pct(Math.min(0.9, v))}`, downXpReduce: (v) => `重傷扣經驗 −${pct(Math.min(0.9, v))}`, battleLootPct: (v) => `戰利品 +${pct(v)}`,
   starveResist: (v) => `飢餓扣血 −${pct(v)}`, foodPct: (v) => `食物 +${pct(v)}`, lumberPct: (v) => `伐木場產量 +${pct(v)}`, lumberFlat: (v) => `每級伐木場木材 +${v.toFixed(1)}/時`,
   foodUpkeepReduce: (v) => `食物消耗 −${pct(v)}`, forageAdd: (v) => `探索食物 +${pct(v)}`, fuelPerHour: (v) => `燃料 +${v.toFixed(1)}/時`,
   farmFlat: (v) => `每級農場食物 +${v.toFixed(1)}/時`, workbenchPct: (v) => `工作台產量 +${pct(v)}`, storagePct: (v) => `消耗品上限 +${pct(v)}`,
-dismantlePct: (v) => `拆解材料 +${pct(v)}`, sellPct: (v) => `商人回收價 +${pct(v)}`, generatorPct: (v) => `發電加成 +${pct(v)}`,
+dismantlePct: (v) => `拆解材料 +${pct(v)}`, sellPct: (v) => `商人回收價 +${pct(v)}`, exchangeRateReduce: (v) => `交換倍率 −${pct(v)}`, generatorPct: (v) => `發電加成 +${pct(v)}`,
   generatorFuelReduce: (v) => `發電耗油 −${pct(v)}`, buildCostReduce: (v) => `建造費用 −${pct(v)}`, buildTimeReduce: (v) => `建造時間 −${pct(v)}`,
   queueSlots: (v) => `探索佇列 +${Math.round(v)}`, partKindPct: (v) => `多找到一種零件 ${pct(v)}`, exploreSpeed: (v) => `探索速度 +${pct(v)}`, lootPct: (v) => `探索物資 +${pct(v)}`, carryPct: (v) => `徒步運載 +${pct(v)}`,
   nightPenaltyReduce: (v) => `夜間懲罰 −${pct(v)}`, ambushReduce: (v) => `遇襲機率 −${pct(v)}`, itemFindPct: (v) => `裝備掉落 +${pct(v)}`,

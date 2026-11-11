@@ -210,10 +210,10 @@ export const RECRUIT_CHOICES = 3;
  * 生命、重傷、飢餓、死亡（時間以現實分鐘計）。
  */
 export const VITALS = {
-  regenPctPerMin: 0.02, // （舊）已改由診療室決定休息回復速度
+  regenPctPerMin: 0.02, // （舊）已改由醫療站決定休息回復速度
   severeRegenPctPerMin: 0.008,
-  medicCarePctPerMin: 0.001, // 醫生在據點或隊伍中照顧隊友：每分鐘回復 0.1%（比診療室慢，醫生等級越高越快）
-  severeClinicMul: 0.6, // 重傷者在診療室的回復為一般的 60%
+  medicCarePctPerMin: 0.001, // 醫生在據點或隊伍中照顧隊友：每分鐘回復 0.1%（比醫療站慢，醫生等級越高越快）
+  severeClinicMul: 0.6, // 重傷者在醫療站的回復為一般的 60%
   severeRecoverRatio: 0.3, // 生命回到 30% 才解除重傷
   starveDrainPctPerMin: 0.04, // 飢餓時每分鐘流失最大生命 4%（約 25 分鐘歸零）
   xpPenaltyPct: 0.1, // 重傷懲罰：扣除升級所需經驗的 10%，不足時降一級

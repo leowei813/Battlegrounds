@@ -278,6 +278,20 @@ export class SurvivorSystem {
    * 重傷（生命歸零）：無法行動，並扣除經驗（可能降級）。
    * @param {string} reason 顯示原因
    */
+  /**
+   * v15.11：戰鬥中倒下：研究「重傷護理」有機率只受輕傷（以 30% 生命撐住），否則重傷。
+   * @returns {boolean} 是否重傷
+   */
+  battleDown(sv, reason = '', at = Date.now(), xpPct = VITALS.xpPenaltyPct) {
+    if (!sv.severe && chance(Math.min(0.9, this.game.research.bonus('severeAvoid')))) {
+      this.setHp(sv, Math.max(1, this.maxHp(sv) * 0.3));
+      this.game.log(`🩹 ${sv.name} ${reason}倒下，經過搶救只受輕傷`, 'info');
+      return false;
+    }
+    this.becomeSevere(sv, reason, at, xpPct);
+    return true;
+  }
+
   becomeSevere(sv, reason = '', at = Date.now(), xpPct = VITALS.xpPenaltyPct) {
     sv.hp = 0;
     if (sv.severe) return;
@@ -292,7 +306,8 @@ export class SurvivorSystem {
    * @returns {{xp:number, levelDown:boolean}}
    */
   penalizeXp(sv, pct = VITALS.xpPenaltyPct) {
-    const loss = Math.max(1, Math.round(xpToNext(sv.level) * pct));
+    // v15.11：研究「重傷護理」：重傷扣的經驗減少
+    const loss = Math.max(1, Math.round(xpToNext(sv.level) * pct * (1 - Math.min(0.9, this.game.research.bonus('downXpReduce')))));
     if (sv.xp >= loss) {
       sv.xp -= loss;
       return { xp: loss, levelDown: false };
@@ -307,7 +322,7 @@ export class SurvivorSystem {
     return { xp: loss, levelDown: true };
   }
 
-  /** 醫生的照護速度（每分鐘最大生命比例）：比診療室慢，醫生等級越高越快 */
+  /** 醫生的照護速度（每分鐘最大生命比例）：比醫療站慢，醫生等級越高越快 */
   medicRate(medic) {
     return medic ? VITALS.medicCarePctPerMin * (1 + (medic.level - 1) * 0.03) : 0;
   }
@@ -321,14 +336,14 @@ export class SurvivorSystem {
       .sort((a, b) => b.level - a.level)[0] || null;
   }
 
-  /** 這位倖存者目前的回復速度：據點內＝診療室＋醫生照護；外出＝隊伍中醫生的照護 */
+  /** 這位倖存者目前的回復速度：據點內＝醫療站＋醫生照護；外出＝隊伍中醫生的照護 */
   healRate(sv) {
     const medic = this.medicRate(this.caringMedic(sv));
     if (sv.status === 'exploring') return medic;
     return this.clinicRate() + medic;
   }
 
-  /** 診療室的休息回復速度（每分鐘最大生命比例） */
+  /** 醫療站的休息回復速度（每分鐘最大生命比例） */
   clinicRate() {
     return clinicRegen(this.game.shelter.maxLevel('clinic'));
   }
@@ -353,7 +368,7 @@ export class SurvivorSystem {
     [...this.list].forEach((sv) => {
       const max = this.maxHp(sv);
       let hp = this.hpOf(sv);
-      // 有食物的時段：在據點有診療室、或身邊有醫生（據點內或同一支隊伍）時才會回復
+      // 有食物的時段：在據點有醫療站、或身邊有醫生（據點內或同一支隊伍）時才會回復
       if (fedMin > 0) {
         const base = this.healRate(sv);
         const rate = sv.severe ? base * VITALS.severeClinicMul * (1 + this.game.research.bonus('severeRegenPct')) : base;

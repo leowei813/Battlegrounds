@@ -330,7 +330,7 @@ export class AssistSystem {
           const sv = exp && g.survivors.get(exp.memberIds[u.i]);
           if (!sv) return;
           if (u.down) {
-            g.survivors.becomeSevere(sv, '在協防中', Date.now());
+            g.survivors.battleDown(sv, '在協防中', Date.now());
             hurt.push(sv.name);
           } else if (Number.isFinite(u.hp)) g.survivors.setHp(sv, Math.min(g.survivors.hpOf(sv), u.hp));
         });

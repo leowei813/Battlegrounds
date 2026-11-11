@@ -4334,7 +4334,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const eq = gm.equipment;
   let lv = 0;
   eq.clinicLevel = () => lv;
-  assert(!eq.canCraftAmmo('gauze').ok && eq.canCraftAmmo('gauze').reason.includes('診療室'), '沒有診療室不能製作藥品');
+  assert(!eq.canCraftAmmo('gauze').ok && eq.canCraftAmmo('gauze').reason.includes('醫療站'), '沒有醫療站不能製作藥品');
   lv = 1;
   assert(eq.canCraftAmmo('gauze').ok && !eq.canCraftAmmo('vitamin').ok, '診療室 Lv1 可做紗布，維他命需要更高等級');
   (gm.state.survivors || []).forEach((s) => { s.bag = {}; });
@@ -6282,7 +6282,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   old.facilities.farm.level = 14;
   gf.state.resources.food = 777;
   const mig = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 33 });
-  assert(mig.freeRelocate === true && mig.guideSeen === 0, '改版存檔：提供一次免費重選與顯示新玩法說明');
+  assert(!mig.freeRelocate && mig.guideSeen === 0, 'v15.10.1：舊存檔的免費重選已取消，仍顯示新玩法說明');
   gf.state.freeRelocate = true;
   assert(!gf.shelter.canFreeMove(abyss).ok, '免費重選只能選安全區');
   const r = gf.shelter.freeMove(safe[1]);
@@ -6293,9 +6293,10 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(GUIDE_VERSION === 15, '遊戲說明版本 15');
   // v15：地圖重劃後再給一次免費重選（沒用掉的不重複增加）；不在安全區的避難所自動搬進安全區
   const used = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 34 });
-  assert(used.freeRelocate === true && used.guideSeen === 0, 'v15 改版：已用掉免費重選的玩家再給一次');
+  assert(!used.freeRelocate && used.guideSeen === 0, 'v15.10.1：免費重選已全部取消');
   const kept = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 34, freeRelocate: true });
-  assert(kept.freeRelocate === true, 'v15 改版：還沒用掉的維持一次（不會變成兩次）');
+  assert(!kept.freeRelocate, 'v15.10.1：還沒用掉的免費重選也取消');
+  assert(!SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 36, freeRelocate: true }).freeRelocate, '存檔 36 還留著免費重選的：升級後取消、提示不再出現');
   const mv = gf.shelter.primary();
   const normalPoi = gf.state.map.pois.find((p) => Z.zoneIndexAt(p.lat, p.lon) === 1);
   Object.assign(mv, { lat: normalPoi.lat, lon: normalPoi.lon, poiId: normalPoi.id, name: normalPoi.name });
@@ -7338,6 +7339,90 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   gf.territory.pruneGone([...others, { id: 'F3' }]);
   gf.territory.pruneGone(others);
   assert(r.players.F3, '中間有回來過就重新計算');
+}
+
+// ---- v15.11：夜間地圖殭屍群強度依區域、Boss 加強、獎勵依區域 ----
+{
+  const ZS = await import('../src/systems/ZombieSpawnSystem.js');
+  const { zoneAt: zA } = await import('../src/config/zones.js');
+  const gz = Game.newGame({ playerName: 'ZG', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gz.genMap();
+  let groups = [];
+  for (let n = 1; n < 40 && !groups.some((x) => x.boss); n += 1) groups = groups.concat(gz.zombies.sharedGroups(n));
+  const normal = groups.filter((x) => !x.boss);
+  const okLv = normal.every((x) => { const [lo, hi] = ZS.NIGHT_GROUP_LEVEL[x.zone]; return x.level >= lo && x.level <= hi; });
+  assert(groups.every((x) => x.count <= ZS.NIGHT_GROUP_MAX), `夜間殭屍群每群最多 ${ZS.NIGHT_GROUP_MAX} 隻`);
+  assert(normal.length > 3 && okLv, `夜間殭屍群等級依區域（${normal.length} 群）`);
+  const boss = groups.find((x) => x.boss);
+  assert(boss && boss.level === ZS.NIGHT_GROUP_LEVEL[boss.zone][1] + 5 && boss.minions >= 4 && boss.minions <= 6, `Boss：等級＝區域上限＋5、帶 4～6 隻小兵（${boss ? gz.zombies.groupLabel(boss) : '沒有 Boss'}）`);
+  // 獎勵：打贏時材料依區域（不再只有廢鐵與粗布）
+  const g0 = normal.find((x) => x.zone === 'alert') || normal[0];
+  gz.shelter.establish(gz.state.map.pois.find((p) => gz.shelter.canEstablish(p).ok));
+  gz.state.map.zombieGroups = [g0];
+  gz.time.phase = () => ({ zombies: true, zombieMul: 1 });
+  const sim0 = gz.combat.simulate.bind(gz.combat);
+  gz.combat.simulate = (t, f, o) => { const r = sim0(t, f, { ...o, record: false }); r.victory = true; f.forEach((x) => { x.hp = 0; }); return r; };
+  const r = gz.zombies.attack(g0.id, [gz.survivors.leader().id]);
+  const keys = Object.keys(r.loot?.resources || {}).filter((k) => k !== 'bandage');
+  assert(r.ok && keys.length > 0 && keys.some((k) => !['scrap', 'coarse'].includes(k)), `打贏殭屍群：材料依區域掉落（${keys.join('、')}）`);
+}
+
+// ---- v15.11：黑市收購基礎物資（每 100 個 💰10、燃料 💰15，每種每天最多 5,000 個） ----
+{
+  const { RESOURCE_BUYBACK: RB } = await import('../src/systems/BlackMarketSystem.js');
+  const gb = Game.newGame({ playerName: 'BR', classId: 'warrior', lat: 25, lon: 121 });
+  const bm = gb.blackMarket;
+  gb.state.resources.food = 9000; gb.state.resources.fuel = 300;
+  const c0 = gb.state.player.coins;
+  const t = Date.UTC(2026, 10, 11, 4);
+  const r1 = bm.sellResource('food', 1000, t);
+  assert(r1.ok && gb.state.player.coins - c0 === 100 && gb.state.resources.food === 8000, `賣食物 1,000 個得到 💰100（${r1.msg || r1.reason}）`);
+  const c1 = gb.state.player.coins;
+  bm.sellResource('fuel', 300, t);
+  assert(gb.state.player.coins - c1 === 45, '燃料每 100 個 💰15');
+  bm.sellResource('food', 99999, t);
+  assert(gb.state.resources.food === 4000 && bm.resourceLeft('food', t) === 0 && !bm.sellResource('food', 10, t).ok, '每種每天最多賣 5,000 個');
+  assert(bm.resourceLeft('food', t + 86400000) === RB.dailyMax && bm.sellResource('food', 100, t + 86400000).ok, '隔天（台灣時間）重新計算');
+  assert(!bm.sellResource('wood', 5, t).ok, '數量太少不收');
+}
+
+// ---- v15.11：研究「黑市人脈」降低交換倍率（每級 −3%，Lv10 為 3.5 換 1） ----
+{
+  const { RESEARCH: RS11 } = await import('../src/config/research.js');
+  const { exchangePreview } = await import('../src/ui/BlackMarketView.js');
+  const ge = Game.newGame({ playerName: 'EX', classId: 'warrior', lat: 25, lon: 121 });
+  const t = RS11.t_exchange;
+  assert(t && t.maxLevel === 10 && t.branch === 'trade' && t.tier === 2 && t.requires.some(([k, l]) => k === 'i_trade' && l === 3), '黑市人脈：交易科技第 2 階、最高 Lv10、需要以物易物 Lv3');
+  const bm = ge.blackMarket;
+  const keys = Object.keys((await import('../src/systems/BlackMarketSystem.js')).EXCHANGE.value).filter((k) => bm.exchangeable(k));
+  const [a, b] = keys;
+  const per0 = bm.exchangeCostPer(a, b);
+  ge.state.research.levels.t_exchange = 10; ge.research.invalidate();
+  const per10 = bm.exchangeCostPer(a, b);
+  assert(Math.abs(bm.exchangeRate() - 3.5) < 1e-9 && Math.abs(per10 / per0 - 0.7) < 1e-9, `黑市人脈 Lv10：交換倍率 5 → 3.5（每換 1 個要 ${per0.toFixed(2)} → ${per10.toFixed(2)} 個）`);
+  assert(/× 3\.5/.test(exchangePreview(ge, { want: b, give: a })), '交換說明顯示目前的倍率');
+}
+
+// ---- v15.11：研究「重傷護理」改版（倒下有機率只受輕傷、重傷扣經驗減少）、「戰利品搜刮」 ----
+{
+  const { RESEARCH: R11 } = await import('../src/config/research.js');
+  const { xpToNext: x2 } = await import('../src/config/survivors.js');
+  assert(R11.m_severe.effects.severeAvoid === 0.03 && R11.m_severe.effects.downXpReduce === 0.05, '重傷護理：每級倒下只受輕傷 +3%、重傷扣經驗 −5%');
+  assert(R11.m_starve.name === '戰利品搜刮' && R11.m_starve.branch === 'survival' && R11.m_starve.requires.some(([k, l]) => k === 's_loot' && l === 3), '戰利品搜刮：生存科技、前置拾荒技巧 Lv3');
+  const gr = Game.newGame({ playerName: 'RS', classId: 'warrior', lat: 25, lon: 121 });
+  const sv = gr.survivors.leader();
+  sv.level = 20; sv.xp = Math.round(x2(20) / 2);
+  const b0 = gr.research.bonus.bind(gr.research);
+  gr.research.bonus = (k) => (k === 'severeAvoid' ? 0.9 : k === 'downXpReduce' ? 0.5 : b0(k));
+  let light = 0;
+  for (let i = 0; i < 40; i += 1) { sv.severe = false; if (!gr.survivors.battleDown(sv, '測試', Date.now())) light += 1; }
+  assert(light > 25, `倒下只受輕傷的機率生效（40 次中 ${light} 次輕傷）`);
+  sv.severe = false;
+  gr.research.bonus = (k) => (k === 'severeAvoid' ? 0 : k === 'downXpReduce' ? 0.5 : b0(k));
+  const t0 = gr.survivors.totalXp(sv);
+  gr.survivors.battleDown(sv, '測試', Date.now(), 0.1);
+  const lost = t0 - gr.survivors.totalXp(sv);
+  assert(sv.severe && Math.abs(lost - Math.round(x2(20) * 0.05)) <= 2, `重傷扣經驗減少（10% × (1−50%) = 5%，扣 ${lost}）`);
 }
 
 if (failures) {

@@ -1049,7 +1049,7 @@ export class NpcSystem {
     const attackers = members.map((m) => ({ sv: m, maxHp: Math.max(1, g.survivors.hpOf(m)), atk: g.survivors.stats(m).atk }));
     const as = g.combat.wallAssault(attackers, df.wall, df.dps);
     attackers.forEach((a) => {
-      if (!as.alive.includes(a)) g.survivors.becomeSevere(a.sv, '在攻打 NPC 據點時被防禦火力擊倒', at, RALLY_XP.downPct);
+      if (!as.alive.includes(a)) g.survivors.battleDown(a.sv, '在攻打 NPC 據點時被防禦火力擊倒', at, RALLY_XP.downPct);
       else g.survivors.setHp(a.sv, a.hp);
     });
     report.events.push(`🧱 攻擊圍牆 ${as.sec} 秒（耐久 ${df.wall}）${as.killed ? `，${as.killed} 名隊員被防禦火力擊倒` : ''}`);
@@ -1078,9 +1078,11 @@ export class NpcSystem {
     const total = Object.entries(n.resources).reduce((s, [k, v]) => s + (v || 0) * unitWeight(k), 0);
     const ratio = total > carry ? carry / total : 1;
     // 攻陷獎勵（v10 提高）：物資、金錢與裝備數量都乘上獎勵倍率
-    const loot = Object.fromEntries(Object.entries(n.resources).map(([k, v]) => [k, Math.floor((v || 0) * ratio * NPC_REWARD_MUL)]));
+    // v15.11：研究「戰利品搜刮」提高搶到的物資與金錢
+    const lootMul = 1 + g.research.bonus('battleLootPct');
+    const loot = Object.fromEntries(Object.entries(n.resources).map(([k, v]) => [k, Math.floor((v || 0) * ratio * NPC_REWARD_MUL * lootMul)]));
     // 據點的金錢只搶得到一部分
-    report.resources = g.grant({ ...loot, coins: Math.round(n.coins * NPC_COIN_LOOT * NPC_REWARD_MUL) });
+    report.resources = g.grant({ ...loot, coins: Math.round(n.coins * NPC_COIN_LOOT * NPC_REWARD_MUL * lootMul) });
     if (ratio < 1) report.events.push(`🎒 帶不走全部物資（運載量 ${carry}），留下約 ${Math.round(total - carry)} 重量的物資`);
     for (let i = 0; i < NPC_REWARD_MUL; i += 1) {
       if (!chance(0.6)) continue;

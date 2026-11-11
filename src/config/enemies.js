@@ -83,9 +83,9 @@ export const DAY_ZONE = {
 };
 /** 夜晚地圖上的殭屍群：一般、精英、Boss 的額外強度 */
 export const MAP_GROUP_MUL = {
-  normal: { hp: 1.3, atk: 1.3 },
+  normal: { hp: 1.95, atk: 1.3 }, // v15.11：生命再 ×1.5（原 ×1.3）
   elite: { hp: 1.8, atk: 1.4 },
-  boss: { hp: 2.6, atk: 1.8 },
+  boss: { hp: 6.5, atk: 2.8 }, // v15.11：原 ×2.6／×1.8
 };
 
 /** 合併強度倍率 */

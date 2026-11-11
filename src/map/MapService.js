@@ -169,8 +169,9 @@ export class MapService {
   baseIcon(size, primary, cls) {
     const s = BASE_SIZES[size] || BASE_SIZES.medium;
     const d = s.pin + (primary ? 4 : 0);
-    const html = `<div class="${cls} size-${size} ${primary ? 'primary' : 'outpost'}" style="--d:${d}px">${s.icon}`
-      + `<i class="size-tag">${s.name[0]}</i>${primary ? '<i class="star-tag">⭐</i>' : ''}</div>`;
+    // v15.11：避難所沒有大小之分：一律用聚落圖示、不再標示規模（巨）
+    const html = `<div class="${cls} size-${size} ${primary ? 'primary' : 'outpost'}" style="--d:${d}px">🏘️`
+      + `${primary ? '<i class="star-tag">⭐</i>' : ''}</div>`;
     return { icon: this.icon(html, 'shelter-icon', d), d };
   }
 
@@ -344,7 +345,7 @@ export class MapService {
       const { icon, d } = this.baseIcon(b.size, b.primary, `other-pin rel-${rel}`);
       L.marker([b.lat, b.lon], { icon, zIndexOffset: 800 })
         .on('click', () => bus.emit('ui:openPlayer', { playerId: p.id }))
-        .bindTooltip(`${{ hostile: '⚔️ 敵對', friend: '🤝 友好', neutral: '👤 中立' }[rel]}・${escapeHtml(p.name)}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）`, { direction: 'top', offset: [0, -d / 2] })
+        .bindTooltip(`${{ hostile: '⚔️ 敵對', friend: '🤝 友好', neutral: '👤 中立' }[rel]}・${escapeHtml(p.name)}・${escapeHtml(b.name)}`, { direction: 'top', offset: [0, -d / 2] })
         .addTo(this.layers.others);
       // 友好玩家正遭到屍潮攻擊：顯示 🧟 圖示與狀況，點擊可協防
       if (rel === 'friend' && b.siege) {
@@ -398,7 +399,7 @@ export class MapService {
       const { icon, d } = this.baseIcon(b.size, primary, 'shelter-pin');
       L.marker([b.lat, b.lon], { icon, zIndexOffset: primary ? 1000 : 900, title: b.name })
         .on('click', () => bus.emit(EVT.OPEN_POI, { poiId: b.poiId }))
-        .bindTooltip(`${primary ? '⭐ 避難所' : '🏴 前哨站'}・${escapeHtml(b.name)}（${(BASE_SIZES[b.size] || BASE_SIZES.medium).name}）`, { direction: 'top', offset: [0, -d / 2] })
+        .bindTooltip(`${primary ? '⭐ 避難所' : '🏴 前哨站'}・${escapeHtml(b.name)}`, { direction: 'top', offset: [0, -d / 2] })
         .addTo(this.layers.shelter);
       // 前哨與主要據點之間的補給線
       if (!primary && sh) {
