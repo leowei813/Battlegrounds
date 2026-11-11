@@ -229,7 +229,7 @@ export class Game {
   }
 
   /**
-   * 推進屍潮（秒）。分頁從背景回來時，先把遊戲時間補算到現在（19:30 自動回家、隊伍返程到家、
+   * 推進屍潮（秒）。分頁從背景回來時，先把遊戲時間補算到現在（21:30 自動回家、隊伍返程到家、
    * 施工與研究），再補算屍潮——否則回到前景的第一瞬間會用「隊伍還在外面」的狀態一口氣補算整晚屍潮，
    * 明明已經回到家的人沒有參與防守。
    */
@@ -304,7 +304,7 @@ export class Game {
     this.shelter.update(now, elapsed);
     this.research.update(now);
     this.survivors.updateVitals(now, elapsed, this.resources.lastStarvingMs);
-    // 離線期間跨過 19:30：照 19:30 當下的狀態自動回家
+    // 離線期間跨過 21:30：照 21:30 當下的狀態自動回家
     this.autoHome.check(now, { silent: true });
     this.dungeon.update(now);
     const reports = this.exploration.update(now, { silent: true });

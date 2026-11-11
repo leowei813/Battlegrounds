@@ -1,7 +1,7 @@
 import {
   DAY_REAL_MS, DAY_REAL_MS_OLD, DAY_SWITCH_AT, WORLD_EPOCH_MS, WORLD_START,
 } from '../config/constants.js';
-import { TIME_PHASES, phaseForHour } from '../config/timePhases.js';
+import { TIME_PHASES, phaseForHour, isSiegeHour } from '../config/timePhases.js';
 
 /**
  * 日夜系統（v9：世界時間）：所有玩家共用同一個日曆，從 WORLD_EPOCH_MS（2050/1/1 06:00）起算，
@@ -65,6 +65,11 @@ export class TimeSystem {
 
   phase(at = Date.now()) {
     return TIME_PHASES[this.phaseId(at)];
+  }
+
+  /** v15.13：是否在據點屍潮時段（22:00～06:00） */
+  siegeTime(at = Date.now()) {
+    return this.phase(at).zombies && isSiegeHour(this.hour(at));
   }
 
   /** 下一次天亮（06:00）的現實時間 */

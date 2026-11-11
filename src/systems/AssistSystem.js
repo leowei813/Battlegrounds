@@ -128,7 +128,7 @@ export class AssistSystem {
     if (g.territory.relation(playerId) !== 'friend') return { ok: false, reason: '只能協防友好玩家' };
     const base = p.bases.find((b) => b.primary) || p.bases[0];
     const raids = (base?.raids || []).some((r) => r.at > Date.now());
-    if (!g.time.phase().zombies && !raids) return { ok: false, reason: '對方目前沒有危險：夜晚屍潮，或有 NPC／玩家正前來攻打時才能派隊協防' };
+    if (!g.time.siegeTime() && !raids) return { ok: false, reason: '對方目前沒有危險：屍潮（22:00～06:00），或有 NPC／玩家正前來攻打時才能派隊協防' };
     if (this.trips().some((e) => e.assistTarget?.playerId === playerId)) return { ok: false, reason: '已經有隊伍在協防對方' };
     return { ok: true, player: p, base };
   }
@@ -148,7 +148,7 @@ export class AssistSystem {
     const exp = st.exp;
     exp.assistTarget = target;
     // 抵達後留守：夜晚到天亮；白天（防守 NPC／玩家攻打）留守 1 小時
-    const until = g.time.phase(now).zombies ? g.time.nextDawn(now) : now + exp.travelMs + ASSIST_DAY_STAY_MS;
+    const until = g.time.siegeTime(now) ? g.time.nextDawn(now) : now + exp.travelMs + ASSIST_DAY_STAY_MS;
     exp.searchMs = Math.max(60000, until - (now + exp.travelMs));
     exp.endAt = exp.startAt + exp.travelMs * 2 + exp.searchMs;
     g.world?.syncSoon?.();

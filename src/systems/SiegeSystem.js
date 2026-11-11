@@ -11,7 +11,7 @@ import {
 import { ITEM_MODELS } from '../config/equipment.js';
 import { xpToNext } from '../config/survivors.js';
 import { FACILITIES, cellarShelter } from '../config/facilities.js';
-import { TIME_PHASES, ZOMBIE_HOURS_FRACTION } from '../config/timePhases.js';
+import { TIME_PHASES, SIEGE_HOURS_FRACTION } from '../config/timePhases.js';
 import {
   chance, pick, randFloat, weightedPick, clamp,
 } from '../utils/math.js';
@@ -348,9 +348,9 @@ export class BaseSiege {
     return { ...info, state: info.wave > 0 ? 'lull' : 'wait', leftWaves: left };
   }
 
-  /** 現在是否有屍潮：只在夜晚與午夜；防線被突破後，當晚不再來襲 */
+  /** 現在是否有屍潮：v15.13 起遊戲時間 22:00～06:00；防線被突破後，當晚不再來襲 */
   active() {
-    return this.game.time.phase().zombies && !this.quiet();
+    return this.game.time.siegeTime() && !this.quiet();
   }
 
   /** 防線被突破後到天亮前的平靜期 */
@@ -980,11 +980,11 @@ export class BaseSiege {
     return Math.round(dps);
   }
 
-  /** 離線時估算此據點的擊殺數（只計算夜間時段，以夜晚的屍潮頻率估算） */
+  /** 離線時估算此據點的擊殺數（只計算屍潮時段 22:00～06:00，以夜晚的屍潮頻率估算） */
   estimateOfflineKills(seconds) {
-    const spawns = (seconds * ZOMBIE_HOURS_FRACTION) / this.spawnInterval(TIME_PHASES.night);
+    const spawns = (seconds * SIEGE_HOURS_FRACTION) / this.spawnInterval(TIME_PHASES.night);
     const avgHp = this.game.combat.createEnemy('infected', this.zombieLevel()).maxHp;
-    const capacity = (this.defenseDps() * seconds * ZOMBIE_HOURS_FRACTION * 0.25) / avgHp;
+    const capacity = (this.defenseDps() * seconds * SIEGE_HOURS_FRACTION * 0.25) / avgHp;
     return Math.floor(clamp(Math.min(spawns, capacity), 0, 5000));
   }
 }

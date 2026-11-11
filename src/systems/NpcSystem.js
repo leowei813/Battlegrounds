@@ -779,7 +779,7 @@ export class NpcSystem {
   /** 屍潮期間（夜晚）不出動；文明度越高越常來 */
   launchRaid(n, now) {
     n.nextRaidAt = now + this.raidDelay();
-    if (this.game.time.phase(now).zombies) return;
+    if (this.game.time.siegeTime(now)) return;
     const bases = this.game.state.bases;
     if (!bases.length) return;
     // 盡量避免多個 NPC 同時攻打玩家：已經有掠奪隊在路上時大多會放棄，玩家文明度很高時才比較常發生
@@ -798,7 +798,7 @@ export class NpcSystem {
     const night = npcQuietSpan(now, now + t.travelMs);
     if (night && now - (this.game.state.npcNightRaidAt || 0) < NPC_QUIET.gapMs) return;
     if (night) this.game.state.npcNightRaidAt = now;
-    // 抵達時若已入夜（屍潮），NPC 會放棄這次掠奪
+    // 抵達時若在屍潮時段（22:00～06:00），NPC 會放棄這次掠奪
     n.trip = {
       kind: 'raid', baseId: base.id, target: base.name, from: { lat: n.lat, lon: n.lon }, to: { lat: base.lat, lon: base.lon },
       startAt: now, endAt: now + t.travelMs * 2, ...t,
@@ -895,7 +895,7 @@ export class NpcSystem {
     const base = g.shelter.base(trip.baseId);
     const arrive = this.arriveAt(trip);
     if (!base) return;
-    if (g.time.phase(arrive).zombies) {
+    if (g.time.siegeTime(arrive)) {
       g.log(`🏴‍☠️「${n.name}」的掠奪隊見屍潮來襲，撤退了`, 'info');
       g.shelter.recordRetreat(base, `NPC「${n.name}」（${this.intelView(n).levelShort}）`);
       return;

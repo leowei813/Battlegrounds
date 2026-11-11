@@ -843,6 +843,13 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .sv-pane-head .grow { flex: 1; min-width: 160px; }
 .sv-name { font-size: 18px; }
 .sv-back { display: none; }
+.sv-swipe-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.sv-swipe-nav > span:empty { min-width: 1px; }
+.sv-swipe-hint { display: none; text-align: center; }
+@keyframes sv-in-next { from { transform: translateX(40px); opacity: .3; } to { transform: none; opacity: 1; } }
+@keyframes sv-in-prev { from { transform: translateX(-40px); opacity: .3; } to { transform: none; opacity: 1; } }
+.sv-detail2.sv-in-next { animation: sv-in-next .2s ease-out; }
+.sv-detail2.sv-in-prev { animation: sv-in-prev .2s ease-out; }
 .sv-bars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .sv-bar { padding: 8px 12px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
 .sv-bar small { color: var(--muted); font-size: 12px; }
@@ -895,6 +902,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
   .sv-layout:not(.pane-open) .sv-pane { display: none; }
   .sv-pane { padding: 10px 12px 28px; }
   .sv-back { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; font-size: 18px; }
+  .sv-swipe-hint { display: block; }
   .sv-pane-head .grow { min-width: 0; flex: 1 1 calc(100% - 140px); }
   .sv-pane-head > .tag, .sv-pane-head > .btn:not(.sv-back), .sv-pane-head > span:not(.sv-icon) { margin-left: 0; }
   .sv-bars { grid-template-columns: 1fr; gap: 6px; }

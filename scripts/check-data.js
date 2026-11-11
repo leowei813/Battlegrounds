@@ -96,7 +96,7 @@ g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '白天地圖上沒有殭屍群');
 for (let i = 0; i < 300; i += 1) g.siege.update(0.1);
 assert(g.siege.of().zombies.length === 0 && !Number.isFinite(g.siege.of().spawnInterval()), '白天沒有屍潮');
-setHour(g, 21); // 之後的測試在夜晚進行
+setHour(g, 23); // 之後的測試在夜晚進行
 assert(g.shelter.upgradeFacility(null, 'farm').ok, 'upgrade farm');
 g.zombies.refresh();
 assert(g.state.map.zombieGroups.length > 0, 'zombie groups spawned');
@@ -124,7 +124,7 @@ for (let i = 0; i < 400; i += 1) g.siege.update(0.1);
 assert(alive === 0 || g.siege.of().zombies.length === 0, `天亮後殭屍撤退（${alive} → ${g.siege.of().zombies.length}）`);
 g.zombies.refresh();
 assert(g.state.map.zombieGroups.length === 0, '天亮後地圖殭屍群消失');
-setHour(g, 21);
+setHour(g, 23);
 const save = JSON.parse(JSON.stringify(g.state));
 assert(save.version === SAVE_VERSION_NOW, 'state is serializable');
 // v3 精簡格式：打包後體積變小，還原後內容一致
@@ -189,7 +189,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   g3.shelter.establish(g3.state.map.pois.find((p) => g3.shelter.canEstablish(p).ok));
   const home = g3.shelter.primary();
   const far = g3.state.map.pois.find((p) => !g3.shelter.baseAtPoi(p.id) && haversine(home.lat, home.lon, p.lat, p.lon) > 600);
-  setHour(g3, 21);
+  setHour(g3, 23);
   const t0 = Date.now();
   const ex = g3.exploration.start(far.id, ['leader'], 15, false, t0).exp;
   const p0 = g3.exploration.progress(ex, t0);
@@ -487,7 +487,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const gw = Game.newGame({ playerName: 'W', classId: 'warrior', lat: 0, lon: 0 });
   gw.state.map.pois = fillPois([], 0, 0);
   gw.shelter.establish(gw.state.map.pois.find((p) => gw.shelter.canEstablish(p).ok));
-  setHour(gw, 21);
+  setHour(gw, 23);
   gw.shelter.primary().facilities.wall.level = 10; // 避免測試中防線被突破
   gw.shelter.primary().wallHp = null;
   const sw = gw.siege.of();
@@ -1191,7 +1191,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
 
   // 突破後圍牆歸零
   const sk = gk.siege.of();
-  setHour(gk, 21);
+  setHour(gk, 23);
   gk.shelter.primary().wallHp = 1;
   sk.zombies = [];
   sk.spawn('walker');
@@ -1302,7 +1302,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const gd = Game.newGame({ playerName: 'D', classId: 'warrior', lat: 25, lon: 121 });
   gd.state.map.pois = fillPois([], 25, 121);
   gd.shelter.establish(gd.state.map.pois.find((p) => gd.shelter.canEstablish(p).ok));
-  setHour(gd, 21);
+  setHour(gd, 23);
   const lead = gd.survivors.leader();
   const rifle = gd.equipment.generate({ level: 5, model: 'ak47', rarity: 'common' });
   gd.equipment.addItem(rifle, '測試');
@@ -1410,7 +1410,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gl.shelter.establish(gl.state.map.pois.find((p) => gl.shelter.canEstablish(p).ok));
   const base = gl.shelter.primary();
   // 屍潮突破 → 防禦失敗，記錄損失與毀損建築
-  setHour(gl, 21);
+  setHour(gl, 23);
   const sl = gl.siege.of();
   sl.update(0.1);
   gl.state.resources.food = 1000;
@@ -1436,7 +1436,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gl2.state.map.pois = fillPois([], 25, 121);
   gl2.shelter.establish(gl2.state.map.pois.find((p) => gl2.shelter.canEstablish(p).ok));
   gl2.shelter.primary().facilities.wall.level = 10;
-  setHour(gl2, 21);
+  setHour(gl2, 23);
   const s2 = gl2.siege.of();
   for (let i = 0; i < 1200; i += 1) { s2.update(0.1); gl2.shelter.primary().wallHp = null; }
   setHour(gl2, 7);
@@ -2241,7 +2241,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const gh = Game.newGame({ playerName: 'H', classId: 'warrior', lat: 25, lon: 121 });
   gh.state.map.pois = fillPois([], 25, 121);
   gh.shelter.establish(gh.state.map.pois.find((p) => gh.shelter.canEstablish(p).ok));
-  setHour(gh, 21);
+  setHour(gh, 23);
   gh.zombies.refresh();
   const grp = gh.state.map.zombieGroups[0];
   grp.count = 1;
@@ -4705,7 +4705,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!pois.some((p) => p.type === 'bakery'), '地圖上不再有麵包店');
 }
 
-// ---- 103. 自動回家：遊戲時間 19:30 所有外派隊伍回家、清空探索佇列；每天只觸發一次；可關閉；離線照 19:30 結算 ----
+// ---- 103. 自動回家：遊戲時間 21:30 所有外派隊伍回家、清空探索佇列；每天只觸發一次；可關閉；離線照 21:30 結算 ----
 {
   const mkH = (name) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25, lon: 121 });
@@ -4718,7 +4718,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   };
   const gh = mkH('H103');
   assert(gh.autoHome.on(), '自動回家預設打開');
-  setHour(gh, 18.5);
+  setHour(gh, 20.5);
   gh.autoHome.check(Date.now());
   const home = gh.shelter.primary();
   const far = gh.state.map.pois.filter((p) => !gh.shelter.baseAtPoi(p.id) && haversine(p.lat, p.lon, home.lat, home.lon) > 600).slice(0, 3);
@@ -4726,11 +4726,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(r.ok, `派遣探索（${r.reason || ''}）`);
   gh.exploration.enqueue(r.exp.id, far[1].id);
   gh.exploration.enqueue(r.exp.id, far[2].id);
-  assert(!gh.autoHome.check(Date.now()), '19:30 以前不會觸發');
-  setHour(gh, 19.5); // 現在剛好 19:30（派遣在 19:30 之前）
+  assert(!gh.autoHome.check(Date.now()), '21:30 以前不會觸發');
+  setHour(gh, 21.5); // 現在剛好 21:30（派遣在 21:30 之前）
   const res = gh.autoHome.check(Date.now() + 2000);
-  assert(res && res.recalled === 1 && res.queued === 2 && r.exp.recalled && !r.exp.queue.length, `19:30 外派隊伍收到召回命令、清空探索佇列（召回 ${res?.recalled}、佇列 ${res?.queued}）`);
-  assert(r.exp.travelEvents.some((t) => t.includes('19:30 自動回家')), '報告寫出 19:30 自動回家');
+  assert(res && res.recalled === 1 && res.queued === 2 && r.exp.recalled && !r.exp.queue.length, `21:30 外派隊伍收到召回命令、清空探索佇列（召回 ${res?.recalled}、佇列 ${res?.queued}）`);
+  assert(r.exp.travelEvents.some((t) => t.includes('21:30 自動回家')), '報告寫出 21:30 自動回家');
   assert(!gh.autoHome.check(Date.now() + 60000), '同一天只觸發一次');
   gh.exploration.update(r.exp.endAt + 1, { silent: true });
   // 回家後可以再派出，當天不會再被召回
@@ -4738,41 +4738,41 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const r2 = gh.exploration.start(far[1].id, ['leader'], 1, false, Date.now());
   assert(r2.ok && !gh.autoHome.check(Date.now()) && !r2.exp.recalled, '回家後可以再派出，當天不會再被召回');
   {
-    // v15.11.1：存檔裡的紀錄比現在還新（舊版計時超前）：不再卡住好幾天，下一個 19:30 照常觸發
+    // v15.11.1：存檔裡的紀錄比現在還新（舊版計時超前）：不再卡住好幾天，下一個 21:30 照常觸發
     const k0 = gh.autoHome.keyAt(Date.now());
     gh.state.autoHomeKey = k0 + 5;
     assert(!gh.autoHome.check(Date.now()) && gh.state.autoHomeKey === k0, '紀錄超前時改為從現在重新計算');
-    const next = Date.now() + 90 * 60000; // 下一個遊戲日的同一時刻（已過 19:30）
+    const next = Date.now() + 90 * 60000; // 下一個遊戲日的同一時刻（已過 21:30）
     const res2 = gh.autoHome.check(next);
-    assert(res2 && gh.state.autoHomeKey === k0 + 1, '紀錄超前修正後，下一個 19:30 照常自動回家');
+    assert(res2 && gh.state.autoHomeKey === k0 + 1, '紀錄超前修正後，下一個 21:30 照常自動回家');
   }
   // 關閉時不召回
   gh.exploration.update(r2.exp.endAt + 1, { silent: true });
   assert(gh.autoHome.toggle().ok && !gh.autoHome.on(), '可以關閉自動回家');
   const gk = mkH('K103');
   gk.state.settings.autoHome = false;
-  setHour(gk, 18.5); gk.autoHome.check(Date.now());
+  setHour(gk, 20.5); gk.autoHome.check(Date.now());
   const rk = gk.exploration.start(gk.state.map.pois.find((p) => !gk.shelter.baseAtPoi(p.id)).id, ['leader'], 1, false, Date.now());
-  setHour(gk, 19.5);
-  assert(!gk.autoHome.check(Date.now() + 2000) && !rk.exp.recalled, '關閉時 19:30 不會召回');
-  // 離線：19:30 前出發、19:30 後才上線結算 → 照 19:30 當下召回（不是上線的時間）
+  setHour(gk, 21.5);
+  assert(!gk.autoHome.check(Date.now() + 2000) && !rk.exp.recalled, '關閉時 21:30 不會召回');
+  // 離線：21:30 前出發、21:30 後才上線結算 → 照 21:30 當下召回（不是上線的時間）
   const go = mkH('O103');
-  setHour(go, 18.9); go.autoHome.check(Date.now());
+  setHour(go, 20.9); go.autoHome.check(Date.now());
   const fo = go.state.map.pois.filter((p) => !go.shelter.baseAtPoi(p.id) && haversine(p.lat, p.lon, go.shelter.primary().lat, go.shelter.primary().lon) > 700)[0];
   const ro = go.exploration.start(fo.id, ['leader'], 1, false, Date.now());
-  setHour(go, 19.5);
-  const later = Date.now() + 120000; // 19:30 之後兩分鐘才上線
+  setHour(go, 21.5);
+  const later = Date.now() + 120000; // 21:30 之後兩分鐘才上線
   const at19 = go.autoHome.triggerAt(later);
   go.autoHome.check(later, { silent: true });
-  assert(ro.exp.recalled && at19 < later - 100000 && Math.abs(ro.exp.endAt - (at19 + ro.exp.travelMs)) < 5, '離線時照 19:30 當下的位置召回');
+  assert(ro.exp.recalled && at19 < later - 100000 && Math.abs(ro.exp.endAt - (at19 + ro.exp.travelMs)) < 5, '離線時照 21:30 當下的位置召回');
   // 協防也召回
   const ga = mkH('A103');
-  setHour(ga, 18.9); ga.autoHome.check(Date.now());
+  setHour(ga, 20.9); ga.autoHome.check(Date.now());
   const tgtA = ga.state.map.pois.find((p) => !ga.shelter.baseAtPoi(p.id));
   const ea = { id: 'ex_a103', kind: 'assist', poiId: tgtA.id, memberIds: [ga.survivors.leader().id], startAt: Date.now() - 1000, travelMs: 600000, searchMs: 0, endAt: Date.now() + 3600e3, distanceM: 800, from: { lat: 25, lon: 121 }, path: [{ lat: 25, lon: 121 }, { lat: 25.007, lon: 121 }], travelEvents: [], vehicleIds: [] };
   ga.state.expeditions.push(ea);
   ga.survivors.leader().status = 'exploring';
-  setHour(ga, 19.5);
+  setHour(ga, 21.5);
   ga.autoHome.check(Date.now() + 2000);
   assert(ea.recalled, '協防隊伍也會自動回家');
 }
@@ -4795,7 +4795,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const res = gr.autoHome.run(Date.now());
   await new Promise((r) => setTimeout(r, 10));
   await gr.shared.poll();
-  assert(res.recalled === 1 && !gr.rally.trips().length && gr.survivors.leader().status === 'idle', '19:30 集結隊伍也會召回（出發前直接留在避難所）');
+  assert(res.recalled === 1 && !gr.rally.trips().length && gr.survivors.leader().status === 'idle', '21:30 集結隊伍也會召回（出發前直接留在避難所）');
   assert(gr.rally.get(st.id || st.rally?.id || gr.shared.all('rally')[0]?.id)?.status === 'cancelled' || gr.shared.all('rally').every((o) => o.data.status === 'cancelled'), '自己發起的集結會取消');
 }
 
@@ -5018,7 +5018,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gs.state.map.pois = fillPois([], 25, 121);
   gs.shelter.establish(gs.state.map.pois.find((p) => gs.shelter.canEstablish(p).ok));
   gs.shelter.primary().facilities.wall.level = 10;
-  setHour(gs, 21);
+  setHour(gs, 23);
   const s1 = gs.siege.of();
   for (let i = 0; i < 1200; i += 1) { s1.update(0.1); gs.shelter.primary().wallHp = null; }
   const killsBefore = s1.nightKills;
@@ -5127,7 +5127,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const s = gs.siege.of();
   s.update(0.1);
   assert(s.nightState() === null, '白天沒有屍潮狀態');
-  setHour(gs, 21);
+  setHour(gs, 23);
   s.update(0.1);
   const w = s.nightState();
   assert(w?.state === 'wait' && w.maxWaves === s.maxWaves() && w.nextIn > 0, `入夜後第一波來襲前顯示倒數（${w?.state}）`);
@@ -5197,7 +5197,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gs.shelter.establish(gs.state.map.pois.find((p) => gs.shelter.canEstablish(p).ok));
   gs.shelter.primary().facilities.wall.level = 15;
   gs.civilization.maxWaves = () => 4;
-  setHour(gs, 21);
+  setHour(gs, 23);
   const s = gs.siege.of();
   s.update(0.1);
   assert(s.wave === 0, '入夜時第一波還沒來');
@@ -5803,7 +5803,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   gr.npcs.update(Date.now());
   const n = gr.npcs.list[0];
   const before = (gr.state.defenseLog || []).length;
-  gr.time.phase = () => ({ zombies: true });
+  gr.time.siegeTime = () => true;
   gr.npcs.resolveIncoming(n, { kind: 'raid', baseId: gr.shelter.primary().id, startAt: Date.now(), travelMs: 0 }, Date.now());
   const e = gr.state.defenseLog[0];
   assert(gr.state.defenseLog.length === before + 1 && e.retreat && e.attacker.includes(n.name) && !e.kills, '屍潮期間 NPC 撤退：據點紀錄多一筆撤退紀錄（沒有交戰）');
@@ -7506,6 +7506,23 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const t3 = groups['fabric:3'];
   const sum = t3.reduce((a, k) => a + LS.baseSupplyWeight(k), 0);
   assert(Math.abs(sum - LS.TIER_BASE_KINDS['fabric:3'] * (LS.TIER_DROP_BOOST['fabric:3'] ?? 1)) < 1e-9, `第 3 階布料總掉落權重固定（${sum.toFixed(2)}）`);
+}
+
+// ---- v15.13：屍潮 22:00 開始、自動回家 21:30 ----
+{
+  const gt = Game.newGame({ playerName: 'T22', classId: 'warrior', lat: 25, lon: 121 });
+  gt.state.map.pois = fillPois([], 25, 121);
+  gt.shelter.establish(gt.state.map.pois.find((p) => gt.shelter.canEstablish(p).ok));
+  setHour(gt, 21);
+  assert(gt.time.phase().zombies && !gt.time.siegeTime() && !gt.siege.of().active(), '21:00 已入夜（地圖殭屍出沒）但屍潮還沒開始');
+  setHour(gt, 22.1);
+  assert(gt.time.siegeTime() && gt.siege.of().active(), '22:00 屍潮開始');
+  setHour(gt, 5.9);
+  assert(gt.siege.of().active(), '屍潮持續到 06:00');
+  setHour(gt, 6.1);
+  assert(!gt.siege.of().active(), '06:00 天亮屍潮結束');
+  const AH = await import('../src/systems/AutoHomeSystem.js');
+  assert(AH.AUTO_HOME_HOUR === 21.5 && AH.AUTO_HOME_LABEL === '21:30', '自動回家改為 21:30');
 }
 
 if (failures) {
