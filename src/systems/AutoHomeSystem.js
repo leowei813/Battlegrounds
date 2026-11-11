@@ -44,6 +44,9 @@ export class AutoHomeSystem {
     const k = this.keyAt(now);
     // 第一次（剛更新到這一版）：從下一個 19:30 開始
     if (st.autoHomeKey == null) { st.autoHomeKey = k; return null; }
+    // v15.11.1：紀錄比現在還新（例如舊版遊戲在一天改成 90 分鐘後繼續用 60 分鐘計時、或時鐘被調過）：
+    // 以前會一直等到追上才觸發，好幾個小時都不會自動回家；改為從現在重新計算
+    if (st.autoHomeKey > k) { st.autoHomeKey = k; return null; }
     if (k <= st.autoHomeKey) return null;
     st.autoHomeKey = k;
     if (!this.on()) return null;
