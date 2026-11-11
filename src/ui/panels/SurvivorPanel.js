@@ -1,3 +1,4 @@
+import { EquipmentSystem } from '../../systems/EquipmentSystem.js';
 import { openRebirthDialog } from '../RebirthDialog.js';
 import { formatDuration } from '../../utils/math.js';
 import {
@@ -289,8 +290,80 @@ export class SurvivorPanel {
     root.addEventListener('pointercancel', end);
   }
 
+  /** 目前名單（依篩選，順序同左側名單）；選中的人不在篩選結果裡時用全部 */
+  shownList() {
+    const list = this.game.state.survivors;
+    const filter = this.filter || 'all';
+    const shown = list.filter((sv) => filter === 'all' || this.stateOf(sv) === filter);
+    return shown.some((sv) => sv.id === this.selId) ? shown : list;
+  }
+
+  /** v15.13：上一位／下一位倖存者 */
+  neighbors(id = this.selId) {
+    const list = this.shownList();
+    const i = list.findIndex((sv) => sv.id === id);
+    return { list, i, prev: i > 0 ? list[i - 1] : null, next: i >= 0 && i < list.length - 1 ? list[i + 1] : null };
+  }
+
+  /** 詳情頁上方的切換列：‹ 上一位　2 / 4　下一位 ›（手機版另有左右滑動提示） */
+  navHtml() {
+    const { list, i, prev, next } = this.neighbors();
+    if (list.length < 2 || i < 0) return '';
+    let hint = false;
+    try { hint = !localStorage.getItem('jdqs_sv_swiped'); } catch { /* 無法讀取 */ }
+    return `<div class="sv-swipe-nav">
+      ${prev ? btn(`‹ ${escapeHtml(prev.name)}`, 'svNav', { id: prev.id }, { cls: 'btn-sm btn-ghost' }) : '<span></span>'}
+      <span class="muted">${i + 1} / ${list.length}</span>
+      ${next ? btn(`${escapeHtml(next.name)} ›`, 'svNav', { id: next.id }, { cls: 'btn-sm btn-ghost' }) : '<span></span>'}
+    </div>${hint ? '<small class="muted block sv-swipe-hint">👆 左右滑動可以切換上一位／下一位倖存者</small>' : ''}`;
+  }
+
+  /** 切換到另一位倖存者（停在同一個分頁） */
+  goTo(id, dir = 0) {
+    if (!id || id === this.selId) return;
+    this.selId = id;
+    this.view = 'detail';
+    this.bagSel = null;
+    this.swipeDir = dir;
+    this.ui.refresh(true);
+    this.ui.panelEl.scrollTop = 0;
+  }
+
+  /** 手機版：在倖存者詳情頁左右滑動切換上一位／下一位 */
+  bindSwipe() {
+    const root = this.ui.panelEl;
+    if (!root || this.swipeBound) return;
+    this.swipeBound = true;
+    let t0 = null;
+    const mobile = () => window.matchMedia?.('(max-width: 899px)').matches;
+    root.addEventListener('touchstart', (e) => {
+      t0 = null;
+      if (this.ui.tab !== 'survivors' || !this.paneOpen || this.view !== 'detail' || !mobile() || e.touches.length !== 1) return;
+      const tg = e.target;
+      // 可以左右捲動的區塊、輸入框、名單上的拖移不觸發
+      if (!tg.closest?.('.sv-pane') || tg.closest('.sv-tabs, .chips, .bt-wrap, input, select, textarea, .sv-drag')) return;
+      const p = e.touches[0];
+      t0 = { x: p.clientX, y: p.clientY, at: Date.now() };
+    }, { passive: true });
+    root.addEventListener('touchend', (e) => {
+      if (!t0) return;
+      const p = e.changedTouches[0];
+      const dx = p.clientX - t0.x;
+      const dy = p.clientY - t0.y;
+      const fast = Date.now() - t0.at < 800;
+      t0 = null;
+      if (!fast || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5 || this.ui.modal?.current) return;
+      const { prev, next } = this.neighbors();
+      const target = dx < 0 ? next : prev;
+      if (!target) return;
+      try { localStorage.setItem('jdqs_sv_swiped', '1'); } catch { /* 無法寫入 */ }
+      this.goTo(target.id, dx < 0 ? 1 : -1);
+    }, { passive: true });
+  }
+
   render() {
     this.bindDrag();
+    this.bindSwipe();
     const g = this.game;
     const st = g.state;
     const list = st.survivors;
@@ -333,6 +406,7 @@ export class SurvivorPanel {
       openRebirthDialog(this.ui, id);
       return;
     }
+    if (action === 'svNav') { this.goTo(data.id); return; }
     if (action === 'svFilter') this.filter = data.f;
     if (action === 'oddsToggle') this.showOdds = !this.showOdds;
     if (action === 'svRecruit') {
@@ -516,6 +590,7 @@ export class SurvivorPanel {
         ${sv.status === 'idle' ? btn('⚡ 快速換裝', 'quickEquip', {}, { cls: 'btn-sm btn-primary', title: '從倉庫與在家隊員的背包，每個部位換上戰力最高的裝備' }) : ''}
         ${sv.status === 'idle' ? btn('🧺 快速脫裝', 'quickUnequip', {}, { cls: 'btn-sm btn-ghost', title: '卸下身上全部裝備放回倉庫（倉庫滿了放自己的背包）', disabled: !SLOT_KEYS.some((k) => sv.equipment[k]) }) : ''}
       </div>
+      ${this.navHtml()}
       <div class="sv-bars">
         ${bar('生命', hp, max, sv.severe || hp / max < 0.3 ? 'danger' : 'hp', `${Math.floor(hp)}/${max}${sv.severe ? '（30% 脫離重傷）' : ''}`)}
         ${bar('經驗', sv.xp, xpToNext(sv.level), 'xp', `${sv.xp}/${xpToNext(sv.level)}`)}
@@ -546,7 +621,10 @@ export class SurvivorPanel {
       bag: bagCard,
       skills: skillsCard,
     }[tab];
-    return `<div class="sv-detail2" style="--cc:${cls.color}">${head}${body}</div>`;
+    // 滑動切換後的進場動畫（只播一次）
+    const anim = this.swipeDir ? (this.swipeDir > 0 ? 'sv-in-next' : 'sv-in-prev') : '';
+    this.swipeDir = 0;
+    return `<div class="sv-detail2 ${anim}" style="--cc:${cls.color}">${head}${body}</div>`;
   }
 
   /** 裝備欄：兩欄小方塊（部位、名稱、品級與戰力），點擊更換 */
@@ -742,9 +820,11 @@ export class SurvivorPanel {
   }
 
   /** 可換上的裝備：同部位、不是這位倖存者身上已穿的（其他人身上的也可以換過來） */
+  /** v15.13：只列現在能換上的裝備（不含自己穿著的、別人穿著的、外出中的人背包裡的） */
   candidates(svId, slot) {
     const g = this.game;
-    return g.state.inventory.items.filter((i) => i.slot === slot && g.equipment.equippedBy(i.id)?.id !== svId);
+    const sv = g.survivors.get(svId);
+    return g.state.inventory.items.filter((i) => i.slot === slot && g.equipment.equippedBy(i.id)?.id !== svId && g.equipment.swappable(sv, i));
   }
 
   /** 裝備選擇頁：有返回按鈕，返回時回到倖存者的裝備頁 */
@@ -753,7 +833,9 @@ export class SurvivorPanel {
     const sv = g.survivors.get(svId);
     const cur = g.equipment.getItem(sv?.equipment[slot]);
     const body = () => {
-      const items = this.candidates(svId, slot).sort((a, b) => b.power - a.power);
+      // 依「對這位倖存者的戰力變化」排序
+      const delta = new Map(this.candidates(svId, slot).map((it) => [it.id, g.equipment.powerDelta(sv, it)]));
+      const items = this.candidates(svId, slot).sort((a, b) => delta.get(b.id) - delta.get(a.id) || b.power - a.power);
       const list = items.length
         ? items.map((it) => {
           const owner = g.equipment.equippedBy(it.id);
@@ -762,12 +844,12 @@ export class SurvivorPanel {
             equippedBy: owner,
             carrier,
             ammoWarn: slot === 'weapon' ? g.equipment.ammoWarn(it, sv) : null,
-            actions: `${btn('裝備', 'equip', { id: it.id }, { cls: 'btn-sm btn-primary' })}${compareHtml(g, it, cur)}`,
+            actions: `${btn('裝備', 'equip', { id: it.id }, { cls: 'btn-sm btn-primary' })}${compareHtml(g, it, cur, { who: sv?.name, delta: delta.get(it.id) })}`,
           });
         }).join('')
         : '<p class="muted">沒有可以裝備的物品。</p>';
       return `<div class="btn-row">${btn('← 返回', 'back', {}, { cls: 'btn-sm' })}</div>
-        <p class="muted">${escapeHtml(sv?.name || '')} 目前的${SLOTS[slot].name}：${cur ? `<b>${escapeHtml(cur.name)}</b>（戰力 ${cur.power}）` : '無'}</p>
+        <p class="muted">${escapeHtml(sv?.name || '')} 目前的${SLOTS[slot].name}：${cur ? `<b>${escapeHtml(cur.name)}</b>（裝備戰力 ${cur.power}）` : '無'}・${escapeHtml(sv?.name || '')} 目前戰力 <b>${sv ? g.survivors.stats(sv, EquipmentSystem.modeOf(slot)).power : 0}</b></p>
         <div class="grid">${list}</div>`;
     };
     this.ui.modal.open({

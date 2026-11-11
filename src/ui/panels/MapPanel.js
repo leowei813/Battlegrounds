@@ -544,7 +544,7 @@ export class MapPanel {
       const pub = g.assist.published(now);
       // 只顯示這次協防出發之後的戰果：今晚的屍潮、或出發後抵達的 NPC／玩家攻打（不顯示上一場的舊結果）
       const r0 = g.assist.myResult(p);
-      const r = r0 && String(r0.night) === String(g.time.nightKey(now)) && g.time.phase(now).zombies ? r0 : null;
+      const r = r0 && String(r0.night) === String(g.time.nightKey(now)) && g.time.siegeTime(now) ? r0 : null;
       const ra = (p.bases || []).map((b) => b.raidAssist).find((x) => x && x.at >= myAssist.startAt && x.list?.[g.world?.myId]);
       const raMine = ra ? ra.list[g.world.myId] : null;
       const idle = p.updatedAt && now - p.updatedAt > 90000;

@@ -28,7 +28,8 @@ export class CivilizationSystem {
     const player = (this.game.survivors.leader()?.level || 1) * CIV_WEIGHTS.playerLevel;
     let power = 0;
     st.survivors.forEach((sv) => SLOT_KEYS.forEach((slot) => {
-      power += this.game.equipment.getItem(sv.equipment[slot])?.power || 0;
+      const it = this.game.equipment.getItem(sv.equipment[slot]);
+      power += it ? this.game.equipment.itemValue(it) : 0;
     }));
     const equipment = power * CIV_WEIGHTS.equipmentPower;
     const researchLv = Object.values(st.research?.levels || {}).reduce((s, v) => s + v, 0);

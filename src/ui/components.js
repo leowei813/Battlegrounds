@@ -95,7 +95,7 @@ export function statLine(stats) {
  * @param {object} item 候選裝備
  * @param {object|null} cur 目前的裝備
  */
-export function compareHtml(game, item, cur) {
+export function compareHtml(game, item, cur, { who = null, delta = null } = {}) {
   const a = game.equipment.itemStats(item);
   const b = cur ? game.equipment.itemStats(cur) : {};
   const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => STAT_FMT[k]);
@@ -106,8 +106,10 @@ export function compareHtml(game, item, cur) {
     const good = k === 'weight' ? d < 0 : d > 0;
     return `<span class="${good ? 'pos' : 'neg'}">${name} ${d > 0 ? '▲' : '▼'}${f(Math.abs(d))}</span>`;
   }).filter(Boolean);
-  const pd = (item.power || 0) - (cur?.power || 0);
-  return `<div class="compare"><b class="${pd >= 0 ? 'pos' : 'neg'}">戰力 ${pd >= 0 ? '▲' : '▼'}${Math.abs(pd)}</b>${rows.join('') || '<span class="muted">能力相同</span>'}</div>`;
+  // v15.13：有指定倖存者時顯示「對他的戰力變化」（含職業技能、研究加成），否則比較裝備本身的戰力
+  const pd = delta ?? ((item.power || 0) - (cur?.power || 0));
+  const head = who != null ? `⚔️ 對 ${escapeHtml(who)} 戰力` : '戰力';
+  return `<div class="compare"><b class="${pd >= 0 ? 'pos' : 'neg'} ${who != null ? 'cmp-who' : ''}">${head} ${pd >= 0 ? '▲' : '▼'}${Math.abs(pd)}</b>${rows.join('') || '<span class="muted">能力相同</span>'}</div>`;
 }
 
 /** 能力範圍（最小值～最大值） */

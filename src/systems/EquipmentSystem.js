@@ -258,15 +258,21 @@ export class EquipmentSystem {
   }
 
   itemPower(item) {
-    // 裝備戰力：基本數值加上所有附加詞條（百分比詞條依裝備等級換算成實際效果）
+    // 裝備戰力：只算戰鬥能力（v15.13 起探索速度、搜刮加成、負重不計入）；百分比詞條依裝備等級換算成實際效果
     const s = this.itemStats(item);
     const lv = item.level || 1;
     return Math.round(
       (s.atk || 0) * 3 + (s.def || 0) * 4 + (s.hp || 0) * 0.5
       + (s.crit || 0) * 1000 + (s.dodge || 0) * 1000 + (s.critDmg || 0) * 250 + (s.atkSpeed || 0) * 300
       + (s.atkPct || 0) * (800 + lv * 40) + ((s.hpPct || 0) + (s.defPct || 0)) * (600 + lv * 30)
-      + (s.lifeSteal || 0) * 1200 + (s.exploreSpeed || 0) * 500 + (s.lootBonus || 0) * 500 + (s.carry || 0) * 2,
+      + (s.lifeSteal || 0) * 1200,
     );
+  }
+
+  /** 文明度用的裝備價值（沿用 v15.12 以前的算法，含探索、搜刮、負重，避免屍潮強度跟著變動） */
+  itemValue(item) {
+    const s = this.itemStats(item);
+    return this.itemPower(item) + Math.round((s.exploreSpeed || 0) * 500 + (s.lootBonus || 0) * 500 + (s.carry || 0) * 2);
   }
 
   // ---------- 物品空間（格子與重量） ----------
@@ -484,6 +490,43 @@ export class EquipmentSystem {
       old.loc = loc;
     }
     return { ok: true };
+  }
+
+  /** 這個部位比較戰力時用哪一把武器（武器欄用該武器自己的模式） */
+  static modeOf(slot) {
+    return slot === 'weapon' ? 'ranged' : slot === 'melee' ? 'melee' : 'auto';
+  }
+
+  /**
+   * v15.13：換上某件裝備後這位倖存者的實際戰力（含職業技能、研究、素質、套裝）。
+   * itemId 為 null 時表示該部位不穿。
+   */
+  powerWith(sv, slot, itemId) {
+    const prev = sv.equipment[slot];
+    sv.equipment[slot] = itemId;
+    const p = this.game.survivors.stats(sv, EquipmentSystem.modeOf(slot)).power;
+    sv.equipment[slot] = prev;
+    return p;
+  }
+
+  /** 換上這件裝備後，這位倖存者的戰力變化 */
+  powerDelta(sv, item) {
+    if (!sv || !item) return 0;
+    return this.powerWith(sv, item.slot, item.id) - this.powerWith(sv, item.slot, sv.equipment[item.slot] || null);
+  }
+
+  /**
+   * v15.13：這件裝備現在能不能換給這位倖存者：別人身上穿著的、外出中的人背包裡的、
+   * 其他職業專用的副本裝備都不行；倉庫、自己或在家的人背包裡的可以。
+   */
+  swappable(sv, item) {
+    if (!sv || !item || !this.canWear(sv, item)) return false;
+    const owner = this.equippedBy(item.id);
+    if (owner && owner.id !== sv.id) return false;
+    const loc = item.loc || 'store';
+    if (loc === 'store' || loc === sv.id) return true;
+    const carrier = this.game.survivors.get(loc);
+    return !!carrier && carrier.status === 'idle';
   }
 
   /**

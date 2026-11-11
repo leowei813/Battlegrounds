@@ -25,6 +25,13 @@ export const TIME_PHASES = {
   },
 };
 
+/** v15.13：據點屍潮從遊戲時間 22:00 開始到 06:00（地圖夜間殭屍群仍是 20:00 入夜就出現） */
+export const SIEGE_START_HOUR = 22;
+/** 一天中屍潮的時間比例：22:00–06:00 共 8 小時 */
+export const SIEGE_HOURS_FRACTION = 8 / 24;
+/** 遊戲時刻是否在屍潮時段 */
+export const isSiegeHour = (hour) => hour >= SIEGE_START_HOUR || hour < 6;
+
 /** 一天中殭屍出沒（夜晚 + 午夜）的時間比例：20:00–06:00 共 10 小時 */
 export const ZOMBIE_HOURS_FRACTION = 10 / 24;
 

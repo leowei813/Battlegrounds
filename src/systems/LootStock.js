@@ -77,10 +77,32 @@ const PLASTIC_BOOST = 1.5;
 const RECYCLING_ELEC_BOOST = 2;
 /** 這些常見地點本身不太出零件，但每次有機會找到少量塑膠外殼 */
 export const PLASTIC_SPOTS = { supermarket: 0.15, residential: 0.1, school: 0.15 };
+/**
+ * v15.13：同階總掉落量固定。每一階的掉落量依「基準種類數」計算，新增或移除材料時該階總量不變，
+ * 只是由同階的材料依需求比例分配（不會擠壓其他階）。基準＝v15.13 新增聚酯纖維前的種類數。
+ * 之後新增材料不要改這張表；要調整某一階的總量請改 TIER_DROP_BOOST。
+ */
+export const TIER_BASE_KINDS = {
+  'part:1': 11, 'part:2': 9, 'part:3': 8, 'part:4': 6, 'part:5': 4,
+  'fabric:1': 3, 'fabric:2': 3, 'fabric:3': 1, 'fabric:4': 2, 'fabric:5': 1,
+};
+/** 某一階的總掉落量倍率（v15.13：第 3 階布料 ×1.3） */
+export const TIER_DROP_BOOST = { 'fabric:3': 1.3 };
+const tierGroup = (k) => `${SUPPLIES[k].cat}:${SUPPLIES[k].tier}`;
+const tierKinds = {};
+suppliesOf('part').concat(suppliesOf('fabric')).filter((k) => SUPPLIES[k].tag !== 'ammo').forEach((k) => { tierKinds[tierGroup(k)] = (tierKinds[tierGroup(k)] || 0) + 1; });
+/** 同階種類數變動時的換算倍率（種類數與基準相同時為 1） */
+const tierScale = (k) => {
+  const g = tierGroup(k);
+  const base = TIER_BASE_KINDS[g];
+  return (base && tierKinds[g] ? base / tierKinds[g] : 1) * (TIER_DROP_BOOST[g] ?? 1);
+};
+
 /** 零件與布料掉落的基本權重（與危險度、建築類型無關的部分） */
 export const baseSupplyWeight = (k) => (isBasicBuild(k) ? BASIC_BUILD_BOOST : 1)
   * (SUPPLIES[k].tier === 1 ? BASIC_TIER_BOOST : 1)
-  * (k === 'plastic' ? PLASTIC_BOOST : 1);
+  * (k === 'plastic' ? PLASTIC_BOOST : 1)
+  * (['part', 'fabric'].includes(SUPPLIES[k].cat) ? tierScale(k) : 1);
 /** 找到零件時額外多找到 1、2 種零件的機率 */
 const PART_EXTRA_KINDS = [0.6, 0.3];
 

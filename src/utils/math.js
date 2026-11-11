@@ -137,11 +137,35 @@ export function offsetLatLon(lat, lon, distanceM, bearingRad) {
   return { lat: lat + (dLat * 180) / Math.PI, lon: lon + (dLon * 180) / Math.PI };
 }
 
+/** 戰力換算倍數：讓新公式的數字大小與舊版相近 */
+export const POWER_SCALE = 2.5;
+
 /**
- * 戰鬥單位的戰力（與倖存者頁面顯示的戰力同一套公式）。
- * 接受 { atk, atkSpeed, crit, critDmg, maxHp|hp, def, dodge, lifeSteal|ls }。
+ * 戰鬥單位的戰力（與倖存者頁面顯示的戰力同一套公式）。v15.13：戰力 = 倍數 × √（輸出 × 耐打）
+ *   輸出 = 攻擊 × 攻速 × 暴擊期望 ×（橫掃、怒火）
+ *   耐打 = 生命 ÷ 防禦減傷 ÷（1 − 閃避）×（1 + 吸血 × 2）×（急救）
+ * 接受 { atk, atkSpeed, crit, critDmg, maxHp|hp, def, dodge, lifeSteal|ls, skills }。
  */
 export function unitPower(u) {
+  if (!u) return 0;
+  const hp = u.maxHp ?? u.hp ?? 0;
+  const ls = u.lifeSteal ?? u.ls ?? 0;
+  const sk = u.skills || {};
+  const atk = u.atk || 0;
+  let dps = atk * (u.atkSpeed || 1) * (1 + (u.crit || 0) * ((u.critDmg || 1.5) - 1));
+  // 戰士橫掃：波及另一名敵人（60% 傷害）；怒火：生命低於 30% 時攻擊提高
+  dps *= 1 + (sk.cleaveChance || 0) * 0.6;
+  dps *= 1 + (sk.rage || 0) * 0.3;
+  // 防禦減傷：受到的傷害 = 攻擊 × 100 ÷（100 + 防禦 × 0.5）
+  let ehp = (hp * (100 + Math.max(0, u.def || 0) * 0.5)) / 100 / Math.max(0.4, 1 - (u.dodge || 0));
+  ehp *= 1 + ls * 2;
+  // 醫生急救：每隔幾秒治療生命最低的隊友
+  if (sk.healEvery > 0) ehp *= 1 + ((sk.healPct || 0) + (hp > 0 ? (atk * 0.5) / hp : 0)) * 10 / sk.healEvery;
+  return Math.round(POWER_SCALE * Math.sqrt(Math.max(0, dps * ehp)));
+}
+
+/** 舊版戰力公式（v15.12 以前）：只用來換算控制點守軍強度，維持既有平衡 */
+export function unitPowerV1(u) {
   if (!u) return 0;
   const hp = u.maxHp ?? u.hp ?? 0;
   const ls = u.lifeSteal ?? u.ls ?? 0;

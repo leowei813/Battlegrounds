@@ -73,6 +73,7 @@ export const SUPPLIES = {
   nylon: s('fabric', '尼龍布', '🟦', 2, 0.15),
   leather: s('fabric', '皮革', '🟤', 2, 0.4),
   techCotton: s('fabric', '科技棉', '🧊', 3, 0.15),
+  polyester: s('fabric', '聚酯纖維', '🎽', 3, 0.15),
   ballistic: s('fabric', '防彈纖維', '🦺', 4, 0.3),
   reinforced: s('fabric', '強化布料', '🧶', 4, 0.3),
   kevlar: s('fabric', '克維拉', '🛡️', 5, 0.25),
@@ -191,6 +192,22 @@ export const tierFromLevel = (lv, maxLv = 10) => Math.max(1, Math.min(5, Math.ce
  * @param {Record<string, number>} cost  可含 metal / cloth / medicine（抽象量）與其他資源
  * @param {{tier?:number, tags?:string[], key?:string}} opts 階級、零件用途、固定挑選用的種子
  */
+/**
+ * v15.13：第 3 階布料有科技棉與聚酯纖維兩種，依配方指定（不隨機）：
+ * 這些研究與設施改用聚酯纖維，其他維持科技棉。
+ */
+export const POLYESTER_KEYS = new Set([
+  // 研究：抗打擊、行動規劃、草藥學、尋寶、精工、圖紙蒐集、節能、建築學、品質控管、斥候訓練、拾荒技巧、偵查、製作技術、物品倉儲、拆解回收
+  'm_def', 's_queue', 'm_med', 's_items', 'c_level', 's_bp', 'i_genfuel', 'i_build', 'c_quality', 's_scout', 's_loot', 's_recon', 'c_tech', 'i_shelves', 'i_salvage',
+  // 設施：廣播塔、交易所、重生器、宿舍、地窖
+  'broadcast', 'exchange', 'rebirth', 'dormitory', 'cellar',
+]);
+const T3_FABRICS = ['techCotton', 'polyester'];
+/** 第 3 階布料只留下這個配方指定的那一種 */
+const pickT3Fabric = (list, key) => (list.some((k) => T3_FABRICS.includes(k))
+  ? [...list.filter((k) => !T3_FABRICS.includes(k)), POLYESTER_KEYS.has(key) ? 'polyester' : 'techCotton']
+  : list);
+
 export function materialize(cost, { tier = 1, tags = ['struct'], key = '' } = {}) {
   const out = {};
   const add = (k, v) => { if (v > 0) out[k] = (out[k] || 0) + v; };
@@ -206,8 +223,8 @@ export function materialize(cost, { tier = 1, tags = ['struct'], key = '' } = {}
       if (b) add(b, Math.round(units * 0.3));
       if (c && c !== a && c !== b) add(c, Math.round(units * 0.8));
     } else if (k === 'cloth') {
-      const main = suppliesOf('fabric', tier, tier);
-      const low = suppliesOf('fabric', Math.max(1, tier - 1), Math.max(1, tier - 1));
+      const main = pickT3Fabric(suppliesOf('fabric', tier, tier), key);
+      const low = pickT3Fabric(suppliesOf('fabric', Math.max(1, tier - 1), Math.max(1, tier - 1)), key);
       const [a] = pickFixed(main.length ? main : low, `${key}|f|${tier}`, 1);
       const [c] = pickFixed(low, `${key}|fl|${tier}`, 1);
       const units = v / (2 + tier);

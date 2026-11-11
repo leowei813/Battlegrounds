@@ -1,7 +1,7 @@
 import {
   DAY_REAL_MS, DAY_REAL_MS_OLD, DAY_SWITCH_AT, WORLD_EPOCH_MS, WORLD_START,
 } from '../config/constants.js';
-import { TIME_PHASES, phaseForHour } from '../config/timePhases.js';
+import { TIME_PHASES, phaseForHour, isSiegeHour } from '../config/timePhases.js';
 
 /**
  * 日夜系統（v9：世界時間）：所有玩家共用同一個日曆，從 WORLD_EPOCH_MS（2050/1/1 06:00）起算，
@@ -40,7 +40,8 @@ export class TimeSystem {
   /** 生存天數：從自己開局算起（第 1 天開始） */
   survivalDay(at = Date.now()) {
     const c = this.game.state.createdAt || at;
-    return Math.max(1, Math.floor((TimeSystem.hoursAt(at) - TimeSystem.hoursAt(c)) / 24) + 1);
+    // 加一點容差：剛好滿整天時浮點誤差可能算成 4.9999… 天
+    return Math.max(1, Math.floor((TimeSystem.hoursAt(at) - TimeSystem.hoursAt(c)) / 24 + 1e-9) + 1);
   }
 
   /** 世界日期（2050/1/1 起） */
@@ -64,6 +65,11 @@ export class TimeSystem {
 
   phase(at = Date.now()) {
     return TIME_PHASES[this.phaseId(at)];
+  }
+
+  /** v15.13：是否在據點屍潮時段（22:00～06:00） */
+  siegeTime(at = Date.now()) {
+    return this.phase(at).zombies && isSiegeHour(this.hour(at));
   }
 
   /** 下一次天亮（06:00）的現實時間 */

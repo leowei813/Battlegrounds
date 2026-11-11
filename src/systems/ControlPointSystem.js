@@ -8,7 +8,7 @@ import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { RAID_TRAVEL } from '../config/constants.js';
 import { NPC_CONFIG, npcQuietSpan, NPC_QUIET, NPC_DAY_SLOW, RALLY_XP } from '../config/npcs.js';
 import {
-  uid, haversine, randInt, weightedPick, formatDuration, unitPower,
+  uid, haversine, randInt, weightedPick, formatDuration, unitPower, unitPowerV1,
 } from '../utils/math.js';
 import { AssistSystem } from './AssistSystem.js';
 import { balanceMultipliers } from './MaterialBalance.js';
@@ -131,9 +131,10 @@ export class ControlPointSystem {
       ? cb.createEnemy(i === 0 ? 'raiderChief' : 'raider', cp.garrison.level)
       : cb.createEnemy(NEUTRAL_TYPES[i % NEUTRAL_TYPES.length], cp.garrison.level, i === 0)));
     // 感染者守軍校正成同等級掠奪者的強度，再乘上控制點倍率（強度表見 docs/v14-plan.md）
-    const ref = unitPower(cb.createEnemy('raider', cp.garrison.level));
+    // 守軍強度換算沿用舊版戰力公式（維持 v15.12 的平衡）
+    const ref = unitPowerV1(cb.createEnemy('raider', cp.garrison.level));
     list.forEach((e) => {
-      const k = (fac ? 1 : ref / Math.max(1, unitPower(e))) * CP_GARRISON_MUL * (CP_ZONE_MUL[cp.zone] ?? 1) * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
+      const k = (fac ? 1 : ref / Math.max(1, unitPowerV1(e))) * CP_GARRISON_MUL * (CP_ZONE_MUL[cp.zone] ?? 1) * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
       e.maxHp = Math.round(e.maxHp * k); e.hp = e.maxHp; e.atk = Math.round(e.atk * k);
     });
     return list;

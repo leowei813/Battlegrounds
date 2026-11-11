@@ -18,7 +18,7 @@ export const AMMO_CAP_OPTIONS = [100, 150, 200, 250, 300];
 import { createSurvivor } from '../core/GameState.js';
 import {
   withSeed,
-  clamp, pick, randInt, weightedPick, chance,
+  clamp, pick, randInt, weightedPick, chance, unitPower,
 } from '../utils/math.js';
 import { canAfford, payCost, scaleCost } from './costUtils.js';
 
@@ -237,9 +237,9 @@ export class SurvivorSystem {
     s.dodge = clamp(s.dodge, 0, 0.6);
     s.atkSpeed = clamp(+s.atkSpeed.toFixed(2), 0.3, 3);
     s.critDmg = +s.critDmg.toFixed(2);
-    // 戰力：輸出（含暴擊、吸血）＋生存（含閃避）
-    s.power = Math.round(s.atk * s.atkSpeed * (1 + s.crit * (s.critDmg - 1)) * (1 + (s.lifeSteal || 0)) * 4 + (s.hp * 0.4) / Math.max(0.4, 1 - (s.dodge || 0)) + s.def * 3);
     s.skills = fx;
+    // v15.13 戰力：√（輸出 × 耐打），含職業戰鬥技能（橫掃、怒火、急救）
+    s.power = unitPower({ ...s, maxHp: s.hp });
     s.weaponMode = use;
     return s;
   }
