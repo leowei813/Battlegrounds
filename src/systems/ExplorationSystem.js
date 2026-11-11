@@ -386,6 +386,12 @@ export class ExplorationSystem {
    * 不選 NPC 與非友好玩家警戒範圍內的地點、據點，以及其他隊伍正要去的地點。
    * @returns {{ok:boolean, added:object[], msg?:string}}
    */
+  /** v15.10：其他玩家或 NPC 正在（或正要去）探索這個地點：快速佇列不選 */
+  othersThere(poi, now = Date.now()) {
+    const v = this.game.poiShare?.view(poi, now);
+    return !!v?.occ?.some((x) => x.rel !== 'me' && x.l > now);
+  }
+
   quickFill(expId, now = Date.now()) {
     const exp = this.list.find((e) => e.id === expId);
     if (!exp || exp.kind !== 'explore' || exp.recalled || exp.defeated) return { ok: false, added: [], reason: '這支小隊無法加入佇列' };
@@ -397,7 +403,7 @@ export class ExplorationSystem {
     const pool = this.game.state.map.pois.filter((p) => POI_TYPES[p.type] && !p.npc && !p.pvp && !taken.has(p.id)
       && !this.game.shelter.baseAtPoi(p.id) && this.hasStock(p, now)
       && !zones.some((z) => haversine(p.lat, p.lon, z.lat, z.lon) <= z.r)
-      && this.explorable(p));
+      && this.explorable(p) && !this.othersThere(p, now));
     let last = this.poi(exp.queue[exp.queue.length - 1] || exp.poiId);
     // 只選與選定建築同一個區域（危險等級）的建築，不跨區
     const base = this.poi(exp.poiId) || last;
@@ -500,7 +506,7 @@ export class ExplorationSystem {
     if (!v.ok) return v;
     if (kind === 'raid' && this.game.npcs.get?.(poiId)?.hq) return { ok: false, reason: '大本營不能攻打' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' || kind === 'rally' || kind === 'cpGuard' ? 0 : kind === 'raid' || kind === 'pvp' || kind === 'infect' || kind === 'cp' ? 2 : this.searchMinutes(v.poi);
+    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' || kind === 'rally' || kind === 'cpGuard' ? 0 : kind === 'pvp' || kind === 'infect' ? 2 : kind === 'raid' || kind === 'cp' ? 0 : this.searchMinutes(v.poi); // v15.9.2：攻打 NPC 據點、控制點抵達就交戰（同集結）
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile, from });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
@@ -1046,6 +1052,12 @@ export class ExplorationSystem {
       if (!hops.length) break;
       reports.push(...hops);
     }
+    // v15.9.2：攻打 NPC 據點：抵達就交戰（同集結），結果先通知，隊伍走回家後才收到報告
+    this.list.filter((e) => e.kind === 'raid' && !e.raidReport && !e.recalled && !e.defeated && now >= e.startAt + (e.travelMs || 0) + (e.searchMs || 0) && now < e.endAt).forEach((e) => {
+      const at = e.startAt + (e.travelMs || 0) + (e.searchMs || 0);
+      e.raidReport = this.game.combat.within(e, () => this.game.npcs.resolveRaid(e, at));
+      if (!silent) this.game.toast(`${e.raidReport.success ? '✅' : '⚠️'} ${e.raidReport.poiName}：${e.raidReport.success ? '攻打成功' : '攻打失敗'}，隊伍返回避難所`, e.raidReport.success ? 'success' : 'danger');
+    });
     let due = this.list.filter((e) => e.endAt <= now);
     while (due.length && guard < 400) {
       guard += 1;
@@ -1065,7 +1077,7 @@ export class ExplorationSystem {
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)
-            : exp.kind === 'raid' ? this.game.npcs.resolveRaid(exp)
+            : exp.kind === 'raid' ? (exp.raidReport ? { ...exp.raidReport, at: exp.endAt } : this.game.npcs.resolveRaid(exp))
             : exp.kind === 'infect' ? this.game.infected.resolveAttack(exp)
             : exp.kind === 'cp' ? this.game.cp.report(exp)
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp)));

@@ -1,12 +1,12 @@
 import { TimeSystem } from './TimeSystem.js';
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT,
+  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT, CP_TAKEN_SHIELD_MS, FACTION_FORCE_SCALE,
 } from '../config/controlPoints.js';
 import { inNpcHome, ZONES } from '../config/zones.js';
 import { xpToNext } from '../config/survivors.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { RAID_TRAVEL } from '../config/constants.js';
-import { NPC_CONFIG, npcQuietAt, npcQuietSpan, NPC_DAY_SLOW, RALLY_XP } from '../config/npcs.js';
+import { NPC_CONFIG, npcQuietSpan, NPC_QUIET, NPC_DAY_SLOW, RALLY_XP } from '../config/npcs.js';
 import {
   uid, haversine, randInt, weightedPick, formatDuration, unitPower,
 } from '../utils/math.js';
@@ -366,6 +366,16 @@ export class ControlPointSystem {
     return `🛡️ 控制點 #${no}已不是你或好友的控制點，駐防隊撤回`;
   }
 
+  /** v15.10：戰鬥明細寫進共用資料前縮小（逐筆紀錄過多時保留頭尾） */
+  static fitBattle(b, max = 9000) {
+    // 戰報給佔領者與駐防者（防守方）看：我方＝守軍、敵方＝進攻方，勝負也換成守軍的角度
+    const log = (b.log || []).map((l) => (l.type === 'win' ? { ...l, msg: '💀 守軍全數被擊倒，控制點失守', type: 'lose' } : l.type === 'lose' ? { ...l, msg: '🏆 守住控制點，進攻方撤退', type: 'win' } : l));
+    const x = { ...b, team: b.foes || [], foes: b.team || [], victory: !b.victory, log };
+    const size = () => new TextEncoder().encode(JSON.stringify(x)).length;
+    while (size() > max && x.log.length > 12) x.log = [...x.log.slice(0, Math.ceil(x.log.length / 2) - 10), ...x.log.slice(-10)];
+    return size() > max ? { ...x, log: [] } : x;
+  }
+
   /** 交戰紀錄的進攻方：勢力部隊或玩家的隊伍（v15.8） */
   static fightWho(ft) {
     return ft.pn ? `玩家「${ft.pn}」的隊伍` : `「${FACTIONS[ft.f]?.name || '勢力'}」的部隊`;
@@ -467,6 +477,8 @@ export class ControlPointSystem {
       this.busy.add(exp.id);
       try {
         exp.cpResult = await this.fight(exp, at);
+        // v15.9.2：抵達就交戰（同集結），結果先通知，隊伍走回家後才收到報告
+        this.game.toast?.(`${exp.cpResult.victory ? '🏆' : '⚠️'} 攻打控制點 #${cpById(exp.cpId)?.no || ''}：${exp.cpResult.victory ? '佔領成功' : '沒能打下'}，隊伍返回避難所`, exp.cpResult.victory ? 'success' : 'danger');
       } finally {
         this.busy.delete(exp.id);
       }
@@ -482,7 +494,7 @@ export class ControlPointSystem {
     if (!c.ok) return { victory: false, events: [`🚩 抵達時控制點 #${cp.no} ${c.reason}`] };
     const foes = this.defenders(id, at);
     const before = foes.length;
-    const result = g.combat.simulate(members, foes, { title: `🚩 攻打控制點 #${cp.no}` });
+    const result = g.combat.simulate(members, foes, { title: `🚩 攻打控制點 #${cp.no}`, capture: 60 });
     g.combat.applyOutcome(members, result, at, { attackXp: RALLY_XP });
     const me = this.myId();
     const name = g.state.player.name || '倖存者';
@@ -499,6 +511,7 @@ export class ControlPointSystem {
         down: [...new Set(result.foes.filter((f) => f.down).map((f) => f.ally?.player).filter(Boolean))],
         downU: result.foes.filter((f) => f.down && f.ally?.e).map((f) => `${f.ally.e}:${f.ally.i}`).slice(0, 60),
         ge: [...new Set(arrived.map((h) => h.e).filter(Boolean))].slice(0, 30),
+        ...(result.entry ? { battle: ControlPointSystem.fitBattle({ ...result.entry, title: `🚩 玩家「${name}」攻打控制點 #${cp.no}` }) } : {}),
       };
     };
     if (result.victory) {
@@ -702,6 +715,8 @@ export class ControlPointSystem {
     const own = this.factionCps(f);
     const near = new Set(own.length ? own.flatMap((id) => cpNeighbors(id)) : hqNeighbors(f));
     own.forEach((id) => near.delete(id));
+    // v15.10：玩家剛佔領的控制點有保護期，勢力不會選它
+    [...near].forEach((id) => { if (this.shielded(id, now)) near.delete(id); });
     const hq = this.hqLatLon(f);
     const list = [...near].map((id) => {
       const cp = cpById(id);
@@ -711,6 +726,18 @@ export class ControlPointSystem {
     if (!list.length) return null;
     list.sort((a, b) => (a.guarded - b.guarded) || (a.power - b.power) || (a.dist - b.dist));
     return list[0].id;
+  }
+
+  /** v15.10：玩家剛佔領（保護期內）的控制點 */
+  shielded(id, now = Date.now()) {
+    const d = this.data(id);
+    return !!(d && (d.owners || []).length && !d.faction && d.takenAt && now - d.takenAt < CP_TAKEN_SHIELD_MS);
+  }
+
+  /** v15.10：勢力進攻部隊的強度倍率（勢力控制點越多越強） */
+  forceScale(f) {
+    const c = FACTION_FORCE_SCALE;
+    return Math.min(c.max, Math.max(c.min, 1 + (this.factionCps(f).length - c.base) * c.step));
   }
 
   hqLatLon(f) {
@@ -724,7 +751,7 @@ export class ControlPointSystem {
     const n = Math.round(cp.garrison.count * 1.2);
     return Array.from({ length: n }, (_, i) => {
       const e = cb.createEnemy(i === 0 ? 'raiderChief' : 'raider', cp.garrison.level);
-      const k = CP_GARRISON_MUL * (CP_ZONE_MUL[cp.zone] ?? 1) * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
+      const k = CP_GARRISON_MUL * (CP_ZONE_MUL[cp.zone] ?? 1) * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1) * this.forceScale(f);
       return {
         id: `fx:${f}:${i}`, ally: { player: `npc:${f}`, i }, name: `${FACTIONS[f].name}${e.name}`,
         maxHp: Math.round(e.maxHp * k), hp: Math.round(e.maxHp * k), atk: Math.round(e.atk * k), def: e.def || 0,
@@ -745,8 +772,6 @@ export class ControlPointSystem {
       // v15.8：進攻次數減半（每 NPC_DAY_SLOW 個遊戲日一次，三個勢力錯開）；控制點多的勢力再減半
       if (!ControlPointSystem.turnDay(f, day, own.length)) continue;
       if ((this.lastTurn || {})[f] === day) continue;
-      // v15.8：現實凌晨（台灣時間 00:00～08:00）勢力不進攻，這一天直接略過（所有玩家依同一規則判斷）
-      if (npcQuietAt(at)) { this.lastTurn = { ...(this.lastTurn || {}), [f]: day }; continue; }
       this.busy.add(`turn:${f}`);
       try {
         // eslint-disable-next-line no-await-in-loop
@@ -755,9 +780,13 @@ export class ControlPointSystem {
         if (!lock.ok) continue;
         const target = this.pickTarget(f, at);
         if (!target) continue;
-        // 抵達時間落在凌晨休息時段的也不出發
+        // v15.10：現實凌晨（台灣時間 00:00～08:00）：三個勢力加起來每 3 小時最多進攻一次（共用紀錄，所有玩家判斷一致）
         const to = this.markerSpot(target);
-        if (npcQuietSpan(at, at + ControlPointSystem.marchMs(this.marchFrom(f, to), to))) continue;
+        if (npcQuietSpan(at, at + ControlPointSystem.marchMs(this.marchFrom(f, to), to))) {
+          // eslint-disable-next-line no-await-in-loop
+          const nl = await g.shared.update(CP_TURN_KIND, 'night', (x) => (x?.at && at - x.at < NPC_QUIET.gapMs ? { fail: 'gap' } : { data: { at } }));
+          if (!nl.ok) continue;
+        }
         // v15.4：部隊從勢力據點（沒有時從大本營）出發，移動時間比照攻打玩家避難所，讓玩家有時間反應
         // eslint-disable-next-line no-await-in-loop
         await this.launchMarch(f, target, at);
@@ -826,9 +855,17 @@ export class ControlPointSystem {
       if (!m || now >= m.arriveAt) return;
       const owner = this.owners(cp.id).some((o) => o.p === me);
       const guard = (this.data(cp.id)?.guards || []).some((h) => h.p === me);
-      if (!owner && !guard) return;
+      const intel = this.marchIntel(m, cp.id);
+      if (!owner && !guard && !intel) return;
       const at = this.markerSpot(cp.id);
-      out.push({ text: `勢力「${FACTIONS[m.f]?.name || ''}」部隊 → 控制點 #${cp.no}`, at: m.arriveAt, lat: at.lat, lon: at.lon });
+      // 不是自己的控制點（偵查 Lv13 才看得到）：文字精簡
+      let text = `勢力「${FACTIONS[m.f]?.name || ''}」部隊${intel} → 控制點 #${cp.no}`;
+      if (!owner && !guard) {
+        const force = this.attackForce(m.f, cp.id);
+        const pw = force.reduce((s, u) => s + unitPower(u), 0);
+        text = `${FACTIONS[m.f]?.name || ''}${force.length}人⚔${pw >= 10000 ? `${(pw / 10000).toFixed(1)}萬` : Math.round(pw)} → #${cp.no}`;
+      }
+      out.push({ text, at: m.arriveAt, lat: at.lat, lon: at.lon, mine: owner || guard });
     });
     this.game.state.expeditions.forEach((e) => {
       const a = e.hqAmbush;
@@ -836,6 +873,13 @@ export class ControlPointSystem {
       out.push({ text: `${FACTIONS[a.f]?.name || ''}大本營部隊 → 探索點「${this.game.exploration.poi(e.poiId)?.name || ''}」`, at: a.hitAt, lat: a.to.lat, lon: a.to.lon });
     });
     return out.sort((a, b) => a.at - b.at);
+  }
+
+  /** v15.10：偵查 Lv13：勢力進攻部隊的人數與戰力（看得到所有控制點的行軍） */
+  marchIntel(m, id) {
+    if ((this.game.npcs?.intel?.() || 0) < 13) return '';
+    const force = this.attackForce(m.f, id);
+    return `（${force.length} 人・戰力 ${Math.round(force.reduce((s, u) => s + unitPower(u), 0)).toLocaleString()}）`;
   }
 
   /** 前往自己（或好友）控制點的進攻部隊：提醒一次 */
@@ -848,13 +892,19 @@ export class ControlPointSystem {
       const me = this.myId();
       const owner = this.owners(cp.id).some((o) => o.p === me);
       const guard = (this.data(cp.id)?.guards || []).some((h) => h.p === me);
-      if (!owner && !guard) return;
+      const intel = this.marchIntel(m, cp.id);
+      if (!owner && !guard && !intel) return;
       const key = `${cp.id}:${m.arriveAt}`;
       if (this.warned.has(key)) return;
       this.warned.add(key);
       const min = Math.max(1, Math.round((m.arriveAt - now) / 60000));
+      // v15.10：偵查 Lv13：其他控制點的行軍也會記在事件紀錄（不跳提醒）
+      if (!owner && !guard) {
+        this.game.log(`🔭 偵查：勢力「${FACTIONS[m.f]?.name || ''}」的部隊${intel}正前往控制點 #${cp.no}（約 ${min} 分鐘後抵達）`, 'info');
+        return;
+      }
       const role = owner && guard ? '你佔領並駐防的' : owner ? '你佔領的' : '你駐防的';
-      const msg = `⚔️ 勢力「${FACTIONS[m.f]?.name || ''}」的部隊正前往${role}控制點 #${cp.no}（約 ${min} 分鐘後抵達）${owner && !guard ? '，可以派人駐防' : ''}`;
+      const msg = `⚔️ 勢力「${FACTIONS[m.f]?.name || ''}」的部隊${intel}正前往${role}控制點 #${cp.no}（約 ${min} 分鐘後抵達）${owner && !guard ? '，可以派人駐防' : ''}`;
       this.game.log(msg, 'danger');
       this.game.toast?.(msg, 'danger');
     });
@@ -895,7 +945,7 @@ export class ControlPointSystem {
     const cp = cpById(id);
     const foes = this.defenders(id, at);
     const attackers = this.attackForce(f, id);
-    const r = g.combat.simulate([], foes, { allies: attackers, record: false });
+    const r = g.combat.simulate([], foes, { allies: attackers, record: false, capture: 60, title: `🏴 「${FACTIONS[f].name}」進攻控制點 #${cp.no}` });
     const win = !!r.victory || !foes.length;
     const killed = r.foes.filter((x) => x.down).length;
     const downIds = new Set(r.foes.filter((x) => x.down).map((x) => x.ally?.player).filter(Boolean));
@@ -909,6 +959,8 @@ export class ControlPointSystem {
         // v15.7：倒下的駐防隊員（駐防隊 id:第幾位），沒倒下的人防守成功時拿經驗
         downU: r.foes.filter((x) => x.down && x.ally?.e).map((x) => `${x.ally.e}:${x.ally.i}`).slice(0, 60),
         ge: [...new Set((data.guards || []).filter((h) => !(h.arr > at)).map((h) => h.e).filter(Boolean))].slice(0, 30),
+        // v15.10：戰鬥明細（佔領者與駐防者都看得到）
+        ...(r.entry ? { battle: ControlPointSystem.fitBattle(r.entry) } : {}),
       };
       if (win) {
         // 打下後留守：守軍約為進攻部隊的一半（之後每小時補回）
@@ -948,12 +1000,15 @@ export class ControlPointSystem {
       g.log(text, ft.win ? 'danger' : 'success');
       g.toast?.(text, ft.win ? 'danger' : 'success');
       // v15.9：控制點交戰戰報另外記在「消息 → 🚩 控制點」
-      g.state.cpLog = [{ id: `cpf:${cp.id}:${ft.at}`, at: ft.at, no: cp.no, win: !!ft.win, text }, ...(g.state.cpLog || [])].slice(0, 30);
+      const logEntry = { id: `cpf:${cp.id}:${ft.at}`, at: ft.at, no: cp.no, win: !!ft.win, text };
+      if (ft.battle) g.combat.adopt?.(ft.battle, logEntry);
+      g.state.cpLog = [logEntry, ...(g.state.cpLog || [])].slice(0, 30);
       // v15.8：交戰經過也寫進駐防隊的探索報告（回到避難所時看得到）
       mine.forEach((e) => {
         const line = ft.win ? this.lostReason(e) : this.guardFought(e, ft) ? msg : null;
         if (!line) return;
         if (!(e.travelEvents || []).includes(line)) e.travelEvents = [...(e.travelEvents || []), line];
+        if (ft.battle && this.guardFought(e, ft)) g.combat.adopt?.(ft.battle, e);
       });
       if (!ft.win && guard && ft.f) this.guardXp(cp, ft); // 防守經驗只限擊退勢力部隊（v15.7 規則）
     });

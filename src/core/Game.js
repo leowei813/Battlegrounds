@@ -260,6 +260,8 @@ export class Game {
     }
     bus.emit(EVT.TICK, now);
     bus.emit(EVT.STATE_CHANGED);
+    // v15.10：最後在線時間（畫面開著才算）：不在線時被 NPC 掠奪損失減半
+    if (typeof document === 'undefined' || document.visibilityState !== 'hidden') this.state.activeAt = now;
   }
 
   applyElapsed(now, dt, silent) {

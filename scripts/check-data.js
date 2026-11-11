@@ -4128,6 +4128,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(qf.ok && r.exp.queue.length === Math.min(ex.queueLimit(), qf.added.length) && qf.added.length > 0, `快速佇列：自動加入附近地點（${qf.added.length}/${ex.queueLimit()}）`);
   assert(qf.added.every((p) => ex.hasStock(p) && !zones.some((z) => haversine(p.lat, p.lon, z.lat, z.lon) <= z.r)) && new Set(r.exp.queue).size === r.exp.queue.length && !r.exp.queue.includes(poi.id), '快速佇列：只加入有物資、不在警戒範圍、不重複的地點');
   assert(ex.quickFill(r.exp.id).added.length === 0 || r.exp.queue.length <= ex.queueLimit(), '快速佇列不超過上限');
+  {
+    // v15.10：其他玩家或 NPC 正在探索的地點，快速佇列不選
+    const busy = qf.added[0];
+    const v0 = gq.poiShare.view.bind(gq.poiShare);
+    gq.poiShare.view = (p, at) => (p?.id === busy.id ? { ...v0(p, at), occ: [{ n: '玩家「X」', p: 'X', rel: 'other', a: Date.now() - 1000, l: Date.now() + 600000 }] } : v0(p, at));
+    r.exp.queue = [];
+    const qf2 = ex.quickFill(r.exp.id);
+    assert(qf2.added.length > 0 && !qf2.added.some((p) => p.id === busy.id), '快速佇列：其他人正在探索的地點不選');
+    gq.poiShare.view = (p, at) => (p?.id === busy.id ? { ...v0(p, at), occ: [{ n: '我', p: 'me', rel: 'me', a: Date.now() - 1000, l: Date.now() + 600000 }] } : v0(p, at));
+    assert(ex.othersThere(busy) === false, '自己的隊伍不算其他人');
+    gq.poiShare.view = v0;
+  }
   const { zoneAt: zoneAt85 } = await import('../src/config/zones.js');
   assert(qf.added.every((p) => zoneAt85(p.lat, p.lon).id === zoneAt85(poi.lat, poi.lon).id), '快速佇列只加入與選定建築同一個區域的建築（不跨區）');
   ex.list.length = 0; L.status = 'idle';
@@ -5205,7 +5217,11 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     const realGet = gn.shared.get?.bind(gn.shared);
     gn.shared.get = (kind, id) => (kind === 'npc' && id === sid ? { gen: base.gen, dc: 1, ident: base.ident, destroyed: { at: Date.now() - 2000, respawnAt: Date.now() - 1000 } } : realGet?.(kind, id));
     const re = gn.npcs.slotNpc(cell, found);
-    assert(re && re.dc === 1 && re.baseLevel >= 35, `格子重生的 NPC 據點基礎等級至少 35（${re?.baseLevel}）`);
+    {
+      const { zoneAt: zA } = await import('../src/config/zones.js');
+      const zmin = { safe: 10, normal: 20, alert: 30 }[zA(re.lat, re.lon).id] ?? 35;
+      assert(re && re.dc === 1 && re.baseLevel >= zmin && gn.npcs.minLevel(re) === zmin, `v15.10：格子重生的 NPC 據點最低等級依區域（${zA(re.lat, re.lon).name} Lv${zmin}，實際 ${re?.baseLevel}）`);
+    }
   }
 }
 
@@ -6323,9 +6339,9 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   A.combat.simulate = (team, foes, o) => { const r = sim(team, foes, { ...o, record: false }); r.victory = true; r.foes.forEach((f) => { f.down = true; }); return r; };
   const at = A.cp.attack(cp.id, [lead.id]);
   assert(at.ok, `派隊攻打控制點（${at.reason || ''}）`);
-  assert(at.exp.searchMs > 0, '攻打控制點有攻打倒數時間');
-  await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs + at.exp.searchMs - 1000);
-  assert(!at.exp.cpResult && A.cp.statusOf(cp.id) !== 'mine', '抵達後攻打倒數還沒結束：還沒佔領（不能駐防、地圖不會點亮）');
+  assert(at.exp.searchMs === 0, 'v15.9.2：攻打控制點沒有攻打倒數（抵達就交戰，同集結）');
+  await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs - 1000);
+  assert(!at.exp.cpResult && A.cp.statusOf(cp.id) !== 'mine', '還沒抵達：還沒佔領（不能駐防、地圖不會點亮）');
   await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs + at.exp.searchMs + 1);
   A.combat.simulate = sim;
   await B.shared.poll(); await C.shared.poll();
@@ -6803,7 +6819,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
       bases[0].level = lv0;
       const abyss = CPC.CONTROL_POINTS.find((c) => c.zone === 5);
       const pw = gq.cp.defensePower(abyss.id);
-      assert(Math.abs(pw / ref - 1) < 0.1, `深淵區控制點守軍戰力約等於 Lv35 NPC 據點（${Math.round(pw)} / ${Math.round(ref)}）`);
+      assert(Math.abs(pw / ref - 0.5) < 0.05, `v15.10：深淵區控制點守軍戰力約為 Lv35 NPC 據點的一半（${Math.round(pw)} / ${Math.round(ref)}）`);
     }
     // v15.3：勢力控制點內有 NPC 據點時要先打掉據點
     if (bases[0]) {
@@ -6864,12 +6880,12 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(lulls.every((x) => x >= 12 && x <= 18), `屍潮每波間隔約 15 秒（${Math.min(...lulls).toFixed(1)}～${Math.max(...lulls).toFixed(1)}）`);
 }
 
-// ---- v15.8：現實凌晨（台灣時間 00:00～08:00）NPC 不掠奪、勢力不進攻 ----
+// ---- v15.10：現實凌晨（台灣時間 00:00～08:00）：勢力合計、每位玩家被掠奪各 3 小時最多一次 ----
 {
   Object.assign(NQ, NQ0);
   const tw = (h, m = 0) => Date.UTC(2026, 10, 10, h - 8, m); // 台灣時間 11/10 h:m
-  assert(NQAt(tw(0)) && NQAt(tw(7, 59)) && !NQAt(tw(8)) && !NQAt(tw(23, 59)) && !NQAt(tw(12)), '休息時段為台灣時間 00:00～08:00');
-  assert(NQSpan(tw(23, 30), tw(0, 30)) && NQSpan(tw(7, 30), tw(8, 30)) && !NQSpan(tw(8), tw(9)) && NQSpan(tw(23), tw(32)), '抵達時間或途中落在休息時段也不出發');
+  assert(NQAt(tw(0)) && NQAt(tw(7, 59)) && !NQAt(tw(8)) && !NQAt(tw(23, 59)) && !NQAt(tw(12)) && NQ.gapMs === 3 * 3600000, '凌晨時段為台灣時間 00:00～08:00、間隔 3 小時');
+  assert(NQSpan(tw(23, 30), tw(0, 30)) && NQSpan(tw(7, 30), tw(8, 30)) && !NQSpan(tw(8), tw(9)), '出發或抵達落在凌晨都算凌晨');
   const gz = Game.newGame({ playerName: 'Z', classId: 'warrior', lat: 25, lon: 121 });
   gz.state.map.pois = fillPois([], 25, 121);
   gz.shelter.establish(gz.state.map.pois.find((p) => gz.shelter.canEstablish(p).ok));
@@ -6877,28 +6893,19 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   gz.npcs.allowConcurrentRaid = () => true;
   gz.npcs.raidLevelCap = () => 99;
   const nz = gz.npcs.spawnAt(gz.state.map.pois.filter((p) => !gz.shelter.baseAtPoi(p.id))[1], 'q', Date.now(), true);
-  {
-    nz.faction = null; nz.trip = null; gz.npcs.launchRaid(nz, tw(3));
-    const night = nz.trip;
-    nz.trip = null; gz.npcs.launchRaid(nz, tw(12));
-    assert(!night && nz.trip?.kind === 'raid', 'NPC 凌晨不掠奪、白天照常');
-    nz.trip = null; gz.npcs.launchRaid(nz, tw(7, 58));
-    assert(!nz.trip, '抵達時間會落在凌晨的掠奪不出發');
-  }
-  // 勢力進攻：凌晨的進攻時間直接略過
-  const turns = [];
+  const raid = (t) => { nz.faction = null; nz.trip = null; gz.npcs.launchRaid(nz, t); return nz.trip?.kind === 'raid'; };
+  const r1 = raid(tw(1)); const r2 = raid(tw(2)); const r3 = raid(tw(4, 1)); const r4 = raid(tw(12)); const r5 = raid(tw(12, 30));
+  assert(r1 && !r2 && r3 && r4 && r5, `NPC 掠奪：凌晨每位玩家 3 小時最多一次、白天不受限（${[r1, r2, r3, r4, r5].join('/')}）`);
+  // 勢力：凌晨三個勢力合計 3 小時最多進攻一次（共用紀錄）
   gz.state.map.source = 'generated';
-  gz.shared = { update: async () => ({ ok: true }), get: () => null, list: () => [] };
-  gz.cp.turnTime = () => tw(3);
-  gz.cp.pickTarget = () => null;
-  gz.cp.launchMarch = async (f) => { turns.push(f); };
-  const picked = [];
-  gz.cp.pickTarget = (f) => { picked.push(f); return null; };
-  await gz.cp.npcTurns(tw(3, 5));
-  const nightPicked = picked.length;
-  gz.cp.lastTurn = {}; gz.cp.turnTime = () => tw(12);
-  await gz.cp.npcTurns(tw(12, 5));
-  assert(nightPicked === 0 && picked.length > 0, `勢力凌晨不進攻、白天照常（凌晨 ${nightPicked}、白天 ${picked.length}）`);
+  const night = {};
+  gz.shared = { update: async (kind, id, fn) => { if (id !== 'night') return { ok: true }; const r = fn(night.x); if (r.fail) return { ok: false }; night.x = r.data; return { ok: true }; }, get: () => null, list: () => [] };
+  const marched = [];
+  gz.cp.pickTarget = () => 'cp1';
+  gz.cp.launchMarch = async (f) => { marched.push(f); };
+  const run = async (t) => { marched.length = 0; gz.cp.lastTurn = {}; gz.cp.turnTime = () => t; await gz.cp.npcTurns(t + 60000); return marched.length; };
+  const a1 = await run(tw(1)); const a2 = await run(tw(2)); const a3 = await run(tw(4, 30)); const a4 = await run(tw(12));
+  assert(a1 === 1 && a2 === 0 && a3 === 1 && a4 >= 1, `勢力：凌晨三個勢力合計 3 小時最多進攻一次、白天照常（${a1}/${a2}/${a3}/${a4}）`);
   NQ.to = NQ.from;
 }
 
@@ -7019,6 +7026,14 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     assert(logs(B, /你駐防的控制點.*擊退了「/).length === 1 && logs(A, /你佔領的控制點.*擊退了「/).length === 1, `情境1：擊退勢力，駐防者與佔領者各收到一則戰報（${logs(B, /擊退/)[0]?.msg || ''}）`);
     assert((sv.level > lv0 || sv.xp > xp0) && !e.recalled && !e.defeated && A.cp.guardsAt(cp.id, Date.now()).some((h) => h.e === e.id), '情境1：駐防隊拿到防守經驗、繼續駐守');
     assert(e.travelEvents.some((x) => /擊退了「/.test(x)), '情境1：戰報寫進駐防隊的報告');
+    {
+      const le = B.state.cpLog?.[0];
+      const bt = le?.battleIds?.[0] && B.combat.battle(le.battleIds[0]);
+      const la = A.state.cpLog?.[0];
+      assert(bt && bt.log.length > 0 && bt.team.length && bt.foes.length && la?.battleIds?.length && e.battleIds?.length, `v15.10：控制點交戰戰報附戰鬥明細（駐防者、佔領者、駐防隊報告）（${bt?.title || ''}，${bt?.log?.length || 0} 筆）`);
+      const sz = new TextEncoder().encode(JSON.stringify(A.cp.data(cp.id)?.fight || {})).length;
+      assert(sz < 12000, `共用資料的交戰紀錄大小合理（${sz} bytes）`);
+    }
   }
   // 情境 2：擊退勢力，但駐防隊員倒下 → 駐防隊被擊退撤回，報告寫出交戰與被擊退
   await reset();
@@ -7078,6 +7093,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     await pollAll();
     assert(at.exp.cpResult?.victory && C.cp.owners(cp.id).some((o) => o.p === 'C'), '情境6：C 打下控制點');
     await tick(A, Date.now()); await tick(B, Date.now());
+    assert(A.state.cpLog?.[0]?.battleIds?.length && /玩家「C」/.test(A.combat.battle(A.state.cpLog[0].battleIds[0])?.title || ''), 'v15.10：玩家攻打控制點的戰報也附戰鬥明細');
     assert(logs(A, /玩家「C」的隊伍.*攻下了你佔領的控制點/).length === 1, `情境6：佔領者收到被玩家攻下的戰報（${logs(A, /攻下/)[0]?.msg || ''}）`);
     assert(e.recalled && logs(B, /玩家「C」的隊伍/).length === 1 && !logs(B, /已不是你或好友/).length, `情境6：駐防者撤回並說明被玩家攻下（${logs(B, /攻下/).map((l) => l.msg).join(' / ')}）`);
     const r = home(B, e);
@@ -7196,6 +7212,132 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   e.recalled = true;
   const itR = gi.exploration.itinerary(e, now);
   assert(!itR.queueOnHold && Math.abs(itR.totalMs - back) < 50, '召回的隊伍回家後不再前往佇列：總計只算返程');
+}
+
+// ---- v15.9.2：單人攻打 NPC 據點：沒有攻打倒數、抵達就交戰（同集結），走回家才收到報告 ----
+{
+  const gr2 = Game.newGame({ playerName: 'RA', classId: 'warrior', lat: 25, lon: 121 });
+  gr2.state.map.pois = fillPois([], 25, 121);
+  gr2.shelter.establish(gr2.state.map.pois.find((p) => gr2.shelter.canEstablish(p).ok));
+  setHour(gr2, 10);
+  const free = gr2.state.map.pois.filter((p) => !gr2.shelter.baseAtPoi(p.id));
+  const nn = gr2.npcs.spawnAt(free[3], 'ra', Date.now(), true);
+  const L2 = gr2.survivors.leader();
+  const st = gr2.exploration.start(nn.id, [L2.id], 5, false, Date.now(), { kind: 'raid' });
+  assert(st.ok && st.exp.searchMs === 0, `攻打 NPC 據點沒有攻打倒數（${st.reason || ''}）`);
+  let calls = 0;
+  const rr0 = gr2.npcs.resolveRaid.bind(gr2.npcs);
+  gr2.npcs.resolveRaid = (...a) => { calls += 1; return rr0(...a); };
+  const arr = st.exp.startAt + st.exp.travelMs;
+  gr2.exploration.update(arr - 1, { silent: true });
+  assert(!st.exp.raidReport && calls === 0, '還沒抵達不交戰');
+  gr2.exploration.update(arr + 1, { silent: true });
+  assert(st.exp.raidReport && calls === 1 && gr2.state.expeditions.includes(st.exp) && !(gr2.state.reports || []).some((r) => r === st.exp.raidReport), '抵達就交戰，隊伍還在回家路上（報告回家才收到）');
+  const n0 = (gr2.state.reports || []).length;
+  gr2.exploration.update(st.exp.endAt + 1, { silent: true });
+  const rep = gr2.state.reports[0];
+  assert(calls === 1 && gr2.state.reports.length === n0 + 1 && rep.poiName.includes(nn.name) && rep.at === st.exp.endAt, '回到避難所收到報告，交戰只結算一次');
+}
+
+// ---- v15.10：偵查 Lv11／Lv13／Lv15 新效果 ----
+{
+  const gk = Game.newGame({ playerName: 'RK', classId: 'warrior', lat: 25, lon: 121 });
+  gk.state.map.pois = fillPois([], 25, 121);
+  gk.shelter.establish(gk.state.map.pois.find((p) => gk.shelter.canEstablish(p).ok));
+  setHour(gk, 10);
+  const nk = gk.npcs.spawnAt(gk.state.map.pois.filter((p) => !gk.shelter.baseAtPoi(p.id))[2], 'rk', Date.now(), true);
+  const setLv = (lv) => { gk.state.research.levels.s_recon = lv; gk.research.invalidate(); };
+  setLv(10);
+  assert(!gk.npcs.intelView(nk).defense, '偵查 Lv10：還看不到圍牆與防禦火力');
+  setLv(11);
+  const dv = gk.npcs.intelView(nk).defense;
+  assert(dv && dv.wall === gk.npcs.defense(nk).wall && dv.dps > 0, '偵查 Lv11：看得到 NPC 據點的圍牆耐久與防禦火力');
+  // Lv13：看得到所有控制點的勢力行軍（人數與戰力）
+  const CPC13 = await import('../src/config/controlPoints.js');
+  const c13 = CPC13.CONTROL_POINTS[3];
+  const march = { f: 'red', from: CPC13.factionHq('red'), at: Date.now(), arriveAt: Date.now() + 600000 };
+  gk.cp.data = (id) => (id === c13.id ? { owners: [], guards: [], march } : null);
+  gk.cp.owners = () => [];
+  setLv(12);
+  assert(!gk.cp.incoming().some((x) => x.text.includes(`#${c13.no}`)), '偵查 Lv12：看不到別人的控制點行軍');
+  setLv(13);
+  const inc = gk.cp.incoming().find((x) => x.text.includes(`#${c13.no}`));
+  assert(inc && inc.mine === false && /\d+人⚔/.test(inc.text), `偵查 Lv13：地圖左上角看得到所有控制點的勢力行軍與人數戰力（${inc?.text || ''}）`);
+  gk.cp.warned = new Set();
+  gk.cp.warnMarches();
+  assert(gk.state.log.some((l) => /🔭 偵查：勢力/.test(l.msg)), '偵查 Lv13：其他控制點的行軍記在事件紀錄');
+  // Lv15：NPC 掠奪隊行軍時間 +10%
+  gk.time.phase = () => ({ zombies: false });
+  gk.npcs.allowConcurrentRaid = () => true;
+  gk.npcs.raidLevelCap = () => 99;
+  const t12 = Date.UTC(2026, 10, 11, 4); // 台灣時間 12:00
+  setLv(14); nk.trip = null; gk.npcs.launchRaid(nk, t12); const m14 = nk.trip?.travelMs;
+  setLv(15); nk.trip = null; gk.npcs.launchRaid(nk, t12); const m15 = nk.trip?.travelMs;
+  assert(m14 && m15 && Math.abs(m15 / m14 - 1.1) < 0.01, `偵查 Lv15：NPC 掠奪隊行軍時間 +10%（${m14}→${m15}）`);
+}
+
+// ---- v15.10：剛佔領的控制點保護期、勢力部隊強度跟著規模、不在線被掠奪損失減半 ----
+{
+  const CPX = await import('../src/config/controlPoints.js');
+  const gx = Game.newGame({ playerName: 'X4', classId: 'warrior', lat: 25, lon: 121 });
+  gx.state.map.source = 'generated';
+  const now = Date.now();
+  const mineId = CPX.hqNeighbors('red')[0];
+  const store = { [mineId]: { owners: [{ p: 'P', n: 'P' }], guards: [], faction: null, takenAt: now - 3600000 } };
+  gx.cp.data = (id) => store[id] || null;
+  gx.cp.factionCps = () => [];
+  const near = CPX.hqNeighbors('red');
+  const t1 = gx.cp.pickTarget('red', now);
+  assert(near.length > 1 ? t1 !== mineId : t1 === null, '玩家剛佔領 2 小時內的控制點，勢力不會選它');
+  store[mineId].takenAt = now - 3 * 3600000;
+  assert(gx.cp.shielded(mineId, now) === false, '保護期過後勢力可以選它');
+  // 勢力部隊強度：以 4 個控制點為準，每個 ±5%，範圍 ×0.8～×1.4
+  const scaleAt = (n) => { gx.cp.factionCps = () => Array.from({ length: n }, (_, i) => `x${i}`); return gx.cp.forceScale('red'); };
+  assert(Math.abs(scaleAt(4) - 1) < 1e-9 && Math.abs(scaleAt(8) - 1.2) < 1e-9 && Math.abs(scaleAt(0) - 0.8) < 1e-9 && Math.abs(scaleAt(20) - 1.4) < 1e-9, '勢力進攻部隊強度跟著控制點數（×0.8～×1.4）');
+  const hp = (n) => { scaleAt(n); return gx.cp.attackForce('red', 'cp1')[1].maxHp; };
+  assert(Math.abs(hp(8) / hp(4) - 1.2) < 0.01, '控制點多的勢力，進攻部隊生命攻擊較高');
+  // 不在線超過 30 分鐘被掠奪：資源與圍牆損失減半
+  const run = (offline) => {
+    const g = Game.newGame({ playerName: 'O4', classId: 'warrior', lat: 25, lon: 121 });
+    g.state.map.pois = fillPois([], 25, 121);
+    g.shelter.establish(g.state.map.pois.find((p) => g.shelter.canEstablish(p).ok));
+    g.time.phase = () => ({ zombies: false });
+    const base = g.state.bases[0];
+    g.state.survivors.forEach((s) => { s.status = 'exploring'; });
+    const n = g.npcs.spawnAt(g.state.map.pois.filter((p) => !g.shelter.baseAtPoi(p.id))[2], 'o', Date.now(), true);
+    n.level = 30;
+    g.state.resources.food = 1000;
+    const arrive = Date.now();
+    g.state.activeAt = offline ? arrive - 3600000 : arrive - 60000;
+    g.npcs.arriveAt = () => arrive;
+    const wall0 = g.shelter.wallHp(base);
+    g.npcs.resolveIncoming(n, { baseId: base.id }, arrive);
+    return { food: 1000 - g.state.resources.food, wall: wall0 - g.shelter.wallHp(base) };
+  };
+  const on = run(false); const off = run(true);
+  assert(on.food > 0 && Math.abs(off.food - on.food / 2) <= 2 && off.wall <= on.wall / 2 + 2, `不在線超過 30 分鐘被掠奪：資源與圍牆損失減半（在線 ${on.food}/${on.wall}、不在線 ${off.food}/${off.wall}）`);
+}
+
+// ---- v15.10：太久沒上線而從玩家名單消失的玩家：解除好友 ----
+{
+  const gf = Game.newGame({ playerName: 'GF', classId: 'warrior', lat: 25, lon: 121 });
+  const r = gf.state.relations;
+  r.players = { F1: { status: 'friend', name: '老朋友' }, F2: { status: 'friend', name: '常上線' }, H1: { status: 'hostile', name: '敵人' } };
+  r.requestsIn = { Q1: { name: '請求者' } };
+  r.requestsOut = {};
+  const others = [{ id: 'F2' }, { id: 'X' }];
+  gf.territory.pruneGone([]);
+  assert(r.players.F1 && r.requestsIn.Q1, '玩家名單是空的（連線異常）時不判斷');
+  gf.territory.pruneGone(others);
+  assert(r.players.F1 && r.requestsIn.Q1, '只消失一次（可能剛好沒同步到）先不移除');
+  gf.territory.pruneGone(others);
+  assert(!r.players.F1 && !r.requestsIn.Q1 && r.players.F2?.status === 'friend' && r.players.H1, '連續兩次不在名單：解除好友、移除友好請求；還在線的好友與敵對關係不受影響');
+  assert(gf.state.log.some((l) => /「老朋友」太久沒上線，已從好友中移除/.test(l.msg)), '事件紀錄寫出移除的好友');
+  r.players.F3 = { status: 'friend', name: 'F3' };
+  gf.territory.pruneGone(others);
+  gf.territory.pruneGone([...others, { id: 'F3' }]);
+  gf.territory.pruneGone(others);
+  assert(r.players.F3, '中間有回來過就重新計算');
 }
 
 if (failures) {

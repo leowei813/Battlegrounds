@@ -1,4 +1,3 @@
-import { NPC_CONFIG } from '../../config/npcs.js';
 import { LOCK_ITEM } from '../../config/rebirth.js';
 import { FACILITIES } from '../../config/facilities.js';
 import { RARITY_ORDER } from '../../config/equipment.js';
@@ -383,7 +382,6 @@ export class MapPanel {
     const sh = g.shelter.primary();
     const dist = sh ? Math.round(haversine(sh.lat, sh.lon, n.lat, n.lon)) : null;
     const trip = n.trip && n.trip.endAt > now ? n.trip : null;
-    const aggr = g.npcs.aggression();
     const unknown = '<span class="muted">？？？（需提升偵查）</span>';
     const garrison = v.garrison
       ? `${v.garrison.map((e) => `${e.icon}${e.name}`).join('、')}${v.wounded ? `<span class="neg">（${v.wounded} 名守軍傷亡中，約 ${formatDuration(Math.max(0, (n.healAt || now) - now))} 後補回 1 名）</span>` : ''}`
@@ -391,14 +389,13 @@ export class MapPanel {
     const loot = v.resources ? `💰${v.coins} ${v.resources.map(([k, x]) => `${metaOf(k).icon}${x}`).join(' ')}` : unknown;
     return `
       <p>🏴‍☠️ <b>${escapeHtml(n.name)}</b>・${v.level}・<span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span>${dist != null ? `・距避難所 ${dist} 公尺` : ''}</p>
-      <p class="muted">🔭 偵查 Lv${v.lv}：${v.lv >= 9 ? '情報完整' : v.lv >= 7 ? '可得知確切物資與戰力' : v.lv >= 5 ? '可得知大約物資' : v.lv >= 3 ? '可得知確切等級、守軍與傷亡' : v.lv >= 1 ? '只知道大約等級' : '只知道名稱'}（研究「偵查」取得更多情報）</p>
+      <p class="muted">🔭 偵查 Lv${v.lv}：${v.lv >= 15 ? '情報完整，掠奪隊行軍較慢' : v.lv >= 13 ? '可得知勢力部隊人數與戰力' : v.lv >= 11 ? '可得知圍牆與防禦火力' : v.lv >= 9 ? '可得知下次掠奪時間' : v.lv >= 7 ? '可得知確切物資與戰力' : v.lv >= 5 ? '可得知大約物資' : v.lv >= 3 ? '可得知確切等級、守軍與傷亡' : v.lv >= 1 ? '只知道大約等級' : '只知道名稱'}（研究「偵查」取得更多情報）</p>
       <p>守軍：${garrison}</p>
       <p>物資：${loot}</p>
       ${v.power != null ? `<p class="muted">⚔️ 建議戰力 ${v.power} 以上</p>` : ''}
+      ${v.defense ? `<p class="muted">🧱 圍牆耐久 ${v.defense.wall.toLocaleString()}・防禦火力 ${v.defense.dps.toLocaleString()}/秒（攻打時要先破牆，期間持續受到射擊）</p>` : ''}
       ${v.nextRaid != null ? `<p class="muted">🏴‍☠️ 下次掠奪約在 ${formatDuration(v.nextRaid)} 後（夜晚不出動）</p>` : ''}
-      <p class="muted">積極度 ${Math.round(aggr * 100)}%（你的文明度越高，NPC 越常來掠奪）。夜晚屍潮期間 NPC 不會出動。</p>
       ${trip ? `<p class="${trip.kind === 'raid' ? 'neg' : 'muted'}">${trip.kind === 'raid' ? `⚔️ 掠奪隊正前往「${escapeHtml(trip.target)}」` : `🔍 正在搜刮「${escapeHtml(trip.target)}」`}・剩 ${formatDuration(trip.endAt - now)}</p>` : ''}
-      <p class="muted">攻陷後可搶走據點的物資與金錢（受隊伍運載量限制），據點會被摧毀，36 小時後重新出現（至少 Lv${NPC_CONFIG.respawnMinLevel}；三大勢力的據點會建在勢力的控制點附近）。</p>
       <div class="sp-hint">✨ <b>特殊物品</b>：攻陷時 ${Math.round(LOCK_ITEM.npcChance * 100)}% 機率在保險箱找到 🔒「${LOCK_ITEM.name}」×1（集結時每支隊伍各抽一次）</div>
       <div class="btn-row">${btn('⚔️ 派隊攻打', 'attackNpc', {}, { cls: 'btn-danger', disabled: !g.shelter.hasShelter() })}${(() => {
     const c = g.rally.canStart({ kind: 'npc', id: n.id });
@@ -697,7 +694,9 @@ export class MapPanel {
     });
     // v15.7：勢力部隊前往自己的控制點、大本營部隊前往自己的探索隊（點擊移到目標）
     (g.cp?.incoming?.(now) || []).forEach((t) => {
-      rows.push(`<button class="feed-chip danger" data-action="feedFocus" data-lat="${t.lat}" data-lon="${t.lon}">⚠️ ${escapeHtml(t.text)}・約 ${formatDuration(t.at - now)}後抵達</button>`);
+      // v15.10：偵查 Lv13 看到的其他控制點行軍：一般樣式（不是自己的控制點，不用紅色警示）
+      const other = t.mine === false;
+      rows.push(`<button class="feed-chip ${other ? '' : 'danger'}" data-action="feedFocus" data-lat="${t.lat}" data-lon="${t.lon}">${other ? '🔭' : '⚠️'} ${escapeHtml(t.text)}・${other ? `${Math.max(1, Math.ceil((t.at - now) / 60000))}分` : `約 ${formatDuration(t.at - now)}後抵達`}</button>`);
     });
     // 好友遭受玩家／NPC 攻打：點擊直接進入增援指派（好友的屍潮不顯示在這裡）
     const seen = new Set();
@@ -726,7 +725,8 @@ export class MapPanel {
       const who = names.length <= 2 ? names.join('、') : `${names[0]}等 ${names.length} 人`;
       const guarding = ex.kind === 'cpGuard' && it.phase === 'searching' && !ex.recalled && !ex.defeated;
       const time = guarding ? `駐防控制點 #${cpById(ex.cpId)?.no || ''}` : `⏱ 總計 ${formatDuration(it.totalMs)}`; // v15.8.1：返程也一律顯示總計（含之後的佇列）
-      const queued = ex.kind === 'explore' && it.phase !== 'returning' ? `・佇列 ${(ex.queue || []).length}` : '';
+      // v15.10：返程中（背包滿了先回家）也顯示佇列數；召回或撤退的隊伍回家後不再前往佇列，不顯示
+      const queued = ex.kind === 'explore' && (it.phase !== 'returning' || it.queueOnHold) ? `・佇列 ${(ex.queue || []).length}` : '';
       // 左側圖示：快速定位隊伍；文字：打開隊伍詳細
       rows.push(`<div class="feed-chip team split"><button class="feed-loc" data-action="feedLocate" data-id="${ex.id}" title="地圖移到隊伍位置">${icon}</button><button class="feed-txt" data-action="feedTeam" data-id="${ex.id}">${escapeHtml(who || '隊伍')}・${time}${queued}</button></div>`);
     });

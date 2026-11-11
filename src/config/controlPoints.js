@@ -55,11 +55,15 @@ const GARRISON = {
 /** 守軍強度倍率（生命、攻擊） */
 export const CP_GARRISON_MUL = 3;
 /** 各區域守軍的額外強度倍率（v15.4：致死區微調、深淵區調整為約與 Lv35 勢力 NPC 據點同強度） */
-export const CP_ZONE_MUL = { 4: 1.3, 5: 6.12 };
+export const CP_ZONE_MUL = { 4: 1.3, 5: 3.06 }; // v15.10：深淵區守軍與勢力進攻部隊強度減半（原 6.12）
 /** 玩家側（西側警戒～致死區）的控制點守軍再減弱一半 */
 export const CP_PLAYER_SIDE_MUL = 0.5;
 /** 被打下後每小時（現實時間）補回的守軍人數 */
 export const CP_REFILL_PER_HOUR = 6; // 現實每 10 分鐘補回 1 人
+/** v15.10：玩家剛佔領的控制點保護期（這段時間內勢力不會把它當目標） */
+export const CP_TAKEN_SHIELD_MS = 2 * 3600000;
+/** v15.10：勢力進攻部隊強度跟著勢力的控制點數：以 base 個為準，每多（少）1 個 ±step，範圍 min～max */
+export const FACTION_FORCE_SCALE = { base: 4, step: 0.05, min: 0.8, max: 1.4 };
 /** 每名玩家每個控制點最多駐防人數 */
 export const CP_GUARD_MAX = 2;
 

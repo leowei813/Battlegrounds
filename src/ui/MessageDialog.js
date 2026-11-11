@@ -86,6 +86,7 @@ function cpHtml(game, openId, since, openBattle) {
     html: `<div class="card report ${e.win ? 'fail' : ''} ${(e.at || 0) > since ? 'unread' : ''}">
       <div class="row-between"><b>${(e.at || 0) > since ? NEW : ''}${e.win ? '🏴' : '🛡️'} ${flagText(`控制點 #${e.no}`)} 交戰戰報</b><small class="muted">${hhmm(e.at)}</small></div>
       <p class="cp-fight">${flagText(escapeHtml(String(e.text || '').replace(/^\S+\s*/, '')))}</p>
+      ${battlesSectionHtml(game, e.battleIds, openBattle)}
     </div>`,
   }));
   const list = [...reps, ...fights].sort((a, b) => b.at - a.at).map((x) => x.html).join('');

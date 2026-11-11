@@ -13,6 +13,7 @@ export const NPC_CONFIG = {
   levelUpMs: [90 * 60000, 150 * 60000], // 升級間隔
   maxLevel: 40,
   respawnMinLevel: 35, // 被攻陷後重生的 NPC 據點至少這個等級（被擊退的等級損失也不會低於此）
+  respawnMinByZone: { safe: 10, normal: 20, alert: 30 }, // v15.10：依區域的重生最低等級（其他區域用 respawnMinLevel）
   exploreEveryMs: [30 * 60000, 55 * 60000], // 外出探索間隔（回來後休息一段時間才再出發）
   exploreRadiusM: 900,
   raidBaseMs: 3 * 3600000, // 每 3 個 NPC 的掠奪基礎間隔（NPC 越多，個別越少出手；依積極度縮短）
@@ -74,7 +75,7 @@ export const NPC_NAMES = NPC_NAME_PREFIX.flatMap((p) => NPC_NAME_SUFFIX.map((x) 
 export const npcAggression = (civ) => Math.min(1, Math.max(0.1, civ / 200));
 
 /** v15.8：現實凌晨（台灣時間 00:00～08:00）NPC 停止掠奪玩家據點、勢力停止進攻控制點；抵達時間落在這段時間的部隊也不出發 */
-export const NPC_QUIET = { from: 0, to: 8, tzHours: 8 };
+export const NPC_QUIET = { from: 0, to: 8, tzHours: 8, gapMs: 3 * 3600000 }; // v15.10：凌晨（台灣時間 00:00～08:00）每 3 小時最多進攻一次
 /** v15.8：其他時段（台灣時間 08:00～00:00）NPC 掠奪據點與勢力進攻控制點的頻率倍率（2＝間隔加倍、次數減半） */
 export const NPC_DAY_SLOW = 2;
 /** 某個時刻是否在 NPC 休息時段（以台灣時間計） */
@@ -89,3 +90,6 @@ export const npcQuietSpan = (start, end) => {
   for (let t = start + 3600000; t < end; t += 3600000) if (npcQuietAt(t)) return true;
   return false;
 };
+
+/** v15.10：不在線（畫面沒開）超過這段時間時被 NPC 掠奪，資源與圍牆損失減半 */
+export const NPC_OFFLINE_RAID = { afterMs: 30 * 60000, lossMul: 0.5 };
