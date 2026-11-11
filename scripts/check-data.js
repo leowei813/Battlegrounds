@@ -7403,6 +7403,28 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(/× 3\.5/.test(exchangePreview(ge, { want: b, give: a })), '交換說明顯示目前的倍率');
 }
 
+// ---- v15.11：研究「重傷護理」改版（倒下有機率只受輕傷、重傷扣經驗減少）、「戰利品搜刮」 ----
+{
+  const { RESEARCH: R11 } = await import('../src/config/research.js');
+  const { xpToNext: x2 } = await import('../src/config/survivors.js');
+  assert(R11.m_severe.effects.severeAvoid === 0.03 && R11.m_severe.effects.downXpReduce === 0.05, '重傷護理：每級倒下只受輕傷 +3%、重傷扣經驗 −5%');
+  assert(R11.m_starve.name === '戰利品搜刮' && R11.m_starve.branch === 'survival' && R11.m_starve.requires.some(([k, l]) => k === 's_loot' && l === 3), '戰利品搜刮：生存科技、前置拾荒技巧 Lv3');
+  const gr = Game.newGame({ playerName: 'RS', classId: 'warrior', lat: 25, lon: 121 });
+  const sv = gr.survivors.leader();
+  sv.level = 20; sv.xp = Math.round(x2(20) / 2);
+  const b0 = gr.research.bonus.bind(gr.research);
+  gr.research.bonus = (k) => (k === 'severeAvoid' ? 0.9 : k === 'downXpReduce' ? 0.5 : b0(k));
+  let light = 0;
+  for (let i = 0; i < 40; i += 1) { sv.severe = false; if (!gr.survivors.battleDown(sv, '測試', Date.now())) light += 1; }
+  assert(light > 25, `倒下只受輕傷的機率生效（40 次中 ${light} 次輕傷）`);
+  sv.severe = false;
+  gr.research.bonus = (k) => (k === 'severeAvoid' ? 0 : k === 'downXpReduce' ? 0.5 : b0(k));
+  const t0 = gr.survivors.totalXp(sv);
+  gr.survivors.battleDown(sv, '測試', Date.now(), 0.1);
+  const lost = t0 - gr.survivors.totalXp(sv);
+  assert(sv.severe && Math.abs(lost - Math.round(x2(20) * 0.05)) <= 2, `重傷扣經驗減少（10% × (1−50%) = 5%，扣 ${lost}）`);
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

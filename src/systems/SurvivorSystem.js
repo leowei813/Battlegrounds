@@ -278,6 +278,20 @@ export class SurvivorSystem {
    * 重傷（生命歸零）：無法行動，並扣除經驗（可能降級）。
    * @param {string} reason 顯示原因
    */
+  /**
+   * v15.11：戰鬥中倒下：研究「重傷護理」有機率只受輕傷（以 30% 生命撐住），否則重傷。
+   * @returns {boolean} 是否重傷
+   */
+  battleDown(sv, reason = '', at = Date.now(), xpPct = VITALS.xpPenaltyPct) {
+    if (!sv.severe && chance(Math.min(0.9, this.game.research.bonus('severeAvoid')))) {
+      this.setHp(sv, Math.max(1, this.maxHp(sv) * 0.3));
+      this.game.log(`🩹 ${sv.name} ${reason}倒下，經過搶救只受輕傷`, 'info');
+      return false;
+    }
+    this.becomeSevere(sv, reason, at, xpPct);
+    return true;
+  }
+
   becomeSevere(sv, reason = '', at = Date.now(), xpPct = VITALS.xpPenaltyPct) {
     sv.hp = 0;
     if (sv.severe) return;
@@ -292,7 +306,8 @@ export class SurvivorSystem {
    * @returns {{xp:number, levelDown:boolean}}
    */
   penalizeXp(sv, pct = VITALS.xpPenaltyPct) {
-    const loss = Math.max(1, Math.round(xpToNext(sv.level) * pct));
+    // v15.11：研究「重傷護理」：重傷扣的經驗減少
+    const loss = Math.max(1, Math.round(xpToNext(sv.level) * pct * (1 - Math.min(0.9, this.game.research.bonus('downXpReduce')))));
     if (sv.xp >= loss) {
       sv.xp -= loss;
       return { xp: loss, levelDown: false };

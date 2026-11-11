@@ -252,7 +252,7 @@ export class TerritorySystem {
     const as = g.combat.wallAssault(attackers, zone.wall || 0, (zone.dps || 0) + allyDps + coverDps);
     if (coverDps > 0) report.events.push(`🛡️ 對方好友的防禦設施協助守城（每秒 ${Math.round(coverDps).toLocaleString()} 傷害）`);
     attackers.forEach((a) => {
-      if (!as.alive.includes(a)) g.survivors.becomeSevere(a.sv, '在突襲中被防禦設施擊倒', exp.endAt);
+      if (!as.alive.includes(a)) g.survivors.battleDown(a.sv, '在突襲中被防禦設施擊倒', exp.endAt);
       else g.survivors.setHp(a.sv, a.hp);
     });
     if (zone.wall > 0) report.events.push(`🧱 攻擊圍牆 ${as.sec} 秒（耐久 −${Math.round(as.wallLost)}）${as.killed ? `，${as.killed} 名隊員被防禦設施擊倒` : ''}`);
@@ -453,7 +453,7 @@ export class TerritorySystem {
     const severe = [];
     list.forEach((sv) => {
       if (chance(severeChance)) {
-        g.survivors.becomeSevere(sv, '防守玩家突襲時受傷', Date.now());
+        g.survivors.battleDown(sv, '防守玩家突襲時受傷', Date.now());
         severe.push(sv.name);
       } else {
         g.survivors.setHp(sv, Math.min(g.survivors.hpOf(sv), Math.max(1, g.survivors.maxHp(sv) * hpPct)));

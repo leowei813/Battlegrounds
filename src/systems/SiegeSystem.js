@@ -814,7 +814,7 @@ export class BaseSiege {
       const u = result.team.find((x) => x.id === sv.id);
       if (!u) return;
       g.combat.consumeMeds(sv, u);
-      if (u.down) g.survivors.becomeSevere(sv, '在據點內迎戰屍潮', Date.now());
+      if (u.down) g.survivors.battleDown(sv, '在據點內迎戰屍潮', Date.now());
       else g.survivors.setHp(sv, u.hp);
     });
     result.foes.forEach((f) => {

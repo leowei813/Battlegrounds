@@ -367,6 +367,12 @@ export class ZombieSpawnSystem {
           mats[k] = (mats[k] || 0) + (SUPPLIES[k].cat === 'med' ? randInt(1, 2) : randInt(3, 8));
         }
       }
+      // v15.11：研究「戰利品搜刮」：材料與金錢提升
+      const lb = this.game.research.bonus('battleLootPct');
+      if (lb > 0) {
+        Object.keys(mats).forEach((k) => { mats[k] = Math.round(mats[k] * (1 + lb)); });
+        mats.coins = Math.round((result.coins || 0) * lb);
+      }
       loot.resources = this.game.grant(mats);
     } else {
       this.game.state.stats.battlesLost += 1;
