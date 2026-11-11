@@ -7341,6 +7341,31 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(r.players.F3, '中間有回來過就重新計算');
 }
 
+// ---- v15.11：夜間地圖殭屍群強度依區域、Boss 加強、獎勵依區域 ----
+{
+  const ZS = await import('../src/systems/ZombieSpawnSystem.js');
+  const { zoneAt: zA } = await import('../src/config/zones.js');
+  const gz = Game.newGame({ playerName: 'ZG', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gz.genMap();
+  let groups = [];
+  for (let n = 1; n < 40 && !groups.some((x) => x.boss); n += 1) groups = groups.concat(gz.zombies.sharedGroups(n));
+  const normal = groups.filter((x) => !x.boss);
+  const okLv = normal.every((x) => { const [lo, hi] = ZS.NIGHT_GROUP_LEVEL[x.zone]; return x.level >= lo && x.level <= hi; });
+  assert(normal.length > 3 && okLv, `夜間殭屍群等級依區域（${normal.length} 群）`);
+  const boss = groups.find((x) => x.boss);
+  assert(boss && boss.level === ZS.NIGHT_GROUP_LEVEL[boss.zone][1] + 5 && boss.minions >= 3 && boss.minions <= 5, `Boss：等級＝區域上限＋5、帶 3～5 隻小兵（${boss ? gz.zombies.groupLabel(boss) : '沒有 Boss'}）`);
+  // 獎勵：打贏時材料依區域（不再只有廢鐵與粗布）
+  const g0 = normal.find((x) => x.zone === 'alert') || normal[0];
+  gz.shelter.establish(gz.state.map.pois.find((p) => gz.shelter.canEstablish(p).ok));
+  gz.state.map.zombieGroups = [g0];
+  gz.time.phase = () => ({ zombies: true, zombieMul: 1 });
+  const sim0 = gz.combat.simulate.bind(gz.combat);
+  gz.combat.simulate = (t, f, o) => { const r = sim0(t, f, { ...o, record: false }); r.victory = true; f.forEach((x) => { x.hp = 0; }); return r; };
+  const r = gz.zombies.attack(g0.id, [gz.survivors.leader().id]);
+  const keys = Object.keys(r.loot?.resources || {}).filter((k) => k !== 'bandage');
+  assert(r.ok && keys.length > 0 && keys.some((k) => !['scrap', 'coarse'].includes(k)), `打贏殭屍群：材料依區域掉落（${keys.join('、')}）`);
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

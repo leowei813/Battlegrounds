@@ -85,7 +85,7 @@ export const DAY_ZONE = {
 export const MAP_GROUP_MUL = {
   normal: { hp: 1.3, atk: 1.3 },
   elite: { hp: 1.8, atk: 1.4 },
-  boss: { hp: 2.6, atk: 1.8 },
+  boss: { hp: 5, atk: 2.5 }, // v15.11：原 ×2.6／×1.8
 };
 
 /** 合併強度倍率 */
