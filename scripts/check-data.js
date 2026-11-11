@@ -7482,6 +7482,19 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(ge.survivors.stats(L, 'melee').power - before === d && L.equipment.melee === free.id, `戰力變化等於實際換上後的差（${d}）`);
 }
 
+// ---- v15.13：第 3 階布料新增聚酯纖維，指定的研究與設施改用聚酯纖維 ----
+{
+  const { researchCost: rc13 } = await import('../src/config/research.js');
+  const { FACILITIES: F13 } = await import('../src/config/facilities.js');
+  const { SUPPLIES: SP13 } = await import('../src/config/supplies.js');
+  assert(SP13.polyester?.cat === 'fabric' && SP13.polyester.tier === 3, '聚酯纖維是第 3 階布料');
+  const lvOf = (f) => [...Array(15).keys()].map((i) => f(i + 1));
+  const uses = (list, k) => list.some((c) => (c?.[k] || 0) > 0);
+  assert(uses(lvOf((lv) => rc13('m_def', lv)), 'polyester') && !uses(lvOf((lv) => rc13('m_def', lv)), 'techCotton'), '抗打擊改用聚酯纖維');
+  assert(uses(lvOf((lv) => rc13('m_dodge', lv)), 'techCotton') && !uses(lvOf((lv) => rc13('m_dodge', lv)), 'polyester'), '反應訓練維持科技棉');
+  assert(uses(lvOf((lv) => F13.dormitory.cost(lv)), 'polyester') && uses(lvOf((lv) => F13.clinic.cost(lv)), 'techCotton'), '宿舍改用聚酯纖維、醫療站維持科技棉');
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);
