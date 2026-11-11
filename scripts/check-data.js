@@ -7019,6 +7019,14 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     assert(logs(B, /你駐防的控制點.*擊退了「/).length === 1 && logs(A, /你佔領的控制點.*擊退了「/).length === 1, `情境1：擊退勢力，駐防者與佔領者各收到一則戰報（${logs(B, /擊退/)[0]?.msg || ''}）`);
     assert((sv.level > lv0 || sv.xp > xp0) && !e.recalled && !e.defeated && A.cp.guardsAt(cp.id, Date.now()).some((h) => h.e === e.id), '情境1：駐防隊拿到防守經驗、繼續駐守');
     assert(e.travelEvents.some((x) => /擊退了「/.test(x)), '情境1：戰報寫進駐防隊的報告');
+    {
+      const le = B.state.cpLog?.[0];
+      const bt = le?.battleIds?.[0] && B.combat.battle(le.battleIds[0]);
+      const la = A.state.cpLog?.[0];
+      assert(bt && bt.log.length > 0 && bt.team.length && bt.foes.length && la?.battleIds?.length && e.battleIds?.length, `v15.10：控制點交戰戰報附戰鬥明細（駐防者、佔領者、駐防隊報告）（${bt?.title || ''}，${bt?.log?.length || 0} 筆）`);
+      const sz = new TextEncoder().encode(JSON.stringify(A.cp.data(cp.id)?.fight || {})).length;
+      assert(sz < 12000, `共用資料的交戰紀錄大小合理（${sz} bytes）`);
+    }
   }
   // 情境 2：擊退勢力，但駐防隊員倒下 → 駐防隊被擊退撤回，報告寫出交戰與被擊退
   await reset();
@@ -7078,6 +7086,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     await pollAll();
     assert(at.exp.cpResult?.victory && C.cp.owners(cp.id).some((o) => o.p === 'C'), '情境6：C 打下控制點');
     await tick(A, Date.now()); await tick(B, Date.now());
+    assert(A.state.cpLog?.[0]?.battleIds?.length && /玩家「C」/.test(A.combat.battle(A.state.cpLog[0].battleIds[0])?.title || ''), 'v15.10：玩家攻打控制點的戰報也附戰鬥明細');
     assert(logs(A, /玩家「C」的隊伍.*攻下了你佔領的控制點/).length === 1, `情境6：佔領者收到被玩家攻下的戰報（${logs(A, /攻下/)[0]?.msg || ''}）`);
     assert(e.recalled && logs(B, /玩家「C」的隊伍/).length === 1 && !logs(B, /已不是你或好友/).length, `情境6：駐防者撤回並說明被玩家攻下（${logs(B, /攻下/).map((l) => l.msg).join(' / ')}）`);
     const r = home(B, e);

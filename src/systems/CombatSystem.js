@@ -347,6 +347,7 @@ export class CombatSystem {
     const add = (ids) => (ids || []).forEach((id) => used.add(id));
     (st.reports || []).forEach((r) => add(r.battleIds));
     (st.defenseLog || []).forEach((e) => add(e.battleIds));
+    (st.cpLog || []).forEach((e) => add(e.battleIds)); // v15.10：控制點交戰戰報
     (st.expeditions || []).forEach((e) => add(e.battleIds));
     (st.log || []).forEach((l) => l.battleId && used.add(l.battleId));
     (st.bases || []).forEach((b) => add(b.nightBattles?.battleIds));
