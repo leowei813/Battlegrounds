@@ -1,7 +1,7 @@
 import { unitPower } from '../utils/math.js';
 import { DUNGEONS, DG_CLEAR_M } from '../config/dungeons.js';
 import { AssistSystem } from './AssistSystem.js';
-import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL, npcQuietSpan, NPC_DAY_SLOW, RALLY_XP } from '../config/npcs.js';
+import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL, npcQuietSpan, NPC_QUIET, NPC_DAY_SLOW, RALLY_XP, NPC_OFFLINE_RAID } from '../config/npcs.js';
 import { xpToNext } from '../config/survivors.js';
 import {
   RESOURCE_KEYS, RAID_TRAVEL,
@@ -274,7 +274,10 @@ export class NpcSystem {
 
   /** 最低等級：被攻陷後重生的據點至少 respawnMinLevel 級，其餘 1 級 */
   minLevel(n) {
-    return (n?.dc || 0) > 0 ? Math.min(NPC_CONFIG.maxLevel, NPC_CONFIG.respawnMinLevel ?? 1) : 1;
+    if (!((n?.dc || 0) > 0)) return 1;
+    // v15.10：重生最低等級依區域（安全區、一般區、警戒區較低）
+    const z = Number.isFinite(n.lat) ? zoneAt(n.lat, n.lon)?.id : null;
+    return Math.min(NPC_CONFIG.maxLevel, NPC_CONFIG.respawnMinByZone?.[z] ?? NPC_CONFIG.respawnMinLevel ?? 1);
   }
 
   /** 依識別碼找回共用 NPC（不在自己附近時也能重建，例如集結時） */
@@ -791,8 +794,10 @@ export class NpcSystem {
     t.travelMs = Math.round(Math.max(t.travelMs * RAID_TRAVEL.npcMul, RAID_TRAVEL.minMin * 60000));
     // v15.10：偵查 Lv15：NPC 掠奪隊的行軍時間 +10%（多一點準備時間）
     if (this.intel() >= 15) t.travelMs = Math.round(t.travelMs * 1.1);
-    // v15.8：現實凌晨（台灣時間 00:00～08:00）不掠奪，抵達時間落在這段時間的也不出發
-    if (npcQuietSpan(now, now + t.travelMs)) return;
+    // v15.10：現實凌晨（台灣時間 00:00～08:00）每位玩家每 3 小時最多被掠奪一次（出發或抵達落在這段時間都算）
+    const night = npcQuietSpan(now, now + t.travelMs);
+    if (night && now - (this.game.state.npcNightRaidAt || 0) < NPC_QUIET.gapMs) return;
+    if (night) this.game.state.npcNightRaidAt = now;
     // 抵達時若已入夜（屍潮），NPC 會放棄這次掠奪
     n.trip = {
       kind: 'raid', baseId: base.id, target: base.name, from: { lat: n.lat, lon: n.lon }, to: { lat: base.lat, lon: base.lon },
@@ -910,7 +915,9 @@ export class NpcSystem {
     // 防守前的生命：結算傷勢時只列出這次真的受傷的人（升級或原本就沒滿血都不算）
     const hpBefore = new Map(g.state.survivors.map((sv) => [sv.id, g.survivors.hpOf(sv)]));
     const as = g.combat.wallAssault(all, wallBefore, siege.defenseDps({ raw: true }) * (1 + g.research.bonus('raidDefensePct')) + helpDps);
-    base.wallHp = Math.max(0, as.wallLeft);
+    // v15.10：不在線（畫面沒開）超過 30 分鐘：圍牆與資源損失減半
+    const offline = arrive - (g.state.activeAt || arrive) > NPC_OFFLINE_RAID.afterMs;
+    base.wallHp = Math.max(0, offline ? Math.round(wallBefore - (wallBefore - as.wallLeft) * NPC_OFFLINE_RAID.lossMul) : as.wallLeft);
     // 守城時：近戰防守的人會受傷，對方有遠程武器時遠程防守的人也可能中彈
     const wallGuards = [...siege.guards().map((x) => x.sv), ...base.defenses.map((d) => g.shelter.towerGuard(d)).filter(Boolean)];
     g.combat.wallDefenseHurt([...new Set(wallGuards)], all, as.sec, '守城對抗 NPC 掠奪時受傷');
@@ -955,17 +962,17 @@ export class NpcSystem {
     const res = g.state.resources;
     const stolen = {};
     RESOURCE_KEYS.forEach((k) => {
-      stolen[k] = Math.floor(g.shelter.exposed(k) * NPC_CONFIG.raidStealPct); // 地窖裡的搶不走
+      stolen[k] = Math.floor(g.shelter.exposed(k) * NPC_CONFIG.raidStealPct * (offline ? NPC_OFFLINE_RAID.lossMul : 1)); // 地窖裡的搶不走
       res[k] -= stolen[k];
     });
-    const coins = Math.floor(g.shelter.exposed('coins') * 0.1);
+    const coins = Math.floor(g.shelter.exposed('coins') * 0.1 * (offline ? NPC_OFFLINE_RAID.lossMul : 1));
     g.state.player.coins -= coins;
     this.addResources(n, stolen, coins);
     g.state.stats.battlesLost += 1;
     const damaged = siege.damageBuildings(base);
     g.shelter.recordDefense({ battleIds: holder?.battleIds,
       base, attacker: label, success: false, lost: stolen, coins, kills, damaged, injured: ShelterSystem.newlySevere(severeBefore, defenders),
-      wallLost: as.wallLost, note: [`圍牆被打破；${defenders.length || allies.length ? `防守人員（${[...defenders.map((d) => d.name), ...allies.map((a) => a.name)].join('、')}）戰敗` : '據點裡沒有人可以防守'}`, assistNote].filter(Boolean).join('。'),
+      wallLost: Math.max(0, wallBefore - base.wallHp), note: [`圍牆被打破；${offline ? '（你不在線，損失減半）' : ''}${defenders.length || allies.length ? `防守人員（${[...defenders.map((d) => d.name), ...allies.map((a) => a.name)].join('、')}）戰敗` : '據點裡沒有人可以防守'}`, assistNote].filter(Boolean).join('。'),
     });
     const total = Object.values(stolen).reduce((s, v) => s + v, 0);
     g.toast(`💀「${n.name}」掠奪了「${base.name}」！搶走 ${total} 單位物資`, 'danger');

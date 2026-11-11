@@ -1,12 +1,12 @@
 import { TimeSystem } from './TimeSystem.js';
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT,
+  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT, CP_TAKEN_SHIELD_MS, FACTION_FORCE_SCALE,
 } from '../config/controlPoints.js';
 import { inNpcHome, ZONES } from '../config/zones.js';
 import { xpToNext } from '../config/survivors.js';
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { RAID_TRAVEL } from '../config/constants.js';
-import { NPC_CONFIG, npcQuietAt, npcQuietSpan, NPC_DAY_SLOW, RALLY_XP } from '../config/npcs.js';
+import { NPC_CONFIG, npcQuietSpan, NPC_QUIET, NPC_DAY_SLOW, RALLY_XP } from '../config/npcs.js';
 import {
   uid, haversine, randInt, weightedPick, formatDuration, unitPower,
 } from '../utils/math.js';
@@ -715,6 +715,8 @@ export class ControlPointSystem {
     const own = this.factionCps(f);
     const near = new Set(own.length ? own.flatMap((id) => cpNeighbors(id)) : hqNeighbors(f));
     own.forEach((id) => near.delete(id));
+    // v15.10：玩家剛佔領的控制點有保護期，勢力不會選它
+    [...near].forEach((id) => { if (this.shielded(id, now)) near.delete(id); });
     const hq = this.hqLatLon(f);
     const list = [...near].map((id) => {
       const cp = cpById(id);
@@ -724,6 +726,18 @@ export class ControlPointSystem {
     if (!list.length) return null;
     list.sort((a, b) => (a.guarded - b.guarded) || (a.power - b.power) || (a.dist - b.dist));
     return list[0].id;
+  }
+
+  /** v15.10：玩家剛佔領（保護期內）的控制點 */
+  shielded(id, now = Date.now()) {
+    const d = this.data(id);
+    return !!(d && (d.owners || []).length && !d.faction && d.takenAt && now - d.takenAt < CP_TAKEN_SHIELD_MS);
+  }
+
+  /** v15.10：勢力進攻部隊的強度倍率（勢力控制點越多越強） */
+  forceScale(f) {
+    const c = FACTION_FORCE_SCALE;
+    return Math.min(c.max, Math.max(c.min, 1 + (this.factionCps(f).length - c.base) * c.step));
   }
 
   hqLatLon(f) {
@@ -737,7 +751,7 @@ export class ControlPointSystem {
     const n = Math.round(cp.garrison.count * 1.2);
     return Array.from({ length: n }, (_, i) => {
       const e = cb.createEnemy(i === 0 ? 'raiderChief' : 'raider', cp.garrison.level);
-      const k = CP_GARRISON_MUL * (CP_ZONE_MUL[cp.zone] ?? 1) * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
+      const k = CP_GARRISON_MUL * (CP_ZONE_MUL[cp.zone] ?? 1) * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1) * this.forceScale(f);
       return {
         id: `fx:${f}:${i}`, ally: { player: `npc:${f}`, i }, name: `${FACTIONS[f].name}${e.name}`,
         maxHp: Math.round(e.maxHp * k), hp: Math.round(e.maxHp * k), atk: Math.round(e.atk * k), def: e.def || 0,
@@ -758,8 +772,6 @@ export class ControlPointSystem {
       // v15.8：進攻次數減半（每 NPC_DAY_SLOW 個遊戲日一次，三個勢力錯開）；控制點多的勢力再減半
       if (!ControlPointSystem.turnDay(f, day, own.length)) continue;
       if ((this.lastTurn || {})[f] === day) continue;
-      // v15.8：現實凌晨（台灣時間 00:00～08:00）勢力不進攻，這一天直接略過（所有玩家依同一規則判斷）
-      if (npcQuietAt(at)) { this.lastTurn = { ...(this.lastTurn || {}), [f]: day }; continue; }
       this.busy.add(`turn:${f}`);
       try {
         // eslint-disable-next-line no-await-in-loop
@@ -768,9 +780,13 @@ export class ControlPointSystem {
         if (!lock.ok) continue;
         const target = this.pickTarget(f, at);
         if (!target) continue;
-        // 抵達時間落在凌晨休息時段的也不出發
+        // v15.10：現實凌晨（台灣時間 00:00～08:00）：三個勢力加起來每 3 小時最多進攻一次（共用紀錄，所有玩家判斷一致）
         const to = this.markerSpot(target);
-        if (npcQuietSpan(at, at + ControlPointSystem.marchMs(this.marchFrom(f, to), to))) continue;
+        if (npcQuietSpan(at, at + ControlPointSystem.marchMs(this.marchFrom(f, to), to))) {
+          // eslint-disable-next-line no-await-in-loop
+          const nl = await g.shared.update(CP_TURN_KIND, 'night', (x) => (x?.at && at - x.at < NPC_QUIET.gapMs ? { fail: 'gap' } : { data: { at } }));
+          if (!nl.ok) continue;
+        }
         // v15.4：部隊從勢力據點（沒有時從大本營）出發，移動時間比照攻打玩家避難所，讓玩家有時間反應
         // eslint-disable-next-line no-await-in-loop
         await this.launchMarch(f, target, at);
