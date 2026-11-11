@@ -25,6 +25,10 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
 body { font-size: 14px; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+/* v15.12：長按不選取文字、不跳出複製／搜尋／儲存圖片選單；輸入框、聊天內容、代碼仍可選取 */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+img { -webkit-user-drag: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable="true"], .chat-bubble, .sync-code, .selectable { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 a { color: var(--accent); }
 h2 { margin: 4px 0 12px; font-size: 20px; }
 h2 small, h3 small { font-weight: 400; color: var(--muted); font-size: 13px; }
@@ -270,6 +274,17 @@ h4 { margin: 14px 0 6px; font-size: 14px; color: #c5e1a5; }
 /* ---------- Quests ---------- */
 .quest.ready { border-color: var(--accent); box-shadow: 0 0 10px #ffb30033; }
 .quest.claimed { opacity: .55; }
+/* v15.12：精簡任務卡片 */
+.quest.q2 { padding: 6px 10px; margin-bottom: 0; }
+.q2-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.q2-top b { white-space: nowrap; }
+.q2-desc { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q2-top .btn, .q2-top .tag { flex: none; }
+.q2-bot { display: flex; align-items: flex-start; gap: 8px; margin-top: 3px; }
+.bar.q2-bar { flex: 0 0 34%; height: 12px; margin: 2px 0 0; }
+.q2-rw { flex: 1; min-width: 0; line-height: 1.35; }
+.grid.q2-grid { gap: 6px; grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr)); }
+.q2-chest { padding: 6px 10px; margin-top: 6px; }
 .reward { color: #ffe082; font-size: 12px; }
 
 /* ---------- Modal ---------- */

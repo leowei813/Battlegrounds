@@ -1,4 +1,4 @@
-import { ACHIEVEMENTS, MAIN_QUESTS, DAILY_CHEST } from '../../config/quests.js';
+import { ACHIEVEMENTS, MAIN_QUESTS } from '../../config/quests.js';
 import { btn, progressBar } from '../components.js';
 import { formatNumber } from '../../utils/math.js';
 import { escapeHtml } from '../../utils/dom.js';
@@ -12,13 +12,12 @@ export class QuestPanel {
     this.game = ui.game;
   }
 
+  /** v15.12：精簡卡片：第 1 行名稱、說明、按鈕；第 2 行進度條與完整獎勵 */
   questCard(def, prog, claimable, claimAction, data, claimed = false) {
     const q = this.game.quests;
-    return `<div class="quest ${claimed ? 'claimed' : claimable ? 'ready' : ''}">
-      <div class="row-between"><b>${def.name}</b>${claimed ? '<span class="tag">已領取</span>' : btn(claimable ? '領取' : '進行中', claimAction, data, { cls: 'btn-xs btn-primary', disabled: !claimable })}</div>
-      <small class="muted block">${def.desc}</small>
-      ${progressBar(prog.cur / prog.max, '', `${formatNumber(Math.min(prog.cur, prog.max))}/${formatNumber(prog.max)}`)}
-      <small class="reward">獎勵：${q.rewardText(def.reward)}</small>
+    return `<div class="quest q2 ${claimed ? 'claimed' : claimable ? 'ready' : ''}">
+      <div class="q2-top"><b>${def.name}</b><small class="muted q2-desc">${def.desc}</small>${claimed ? '<span class="tag">已領取</span>' : btn(claimable ? '領取' : '進行中', claimAction, data, { cls: 'btn-xs btn-primary', disabled: !claimable })}</div>
+      <div class="q2-bot">${progressBar(prog.cur / prog.max, 'q2-bar', `${formatNumber(Math.min(prog.cur, prog.max))}/${formatNumber(prog.max)}`)}<small class="reward q2-rw">🎁 ${q.rewardText(def.reward)}</small></div>
     </div>`;
   }
 
@@ -29,7 +28,11 @@ export class QuestPanel {
     const mainHtml = main
       ? this.questCard(main, q.progress(main.cond), q.isDone(main.cond), 'claimMain', {})
       : '<p class="muted">🎉 你已完成所有主線任務！</p>';
-    const dailies = q.dailyDefs().map((d) => this.questCard(d.def, q.progress(d.def.cond, d.baseline), q.isDone(d.def.cond, d.baseline), 'claimDaily', { id: d.id }, d.claimed)).join('');
+    // 每日任務：已完成未領取 → 進行中 → 已領取（同一類維持原本順序）
+    const dailies = q.dailyDefs().map((d) => ({ d, done: q.isDone(d.def.cond, d.baseline) }))
+      .map((x, i) => ({ ...x, i, rank: x.d.claimed ? 2 : x.done ? 0 : 1 }))
+      .sort((a, b) => a.rank - b.rank || a.i - b.i)
+      .map(({ d, done }) => this.questCard(d.def, q.progress(d.def.cond, d.baseline), done, 'claimDaily', { id: d.id }, d.claimed)).join('');
     // 成就：可領取的排最前面，已領取的收合到最下方（點擊展開）
     const card = (a) => this.questCard(a, q.progress(a.cond), q.isDone(a.cond), 'claimAch', { id: a.id }, !!g.state.quests.achievements[a.id]);
     const open = ACHIEVEMENTS.filter((a) => !g.state.quests.achievements[a.id])
@@ -37,18 +40,17 @@ export class QuestPanel {
     const done = ACHIEVEMENTS.filter((a) => g.state.quests.achievements[a.id]);
     const ach = `${open.map(card).join('') || '<p class="muted">所有成就都已達成！</p>'}`;
     const doneHtml = done.length ? `<div class="btn-row">${btn(`${this.showDone ? '▲ 收合' : '▼ 展開'}已達成的成就（${done.length}）`, 'toggleDoneAch', {}, { cls: 'btn-sm btn-ghost' })}</div>
-      ${this.showDone ? `<div class="grid">${done.map(card).join('')}</div>` : ''}` : '';
+      ${this.showDone ? `<div class="grid q2-grid">${done.map(card).join('')}</div>` : ''}` : '';
     const doneAch = Object.keys(g.state.quests.achievements).length;
     const claimedN = q.dailyDefs().filter((d) => d.claimed).length;
     const opened = g.state.quests.chestDate === g.state.quests.dailyDate;
-    const chest = `<div class="card row-between chest-card ${q.chestReady() ? 'ready' : ''}"><div><b>🎁 每日物資箱</b>
-      <small class="muted block">領取當天全部每日任務（${claimedN}/${q.dailyDefs().length}）後可開啟一次：隨機 ${DAILY_CHEST.rolls[0]}～${DAILY_CHEST.rolls[1]} 項零件、布料、藥品、彈藥、裝備或設計圖，越高階、品級越高越難開到。</small></div>
-      ${opened ? '<span class="tag">今天已開啟</span>' : btn('開啟', 'openChest', {}, { cls: 'btn-sm btn-primary', disabled: !q.chestReady() })}</div>`;
+    const chest = `<div class="card row-between chest-card q2-chest ${q.chestReady() ? 'ready' : ''}"><div><b>🎁 每日物資箱</b> <small class="muted">領完全部每日任務（${claimedN}/${q.dailyDefs().length}）可開啟</small></div>
+      ${opened ? '<span class="tag">今天已開啟</span>' : btn('開啟', 'openChest', {}, { cls: 'btn-xs btn-primary', disabled: !q.chestReady() })}</div>`;
     return `<div class="panel-inner">
       <h2>📜 任務</h2>
       <h3>主線 <small>${Math.min(g.state.quests.mainIndex + 1, MAIN_QUESTS.length)}/${MAIN_QUESTS.length}</small></h3>${mainHtml}
-      <h3>每日任務 <small class="muted">每天 00:00 重置</small></h3><div class="grid">${dailies}</div>${chest}
-      <h3>成就 <small>${doneAch}/${ACHIEVEMENTS.length}</small></h3><div class="grid">${ach}</div>${doneHtml}
+      <h3>每日任務 <small class="muted">每天 00:00 重置</small></h3><div class="grid q2-grid">${dailies}</div>${chest}
+      <h3>成就 <small>${doneAch}/${ACHIEVEMENTS.length}</small></h3><div class="grid q2-grid">${ach}</div>${doneHtml}
     </div>`;
   }
 

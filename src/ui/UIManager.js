@@ -162,6 +162,8 @@ export class UIManager {
         return;
       }
       this.panels[this.tab].onAction?.(action, data, el);
+      // v15.12：切換分支、篩選等只改畫面的操作也立即重畫（以前要等每秒更新，手機剛滑過分頁列時還會再延後）
+      this.refresh(true);
       this.game.requestSave(); // 任何操作都立即存檔
     });
     delegateActions(this.hud, (action) => {

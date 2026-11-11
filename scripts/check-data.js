@@ -4736,6 +4736,15 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   Object.assign(gh.survivors.leader(), { status: 'idle', hp: null, severe: false });
   const r2 = gh.exploration.start(far[1].id, ['leader'], 1, false, Date.now());
   assert(r2.ok && !gh.autoHome.check(Date.now()) && !r2.exp.recalled, '回家後可以再派出，當天不會再被召回');
+  {
+    // v15.11.1：存檔裡的紀錄比現在還新（舊版計時超前）：不再卡住好幾天，下一個 19:30 照常觸發
+    const k0 = gh.autoHome.keyAt(Date.now());
+    gh.state.autoHomeKey = k0 + 5;
+    assert(!gh.autoHome.check(Date.now()) && gh.state.autoHomeKey === k0, '紀錄超前時改為從現在重新計算');
+    const next = Date.now() + 90 * 60000; // 下一個遊戲日的同一時刻（已過 19:30）
+    const res2 = gh.autoHome.check(next);
+    assert(res2 && gh.state.autoHomeKey === k0 + 1, '紀錄超前修正後，下一個 19:30 照常自動回家');
+  }
   // 關閉時不召回
   gh.exploration.update(r2.exp.endAt + 1, { silent: true });
   assert(gh.autoHome.toggle().ok && !gh.autoHome.on(), '可以關閉自動回家');
