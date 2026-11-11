@@ -55,7 +55,7 @@ const GARRISON = {
 /** 守軍強度倍率（生命、攻擊） */
 export const CP_GARRISON_MUL = 3;
 /** 各區域守軍的額外強度倍率（v15.4：致死區微調、深淵區調整為約與 Lv35 勢力 NPC 據點同強度） */
-export const CP_ZONE_MUL = { 4: 1.3, 5: 6.12 };
+export const CP_ZONE_MUL = { 4: 1.3, 5: 3.06 }; // v15.10：深淵區守軍與勢力進攻部隊強度減半（原 6.12）
 /** 玩家側（西側警戒～致死區）的控制點守軍再減弱一半 */
 export const CP_PLAYER_SIDE_MUL = 0.5;
 /** 被打下後每小時（現實時間）補回的守軍人數 */

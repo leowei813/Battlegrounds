@@ -6803,7 +6803,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
       bases[0].level = lv0;
       const abyss = CPC.CONTROL_POINTS.find((c) => c.zone === 5);
       const pw = gq.cp.defensePower(abyss.id);
-      assert(Math.abs(pw / ref - 1) < 0.1, `深淵區控制點守軍戰力約等於 Lv35 NPC 據點（${Math.round(pw)} / ${Math.round(ref)}）`);
+      assert(Math.abs(pw / ref - 0.5) < 0.05, `v15.10：深淵區控制點守軍戰力約為 Lv35 NPC 據點的一半（${Math.round(pw)} / ${Math.round(ref)}）`);
     }
     // v15.3：勢力控制點內有 NPC 據點時要先打掉據點
     if (bases[0]) {
