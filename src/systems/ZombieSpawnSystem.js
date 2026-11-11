@@ -20,6 +20,8 @@ import { WORLD_CENTER, WORLD_HALF_DIAG_M, inWorld } from '../config/world.js';
 /** v15.11：夜間地圖殭屍群依區域的等級範圍（對齊控制點守軍），人數倍率 */
 export const NIGHT_GROUP_LEVEL = { safe: [8, 12], normal: [15, 20], alert: [22, 27], danger: [30, 35], lethal: [38, 43], abyss: [45, 50] };
 export const NIGHT_GROUP_COUNT_MUL = 2.25; // 原本的 ×1.5 再 ×1.5
+/** v15.11：每群人數上限（單隊仍有機會打贏） */
+export const NIGHT_GROUP_MAX = 20;
 /** v15.11：夜間 Boss：等級＝該區上限＋levelPlus，另帶 minions 隻同區普通殭屍 */
 export const NIGHT_BOSS = { levelPlus: 5, minions: [4, 6] };
 /** v15.11：夜間殭屍群的裝備掉落倍率與品級加成 */
@@ -130,7 +132,7 @@ export class ZombieSpawnSystem {
           const boss = zone.danger >= 1 && chance(0.03 + d * 0.01);
           if (boss) enemyId = pick(Object.keys(BOSSES).sort());
           if (!inWorld(lat, lon)) continue;
-          const count = boss ? 1 : Math.max(1, Math.round(randInt(1, 2 + d + 1) * this.encounterMul(lat, lon) * NIGHT_GROUP_COUNT_MUL));
+          const count = boss ? 1 : Math.min(NIGHT_GROUP_MAX, Math.max(1, Math.round(randInt(1, 2 + d + 1) * this.encounterMul(lat, lon) * NIGHT_GROUP_COUNT_MUL)));
           // v15.11：等級依區域（對齊控制點守軍）
           const [lo, hi] = NIGHT_GROUP_LEVEL[zone.id] || [1, 5];
           const level = randInt(lo, hi);
