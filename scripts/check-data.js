@@ -7495,6 +7495,19 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(uses(lvOf((lv) => F13.dormitory.cost(lv)), 'polyester') && uses(lvOf((lv) => F13.clinic.cost(lv)), 'techCotton'), '宿舍改用聚酯纖維、醫療站維持科技棉');
 }
 
+// ---- v15.13：同階總掉落量固定（新增材料不會擠壓其他階） ----
+{
+  const LS = await import('../src/systems/LootStock.js');
+  const { SUPPLIES: SP, suppliesOf: so } = await import('../src/config/supplies.js');
+  const groups = {};
+  so('part').concat(so('fabric')).filter((k) => SP[k].tag !== 'ammo').forEach((k) => { (groups[`${SP[k].cat}:${SP[k].tier}`] = groups[`${SP[k].cat}:${SP[k].tier}`] || []).push(k); });
+  Object.keys(groups).forEach((g) => assert(LS.TIER_BASE_KINDS[g] > 0, `掉落基準有列出 ${g}（新增一階時要補上）`));
+  // 一階的總權重 = 基準種類數 × 該階倍率（不含個別材料的加成時）
+  const t3 = groups['fabric:3'];
+  const sum = t3.reduce((a, k) => a + LS.baseSupplyWeight(k), 0);
+  assert(Math.abs(sum - LS.TIER_BASE_KINDS['fabric:3'] * (LS.TIER_DROP_BOOST['fabric:3'] ?? 1)) < 1e-9, `第 3 階布料總掉落權重固定（${sum.toFixed(2)}）`);
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);
