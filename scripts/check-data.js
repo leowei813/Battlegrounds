@@ -7461,6 +7461,27 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(p16 > p15 * 1.05, `解鎖戰鬥技能後戰力明顯提高（${p15} → ${p16}）`);
 }
 
+// ---- v15.13：換裝頁只列可以換上的裝備、比較顯示對這位倖存者的戰力變化 ----
+{
+  const { createSurvivor: cs13 } = await import('../src/core/GameState.js');
+  const ge = Game.newGame({ playerName: 'EQ', classId: 'warrior', lat: 25, lon: 121 });
+  const L = ge.survivors.leader(); L.level = 20;
+  const other = cs13('小美', 'scout', 10, 'rare'); ge.state.survivors.push(other);
+  const mk = () => { const it = ge.equipment.generate({ level: 20, model: 'knife', rarity: 'rare' }); ge.state.inventory.items.push(it); return it; };
+  const free = mk(); const worn = mk(); const carried = mk();
+  other.equipment.melee = worn.id;
+  carried.loc = other.id;
+  assert(ge.equipment.swappable(L, free) && !ge.equipment.swappable(L, worn), '別人身上穿著的裝備不能換');
+  other.status = 'idle';
+  assert(ge.equipment.swappable(L, carried), '在家的人背包裡的裝備可以換');
+  other.status = 'exploring';
+  assert(!ge.equipment.swappable(L, carried), '外出中的人背包裡的裝備不能換');
+  const before = ge.survivors.stats(L, 'melee').power;
+  const d = ge.equipment.powerDelta(L, free);
+  L.equipment.melee = free.id;
+  assert(ge.survivors.stats(L, 'melee').power - before === d && L.equipment.melee === free.id, `戰力變化等於實際換上後的差（${d}）`);
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

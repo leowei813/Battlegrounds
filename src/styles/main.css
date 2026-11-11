@@ -689,6 +689,7 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .drawer-tabs .seg-btn { flex: 1 1 30%; }
 .unread { border-left: 3px solid #42a5f5; }
 .compare { display:flex; flex-wrap:wrap; gap:4px 8px; font-size:12px; margin-top:4px; }
+.compare .cmp-who { flex-basis: 100%; font-size: 13px; }
 .battle-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0; }
 .battle-table th, .battle-table td { border-bottom: 1px solid var(--line); padding: 2px 4px; text-align: right; }
 .battle-table th:first-child, .battle-table td:first-child { text-align: left; }

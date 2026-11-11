@@ -597,7 +597,8 @@ export class InventoryPanel {
     const carry = mode === 'carry';
     const rows = g.state.survivors.map((sv) => {
       const cur = eq.getItem(sv.equipment[item.slot]);
-      const diff = item.power - (cur?.power || 0);
+      // v15.13：對這位倖存者的實際戰力變化（含職業技能、研究加成）
+      const diff = eq.powerDelta(sv, item);
       const info = carry
         ? `<small class="muted">背包 ${eq.bagSlotsUsed(sv)}/${eq.bagSlotCap(sv)} 格・負重 ${Math.floor(g.survivors.bagLoad(sv))}/${g.survivors.bagCap(sv)}</small>`
         : `<small class="muted">目前：${cur ? escapeHtml(cur.name) : '無'}</small><span class="${diff >= 0 ? 'pos' : 'neg'}">${diff >= 0 ? '▲' : '▼'}${Math.abs(diff)}</span>`;

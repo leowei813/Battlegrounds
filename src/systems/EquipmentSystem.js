@@ -492,6 +492,43 @@ export class EquipmentSystem {
     return { ok: true };
   }
 
+  /** 這個部位比較戰力時用哪一把武器（武器欄用該武器自己的模式） */
+  static modeOf(slot) {
+    return slot === 'weapon' ? 'ranged' : slot === 'melee' ? 'melee' : 'auto';
+  }
+
+  /**
+   * v15.13：換上某件裝備後這位倖存者的實際戰力（含職業技能、研究、素質、套裝）。
+   * itemId 為 null 時表示該部位不穿。
+   */
+  powerWith(sv, slot, itemId) {
+    const prev = sv.equipment[slot];
+    sv.equipment[slot] = itemId;
+    const p = this.game.survivors.stats(sv, EquipmentSystem.modeOf(slot)).power;
+    sv.equipment[slot] = prev;
+    return p;
+  }
+
+  /** 換上這件裝備後，這位倖存者的戰力變化 */
+  powerDelta(sv, item) {
+    if (!sv || !item) return 0;
+    return this.powerWith(sv, item.slot, item.id) - this.powerWith(sv, item.slot, sv.equipment[item.slot] || null);
+  }
+
+  /**
+   * v15.13：這件裝備現在能不能換給這位倖存者：別人身上穿著的、外出中的人背包裡的、
+   * 其他職業專用的副本裝備都不行；倉庫、自己或在家的人背包裡的可以。
+   */
+  swappable(sv, item) {
+    if (!sv || !item || !this.canWear(sv, item)) return false;
+    const owner = this.equippedBy(item.id);
+    if (owner && owner.id !== sv.id) return false;
+    const loc = item.loc || 'store';
+    if (loc === 'store' || loc === sv.id) return true;
+    const carrier = this.game.survivors.get(loc);
+    return !!carrier && carrier.status === 'idle';
+  }
+
   /**
    * 快速換裝：從倉庫與待在避難所的倖存者背包中，每個部位換上戰力最高的裝備。
    * 不會拿走別人身上已經穿戴的裝備；遠程武器只換有彈藥庫存的。

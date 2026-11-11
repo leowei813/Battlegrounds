@@ -1,3 +1,4 @@
+import { EquipmentSystem } from '../../systems/EquipmentSystem.js';
 import { openRebirthDialog } from '../RebirthDialog.js';
 import { formatDuration } from '../../utils/math.js';
 import {
@@ -742,9 +743,11 @@ export class SurvivorPanel {
   }
 
   /** 可換上的裝備：同部位、不是這位倖存者身上已穿的（其他人身上的也可以換過來） */
+  /** v15.13：只列現在能換上的裝備（不含自己穿著的、別人穿著的、外出中的人背包裡的） */
   candidates(svId, slot) {
     const g = this.game;
-    return g.state.inventory.items.filter((i) => i.slot === slot && g.equipment.equippedBy(i.id)?.id !== svId);
+    const sv = g.survivors.get(svId);
+    return g.state.inventory.items.filter((i) => i.slot === slot && g.equipment.equippedBy(i.id)?.id !== svId && g.equipment.swappable(sv, i));
   }
 
   /** 裝備選擇頁：有返回按鈕，返回時回到倖存者的裝備頁 */
@@ -753,7 +756,9 @@ export class SurvivorPanel {
     const sv = g.survivors.get(svId);
     const cur = g.equipment.getItem(sv?.equipment[slot]);
     const body = () => {
-      const items = this.candidates(svId, slot).sort((a, b) => b.power - a.power);
+      // 依「對這位倖存者的戰力變化」排序
+      const delta = new Map(this.candidates(svId, slot).map((it) => [it.id, g.equipment.powerDelta(sv, it)]));
+      const items = this.candidates(svId, slot).sort((a, b) => delta.get(b.id) - delta.get(a.id) || b.power - a.power);
       const list = items.length
         ? items.map((it) => {
           const owner = g.equipment.equippedBy(it.id);
@@ -762,12 +767,12 @@ export class SurvivorPanel {
             equippedBy: owner,
             carrier,
             ammoWarn: slot === 'weapon' ? g.equipment.ammoWarn(it, sv) : null,
-            actions: `${btn('裝備', 'equip', { id: it.id }, { cls: 'btn-sm btn-primary' })}${compareHtml(g, it, cur)}`,
+            actions: `${btn('裝備', 'equip', { id: it.id }, { cls: 'btn-sm btn-primary' })}${compareHtml(g, it, cur, { who: sv?.name, delta: delta.get(it.id) })}`,
           });
         }).join('')
         : '<p class="muted">沒有可以裝備的物品。</p>';
       return `<div class="btn-row">${btn('← 返回', 'back', {}, { cls: 'btn-sm' })}</div>
-        <p class="muted">${escapeHtml(sv?.name || '')} 目前的${SLOTS[slot].name}：${cur ? `<b>${escapeHtml(cur.name)}</b>（戰力 ${cur.power}）` : '無'}</p>
+        <p class="muted">${escapeHtml(sv?.name || '')} 目前的${SLOTS[slot].name}：${cur ? `<b>${escapeHtml(cur.name)}</b>（裝備戰力 ${cur.power}）` : '無'}・${escapeHtml(sv?.name || '')} 目前戰力 <b>${sv ? g.survivors.stats(sv, EquipmentSystem.modeOf(slot)).power : 0}</b></p>
         <div class="grid">${list}</div>`;
     };
     this.ui.modal.open({
