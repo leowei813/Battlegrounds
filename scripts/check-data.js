@@ -4128,6 +4128,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(qf.ok && r.exp.queue.length === Math.min(ex.queueLimit(), qf.added.length) && qf.added.length > 0, `快速佇列：自動加入附近地點（${qf.added.length}/${ex.queueLimit()}）`);
   assert(qf.added.every((p) => ex.hasStock(p) && !zones.some((z) => haversine(p.lat, p.lon, z.lat, z.lon) <= z.r)) && new Set(r.exp.queue).size === r.exp.queue.length && !r.exp.queue.includes(poi.id), '快速佇列：只加入有物資、不在警戒範圍、不重複的地點');
   assert(ex.quickFill(r.exp.id).added.length === 0 || r.exp.queue.length <= ex.queueLimit(), '快速佇列不超過上限');
+  {
+    // v15.10：其他玩家或 NPC 正在探索的地點，快速佇列不選
+    const busy = qf.added[0];
+    const v0 = gq.poiShare.view.bind(gq.poiShare);
+    gq.poiShare.view = (p, at) => (p?.id === busy.id ? { ...v0(p, at), occ: [{ n: '玩家「X」', p: 'X', rel: 'other', a: Date.now() - 1000, l: Date.now() + 600000 }] } : v0(p, at));
+    r.exp.queue = [];
+    const qf2 = ex.quickFill(r.exp.id);
+    assert(qf2.added.length > 0 && !qf2.added.some((p) => p.id === busy.id), '快速佇列：其他人正在探索的地點不選');
+    gq.poiShare.view = (p, at) => (p?.id === busy.id ? { ...v0(p, at), occ: [{ n: '我', p: 'me', rel: 'me', a: Date.now() - 1000, l: Date.now() + 600000 }] } : v0(p, at));
+    assert(ex.othersThere(busy) === false, '自己的隊伍不算其他人');
+    gq.poiShare.view = v0;
+  }
   const { zoneAt: zoneAt85 } = await import('../src/config/zones.js');
   assert(qf.added.every((p) => zoneAt85(p.lat, p.lon).id === zoneAt85(poi.lat, poi.lon).id), '快速佇列只加入與選定建築同一個區域的建築（不跨區）');
   ex.list.length = 0; L.status = 'idle';

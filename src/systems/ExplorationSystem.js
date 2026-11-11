@@ -386,6 +386,12 @@ export class ExplorationSystem {
    * 不選 NPC 與非友好玩家警戒範圍內的地點、據點，以及其他隊伍正要去的地點。
    * @returns {{ok:boolean, added:object[], msg?:string}}
    */
+  /** v15.10：其他玩家或 NPC 正在（或正要去）探索這個地點：快速佇列不選 */
+  othersThere(poi, now = Date.now()) {
+    const v = this.game.poiShare?.view(poi, now);
+    return !!v?.occ?.some((x) => x.rel !== 'me' && x.l > now);
+  }
+
   quickFill(expId, now = Date.now()) {
     const exp = this.list.find((e) => e.id === expId);
     if (!exp || exp.kind !== 'explore' || exp.recalled || exp.defeated) return { ok: false, added: [], reason: '這支小隊無法加入佇列' };
@@ -397,7 +403,7 @@ export class ExplorationSystem {
     const pool = this.game.state.map.pois.filter((p) => POI_TYPES[p.type] && !p.npc && !p.pvp && !taken.has(p.id)
       && !this.game.shelter.baseAtPoi(p.id) && this.hasStock(p, now)
       && !zones.some((z) => haversine(p.lat, p.lon, z.lat, z.lon) <= z.r)
-      && this.explorable(p));
+      && this.explorable(p) && !this.othersThere(p, now));
     let last = this.poi(exp.queue[exp.queue.length - 1] || exp.poiId);
     // 只選與選定建築同一個區域（危險等級）的建築，不跨區
     const base = this.poi(exp.poiId) || last;
