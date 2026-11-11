@@ -391,10 +391,11 @@ export class MapPanel {
     const loot = v.resources ? `💰${v.coins} ${v.resources.map(([k, x]) => `${metaOf(k).icon}${x}`).join(' ')}` : unknown;
     return `
       <p>🏴‍☠️ <b>${escapeHtml(n.name)}</b>・${v.level}・<span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span>${dist != null ? `・距避難所 ${dist} 公尺` : ''}</p>
-      <p class="muted">🔭 偵查 Lv${v.lv}：${v.lv >= 9 ? '情報完整' : v.lv >= 7 ? '可得知確切物資與戰力' : v.lv >= 5 ? '可得知大約物資' : v.lv >= 3 ? '可得知確切等級、守軍與傷亡' : v.lv >= 1 ? '只知道大約等級' : '只知道名稱'}（研究「偵查」取得更多情報）</p>
+      <p class="muted">🔭 偵查 Lv${v.lv}：${v.lv >= 15 ? '情報完整，掠奪隊行軍較慢' : v.lv >= 13 ? '可得知勢力部隊人數與戰力' : v.lv >= 11 ? '可得知圍牆與防禦火力' : v.lv >= 9 ? '可得知下次掠奪時間' : v.lv >= 7 ? '可得知確切物資與戰力' : v.lv >= 5 ? '可得知大約物資' : v.lv >= 3 ? '可得知確切等級、守軍與傷亡' : v.lv >= 1 ? '只知道大約等級' : '只知道名稱'}（研究「偵查」取得更多情報）</p>
       <p>守軍：${garrison}</p>
       <p>物資：${loot}</p>
       ${v.power != null ? `<p class="muted">⚔️ 建議戰力 ${v.power} 以上</p>` : ''}
+      ${v.defense ? `<p class="muted">🧱 圍牆耐久 ${v.defense.wall.toLocaleString()}・防禦火力 ${v.defense.dps.toLocaleString()}/秒（攻打時要先破牆，期間持續受到射擊）</p>` : ''}
       ${v.nextRaid != null ? `<p class="muted">🏴‍☠️ 下次掠奪約在 ${formatDuration(v.nextRaid)} 後（夜晚不出動）</p>` : ''}
       <p class="muted">積極度 ${Math.round(aggr * 100)}%（你的文明度越高，NPC 越常來掠奪）。夜晚屍潮期間 NPC 不會出動。</p>
       ${trip ? `<p class="${trip.kind === 'raid' ? 'neg' : 'muted'}">${trip.kind === 'raid' ? `⚔️ 掠奪隊正前往「${escapeHtml(trip.target)}」` : `🔍 正在搜刮「${escapeHtml(trip.target)}」`}・剩 ${formatDuration(trip.endAt - now)}</p>` : ''}
@@ -697,7 +698,9 @@ export class MapPanel {
     });
     // v15.7：勢力部隊前往自己的控制點、大本營部隊前往自己的探索隊（點擊移到目標）
     (g.cp?.incoming?.(now) || []).forEach((t) => {
-      rows.push(`<button class="feed-chip danger" data-action="feedFocus" data-lat="${t.lat}" data-lon="${t.lon}">⚠️ ${escapeHtml(t.text)}・約 ${formatDuration(t.at - now)}後抵達</button>`);
+      // v15.10：偵查 Lv13 看到的其他控制點行軍：一般樣式（不是自己的控制點，不用紅色警示）
+      const other = t.mine === false;
+      rows.push(`<button class="feed-chip ${other ? '' : 'danger'}" data-action="feedFocus" data-lat="${t.lat}" data-lon="${t.lon}">${other ? '🔭' : '⚠️'} ${escapeHtml(t.text)}・${other ? `${Math.max(1, Math.ceil((t.at - now) / 60000))}分` : `約 ${formatDuration(t.at - now)}後抵達`}</button>`);
     });
     // 好友遭受玩家／NPC 攻打：點擊直接進入增援指派（好友的屍潮不顯示在這裡）
     const seen = new Set();

@@ -839,9 +839,17 @@ export class ControlPointSystem {
       if (!m || now >= m.arriveAt) return;
       const owner = this.owners(cp.id).some((o) => o.p === me);
       const guard = (this.data(cp.id)?.guards || []).some((h) => h.p === me);
-      if (!owner && !guard) return;
+      const intel = this.marchIntel(m, cp.id);
+      if (!owner && !guard && !intel) return;
       const at = this.markerSpot(cp.id);
-      out.push({ text: `勢力「${FACTIONS[m.f]?.name || ''}」部隊 → 控制點 #${cp.no}`, at: m.arriveAt, lat: at.lat, lon: at.lon });
+      // 不是自己的控制點（偵查 Lv13 才看得到）：文字精簡
+      let text = `勢力「${FACTIONS[m.f]?.name || ''}」部隊${intel} → 控制點 #${cp.no}`;
+      if (!owner && !guard) {
+        const force = this.attackForce(m.f, cp.id);
+        const pw = force.reduce((s, u) => s + unitPower(u), 0);
+        text = `${FACTIONS[m.f]?.name || ''}${force.length}人⚔${pw >= 10000 ? `${(pw / 10000).toFixed(1)}萬` : Math.round(pw)} → #${cp.no}`;
+      }
+      out.push({ text, at: m.arriveAt, lat: at.lat, lon: at.lon, mine: owner || guard });
     });
     this.game.state.expeditions.forEach((e) => {
       const a = e.hqAmbush;
@@ -849,6 +857,13 @@ export class ControlPointSystem {
       out.push({ text: `${FACTIONS[a.f]?.name || ''}大本營部隊 → 探索點「${this.game.exploration.poi(e.poiId)?.name || ''}」`, at: a.hitAt, lat: a.to.lat, lon: a.to.lon });
     });
     return out.sort((a, b) => a.at - b.at);
+  }
+
+  /** v15.10：偵查 Lv13：勢力進攻部隊的人數與戰力（看得到所有控制點的行軍） */
+  marchIntel(m, id) {
+    if ((this.game.npcs?.intel?.() || 0) < 13) return '';
+    const force = this.attackForce(m.f, id);
+    return `（${force.length} 人・戰力 ${Math.round(force.reduce((s, u) => s + unitPower(u), 0)).toLocaleString()}）`;
   }
 
   /** 前往自己（或好友）控制點的進攻部隊：提醒一次 */
@@ -861,13 +876,19 @@ export class ControlPointSystem {
       const me = this.myId();
       const owner = this.owners(cp.id).some((o) => o.p === me);
       const guard = (this.data(cp.id)?.guards || []).some((h) => h.p === me);
-      if (!owner && !guard) return;
+      const intel = this.marchIntel(m, cp.id);
+      if (!owner && !guard && !intel) return;
       const key = `${cp.id}:${m.arriveAt}`;
       if (this.warned.has(key)) return;
       this.warned.add(key);
       const min = Math.max(1, Math.round((m.arriveAt - now) / 60000));
+      // v15.10：偵查 Lv13：其他控制點的行軍也會記在事件紀錄（不跳提醒）
+      if (!owner && !guard) {
+        this.game.log(`🔭 偵查：勢力「${FACTIONS[m.f]?.name || ''}」的部隊${intel}正前往控制點 #${cp.no}（約 ${min} 分鐘後抵達）`, 'info');
+        return;
+      }
       const role = owner && guard ? '你佔領並駐防的' : owner ? '你佔領的' : '你駐防的';
-      const msg = `⚔️ 勢力「${FACTIONS[m.f]?.name || ''}」的部隊正前往${role}控制點 #${cp.no}（約 ${min} 分鐘後抵達）${owner && !guard ? '，可以派人駐防' : ''}`;
+      const msg = `⚔️ 勢力「${FACTIONS[m.f]?.name || ''}」的部隊${intel}正前往${role}控制點 #${cp.no}（約 ${min} 分鐘後抵達）${owner && !guard ? '，可以派人駐防' : ''}`;
       this.game.log(msg, 'danger');
       this.game.toast?.(msg, 'danger');
     });

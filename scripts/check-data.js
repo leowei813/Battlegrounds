@@ -7244,6 +7244,43 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(calls === 1 && gr2.state.reports.length === n0 + 1 && rep.poiName.includes(nn.name) && rep.at === st.exp.endAt, '回到避難所收到報告，交戰只結算一次');
 }
 
+// ---- v15.10：偵查 Lv11／Lv13／Lv15 新效果 ----
+{
+  const gk = Game.newGame({ playerName: 'RK', classId: 'warrior', lat: 25, lon: 121 });
+  gk.state.map.pois = fillPois([], 25, 121);
+  gk.shelter.establish(gk.state.map.pois.find((p) => gk.shelter.canEstablish(p).ok));
+  setHour(gk, 10);
+  const nk = gk.npcs.spawnAt(gk.state.map.pois.filter((p) => !gk.shelter.baseAtPoi(p.id))[2], 'rk', Date.now(), true);
+  const setLv = (lv) => { gk.state.research.levels.s_recon = lv; gk.research.invalidate(); };
+  setLv(10);
+  assert(!gk.npcs.intelView(nk).defense, '偵查 Lv10：還看不到圍牆與防禦火力');
+  setLv(11);
+  const dv = gk.npcs.intelView(nk).defense;
+  assert(dv && dv.wall === gk.npcs.defense(nk).wall && dv.dps > 0, '偵查 Lv11：看得到 NPC 據點的圍牆耐久與防禦火力');
+  // Lv13：看得到所有控制點的勢力行軍（人數與戰力）
+  const CPC13 = await import('../src/config/controlPoints.js');
+  const c13 = CPC13.CONTROL_POINTS[3];
+  const march = { f: 'red', from: CPC13.factionHq('red'), at: Date.now(), arriveAt: Date.now() + 600000 };
+  gk.cp.data = (id) => (id === c13.id ? { owners: [], guards: [], march } : null);
+  gk.cp.owners = () => [];
+  setLv(12);
+  assert(!gk.cp.incoming().some((x) => x.text.includes(`#${c13.no}`)), '偵查 Lv12：看不到別人的控制點行軍');
+  setLv(13);
+  const inc = gk.cp.incoming().find((x) => x.text.includes(`#${c13.no}`));
+  assert(inc && inc.mine === false && /\d+人⚔/.test(inc.text), `偵查 Lv13：地圖左上角看得到所有控制點的勢力行軍與人數戰力（${inc?.text || ''}）`);
+  gk.cp.warned = new Set();
+  gk.cp.warnMarches();
+  assert(gk.state.log.some((l) => /🔭 偵查：勢力/.test(l.msg)), '偵查 Lv13：其他控制點的行軍記在事件紀錄');
+  // Lv15：NPC 掠奪隊行軍時間 +10%
+  gk.time.phase = () => ({ zombies: false });
+  gk.npcs.allowConcurrentRaid = () => true;
+  gk.npcs.raidLevelCap = () => 99;
+  const t12 = Date.UTC(2026, 10, 11, 4); // 台灣時間 12:00
+  setLv(14); nk.trip = null; gk.npcs.launchRaid(nk, t12); const m14 = nk.trip?.travelMs;
+  setLv(15); nk.trip = null; gk.npcs.launchRaid(nk, t12); const m15 = nk.trip?.travelMs;
+  assert(m14 && m15 && Math.abs(m15 / m14 - 1.1) < 0.01, `偵查 Lv15：NPC 掠奪隊行軍時間 +10%（${m14}→${m15}）`);
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

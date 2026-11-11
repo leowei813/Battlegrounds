@@ -128,7 +128,7 @@ export const RESEARCH = {
   s_stealth: r('survival', 2, '潛行', '移動途中遇襲機率降低', { ambushReduce: 0.05 }, { req: [['s_scout', 2]] }),
   s_items: r('survival', 2, '尋寶', '探索時找到裝備的機率提升', { itemFindPct: 0.05 }, { req: [['s_loot', 2]] }),
   s_survivor: r('survival', 2, '搜救', '探索時遇到倖存者的機率提升', { survivorFindPct: 0.08 }),
-  s_recon: r('survival', 1, '偵查', '取得 NPC 勢力情報：Lv1 大約等級、Lv3 確切等級／守軍／傷亡、Lv5 大約物資、Lv7 確切物資與建議戰力、Lv9 下次掠奪時間', { intel: 1 }),
+  s_recon: r('survival', 1, '偵查', '取得 NPC 勢力情報：Lv1 大約等級、Lv3 確切等級／守軍／傷亡、Lv5 大約物資、Lv7 確切物資與建議戰力、Lv9 下次掠奪時間、Lv11 圍牆與防禦火力、Lv13 所有勢力部隊的人數與戰力、Lv15 NPC 掠奪隊行軍時間 +10%', { intel: 1 }),
   s_bp: r('survival', 3, '圖紙蒐集', '探索時找到設計圖的機率提升', { blueprintPct: 0.08 }, { req: [['s_items', 3]] }),
   // ---- 載具 ----
   v_wear: r('vehicles', 1, '保養', '載具磨損減少', { vehicleWearReduce: 0.05 }),

@@ -690,6 +690,7 @@ export class NpcSystem {
     }
     if (lv >= 7) view.power = this.displayPower(n);
     if (lv >= 9) view.nextRaid = Math.max(0, n.nextRaidAt - now);
+    if (lv >= 11) view.defense = this.defense(n); // v15.10：圍牆耐久與防禦火力
     return view;
   }
 
@@ -788,6 +789,8 @@ export class NpcSystem {
     const t = this.tripTimes(n, base, 0, base.id);
     // 掠奪避難所的移動時間較長，讓玩家有時間準備防守
     t.travelMs = Math.round(Math.max(t.travelMs * RAID_TRAVEL.npcMul, RAID_TRAVEL.minMin * 60000));
+    // v15.10：偵查 Lv15：NPC 掠奪隊的行軍時間 +10%（多一點準備時間）
+    if (this.intel() >= 15) t.travelMs = Math.round(t.travelMs * 1.1);
     // v15.8：現實凌晨（台灣時間 00:00～08:00）不掠奪，抵達時間落在這段時間的也不出發
     if (npcQuietSpan(now, now + t.travelMs)) return;
     // 抵達時若已入夜（屍潮），NPC 會放棄這次掠奪
