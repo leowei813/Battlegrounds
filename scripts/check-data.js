@@ -4334,7 +4334,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const eq = gm.equipment;
   let lv = 0;
   eq.clinicLevel = () => lv;
-  assert(!eq.canCraftAmmo('gauze').ok && eq.canCraftAmmo('gauze').reason.includes('診療室'), '沒有診療室不能製作藥品');
+  assert(!eq.canCraftAmmo('gauze').ok && eq.canCraftAmmo('gauze').reason.includes('醫療站'), '沒有醫療站不能製作藥品');
   lv = 1;
   assert(eq.canCraftAmmo('gauze').ok && !eq.canCraftAmmo('vitamin').ok, '診療室 Lv1 可做紗布，維他命需要更高等級');
   (gm.state.survivors || []).forEach((s) => { s.bag = {}; });

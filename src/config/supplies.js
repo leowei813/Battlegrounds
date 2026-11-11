@@ -129,7 +129,7 @@ export const AMMO_RECIPES = {
 };
 
 /**
- * 藥品製作（診療室）：依診療室等級解鎖，一次產出 batch 個。
+ * 藥品製作（醫療站）：依醫療站等級解鎖，一次產出 batch 個。
  * 投入的藥品回復量不超過產出的約 6 成，確保製作划算。大型醫藥箱不能製作。
  */
 export const MED_RECIPES = {

@@ -155,19 +155,19 @@ export class InventoryPanel {
     </div>${this.craftSide()}</div>`;
   }
 
-  /** 藥品製作：依診療室等級解鎖 */
+  /** 藥品製作：依醫療站等級解鎖 */
   renderMedCraft() {
     const eq = this.game.equipment;
     const cards = Object.entries(MED_RECIPES).map(([key, rc]) => this.batchCard(key, rc, {
-      effect: `診療室 Lv${rc.clinic}`,
+      effect: `醫療站 Lv${rc.clinic}`,
       unit: '個',
       tag: `<span class="heal-tag">回復 ${Math.round((SUPPLIES[key].heal || 0) * 100)}%</span>`,
       highlight: Object.keys(rc.cost).filter((k) => SUPPLIES[k]?.cat === 'med'),
     })).join('');
     return `<div class="sh-fac"><div class="sh-fac-main">
       <h3 class="sh-title">💊 藥品</h3>
-      <small class="muted block">🩺 診療室 Lv${eq.clinicLevel()}・等級越高可製作的藥品越好</small>
-      <details class="civ-more"><summary>說明</summary><p class="muted">依診療室等級解鎖：Lv1 紗布、繃帶／Lv3 維他命／Lv5 止痛藥／Lv7 抗生素／Lv9 小型醫藥箱／Lv12 中型醫藥箱。大型醫藥箱不能製作，只能探索取得。藍色標示的是當作材料的藥品，投入的回復量不超過做出來的 6 成，製作一定划算。</p></details>
+      <small class="muted block">🏥 醫療站 Lv${eq.clinicLevel()}・等級越高可製作的藥品越好</small>
+      <details class="civ-more"><summary>說明</summary><p class="muted">依醫療站等級解鎖：Lv1 紗布、繃帶／Lv3 維他命／Lv5 止痛藥／Lv7 抗生素／Lv9 小型醫藥箱／Lv12 中型醫藥箱。大型醫藥箱不能製作，只能探索取得。藍色標示的是當作材料的藥品，投入的回復量不超過做出來的 6 成，製作一定划算。</p></details>
       ${this.filterChips()}
       <div class="fac-grid">${cards || '<p class="muted">沒有符合的項目。</p>'}</div>
     </div>${this.craftSide()}</div>`;

@@ -307,7 +307,7 @@ export class SurvivorSystem {
     return { xp: loss, levelDown: true };
   }
 
-  /** 醫生的照護速度（每分鐘最大生命比例）：比診療室慢，醫生等級越高越快 */
+  /** 醫生的照護速度（每分鐘最大生命比例）：比醫療站慢，醫生等級越高越快 */
   medicRate(medic) {
     return medic ? VITALS.medicCarePctPerMin * (1 + (medic.level - 1) * 0.03) : 0;
   }
@@ -321,14 +321,14 @@ export class SurvivorSystem {
       .sort((a, b) => b.level - a.level)[0] || null;
   }
 
-  /** 這位倖存者目前的回復速度：據點內＝診療室＋醫生照護；外出＝隊伍中醫生的照護 */
+  /** 這位倖存者目前的回復速度：據點內＝醫療站＋醫生照護；外出＝隊伍中醫生的照護 */
   healRate(sv) {
     const medic = this.medicRate(this.caringMedic(sv));
     if (sv.status === 'exploring') return medic;
     return this.clinicRate() + medic;
   }
 
-  /** 診療室的休息回復速度（每分鐘最大生命比例） */
+  /** 醫療站的休息回復速度（每分鐘最大生命比例） */
   clinicRate() {
     return clinicRegen(this.game.shelter.maxLevel('clinic'));
   }
@@ -353,7 +353,7 @@ export class SurvivorSystem {
     [...this.list].forEach((sv) => {
       const max = this.maxHp(sv);
       let hp = this.hpOf(sv);
-      // 有食物的時段：在據點有診療室、或身邊有醫生（據點內或同一支隊伍）時才會回復
+      // 有食物的時段：在據點有醫療站、或身邊有醫生（據點內或同一支隊伍）時才會回復
       if (fedMin > 0) {
         const base = this.healRate(sv);
         const rate = sv.severe ? base * VITALS.severeClinicMul * (1 + this.game.research.bonus('severeRegenPct')) : base;
