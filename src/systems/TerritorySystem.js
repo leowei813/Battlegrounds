@@ -7,7 +7,9 @@ import { gridRoute } from '../map/regionRoute.js';
 import { WORLD_BOUNDS, inWorld } from '../config/world.js';
 import { inNpcHome } from '../config/zones.js';
 import { cpAt, CONTROL_POINTS } from '../config/controlPoints.js';
-import { uid, chance, randFloat, haversine } from '../utils/math.js';
+import {
+  uid, chance, randFloat, haversine, unitPower,
+} from '../utils/math.js';
 
 /** 驗證攻擊事件裡附帶的協防結果 */
 function cleanHelpers(h) {
@@ -34,8 +36,7 @@ export const PVP_LOSS = 0.1;
 /** 突襲時公開、應戰的駐守人員上限（與公開資料的駐守人數上限相同） */
 export const GUARD_UNITS_MAX = 20;
 
-const powerOf = (units) => units.reduce((t, u) => t + Math.round((u.atk || 0) * (u.atkSpeed || 1) * (1 + (u.crit || 0) * ((u.critDmg || 1.5) - 1)) * 4
-  + ((u.maxHp || 0) * 0.4) / Math.max(0.4, 1 - (u.dodge || 0)) + (u.def || 0) * 3), 0);
+const powerOf = (units) => units.reduce((t, u) => t + unitPower(u), 0);
 
 /**
  * 領地與外交：

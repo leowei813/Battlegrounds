@@ -258,15 +258,21 @@ export class EquipmentSystem {
   }
 
   itemPower(item) {
-    // 裝備戰力：基本數值加上所有附加詞條（百分比詞條依裝備等級換算成實際效果）
+    // 裝備戰力：只算戰鬥能力（v15.13 起探索速度、搜刮加成、負重不計入）；百分比詞條依裝備等級換算成實際效果
     const s = this.itemStats(item);
     const lv = item.level || 1;
     return Math.round(
       (s.atk || 0) * 3 + (s.def || 0) * 4 + (s.hp || 0) * 0.5
       + (s.crit || 0) * 1000 + (s.dodge || 0) * 1000 + (s.critDmg || 0) * 250 + (s.atkSpeed || 0) * 300
       + (s.atkPct || 0) * (800 + lv * 40) + ((s.hpPct || 0) + (s.defPct || 0)) * (600 + lv * 30)
-      + (s.lifeSteal || 0) * 1200 + (s.exploreSpeed || 0) * 500 + (s.lootBonus || 0) * 500 + (s.carry || 0) * 2,
+      + (s.lifeSteal || 0) * 1200,
     );
+  }
+
+  /** 文明度用的裝備價值（沿用 v15.12 以前的算法，含探索、搜刮、負重，避免屍潮強度跟著變動） */
+  itemValue(item) {
+    const s = this.itemStats(item);
+    return this.itemPower(item) + Math.round((s.exploreSpeed || 0) * 500 + (s.lootBonus || 0) * 500 + (s.carry || 0) * 2);
   }
 
   // ---------- 物品空間（格子與重量） ----------

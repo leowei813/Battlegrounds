@@ -6826,10 +6826,12 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     if (bases[0]) {
       const lv0 = bases[0].level;
       bases[0].level = 35;
-      const ref = gq.npcs.displayPower(bases[0]);
+      // 實際強度比較沿用舊版戰力公式（v15.13 顯示戰力改為 √(輸出×耐打)，守軍強度不變）
+      const { unitPowerV1: upV1 } = await import('../src/utils/math.js');
+      const ref = gq.npcs.garrison(bases[0], { assault: true }).reduce((t, e) => t + upV1(e), 0);
       bases[0].level = lv0;
       const abyss = CPC.CONTROL_POINTS.find((c) => c.zone === 5);
-      const pw = gq.cp.defensePower(abyss.id);
+      const pw = gq.cp.defenders(abyss.id).reduce((t, u) => t + upV1(u), 0);
       assert(Math.abs(pw / ref - 0.5) < 0.05, `v15.10：深淵區控制點守軍戰力約為 Lv35 NPC 據點的一半（${Math.round(pw)} / ${Math.round(ref)}）`);
     }
     // v15.3：勢力控制點內有 NPC 據點時要先打掉據點
@@ -7433,6 +7435,30 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   gr.survivors.battleDown(sv, '測試', Date.now(), 0.1);
   const lost = t0 - gr.survivors.totalXp(sv);
   assert(sv.severe && Math.abs(lost - Math.round(x2(20) * 0.05)) <= 2, `重傷扣經驗減少（10% × (1−50%) = 5%，扣 ${lost}）`);
+}
+
+// ---- v15.13：戰力＝戰鬥能力 ----
+{
+  const { unitPower: upN } = await import('../src/utils/math.js');
+  const { AFFIXES } = await import('../src/config/equipment.js');
+  const gp = Game.newGame({ playerName: 'PW', classId: 'warrior', lat: 25, lon: 121 });
+  const base = { atk: 100, atkSpeed: 1, crit: 0.1, critDmg: 1.5, maxHp: 1000, def: 40, dodge: 0.05, lifeSteal: 0 };
+  // 輸出與耐打相乘：只堆攻擊不如攻守平衡
+  assert(upN({ ...base, atk: 200 }) > upN(base) && upN({ ...base, maxHp: 2000 }) > upN(base), '攻擊、生命越高戰力越高');
+  assert(upN({ ...base, atk: 400, maxHp: 250 }) < upN({ ...base, atk: 200, maxHp: 500 }) * 1.01, '攻擊與生命要搭配（相乘）');
+  // 職業戰鬥技能算進戰力
+  assert(upN({ ...base, skills: { cleaveChance: 0.2 } }) > upN(base), '戰士橫掃提高戰力');
+  assert(upN({ ...base, skills: { healEvery: 4, healPct: 0.12 } }) > upN(base), '醫生急救提高戰力');
+  // 裝備戰力不含探索速度、搜刮加成、負重
+  const it = gp.equipment.generate({ level: 10, model: 'knife', rarity: 'rare' });
+  const p0 = gp.equipment.itemPower(it);
+  it.affixes.push({ id: Object.keys(AFFIXES).find((k) => AFFIXES[k].stat === 'lootBonus'), value: 0.5 });
+  assert(gp.equipment.itemPower(it) === p0 && gp.equipment.itemValue(it) > p0, '裝備戰力不含搜刮加成（文明度仍計入）');
+  // 倖存者戰力含職業技能（戰士 Lv16 百戰老兵攻擊 +15%）
+  const L = gp.survivors.leader();
+  L.level = 15; const p15 = gp.survivors.stats(L).power;
+  L.level = 16; const p16 = gp.survivors.stats(L).power;
+  assert(p16 > p15 * 1.05, `解鎖戰鬥技能後戰力明顯提高（${p15} → ${p16}）`);
 }
 
 if (failures) {
