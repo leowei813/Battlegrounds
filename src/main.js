@@ -188,6 +188,12 @@ function offerLegacy() {
   return ok ? legacy : null;
 }
 
+// v15.12：長按不跳出系統選單（複製、搜尋、儲存圖片）；輸入框與可選取的文字除外
+document.addEventListener('contextmenu', (e) => {
+  if (e.target.closest?.('input, textarea, [contenteditable="true"], .chat-bubble, .sync-code, .selectable')) return;
+  e.preventDefault();
+});
+
 async function boot() {
   // 通行碼（建置時設定 VITE_ACCESS_HASH 才會啟用）
   await requireAccess($('#gate-root'));
