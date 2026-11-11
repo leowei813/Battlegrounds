@@ -6,6 +6,7 @@ import {
   RARITIES, RARITY_ORDER, ITEM_TYPES, ITEM_MODELS, tierMul,
 } from '../config/equipment.js';
 import { sha256 } from '../utils/sha256.js';
+import { RESOURCES } from '../config/constants.js';
 import { exchangeValues, scarcity } from './MaterialBalance.js';
 import { baseSupplyWeight } from './LootStock.js';
 
@@ -15,6 +16,10 @@ export const BLUEPRINT_PRICE_MUL = 1.5;
 export const BLUEPRINT_DUNGEON_PRICE = 5000;
 
 /** 價格基準（沿用過去流浪商人的定價，回收價也以此計算） */
+/** v15.11：黑市收購基礎物資（每個的價格），每種每天（台灣時間）最多收 dailyMax 個 */
+export const RESOURCE_BUYBACK = { price: { food: 0.1, wood: 0.1, fuel: 0.15 }, dailyMax: 5000 };
+const twDay = (t) => new Date(t + 8 * 3600000).toISOString().slice(0, 10);
+
 export const TRADER = {
   /** 材料每個的基本價格（依階級 1～5） */
   supplyPrice: [0, 3, 8, 20, 50, 120],
@@ -313,6 +318,37 @@ export class BlackMarketSystem {
     g.state.player.coins += price;
     g.log(`🕶️ 賣到黑市 ${SUPPLIES[key].name} ×${n}（💰${price}）`, 'loot');
     return { ok: true, msg: `賣出 ${SUPPLIES[key].name} ×${n}，得到 💰${price}` };
+  }
+
+  /** v15.11：今天（台灣時間）這種基礎物資還能賣幾個 */
+  resourceLeft(key, now = Date.now()) {
+    const st = this.game.state;
+    const day = twDay(now);
+    if (st.bmResSold?.day !== day) st.bmResSold = { day };
+    return Math.max(0, RESOURCE_BUYBACK.dailyMax - (st.bmResSold[key] || 0));
+  }
+
+  /** 基礎物資賣出總價（研究「以物易物」提高回收價） */
+  resourcePrice(key, qty) {
+    return Math.floor((RESOURCE_BUYBACK.price[key] || 0) * qty * (1 + this.game.research.bonus('sellPct')));
+  }
+
+  /** v15.11：把基礎物資（食物、木材、燃料）賣到黑市 */
+  sellResource(key, qty, now = Date.now()) {
+    const g = this.game;
+    if (!RESOURCE_BUYBACK.price[key]) return { ok: false, reason: '黑市不收這種東西' };
+    const have = Math.floor(g.state.resources[key] || 0);
+    const left = this.resourceLeft(key, now);
+    const n = Math.min(have, left, Math.max(0, Math.floor(qty)));
+    if (left <= 0) return { ok: false, reason: `今天的${RESOURCES[key].name}已經收滿 ${RESOURCE_BUYBACK.dailyMax.toLocaleString()} 個，明天再來` };
+    if (n <= 0) return { ok: false, reason: `倉庫裡沒有${RESOURCES[key].name}` };
+    const price = this.resourcePrice(key, n);
+    if (price <= 0) return { ok: false, reason: '數量太少，黑市不收（多賣一些才值錢）' };
+    g.state.resources[key] -= n;
+    g.state.bmResSold[key] = (g.state.bmResSold[key] || 0) + n;
+    g.state.player.coins += price;
+    g.log(`🕶️ 賣到黑市 ${RESOURCES[key].name} ×${n.toLocaleString()}（💰${price}）`, 'loot');
+    return { ok: true, msg: `賣出 ${RESOURCES[key].name} ×${n.toLocaleString()}，得到 💰${price}` };
   }
 
   /** 可以拿來交換（換入或換出）的材料 */

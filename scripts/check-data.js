@@ -7367,6 +7367,25 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(r.ok && keys.length > 0 && keys.some((k) => !['scrap', 'coarse'].includes(k)), `打贏殭屍群：材料依區域掉落（${keys.join('、')}）`);
 }
 
+// ---- v15.11：黑市收購基礎物資（每 100 個 💰10、燃料 💰15，每種每天最多 5,000 個） ----
+{
+  const { RESOURCE_BUYBACK: RB } = await import('../src/systems/BlackMarketSystem.js');
+  const gb = Game.newGame({ playerName: 'BR', classId: 'warrior', lat: 25, lon: 121 });
+  const bm = gb.blackMarket;
+  gb.state.resources.food = 9000; gb.state.resources.fuel = 300;
+  const c0 = gb.state.player.coins;
+  const t = Date.UTC(2026, 10, 11, 4);
+  const r1 = bm.sellResource('food', 1000, t);
+  assert(r1.ok && gb.state.player.coins - c0 === 100 && gb.state.resources.food === 8000, `賣食物 1,000 個得到 💰100（${r1.msg || r1.reason}）`);
+  const c1 = gb.state.player.coins;
+  bm.sellResource('fuel', 300, t);
+  assert(gb.state.player.coins - c1 === 45, '燃料每 100 個 💰15');
+  bm.sellResource('food', 99999, t);
+  assert(gb.state.resources.food === 4000 && bm.resourceLeft('food', t) === 0 && !bm.sellResource('food', 10, t).ok, '每種每天最多賣 5,000 個');
+  assert(bm.resourceLeft('food', t + 86400000) === RB.dailyMax && bm.sellResource('food', 100, t + 86400000).ok, '隔天（台灣時間）重新計算');
+  assert(!bm.sellResource('wood', 5, t).ok, '數量太少不收');
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

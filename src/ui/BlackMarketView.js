@@ -1,6 +1,7 @@
 import { SUPPLIES, SUPPLY_CATS } from '../config/supplies.js';
 import { RARITIES, rarityIndex, ITEM_TYPES, ITEM_MODELS } from '../config/equipment.js';
-import { BLACK_MARKET, EXCHANGE } from '../systems/BlackMarketSystem.js';
+import { BLACK_MARKET, EXCHANGE, RESOURCE_BUYBACK } from '../systems/BlackMarketSystem.js';
+import { RESOURCES } from '../config/constants.js';
 import { escapeHtml } from '../utils/dom.js';
 import { formatDuration, formatNumber } from '../utils/math.js';
 import { LOCK_ITEM } from '../config/rebirth.js';
@@ -63,7 +64,22 @@ export function blackMarketBody(ui, view = 'buy') {
     const gear = g.equipment.storeItems()
       .sort((a, b) => rarityIndex(b.rarity) - rarityIndex(a.rarity) || b.power - a.power || String(a.id).localeCompare(String(b.id)))
       .map((it) => gearRow(it, btn(`賣出 💰${bm.gearBuyback(it)}`, 'bmSellItem', { id: it.id }, { cls: 'btn-xs btn-primary', disabled: it.locked, title: it.locked ? '已上鎖' : '' }))).join('');
-    return `${head}<p class="muted">收購倉庫裡的材料與裝備，越稀有回收比例越好。上鎖與穿戴中的裝備不會賣出。</p>
+    // v15.11：基礎物資（食物、木材、燃料）：每種每天最多收購 RESOURCE_BUYBACK.dailyMax 個
+    const res = Object.keys(RESOURCE_BUYBACK.price).map((k) => {
+      const have = Math.floor(g.state.resources[k] || 0);
+      const left = bm.resourceLeft(k);
+      const can = Math.min(have, left);
+      const per100 = bm.resourcePrice(k, 100);
+      const b = (q, label, cls = 'btn-xs') => btn(`${label}（💰${bm.resourcePrice(k, Math.min(q, can))}）`, 'bmSellRes', { key: k, qty: q }, { cls, disabled: bm.resourcePrice(k, Math.min(q, can)) <= 0 });
+      return bmRow({
+        icon: RESOURCES[k].icon, name: `${RESOURCES[k].name} <small class="muted">倉庫 ${formatNumber(have)}</small>`,
+        sub: `每 100 個 💰${per100}・今天還可賣 ${left.toLocaleString()} 個`,
+        right: `${b(100, '賣 100')}${b(1000, '賣 1,000')}${b(can, `全賣 ${can.toLocaleString()}`, 'btn-xs btn-primary')}`,
+        cls: 'bm-res',
+      });
+    }).join('');
+    return `${head}<p class="muted">收購倉庫裡的物資、材料與裝備，越稀有回收比例越好。上鎖與穿戴中的裝備不會賣出。</p>
+      <h4>基礎物資 <small class="muted">每種每天最多 ${RESOURCE_BUYBACK.dailyMax.toLocaleString()} 個</small></h4><div class="bm-list">${res}</div>
       <h4>材料</h4><div class="bm-list">${sells || '<p class="muted">倉庫裡沒有可以回收的物資。</p>'}</div>
       <div class="row-between"><h4>裝備</h4>${btn('一鍵賣出劣質/一般', 'bmSellCommon', {}, { cls: 'btn-sm btn-ghost' })}</div>
       <div class="bm-list">${gear || '<p class="muted">倉庫裡沒有裝備。</p>'}</div>`;
@@ -222,6 +238,7 @@ export function blackMarketAction(ui, action, data) {
     return true;
   }
   if (action === 'bmSell') { ui.result(bm.sell(data.key, Number(data.qty))); return true; }
+  if (action === 'bmSellRes') { ui.result(bm.sellResource(data.key, Number(data.qty))); return true; }
   if (action === 'bmSpBuy') { openSpecialBuy(ui); return true; }
   const f = ui.bmEx || (ui.bmEx = { cat: 'part', tier: 1, want: null, give: null, get: 0 });
   if (action === 'bmExCat') { f.cat = data.v; f.want = null; f.give = null; f.get = 0; return true; }
