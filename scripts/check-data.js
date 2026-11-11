@@ -7386,6 +7386,23 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(!bm.sellResource('wood', 5, t).ok, '數量太少不收');
 }
 
+// ---- v15.11：研究「黑市人脈」降低交換倍率（每級 −3%，Lv10 為 3.5 換 1） ----
+{
+  const { RESEARCH: RS11 } = await import('../src/config/research.js');
+  const { exchangePreview } = await import('../src/ui/BlackMarketView.js');
+  const ge = Game.newGame({ playerName: 'EX', classId: 'warrior', lat: 25, lon: 121 });
+  const t = RS11.t_exchange;
+  assert(t && t.maxLevel === 10 && t.branch === 'trade' && t.tier === 2 && t.requires.some(([k, l]) => k === 'i_trade' && l === 3), '黑市人脈：交易科技第 2 階、最高 Lv10、需要以物易物 Lv3');
+  const bm = ge.blackMarket;
+  const keys = Object.keys((await import('../src/systems/BlackMarketSystem.js')).EXCHANGE.value).filter((k) => bm.exchangeable(k));
+  const [a, b] = keys;
+  const per0 = bm.exchangeCostPer(a, b);
+  ge.state.research.levels.t_exchange = 10; ge.research.invalidate();
+  const per10 = bm.exchangeCostPer(a, b);
+  assert(Math.abs(bm.exchangeRate() - 3.5) < 1e-9 && Math.abs(per10 / per0 - 0.7) < 1e-9, `黑市人脈 Lv10：交換倍率 5 → 3.5（每換 1 個要 ${per0.toFixed(2)} → ${per10.toFixed(2)} 個）`);
+  assert(/× 3\.5/.test(exchangePreview(ge, { want: b, give: a })), '交換說明顯示目前的倍率');
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

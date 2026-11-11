@@ -106,7 +106,7 @@ export function blackMarketBody(ui, view = 'buy') {
   return `${head}<div class="bm-list">${rows}</div>`;
 }
 
-const exNum = (v) => (Number.isInteger(v) ? v : v.toFixed(1));
+const exNum = (v) => (Number.isInteger(v) ? v : Number(v.toFixed(2)));
 
 /** 換到 n 個需要給出幾個（無條件進位） */
 export function exchangeNeed(g, f, n = f.get || 0) {
@@ -132,7 +132,7 @@ export function exchangePreview(g, f) {
   const short = need > have;
   return `<div class="bmx-need">需要給出 <b class="${short ? 'neg' : 'bmx-give'}">${gs.icon} ${gs.name} ×${need}</b>
       ${short ? `<span class="neg">（倉庫只有 ${have}）</span>` : `<small class="muted">（倉庫 ${have}${need ? `，交換後剩 ${have - need}` : ''}）</small>`}</div>
-    <small class="muted block">每換 1 個${ws.name}要 ${exNum(per)} 個${gs.name}（價值 ${exNum(EXCHANGE.value[f.want])} ÷ ${exNum(EXCHANGE.value[f.give])} × ${EXCHANGE.rate}${cross ? ` × 跨階 ${EXCHANGE.crossMul}` : ''}）</small>`;
+    <small class="muted block">每換 1 個${ws.name}要 ${exNum(per)} 個${gs.name}（價值 ${exNum(EXCHANGE.value[f.want])} ÷ ${exNum(EXCHANGE.value[f.give])} × ${exNum(g.blackMarket.exchangeRate())}${cross ? ` × 跨階 ${EXCHANGE.crossMul}` : ''}）</small>`;
 }
 
 /** 交換按鈕能不能按 */
@@ -160,7 +160,7 @@ function exchangeHtml(ui) {
   // 只列出倉庫裡有的材料（沒有的不列，清單才不會太長）
   const giveList = sources.filter((k) => sup[k] > 0).map((k) => cell(k, 'bmExGive', `give ${f.give === k ? 'on' : ''}`)).join('')
     || '<p class="muted">倉庫裡沒有可以拿來換的材料。</p>';
-  return `<p class="muted bmx-rule">用倉庫裡的零件或布料，換成同類別的其他材料。黑市抽成很重：<b class="bmx-rate">同價值 ${EXCHANGE.rate} 換 1</b>，用低一階的材料換再 ×${EXCHANGE.crossMul}。只能用同階或低一階的材料交換，${'★'.repeat(EXCHANGE.maxTier + 1)} 最高階不開放。</p>
+  return `<p class="muted bmx-rule">用倉庫裡的零件或布料，換成同類別的其他材料。黑市抽成很重：<b class="bmx-rate">同價值 ${exNum(ui.game.blackMarket.exchangeRate())} 換 1</b>，用低一階的材料換再 ×${EXCHANGE.crossMul}。只能用同階或低一階的材料交換，${'★'.repeat(EXCHANGE.maxTier + 1)} 最高階不開放。</p>
     <h4>① 想換到什麼</h4>
     <div class="chips bmx-cats">${chip('bmExCat', 'part', '🔩 零件', f.cat === 'part')}${chip('bmExCat', 'fabric', '🧵 布料', f.cat === 'fabric')}
       ${[1, 2, 3, 4].map((t) => chip('bmExTier', t, `★${t}`, f.tier === t)).join('')}</div>

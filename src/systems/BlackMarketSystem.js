@@ -351,6 +351,11 @@ export class BlackMarketSystem {
     return { ok: true, msg: `賣出 ${RESOURCES[key].name} ×${n.toLocaleString()}，得到 💰${price}` };
   }
 
+  /** v15.11：目前的交換倍率（研究「黑市人脈」每級 −3%，Lv10 為 3.5 換 1） */
+  exchangeRate() {
+    return EXCHANGE.rate * (1 - Math.min(0.5, this.game.research.bonus('exchangeRateReduce')));
+  }
+
   /** 可以拿來交換（換入或換出）的材料 */
   exchangeable(key) {
     const sp = SUPPLIES[key];
@@ -368,7 +373,7 @@ export class BlackMarketSystem {
   /** 換到 1 個 want 需要幾個 give（可能不是整數） */
   exchangeCostPer(give, want) {
     const cross = SUPPLIES[give].tier < SUPPLIES[want].tier ? EXCHANGE.crossMul : 1;
-    return (EXCHANGE.value[want] / EXCHANGE.value[give]) * EXCHANGE.rate * cross;
+    return (EXCHANGE.value[want] / EXCHANGE.value[give]) * this.exchangeRate() * cross;
   }
 
   /**
