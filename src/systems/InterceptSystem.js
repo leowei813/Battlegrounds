@@ -1,3 +1,4 @@
+import { maxLevelOf } from './EquipmentSystem.js';
 import { haversine, uid, chance, randInt } from '../utils/math.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
 import { SUPPLIES, isSupply } from '../config/supplies.js';
@@ -335,7 +336,8 @@ export class InterceptSystem {
       const md = ITEM_MODELS[raw?.model];
       if (!md || !RARITIES[raw.rarity]) return null;
       // 依型號、品級、等級重新生成，避免對方送來不合理的數值
-      const it = g.equipment.generate({ level: Math.min(60, Math.max(1, Math.round(Number(raw.level) || 1))), model: raw.model, rarity: raw.rarity });
+      const cap = maxLevelOf(raw.model);
+      const it = g.equipment.generate({ level: Math.min(cap, Math.max(1, Math.round(Number(raw.level) || 1))), model: raw.model, rarity: raw.rarity, maxLevel: cap });
       g.equipment.addItem(it, source);
       return it;
     }).filter(Boolean);

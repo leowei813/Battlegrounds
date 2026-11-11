@@ -7525,6 +7525,31 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(AH.AUTO_HOME_HOUR === 21.5 && AH.AUTO_HOME_LABEL === '21:30', '自動回家改為 21:30');
 }
 
+// ---- v15.14：製作裝備最高 Lv70（工作台、精工都升滿），掉落最高 Lv60 ----
+{
+  const gc = Game.newGame({ playerName: 'C70', classId: 'warrior', lat: 25, lon: 121 });
+  gc.state.map.pois = fillPois([], 25, 121);
+  gc.shelter.establish(gc.state.map.pois.find((p) => gc.shelter.canEstablish(p).ok));
+  const lvAt = (wb, fine, model = 'barrett') => {
+    gc.equipment.workbench = () => wb;
+    gc.state.research.levels.c_level = fine;
+    gc.research.invalidate?.();
+    return gc.equipment.craftLevel(model);
+  };
+  const { ITEM_MODELS: IM } = await import('../src/config/equipment.js');
+  const top = Object.keys(IM).find((k) => !IM[k].simple && !IM[k].dg);
+  const simple = Object.keys(IM).find((k) => IM[k].simple);
+  assert(lvAt(15, 15, top) === 70, `工作台 Lv15＋精工 Lv15 做出 Lv70（${lvAt(15, 15, top)}）`);
+  assert(lvAt(14, 15, top) < 70 && lvAt(15, 14, top) < 70, '兩項都升滿才到 Lv70');
+  assert(lvAt(9, 5, top) === 48 && lvAt(10, 0, top) === 50, `中期等級（工作台 9＋精工 5 → ${lvAt(9, 5, top)}）`);
+  assert(lvAt(15, 15, simple) === 60, '簡易裝備最高 Lv60');
+  const drop = gc.equipment.generate({ level: 80, model: top, rarity: 'rare' });
+  assert(drop.level === 60, `掉落的裝備最高 Lv60（${drop.level}）`);
+  const crafted = gc.equipment.generate({ level: 70, model: top, rarity: 'rare', maxLevel: 70 });
+  const imported = gc.equipment.importItem(gc.equipment.exportItem(crafted));
+  assert(crafted.level === 70 && imported?.level === 70, `交易取得的 Lv70 裝備保留等級（${imported?.level}）`);
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);
