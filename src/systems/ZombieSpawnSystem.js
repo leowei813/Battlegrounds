@@ -19,9 +19,9 @@ import { WORLD_CENTER, WORLD_HALF_DIAG_M, inWorld } from '../config/world.js';
  */
 /** v15.11：夜間地圖殭屍群依區域的等級範圍（對齊控制點守軍），人數倍率 */
 export const NIGHT_GROUP_LEVEL = { safe: [8, 12], normal: [15, 20], alert: [22, 27], danger: [30, 35], lethal: [38, 43], abyss: [45, 50] };
-export const NIGHT_GROUP_COUNT_MUL = 1.5;
+export const NIGHT_GROUP_COUNT_MUL = 2.25; // 原本的 ×1.5 再 ×1.5
 /** v15.11：夜間 Boss：等級＝該區上限＋levelPlus，另帶 minions 隻同區普通殭屍 */
-export const NIGHT_BOSS = { levelPlus: 5, minions: [3, 5] };
+export const NIGHT_BOSS = { levelPlus: 5, minions: [4, 6] };
 /** v15.11：夜間殭屍群的裝備掉落倍率與品級加成 */
 export const NIGHT_GROUP_DROP = { chanceMul: 2, boost: 0.15 };
 

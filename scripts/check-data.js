@@ -7353,7 +7353,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const okLv = normal.every((x) => { const [lo, hi] = ZS.NIGHT_GROUP_LEVEL[x.zone]; return x.level >= lo && x.level <= hi; });
   assert(normal.length > 3 && okLv, `夜間殭屍群等級依區域（${normal.length} 群）`);
   const boss = groups.find((x) => x.boss);
-  assert(boss && boss.level === ZS.NIGHT_GROUP_LEVEL[boss.zone][1] + 5 && boss.minions >= 3 && boss.minions <= 5, `Boss：等級＝區域上限＋5、帶 3～5 隻小兵（${boss ? gz.zombies.groupLabel(boss) : '沒有 Boss'}）`);
+  assert(boss && boss.level === ZS.NIGHT_GROUP_LEVEL[boss.zone][1] + 5 && boss.minions >= 4 && boss.minions <= 6, `Boss：等級＝區域上限＋5、帶 4～6 隻小兵（${boss ? gz.zombies.groupLabel(boss) : '沒有 Boss'}）`);
   // 獎勵：打贏時材料依區域（不再只有廢鐵與粗布）
   const g0 = normal.find((x) => x.zone === 'alert') || normal[0];
   gz.shelter.establish(gz.state.map.pois.find((p) => gz.shelter.canEstablish(p).ok));
