@@ -575,6 +575,8 @@ export class SaveManager {
       const c = data.map?.center;
       if (data.map && (!c || !inWorld(c.lat, c.lon))) data.map.center = { ...WORLD_CENTER };
     }
+    // v15.10.1（存檔 37）：地圖重劃已過一段時間，取消所有玩家的免費重新選擇避難所
+    if (v < 37) delete data.freeRelocate;
     data.version = SAVE_VERSION;
     return data;
   }

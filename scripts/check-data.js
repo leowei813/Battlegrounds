@@ -6282,7 +6282,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   old.facilities.farm.level = 14;
   gf.state.resources.food = 777;
   const mig = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 33 });
-  assert(mig.freeRelocate === true && mig.guideSeen === 0, '改版存檔：提供一次免費重選與顯示新玩法說明');
+  assert(!mig.freeRelocate && mig.guideSeen === 0, 'v15.10.1：舊存檔的免費重選已取消，仍顯示新玩法說明');
   gf.state.freeRelocate = true;
   assert(!gf.shelter.canFreeMove(abyss).ok, '免費重選只能選安全區');
   const r = gf.shelter.freeMove(safe[1]);
@@ -6293,9 +6293,10 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(GUIDE_VERSION === 15, '遊戲說明版本 15');
   // v15：地圖重劃後再給一次免費重選（沒用掉的不重複增加）；不在安全區的避難所自動搬進安全區
   const used = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 34 });
-  assert(used.freeRelocate === true && used.guideSeen === 0, 'v15 改版：已用掉免費重選的玩家再給一次');
+  assert(!used.freeRelocate && used.guideSeen === 0, 'v15.10.1：免費重選已全部取消');
   const kept = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 34, freeRelocate: true });
-  assert(kept.freeRelocate === true, 'v15 改版：還沒用掉的維持一次（不會變成兩次）');
+  assert(!kept.freeRelocate, 'v15.10.1：還沒用掉的免費重選也取消');
+  assert(!SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 36, freeRelocate: true }).freeRelocate, '存檔 36 還留著免費重選的：升級後取消、提示不再出現');
   const mv = gf.shelter.primary();
   const normalPoi = gf.state.map.pois.find((p) => Z.zoneIndexAt(p.lat, p.lon) === 1);
   Object.assign(mv, { lat: normalPoi.lat, lon: normalPoi.lon, poiId: normalPoi.id, name: normalPoi.name });
