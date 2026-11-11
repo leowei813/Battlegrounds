@@ -726,7 +726,8 @@ export class MapPanel {
       const who = names.length <= 2 ? names.join('、') : `${names[0]}等 ${names.length} 人`;
       const guarding = ex.kind === 'cpGuard' && it.phase === 'searching' && !ex.recalled && !ex.defeated;
       const time = guarding ? `駐防控制點 #${cpById(ex.cpId)?.no || ''}` : `⏱ 總計 ${formatDuration(it.totalMs)}`; // v15.8.1：返程也一律顯示總計（含之後的佇列）
-      const queued = ex.kind === 'explore' && it.phase !== 'returning' ? `・佇列 ${(ex.queue || []).length}` : '';
+      // v15.10：返程中（背包滿了先回家）也顯示佇列數；召回或撤退的隊伍回家後不再前往佇列，不顯示
+      const queued = ex.kind === 'explore' && (it.phase !== 'returning' || it.queueOnHold) ? `・佇列 ${(ex.queue || []).length}` : '';
       // 左側圖示：快速定位隊伍；文字：打開隊伍詳細
       rows.push(`<div class="feed-chip team split"><button class="feed-loc" data-action="feedLocate" data-id="${ex.id}" title="地圖移到隊伍位置">${icon}</button><button class="feed-txt" data-action="feedTeam" data-id="${ex.id}">${escapeHtml(who || '隊伍')}・${time}${queued}</button></div>`);
     });
