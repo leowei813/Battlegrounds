@@ -4093,14 +4093,15 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   // 一般探索：搜索途中召回
   const r = ex.start(poi.id, [L.id], 1, false, t0);
   const e = r.exp;
-  const mid = e.startAt + e.travelMs + Math.round(e.searchMs / 2);
+  // 抵達後 1 秒召回：一定還在搜索中（搜索到一半時可能已因背包滿了提早回家）
+  const mid = e.startAt + e.travelMs + 1000;
   assert(ex.recall(e.id, mid).ok && e.endAt - mid > 0 && Math.abs((e.endAt - mid) - e.travelMs) < 5, `搜索途中召回：需要走回避難所（回程 ${Math.round((e.endAt - mid) / 1000)} 秒）`);
   ex.list.splice(ex.list.indexOf(e), 1); L.status = 'idle'; L.hp = gr.survivors.maxHp(L);
   // 連續探索在同一地點再搜索：這一段去程距離為 0
   const r2 = ex.start(poi.id, [L.id], 1, false, t0, { from: { lat: poi.lat, lon: poi.lon } });
   const e2 = r2.exp;
   assert(r2.ok && e2.distanceM < 5 && e2.backMs > 0, '同一地點再搜索：去程為 0、回程直接回避難所');
-  const mid2 = e2.startAt + e2.travelMs + Math.round(e2.searchMs / 2);
+  const mid2 = e2.startAt + e2.travelMs + 1000;
   const back2 = e2.backMs;
   // 重點是「不會瞬間回家」：回程至少要回程時間的一半（執行速度、日夜交界會讓時間略有差異）
   assert(ex.recall(e2.id, mid2).ok && e2.endAt - mid2 >= Math.min(back2 * 0.5, 5000), `同一地點再搜索時召回：仍需要回程時間（${Math.round((e2.endAt - mid2) / 1000)} 秒，不會瞬間回家）`);

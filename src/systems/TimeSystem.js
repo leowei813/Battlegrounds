@@ -40,7 +40,8 @@ export class TimeSystem {
   /** 生存天數：從自己開局算起（第 1 天開始） */
   survivalDay(at = Date.now()) {
     const c = this.game.state.createdAt || at;
-    return Math.max(1, Math.floor((TimeSystem.hoursAt(at) - TimeSystem.hoursAt(c)) / 24) + 1);
+    // 加一點容差：剛好滿整天時浮點誤差可能算成 4.9999… 天
+    return Math.max(1, Math.floor((TimeSystem.hoursAt(at) - TimeSystem.hoursAt(c)) / 24 + 1e-9) + 1);
   }
 
   /** 世界日期（2050/1/1 起） */
