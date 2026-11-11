@@ -7318,6 +7318,28 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(on.food > 0 && Math.abs(off.food - on.food / 2) <= 2 && off.wall <= on.wall / 2 + 2, `不在線超過 30 分鐘被掠奪：資源與圍牆損失減半（在線 ${on.food}/${on.wall}、不在線 ${off.food}/${off.wall}）`);
 }
 
+// ---- v15.10：太久沒上線而從玩家名單消失的玩家：解除好友 ----
+{
+  const gf = Game.newGame({ playerName: 'GF', classId: 'warrior', lat: 25, lon: 121 });
+  const r = gf.state.relations;
+  r.players = { F1: { status: 'friend', name: '老朋友' }, F2: { status: 'friend', name: '常上線' }, H1: { status: 'hostile', name: '敵人' } };
+  r.requestsIn = { Q1: { name: '請求者' } };
+  r.requestsOut = {};
+  const others = [{ id: 'F2' }, { id: 'X' }];
+  gf.territory.pruneGone([]);
+  assert(r.players.F1 && r.requestsIn.Q1, '玩家名單是空的（連線異常）時不判斷');
+  gf.territory.pruneGone(others);
+  assert(r.players.F1 && r.requestsIn.Q1, '只消失一次（可能剛好沒同步到）先不移除');
+  gf.territory.pruneGone(others);
+  assert(!r.players.F1 && !r.requestsIn.Q1 && r.players.F2?.status === 'friend' && r.players.H1, '連續兩次不在名單：解除好友、移除友好請求；還在線的好友與敵對關係不受影響');
+  assert(gf.state.log.some((l) => /「老朋友」太久沒上線，已從好友中移除/.test(l.msg)), '事件紀錄寫出移除的好友');
+  r.players.F3 = { status: 'friend', name: 'F3' };
+  gf.territory.pruneGone(others);
+  gf.territory.pruneGone([...others, { id: 'F3' }]);
+  gf.territory.pruneGone(others);
+  assert(r.players.F3, '中間有回來過就重新計算');
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

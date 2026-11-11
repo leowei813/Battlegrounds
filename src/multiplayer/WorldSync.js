@@ -354,6 +354,8 @@ export class WorldSync {
       this.fixRallyTrips(this.others);
       // 對方刪除進度重新開始：解除與舊角色的關係
       g.territory.checkEpochs?.(this.others);
+      // v15.10：太久沒上線而從名單消失的玩家：解除好友
+      g.territory.pruneGone?.(this.others);
       // 其他玩家送來的事件（攻擊、友好請求…）
       if (this.provider.worldInbox && this.shared) {
         const events = await this.provider.worldInbox(id, token).catch(() => []);

@@ -363,6 +363,39 @@ export class TerritorySystem {
     return { ok: true, msg: '已解除友好，回到中立' };
   }
 
+  /**
+   * v15.10：太久沒上線（超過 3 天）的玩家會從共用世界的玩家名單消失：
+   * 連續兩次同步都不在名單裡的好友與友好請求一併移除（名單整個是空的時候不判斷，避免連線異常誤刪）。
+   */
+  pruneGone(others = []) {
+    const r = this.rel;
+    if (!r || !others.length) return 0;
+    const alive = new Set(others.map((o) => o.id));
+    const ids = new Set([
+      ...Object.entries(r.players || {}).filter(([, p]) => p.status === 'friend').map(([pid]) => pid),
+      ...Object.keys(r.requestsIn || {}), ...Object.keys(r.requestsOut || {}),
+    ]);
+    r.gone = r.gone || {};
+    let removed = 0;
+    ids.forEach((pid) => {
+      if (alive.has(pid)) { delete r.gone[pid]; return; }
+      r.gone[pid] = (r.gone[pid] || 0) + 1;
+      if (r.gone[pid] < 2) return;
+      const name = r.players?.[pid]?.name || r.requestsIn?.[pid]?.name || r.requestsOut?.[pid]?.name || '玩家';
+      if (r.players?.[pid]?.status === 'friend') {
+        delete r.players[pid];
+        this.game.log(`🤝「${name}」太久沒上線，已從好友中移除`, 'info');
+      }
+      delete r.requestsIn?.[pid];
+      delete r.requestsOut?.[pid];
+      delete r.gone[pid];
+      removed += 1;
+    });
+    Object.keys(r.gone).forEach((pid) => { if (!ids.has(pid)) delete r.gone[pid]; });
+    if (removed) { this.game.bus.emit('relations:changed'); this.game.changed?.(); }
+    return removed;
+  }
+
   /** 刪除進度時：通知所有好友與提出過友好請求的玩家解除關係 */
   async leaveAll() {
     const r = this.rel;
