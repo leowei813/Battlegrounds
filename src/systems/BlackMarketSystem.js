@@ -277,6 +277,38 @@ export class BlackMarketSystem {
     return { ok: true, msg: `賣出設計圖「${name}」，得到 💰${price}` };
   }
 
+  /** v15.15：自動出售設計圖的保底品級（空陣列＝不自動出售） */
+  bpAutoSell() {
+    return Array.isArray(this.game.state.bpAutoSell) ? this.game.state.bpAutoSell : [];
+  }
+
+  /** 會被自動出售的設計圖：保底品級在設定裡、不是副本圖紙、不是從交易所買來或撤回的 */
+  bpAutoTargets(rarities = this.bpAutoSell()) {
+    return this.game.state.inventory.blueprints.filter((b) => !b.dg && !b.keep && rarities.includes(b.rarity) && this.blueprintBuyback(b) > 0);
+  }
+
+  /** 切換某個品級的自動出售；開啟時現有的同品級設計圖也一起賣掉 */
+  toggleBpAutoSell(rarity) {
+    const cur = this.bpAutoSell();
+    this.game.state.bpAutoSell = cur.includes(rarity) ? cur.filter((r) => r !== rarity) : [...cur, rarity];
+    return this.autoSellBlueprints();
+  }
+
+  /** 把符合自動出售設定的設計圖賣到黑市（每秒檢查；有賣出才記錄） */
+  autoSellBlueprints() {
+    const g = this.game;
+    const list = this.bpAutoTargets();
+    if (!list.length) return { ok: true, n: 0, coins: 0 };
+    let coins = 0;
+    list.forEach((b) => { coins += this.blueprintBuyback(b); });
+    const ids = new Set(list.map((b) => b.id));
+    g.state.inventory.blueprints = g.state.inventory.blueprints.filter((b) => !ids.has(b.id));
+    g.state.player.coins += coins;
+    const msg = `🕶️ 自動出售 ${list.length} 張設計圖（💰${coins.toLocaleString()}）`;
+    g.log(msg, 'loot');
+    return { ok: true, n: list.length, coins, msg };
+  }
+
   /** 把倉庫裡的裝備賣到黑市（上鎖、穿戴中的不能賣） */
   sellItem(itemId) {
     const g = this.game;

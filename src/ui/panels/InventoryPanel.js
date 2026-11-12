@@ -100,11 +100,17 @@ export class InventoryPanel {
     const bps = g.state.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model] && !bp.dg);
     return `<aside class="sh-fac-side">
       <section class="sh-card"><h3>製作品級機率</h3>${odds}<small class="muted">研究「製作技術」可提高高品級機率（Lv${eq.craftTech()}/15）</small></section>
-      <section class="sh-card sh-rates"><h3>設計圖 ${bps.length}</h3>${bps.slice(0, 6).map((bp) => {
-        const md = ITEM_MODELS[bp.model];
-        const st = this.craftState(eq.canCraftModel(bp.model, true), eq.craftCost(bp.model, true));
-        return `<div class="row-between bp-row"><span><b>${md.name}</b><small class="block" style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</small></span>${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, eq.canCraftModel(bp.model, true).reason)}</div>`;
-      }).join('') || '<p class="muted">探索時有機會找到設計圖（製作時保底品級）。</p>'}${bps.length > 6 ? btn('查看全部', 'view', { v: 'blueprints' }, { cls: 'btn-xs' }) : ''}</section>
+      <section class="sh-card sh-rates"><h3>設計圖 ${bps.length}</h3>${(() => {
+        // v15.15：同型號、同保底品級合併（×數量）
+        const groups = [];
+        bps.forEach((bp) => { const hit = groups.find((x) => x.bp.model === bp.model && x.bp.rarity === bp.rarity); if (hit) hit.n += 1; else groups.push({ bp, n: 1 }); });
+        const auto = g.blackMarket.bpAutoSell();
+        return `${auto.length ? `<small class="muted block bp-auto-sum">🔁 自動出售：${RARITY_ORDER.filter((r) => auto.includes(r)).map((r) => `<span style="color:${RARITIES[r].color}">${RARITIES[r].name}</span>`).join('、')}</small>` : ''}${groups.slice(0, 6).map(({ bp, n }) => {
+          const md = ITEM_MODELS[bp.model];
+          const st = this.craftState(eq.canCraftModel(bp.model, true), eq.craftCost(bp.model, true));
+          return `<div class="row-between bp-row"><span><b>${md.name}</b>${n > 1 ? ` <span class="bp-count">×${n}</span>` : ''}<small class="block" style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</small></span>${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, eq.canCraftModel(bp.model, true).reason)}</div>`;
+        }).join('') || '<p class="muted">探索時有機會找到設計圖（製作時保底品級）。</p>'}${groups.length > 6 ? btn('查看全部', 'view', { v: 'blueprints' }, { cls: 'btn-xs' }) : ''}`;
+      })()}</section>
     </aside>`;
   }
 
@@ -305,9 +311,18 @@ export class InventoryPanel {
     return `<div class="sh-fac"><div class="sh-fac-main">
       <h3 class="sh-title">📜 設計圖</h3>
       ${this.filterChips()}
+      ${this.bpAutoHtml()}
       <div class="fac-grid">${cards || '<p class="muted">沒有設計圖。探索時有機會找到，用設計圖製作時保底品級。</p>'}</div>
       <small class="muted">設計圖也可以在交易所的交易市場刊登，賣給其他玩家。</small>
     </div>${this.craftSide()}</div>`;
+  }
+
+  /** v15.15：設計圖自動出售：勾選的保底品級拿到時自動賣到黑市 */
+  bpAutoHtml() {
+    const auto = this.game.blackMarket.bpAutoSell();
+    const chips = RARITY_ORDER.map((r) => `<button class="chip bp-auto-chip ${auto.includes(r) ? 'active' : ''}" style="--rc:${RARITIES[r].color}" data-action="bpAuto" data-r="${r}">${auto.includes(r) ? '✓ ' : ''}${RARITIES[r].name}</button>`).join('');
+    return `<div class="bp-auto"><b>🔁 自動出售</b><div class="chips">${chips}</div>
+      <small class="muted block">勾選的保底品級，拿到時自動賣到黑市（副本圖紙、交易所買來或撤回的不會賣）。</small></div>`;
   }
 
   /** 丟棄設計圖前確認（可以改賣黑市） */
@@ -581,6 +596,17 @@ export class InventoryPanel {
         break;
       }
       case 'bpDiscard': this.confirmBpDiscard(data.id); break;
+      case 'bpAuto': {
+        const bm = g.blackMarket;
+        const on = !bm.bpAutoSell().includes(data.r);
+        const now = on ? bm.bpAutoTargets([data.r]) : [];
+        const coins = now.reduce((t, b) => t + bm.blueprintBuyback(b), 0);
+        if (on && now.length && !confirm(`開啟「保底${RARITIES[data.r].name}」自動出售：現有 ${now.length} 張也會一起賣掉（💰${coins.toLocaleString()}），確定？`)) break;
+        const r = bm.toggleBpAutoSell(data.r);
+        if (r.n) this.ui.result({ ok: true, msg: r.msg });
+        else this.ui.toastEl.show(on ? `🔁 已開啟「保底${RARITIES[data.r].name}」設計圖自動出售` : `已關閉「保底${RARITIES[data.r].name}」設計圖自動出售`, 'info');
+        break;
+      }
       case 'dgCraft': {
         const r = g.dungeon.craft(data.id);
         this.ui.result(r);
