@@ -1781,3 +1781,7 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 /* v15.15：副本視窗切換箭頭（地下感染區那一行兩端） */
 .dg-head .grow { flex: 1; }
 .dg-head .dg-arrow { min-width: 36px; padding: 2px 10px; font-size: 18px; line-height: 1.2; }
+
+/* v15.15：地下城未報名提醒視窗 */
+.dg-remind { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
+.dg-remind-row { padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }

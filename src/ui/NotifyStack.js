@@ -1,12 +1,10 @@
 import { escapeHtml } from '../utils/dom.js';
 import { formatDuration } from '../utils/math.js';
-import { rallyFlag } from './components.js';
+import { rallyFlag, btn } from './components.js';
 import { DungeonSystem } from '../systems/DungeonSystem.js';
 import { DUNGEONS, DUNGEON_KEYS } from '../config/dungeons.js';
 import { openDungeon } from './DungeonView.js';
 
-/** v15.15：地下城未報名提醒顯示時間 */
-export const DG_REMIND_MS = 15000;
 
 /** 聊天預覽顯示時間 */
 export const CHAT_POP_MS = 5000;
@@ -66,20 +64,35 @@ export class NotifyStack {
   }
 
   /**
-   * v15.15：每天地下城開放報名後第一次開遊戲（或遊戲開著跨過 00:00）：還有副本沒報名就提醒一次（報名截止前）。
+   * v15.15：每天地下城開放報名後第一次開遊戲（或遊戲開著跨過 00:00）：一個副本都還沒報名就跳出視窗提醒一次（報名截止前）。
+   * 已經有其他視窗開著（更新內容、離線收益…）時，等它關掉再跳出。
    */
   dungeonRemind(now = Date.now()) {
     const g = this.game;
+    const ui = this.ui;
     const dgs = g.dungeon;
     if (!dgs || !g.shelter?.hasShelter?.() || DungeonSystem.phase(now) !== 'signup') return;
     const day = DungeonSystem.dayKey(now);
-    if (g.state.dgRemindDay === day) return;
+    if (g.state.dgRemindDay === day || ui.modal.current) return;
     g.state.dgRemindDay = day;
     const left = DUNGEON_KEYS.filter((dg) => { const r = dgs.record(dg, now); return !r || r.cancelled; });
-    if (!left.length) return;
+    // 一個副本都還沒報名才提醒（已經報名其中一個就不打擾）
+    if (left.length < DUNGEON_KEYS.length) return;
     const close = DungeonSystem.times(DungeonSystem.dayStart(now)).close;
-    const names = left.map((dg) => escapeHtml(DUNGEONS[dg].name)).join('、');
-    this.show('dg', left[0], `<span class="nc-ic">🕳️</span><div><b>今天的地下城還沒報名（${left.length}/${DUNGEON_KEYS.length}）</b><p>${names}</p><small>${formatDuration(Math.max(0, close - now))}後截止（17:40）・點一下前往報名</small></div>`, DG_REMIND_MS);
+    const rows = DUNGEON_KEYS.map((dg) => {
+      const r = dgs.record(dg, now);
+      const ok = r && !r.cancelled;
+      return `<div class="row-between dg-remind-row"><span>🕳️ ${escapeHtml(DUNGEONS[dg].name)}</span>${ok ? `<span class="tag tag-green">已報名・${escapeHtml(r.svName || '')}</span>` : btn('前往報名', 'dgGo', { d: dg }, { cls: 'btn-sm btn-primary' })}</div>`;
+    }).join('');
+    ui.modal.open({
+      title: '🕳️ 今天還沒報名地下城',
+      body: `<p>今天還沒有報名任何地下城副本，<b>${formatDuration(Math.max(0, close - now))}</b>後（17:40）截止。</p>
+        <div class="dg-remind">${rows}</div>
+        <div class="btn-row end">${btn('稍後再說', 'close', {}, { cls: 'btn-ghost' })}${btn('前往報名', 'dgGo', { d: left[0] }, { cls: 'btn-primary' })}</div>`,
+      onAction: (action, data) => {
+        if (action === 'dgGo' && DUNGEONS[data.d]) openDungeon(ui, data.d);
+      },
+    });
   }
 
   show(kind, id, html, ms) {
