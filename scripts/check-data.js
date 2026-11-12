@@ -5248,7 +5248,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const n = { baseLevel: 5, bornAt: Date.now() - 100 * SN.levelMs, dc: 0, levelLoss: 0, sid: 'x' };
   assert(SN.maxGrowth === 15 && gn.npcs.sharedLevel(n) === 20, `自然升級最多 +15 級（${gn.npcs.sharedLevel(n)}）`);
   assert(gn.npcs.sharedLevel({ ...n, baseLevel: 3, bornAt: Date.now() - 4 * SN.levelMs }) === 7, '未達上限時照時間升級');
-  assert(gn.npcs.sharedLevel({ ...n, dc: 1, baseLevel: 35 }) === 40, '重生的據點最高 Lv40');
+  assert(gn.npcs.sharedLevel({ ...n, dc: 1, baseLevel: 35 }) === 50, 'v15.14：勢力領地的據點最高 Lv50');
 }
 
 // ---- 123. 脫胎換骨還你漂漂重生器：超渡（洗鍊素質）、鎖定、費用、越洗越貴、快樂重生／還你原形、就是要鎖你取得 ----
@@ -6765,7 +6765,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   {
     // v15：勢力據點的警戒範圍（最高等級）完整落在自己的控制點內，不會蓋到旁邊已佔領的控制點
     const { NPC_CONFIG: NC } = await import('../src/config/npcs.js');
-    const R = 60 + NC.maxLevel;
+    const R = 60 + Math.min(40, NC.maxLevel); // v15.14：警戒範圍以 Lv40 為上限
     const out = CPC.CONTROL_POINTS.filter((cp) => {
       const p = gq.npcs.factionSpot(cp, 2.1);
       return !Array.from({ length: 36 }, (_, i) => (i / 36) * Math.PI * 2).every((a) => CPC.cpAt(p.lat + (Math.sin(a) * R) / 111320, p.lon + (Math.cos(a) * R) / (111320 * Math.cos((p.lat * Math.PI) / 180)))?.id === cp.id);
@@ -7556,6 +7556,49 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const crafted = gc.equipment.generate({ level: 70, model: top, rarity: 'rare', maxLevel: 70 });
   const imported = gc.equipment.importItem(gc.equipment.exportItem(crafted));
   assert(crafted.level === 70 && imported?.level === 70, `交易取得的 Lv70 裝備保留等級（${imported?.level}）`);
+}
+
+// ---- v15.14：勢力據點建好後固定（控制點變少不消失）、被打掉後要等勢力再打下控制點才蓋新的；等級上限依區域 ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const CPC = await import('../src/config/controlPoints.js');
+  const Z = await import('../src/config/zones.js');
+  const gb = Game.newGame({ playerName: 'FB', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gb.genMap();
+  gb.shelter.establish(gb.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gb.shelter.canEstablish(p).ok));
+  gb.shared.backend = new MemoryObjects();
+  gb.world = { others: [], myId: 'FB', identity: () => ({ id: 'FB', token: 't' }) };
+  gb.npcs.createdAt = 0; // 不等第一次共用 NPC 資料（測試直接重建清單）
+  await gb.npcs.syncFactionRecs(Date.now());
+  const f = CPC.FACTION_KEYS.find((k) => gb.cp.factionCps(k).length >= 3);
+  const rec = gb.npcs.factionRec(f);
+  assert(rec && rec.list.length === Math.min(4, Math.floor(gb.cp.factionCps(f).length / 3)), `勢力據點清單第一次建立時保留現有據點（${rec?.list.length} 座）`);
+  const baseCp = gb.npcs.factionAlive(f)[0].cp;
+  const setOwner = (id, fac) => gb.shared.update(CPC.CP_KIND, id, (x) => ({ data: { ...(x || {}), faction: fac, owners: fac ? [] : [{ p: 'X', n: 'X' }], guards: [] } }));
+  // 玩家打下勢力其他的控制點，讓勢力少於 3 個：據點仍在
+  for (const id of gb.cp.factionCps(f).filter((x) => x !== baseCp)) await setOwner(id, null);
+  gb.npcs.fillCells(Date.now(), { silent: true });
+  const nb = gb.npcs.list.find((n) => n.faction === f && n.cp === baseCp && !n.hq);
+  assert(gb.cp.factionCps(f).length < 3 && nb, `勢力控制點少於 3 個時，已建好的據點不會自己消失（剩 ${gb.cp.factionCps(f).length} 個控制點）`);
+  // 打掉據點：從清單移除，36 小時後也不會重生
+  gb.npcs.destroy(nb);
+  await new Promise((r) => setTimeout(r, 0));
+  gb.npcs.fillCells(Date.now() + 40 * 3600000, { silent: true });
+  assert(!gb.npcs.factionAlive(f).length && !gb.npcs.list.some((n) => n.faction === f && !n.hq) && gb.npcs.list.some((n) => n.faction === f && n.hq), '據點被打掉後不再計時重生，改由大本營出兵');
+  // 勢力再打下控制點湊滿 3 個：蓋新的據點
+  const others = CPC.CONTROL_POINTS.filter((c) => c.id !== baseCp && !gb.cp.factionCps(f).includes(c.id) && c.side === 'npc').slice(0, 3);
+  for (const c of others) await setOwner(c.id, f);
+  const built = await gb.npcs.factionBuild(f, Date.now());
+  gb.npcs.fillCells(Date.now(), { silent: true });
+  const nn = gb.npcs.list.find((n) => n.faction === f && !n.hq);
+  assert(built && nn && nn.cp === built && nn.level >= 35, `勢力打下控制點、數量達到門檻時蓋新的據點（#${CPC.cpById(built)?.no}、Lv${nn?.level}）`);
+  const again = await gb.npcs.factionBuild(f, Date.now());
+  assert(!again, '數量沒有增加時不會再蓋');
+  // 等級上限依區域
+  const at = (zid) => gb.state.map.pois.find((p) => Z.zoneAt(p.lat, p.lon)?.id === zid);
+  const caps = ['safe', 'normal', 'alert', 'danger', 'lethal'].map((z) => { const p = at(z); return p ? gb.npcs.levelCap({ lat: p.lat, lon: p.lon }) : null; });
+  assert(caps.join() === '25,35,40,45,50', `NPC 據點等級上限依區域（安全 25、一般 35、警戒 40、危險 45、致死 50：${caps.join('、')}）`);
+  assert(gb.npcs.levelCap({ hq: true, lat: 0, lon: 0 }) === 50, '大本營上限 Lv50');
 }
 
 if (failures) {

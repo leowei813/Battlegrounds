@@ -2,6 +2,9 @@
  * 自有意識的 NPC 據點：隨機出現在地圖上，會升級、外出探索（搶先搜刮建築），
  * 也會掠奪玩家據點。玩家文明度越高，NPC 越積極。屍潮來襲（夜晚）時 NPC 不會出動攻擊。
  */
+/** v15.14：NPC 據點等級上限依所在區域（其他區域＝致死區、深淵區、勢力領地 Lv50） */
+export const NPC_ZONE_MAX = { safe: 25, normal: 35, alert: 40, danger: 45 };
+
 export const NPC_CONFIG = {
   perCell: 2, // 每個格子（約 0.9 公里見方）內的 NPC 據點數
   cellKm: 0.9, // 格子大小（約 0.9 公里見方）
@@ -11,7 +14,7 @@ export const NPC_CONFIG = {
   respawnHour: 12, // （舊）被擊敗的 NPC 據點在下一個中午 12:00 重新出現；v12 改為 respawnAfterMs
   respawnAfterMs: 36 * 3600000, // v12：被消滅的 NPC 據點 36 小時（現實時間）後才重新出現
   levelUpMs: [90 * 60000, 150 * 60000], // 升級間隔
-  maxLevel: 40,
+  maxLevel: 50, // v15.14：等級上限依區域（NPC_ZONE_MAX），最高 Lv50
   respawnMinLevel: 35, // 被攻陷後重生的 NPC 據點至少這個等級（被擊退的等級損失也不會低於此）
   respawnMinByZone: { safe: 10, normal: 20, alert: 30 }, // v15.10：依區域的重生最低等級（其他區域用 respawnMinLevel）
   exploreEveryMs: [30 * 60000, 55 * 60000], // 外出探索間隔（回來後休息一段時間才再出發）

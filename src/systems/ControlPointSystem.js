@@ -972,7 +972,11 @@ export class ControlPointSystem {
       else { data.lost = Math.min(cp.garrison.count, (cp.garrison.count - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
       return { data };
     }, { lat: cp.lat, lon: cp.lon });
-    if (res.ok && win) g.log(`🏴 勢力「${FACTIONS[f].name}」佔領了控制點 #${cp.no}`, 'danger');
+    if (res.ok && win) {
+      g.log(`🏴 勢力「${FACTIONS[f].name}」佔領了控制點 #${cp.no}`, 'danger');
+      // v15.14：控制點數達到門檻時蓋新的勢力據點
+      await g.npcs?.factionBuild?.(f, at);
+    }
     return { win, ok: res.ok };
   }
 

@@ -28,7 +28,8 @@ function cleanHelpers(h) {
 }
 
 /** NPC 據點的警戒範圍（公尺） */
-export const npcAlert = (n) => 60 + n.level;
+/** v15.14：NPC 等級上限提高到 50，警戒範圍仍以 Lv40 為上限（勢力據點的警戒範圍不超出自己的控制點） */
+export const npcAlert = (n) => 60 + Math.min(40, n.level || 0);
 /** 攻擊其他玩家成功時，對方損失的資源比例 */
 export const PVP_LOSS = 0.1;
 
