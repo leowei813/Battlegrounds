@@ -14,20 +14,25 @@ const eventsSeen = (seen) => seen.events ?? seen.base ?? 0;
 /** 各分頁的未讀數：探索報告、避難所紀錄（遭襲紀錄）；事件紀錄只做記錄，不計未讀 */
 /** v15.9：控制點的報告（攻打、集結攻打、駐防）放在「🚩 控制點」分頁；舊報告依名稱判斷 */
 export const isCpReport = (r) => !!r.cp || /控制點 #\d+/.test(String(r.poiName || ''));
+/** v15.15：地下城（副本）報告放在「🕳️ 地下城」分頁 */
+export const isDgReport = (r) => r.kind === 'dungeon';
+/** 探索報告分頁：不含控制點與地下城的報告 */
+const isExploreReport = (r) => !isCpReport(r) && !isDgReport(r);
 
 export function unreadCounts(game) {
   const st = game.state;
   const seen = st.msgSeen || {};
-  const reports = (st.reports || []).filter((r) => !isCpReport(r) && (r.at || 0) > (seen.reports || 0)).length;
+  const reports = (st.reports || []).filter((r) => isExploreReport(r) && (r.at || 0) > (seen.reports || 0)).length;
+  const dg = (st.reports || []).filter((r) => isDgReport(r) && (r.at || 0) > (seen.dg ?? seen.reports ?? 0)).length;
   const cpSeen = seen.cp ?? seen.reports ?? 0;
   const cp = (st.reports || []).filter((r) => isCpReport(r) && (r.at || 0) > cpSeen).length + (st.cpLog || []).filter((e) => (e.at || 0) > cpSeen).length;
   const base = (st.defenseLog || []).filter((e) => (e.at || 0) > (seen.base || 0)).length;
-  return { reports, cp, base, events: 0 };
+  return { reports, cp, dg, base, events: 0 };
 }
 
 export function unreadCount(game) {
   const c = unreadCounts(game);
-  return c.reports + c.cp + c.base;
+  return c.reports + c.cp + c.dg + c.base;
 }
 
 const NEW = '<span class="tag tag-blue new-tag">未讀</span>';
@@ -50,13 +55,14 @@ function xpChip(r) {
 }
 
 function reportsHtml(game, openId, since, openBattle) {
-  const list = (game.state.reports || []).filter((r) => !isCpReport(r)).map((r) => {
-    const open = openId === r.id;
-    const fresh = (r.at || 0) > since;
-    if (r.kind === 'dungeon') return dungeonReportHtml(game, r, open, fresh, NEW, hhmm);
-    return reportCardHtml(game, r, { open, fresh, openBattle });
-  }).join('');
+  const list = (game.state.reports || []).filter(isExploreReport).map((r) => reportCardHtml(game, r, { open: openId === r.id, fresh: (r.at || 0) > since, openBattle })).join('');
   return list || '<p class="muted">尚無探索報告。</p>';
+}
+
+/** v15.15：地下城分頁：副本的戰鬥報告 */
+function dgHtml(game, openId, since) {
+  const list = (game.state.reports || []).filter(isDgReport).map((r) => dungeonReportHtml(game, r, openId === r.id, (r.at || 0) > since, NEW, hhmm)).join('');
+  return list || '<p class="muted">尚無地下城報告。報名地下感染區後，每次副本的戰鬥報告都會放在這裡。</p>';
 }
 
 /**
@@ -114,12 +120,12 @@ function eventsHtml(ui, since, openBattle) {
 export function openMessages(ui) {
   const g = ui.game;
   const first = unreadCounts(g);
-  let tab = first.reports ? 'reports' : first.base ? 'base' : first.cp ? 'cp' : 'reports';
+  let tab = first.reports ? 'reports' : first.base ? 'base' : first.cp ? 'cp' : first.dg ? 'dg' : 'reports';
   let openId = null;
   let openBattle = null;
   g.state.msgSeen = g.state.msgSeen || {};
   // 開啟分頁時記下上次已讀的時間，用來標示這次看到的未讀項目
-  const since = { reports: g.state.msgSeen.reports || 0, cp: g.state.msgSeen.cp ?? g.state.msgSeen.reports ?? 0, base: g.state.msgSeen.base || 0, events: eventsSeen(g.state.msgSeen) };
+  const since = { reports: g.state.msgSeen.reports || 0, cp: g.state.msgSeen.cp ?? g.state.msgSeen.reports ?? 0, dg: g.state.msgSeen.dg ?? g.state.msgSeen.reports ?? 0, base: g.state.msgSeen.base || 0, events: eventsSeen(g.state.msgSeen) };
   const markRead = (t) => { g.state.msgSeen[t] = Date.now(); };
   const badge = (n) => (n ? ` <i class="msg-dot">${n}</i>` : '');
   const body = () => {
@@ -128,9 +134,10 @@ export function openMessages(ui) {
       <button class="btn ${tab === 'reports' ? 'active' : ''}" data-action="msgTab" data-t="reports">🧭 探索報告${badge(c.reports)}</button>
       <button class="btn ${tab === 'base' ? 'active' : ''}" data-action="msgTab" data-t="base">🏠 避難所紀錄${badge(c.base)}</button>
       <button class="btn ${tab === 'cp' ? 'active' : ''}" data-action="msgTab" data-t="cp">🚩 控制點${badge(c.cp)}</button>
+      <button class="btn ${tab === 'dg' ? 'active' : ''}" data-action="msgTab" data-t="dg">🕳️ 地下城${badge(c.dg)}</button>
       <button class="btn ${tab === 'events' ? 'active' : ''}" data-action="msgTab" data-t="events">📜 事件紀錄${badge(c.events)}</button></div>
       ${c[tab] ? `<div class="btn-row">${btn('✓ 這頁全部標為已讀', 'markRead', {}, { cls: 'btn-xs btn-ghost' })}</div>` : ''}`;
-    return `<div class="msg-body">${tabs}${tab === 'reports' ? reportsHtml(g, openId, since.reports, openBattle) : tab === 'cp' ? cpHtml(g, openId, since.cp, openBattle) : tab === 'events' ? eventsHtml(ui, since.events, openBattle) : baseHtml(ui, since.base, openBattle)}</div>`;
+    return `<div class="msg-body">${tabs}${tab === 'reports' ? reportsHtml(g, openId, since.reports, openBattle) : tab === 'cp' ? cpHtml(g, openId, since.cp, openBattle) : tab === 'dg' ? dgHtml(g, openId, since.dg) : tab === 'events' ? eventsHtml(ui, since.events, openBattle) : baseHtml(ui, since.base, openBattle)}</div>`;
   };
   ui.modal.open({
     title: '📜 消息',
