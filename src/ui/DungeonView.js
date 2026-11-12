@@ -256,15 +256,29 @@ export function openDungeon(ui, dg, tab0 = 'sign') {
     const tabs = [['sign', '報名'], ['cls', '職業說明'], ['reward', '獎勵'], ['today', '今日紀錄']]
       .map(([k, l]) => `<button class="chip ${tab === k ? 'active' : ''}" data-action="dgTab" data-t="${k}">${l}</button>`).join('');
     const content = tab === 'cls' ? classTab() : tab === 'reward' ? rewardTab(g, dg) : tab === 'today' ? todayTab(g, dg, now) : signupTab(g, dg, now);
-    return `<div class="dg-head">${dgIcon()}<b>地下感染區</b></div><p class="muted">產出 ${CLASSES[d.cls].icon} ${CLASSES[d.cls].name}副本裝備・${DG_FLOORS} 層・每天 18:00 開打</p><div class="chips">${tabs}</div>${content}`;
+    // v15.15：上一個／下一個副本（手機版也可以左右滑動）
+    const i = DUNGEON_KEYS.indexOf(dg);
+    const prev = DUNGEON_KEYS[(i - 1 + DUNGEON_KEYS.length) % DUNGEON_KEYS.length];
+    const next = DUNGEON_KEYS[(i + 1) % DUNGEON_KEYS.length];
+    const nav = `<div class="sv-swipe-nav dg-nav">${btn(`‹ ${escapeHtml(DUNGEONS[prev].name)}`, 'dgNav', { d: prev }, { cls: 'btn-sm btn-ghost' })}<span class="muted">${i + 1} / ${DUNGEON_KEYS.length}</span>${btn(`${escapeHtml(DUNGEONS[next].name)} ›`, 'dgNav', { d: next }, { cls: 'btn-sm btn-ghost' })}</div>`;
+    return `${nav}<div class="dg-head">${dgIcon()}<b>地下感染區</b></div><p class="muted">產出 ${CLASSES[d.cls].icon} ${CLASSES[d.cls].name}副本裝備・${DG_FLOORS} 層・每天 18:00 開打</p><div class="chips">${tabs}</div>${content}`;
   };
   g.shared.list('dg', 5).then(() => ui.refresh(true)).catch(() => {});
-  ui.modal.open({
+  const go = (m, to) => {
+    if (!DUNGEONS[to] || to === dg) return;
+    dg = to;
+    const h = m.el.querySelector('.modal-head h3');
+    if (h) h.textContent = DUNGEONS[dg].name;
+    m.update(body());
+    m.body.scrollTop = 0;
+  };
+  const modal = ui.modal.open({
     title: DUNGEONS[dg].name,
     wide: true,
     body: body(),
     live: body,
     onAction: (action, data, m) => {
+      if (action === 'dgNav') { go(m, data.d); return; }
       if (action === 'dgTab') tab = data.t;
       if (action === 'dgSign' && !busy) {
         busy = true;
@@ -277,6 +291,29 @@ export function openDungeon(ui, dg, tab0 = 'sign') {
       m.update(body());
     },
   });
+  // 手機版：左右滑動切換上一個／下一個副本（在可左右捲動的表格或頁籤上滑動不算）
+  let t0 = null;
+  modal.el.addEventListener('touchstart', (e) => {
+    t0 = null;
+    if (e.touches.length !== 1 || e.target.closest?.('.chips, .dg-tbl, .dg-scroll, input, select, textarea')) return;
+    t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY, at: Date.now() };
+    modal.holdUntil = Date.now() + 1500; // 滑動期間暫停每秒重繪
+  }, { passive: true });
+  // 綁在 document：視窗每秒重畫，手指下的元素被換掉時 touchend 不會冒泡到視窗
+  const onEnd = (e) => {
+    if (ui.modal.current !== modal) { document.removeEventListener('touchend', onEnd); return; }
+    modal.holdUntil = 0;
+    if (!t0) return;
+    const p = e.changedTouches[0];
+    const dx = p.clientX - t0.x;
+    const dy = p.clientY - t0.y;
+    const fast = Date.now() - t0.at < 800;
+    t0 = null;
+    if (!fast || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5 || ui.modal.current !== modal) return;
+    const i = DUNGEON_KEYS.indexOf(dg);
+    go(modal, DUNGEON_KEYS[(i + (dx < 0 ? 1 : -1) + DUNGEON_KEYS.length) % DUNGEON_KEYS.length]);
+  };
+  document.addEventListener('touchend', onEnd, { passive: true });
 }
 
 /** 隊伍表（截至已公布的層數） */

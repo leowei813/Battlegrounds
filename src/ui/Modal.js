@@ -82,6 +82,8 @@ export class Modal {
   refreshLive() {
     const cur = this.current;
     if (!cur?.live) return;
+    // 手指觸控中（例如左右滑動切換）先不重繪：重繪會換掉手指下的元素，放開的事件就收不到
+    if (cur.holdUntil && Date.now() < cur.holdUntil) return;
     const html = cur.live();
     if (html === cur.lastLive) return;
     cur.lastLive = html;
