@@ -1001,9 +1001,12 @@ export class ControlPointSystem {
       g.log(text, ft.win ? 'danger' : 'success');
       g.toast?.(text, ft.win ? 'danger' : 'success');
       // v15.9：控制點交戰戰報另外記在「消息 → 🚩 控制點」
-      const logEntry = { id: `cpf:${cp.id}:${ft.at}`, at: ft.at, no: cp.no, win: !!ft.win, text };
-      if (ft.battle) g.combat.adopt?.(ft.battle, logEntry);
-      g.state.cpLog = [logEntry, ...(g.state.cpLog || [])].slice(0, 30);
+      // v15.14：沒有玩家駐防的控制點不出詳細戰報（事件紀錄與提示照常）
+      if ((ft.guards || []).length) {
+        const logEntry = { id: `cpf:${cp.id}:${ft.at}`, at: ft.at, no: cp.no, win: !!ft.win, text };
+        if (ft.battle) g.combat.adopt?.(ft.battle, logEntry);
+        g.state.cpLog = [logEntry, ...(g.state.cpLog || [])].slice(0, 30);
+      }
       // v15.8：交戰經過也寫進駐防隊的探索報告（回到避難所時看得到）
       mine.forEach((e) => {
         const line = ft.win ? this.lostReason(e) : this.guardFought(e, ft) ? msg : null;

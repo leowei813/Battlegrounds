@@ -7048,6 +7048,14 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
       assert(sz < 12000, `共用資料的交戰紀錄大小合理（${sz} bytes）`);
     }
   }
+  // v15.14：沒有駐防的控制點被攻下：佔領者照常收到事件紀錄，但不出詳細戰報
+  await reset();
+  {
+    const n0 = (A.state.cpLog || []).length;
+    await march(A, true, false);
+    await tick(A, Date.now());
+    assert(logs(A, /攻下了你佔領的控制點/).length === 1 && (A.state.cpLog || []).length === n0, `v15.14：沒駐防的控制點被攻下只記事件、不出詳細戰報（戰報 ${n0} → ${(A.state.cpLog || []).length}）`);
+  }
   // 情境 2：擊退勢力，但駐防隊員倒下 → 駐防隊被擊退撤回，報告寫出交戰與被擊退
   await reset();
   {
