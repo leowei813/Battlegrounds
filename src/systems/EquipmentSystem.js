@@ -96,6 +96,14 @@ const INT_STATS = new Set(['atk', 'def', 'hp']);
 /**
  * 裝備系統：隨機生成（品質 + 詞綴）、穿脫、出售、拆解、製作。
  */
+/** v15.14：掉落、探索、黑市取得的裝備等級上限 */
+export const DROP_MAX_LEVEL = 60;
+/** v15.14：自己製作（工作台 Lv15＋精工 Lv15）的裝備等級上限 */
+export const CRAFT_MAX_LEVEL = 70;
+
+/** 這種裝備最高可以到幾級（自己製作的一般裝備 Lv70，簡易與副本裝備 Lv60） */
+export const maxLevelOf = (model) => (ITEM_MODELS[model] && !ITEM_MODELS[model].simple && !ITEM_MODELS[model].dg ? CRAFT_MAX_LEVEL : DROP_MAX_LEVEL);
+
 export class EquipmentSystem {
   constructor(game) {
     this.game = game;
@@ -137,10 +145,11 @@ export class EquipmentSystem {
    *   boost?:number, tierBoost?:number, qualityAdd?:number}} opts
    */
   generate({
-    level = 1, model, type, rarity, minRarity, bias, boost = 0, tierBoost = 0, qualityAdd = 0,
+    level = 1, model, type, rarity, minRarity, bias, boost = 0, tierBoost = 0, qualityAdd = 0, maxLevel = DROP_MAX_LEVEL,
   }) {
     const typeId = model ? ITEM_MODELS[model].type : type || weightedPick(bias || Object.fromEntries(Object.keys(ITEM_TYPES).map((k) => [k, 1])));
-    const lv = clamp(Math.round(level), 1, 60);
+    // v15.14：掉落、探索、黑市取得的裝備最高 Lv60；自己製作最高 Lv70
+    const lv = clamp(Math.round(level), 1, maxLevel);
     const modelId = model || this.pickModel(typeId, lv, tierBoost);
     const md = ITEM_MODELS[modelId];
     const def = ITEM_TYPES[typeId];
@@ -220,8 +229,10 @@ export class EquipmentSystem {
   importItem(raw) {
     const md = ITEM_MODELS[raw?.model];
     if (!md || !RARITIES[raw.rarity]) return null;
-    const lv = clamp(Math.round(Number(raw.level) || 1), 1, 60);
-    const it = this.generate({ level: lv, model: raw.model, rarity: raw.rarity });
+    // 交易取得：保留原本等級（自己製作的最高 Lv70）
+    const cap = maxLevelOf(raw.model);
+    const lv = clamp(Math.round(Number(raw.level) || 1), 1, cap);
+    const it = this.generate({ level: lv, model: raw.model, rarity: raw.rarity, maxLevel: cap });
     const rdef = RARITIES[raw.rarity];
     const def = ITEM_TYPES[md.type];
     const tm = tierMul(md.tier);
@@ -806,11 +817,18 @@ export class EquipmentSystem {
   }
 
   /** 製作的裝備等級：簡易製作較低；工作台等級與研究「精工」提高 */
+  /**
+   * 製作出的裝備等級。v15.14：
+   * 一般裝備＝工作台（Lv1～10 每級 +5、Lv11～15 每級 +2，最多 60）＋精工（每級 +⅔，最多 +10），最高 Lv70；
+   * 簡易裝備＝工作台 ×3＋精工，最高 Lv60。
+   */
   craftLevel(modelId) {
     const md = modelId ? ITEM_MODELS[modelId] : null;
     const wb = this.workbench();
-    const base = md?.simple ? Math.max(1, wb * 3) : Math.max(1, wb * 5);
-    return base + Math.floor(this.game.research.bonus('craftLevelAdd'));
+    const fine = Math.floor(this.game.research.bonus('craftLevelAdd'));
+    if (md?.simple) return clamp(Math.max(1, wb * 3) + fine, 1, DROP_MAX_LEVEL);
+    const bench = Math.min(wb, 10) * 5 + Math.max(0, Math.min(wb, 15) - 10) * 2;
+    return clamp(Math.max(1, bench) + Math.min(10, Math.floor((fine * 2) / 3)), 1, CRAFT_MAX_LEVEL);
   }
 
   /** @returns {{ok:boolean, reason?:string}} */
@@ -841,7 +859,7 @@ export class EquipmentSystem {
   craftStatRange(modelId, withBlueprint = null) {
     const md = ITEM_MODELS[modelId];
     const def = ITEM_TYPES[md.type];
-    const lv = clamp(Math.round(this.craftLevel(modelId)), 1, 60);
+    const lv = clamp(Math.round(this.craftLevel(modelId)), 1, CRAFT_MAX_LEVEL);
     const table = craftRarityTable(this.craftTech());
     const possible = RARITY_ORDER.filter((r) => table[r] > 0 && (!withBlueprint || rarityIndex(r) >= rarityIndex(withBlueprint)));
     // 設計圖的保底品級比目前製作技術能做出的還高：就以保底品級計算（避免畫面出錯）
@@ -885,7 +903,7 @@ export class EquipmentSystem {
     if (bp && rarityIndex(rarity) < rarityIndex(bp.rarity)) rarity = bp.rarity;
     if (bp && chance(this.game.research.bonus('craftBpBoost'))) rarity = RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, rarityIndex(rarity) + 1)];
     const item = this.generate({
-      level: this.craftLevel(modelId), model: modelId, rarity, qualityAdd: this.game.research.bonus('craftQualityAdd'),
+      level: this.craftLevel(modelId), model: modelId, rarity, qualityAdd: this.game.research.bonus('craftQualityAdd'), maxLevel: CRAFT_MAX_LEVEL,
     });
     this.addItem(item, '製作');
     this.game.state.stats.crafted += 1;

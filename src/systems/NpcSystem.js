@@ -1,7 +1,7 @@
 import { unitPower } from '../utils/math.js';
 import { DUNGEONS, DG_CLEAR_M } from '../config/dungeons.js';
 import { AssistSystem } from './AssistSystem.js';
-import { NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL, npcQuietSpan, NPC_QUIET, NPC_DAY_SLOW, RALLY_XP, NPC_OFFLINE_RAID } from '../config/npcs.js';
+import { NPC_ZONE_MAX, NPC_CONFIG, NPC_NAMES, npcAggression, NPC_ASSAULT, NPC_REWARD_MUL, npcQuietSpan, NPC_QUIET, NPC_DAY_SLOW, RALLY_XP, NPC_OFFLINE_RAID } from '../config/npcs.js';
 import { xpToNext } from '../config/survivors.js';
 import {
   RESOURCE_KEYS, RAID_TRAVEL,
@@ -19,7 +19,7 @@ import {
 } from '../utils/math.js';
 import { seeded, cellOf as gridCell, cellBox } from '../multiplayer/worldGrid.js';
 import { inWorld } from '../config/world.js';
-import { FACTIONS, FACTION_KEYS, FACTION_BASE, cpById, cpAt, factionHq } from '../config/controlPoints.js';
+import { FACTIONS, FACTION_KEYS, FACTION_BASE, cpById, cpAt, factionHq, CP_KIND } from '../config/controlPoints.js';
 
 /**
  * 共用 NPC：位置、名稱、基礎等級由「格子＋世代」決定（所有玩家相同）；
@@ -192,10 +192,115 @@ export class NpcSystem {
    * v14：三大勢力的 NPC 據點：每擁有 3 個控制點建 1 座（最多 4 座），起始 Lv35，建在自己最靠前線的控制點附近。
    * 被摧毀後 36 小時才重建（共用資料 destroyed）。
    */
-  factionSlot(f, slot, now = Date.now()) {
+  /**
+   * v15.14：勢力據點清單（共用、全域）：{ list: [{ cp, at }] }。據點建好後固定在那個控制點，
+   * 控制點變少也不會消失，只有被玩家打掉才移除；勢力打下控制點、數量達到門檻時才蓋新的（不再計時重生）。
+   */
+  factionRec(f) {
+    return this.game.shared?.get(CP_KIND, `fbase:${f}`) || null;
+  }
+
+  /** 目前存在的勢力據點（只算勢力還擁有的控制點），依由西到東排序 */
+  factionAlive(f) {
+    const rec = this.factionRec(f);
+    if (!rec) return null;
+    const owned = new Set(this.game.cp?.factionCps(f) || []);
+    // 被打掉（共用資料的 destroyed 晚於建立時間）的不算，等清單更新移除
+    const gone = (b) => (this.sharedOf(`fx:${f}:${b.cp}`, 0)?.destroyed?.at || 0) >= (b.at || 0);
+    return (rec.list || []).filter((b) => owned.has(b.cp) && cpById(b.cp) && !gone(b))
+      .sort((a, b) => cpById(a.cp).lon - cpById(b.cp).lon);
+  }
+
+  /** 舊規則（依控制點數即時算出）的據點：只用來在第一次建立清單時保留已經存在的據點 */
+  legacyFactionList(f, now = Date.now()) {
     const cps = this.game.cp?.factionCps(f) || [];
     const count = Math.min(FACTION_BASE.max, Math.floor(cps.length / FACTION_BASE.perCps));
+    return cps.map((id) => cpById(id)).filter(Boolean).sort((a, b) => a.lon - b.lon).slice(0, count)
+      .map((cp) => ({ cp: cp.id, d: this.sharedOf(`fx:${f}:${cp.id}`, 0) }))
+      .filter(({ d }) => !(d?.destroyed && now < d.destroyed.respawnAt))
+      .map(({ cp, d }) => ({ cp, at: d?.destroyed?.respawnAt || SHARED_NPC.freezeAt }));
+  }
+
+  /** 共用清單：第一次建立（保留目前已存在的據點）、移除已不屬於這個勢力的控制點 */
+  async syncFactionRecs(now = Date.now()) {
+    const g = this.game;
+    if (!g.cp?.ready?.() || !g.shared || this.recBusy) return;
+    this.recBusy = true;
+    try {
+      for (const f of FACTION_KEYS) {
+        const rec = this.factionRec(f);
+        const owned = new Set(g.cp.factionCps(f) || []);
+        // 伺服器會清除太久沒更新的共用資料：每天更新一次時間
+        const stale = rec && now - (rec.touchedAt || 0) > 24 * 3600000;
+        if (rec && !stale && !(rec.list || []).some((b) => !owned.has(b.cp))) continue;
+        // eslint-disable-next-line no-await-in-loop
+        await g.shared.update(CP_KIND, `fbase:${f}`, (x) => {
+          if (!x) return { data: { list: this.legacyFactionList(f, now), touchedAt: now } };
+          const list = (x.list || []).filter((b) => owned.has(b.cp));
+          if (list.length === (x.list || []).length && now - (x.touchedAt || 0) <= 24 * 3600000) return { fail: 'same' };
+          return { data: { ...x, list, touchedAt: now } };
+        }, { lat: null, lon: null });
+      }
+    } finally { this.recBusy = false; }
+  }
+
+  /** 勢力打下控制點後：據點數少於「控制點數 ÷ 3」（最多 4 座）時，在最西邊還沒有據點的控制點蓋一座 */
+  async factionBuild(f, now = Date.now()) {
+    const g = this.game;
+    if (!FACTIONS[f] || !g.shared) return null;
+    const cps = (g.cp?.factionCps(f) || []).map((id) => cpById(id)).filter(Boolean).sort((a, b) => a.lon - b.lon);
+    const want = Math.min(FACTION_BASE.max, Math.floor(cps.length / FACTION_BASE.perCps));
+    let built = null;
+    await g.shared.update(CP_KIND, `fbase:${f}`, (x) => {
+      const owned = new Set(cps.map((c) => c.id));
+      const list = (x ? x.list || [] : this.legacyFactionList(f, now)).filter((b) => owned.has(b.cp));
+      if (list.length >= want) return x ? { fail: 'enough' } : { data: { list } };
+      const cp = cps.find((c) => !list.some((b) => b.cp === c.id));
+      if (!cp) return { fail: 'full' };
+      built = cp.id;
+      return { data: { ...(x || {}), list: [...list, { cp: cp.id, at: now }] } };
+    }, { lat: null, lon: null });
+    if (built) g.bus?.emit('npcs:changed');
+    return built;
+  }
+
+  factionSlot(f, slot, now = Date.now()) {
     if (!FACTIONS[f]) return null;
+    const alive = this.factionAlive(f);
+    // 共用清單還沒建立（剛更新到這一版、或還沒讀到）：沿用舊規則
+    if (!alive) return this.factionSlotLegacy(f, slot, now);
+    if (!alive.length) return slot === 0 ? this.factionHqNpc(f) : null;
+    const b = alive[slot];
+    if (!b) return null;
+    return this.factionNpcAt(f, cpById(b.cp), b.at);
+  }
+
+  /** 在某個控制點的勢力據點（位置、名字依控制點與被打掉次數決定，所有玩家相同） */
+  factionNpcAt(f, cp, bornAt) {
+    const sid = `fx:${f}:${cp.id}`;
+    const gen = 0;
+    const d = this.sharedOf(sid, gen);
+    const dc = d?.dc || 0;
+    const ident = `${sid}:${gen}:${dc}:p3`;
+    const npc = seeded(`npc:${ident}`, () => {
+      const { lat, lon } = this.factionSpot(cp, randFloat(0, Math.PI * 2));
+      return {
+        sid, ident, gen, dc, cell: `fx:${f}`, lat, lon, bornAt, baseLevel: FACTION_BASE.level,
+        faction: f, cp: cp.id, name: pick(NPC_NAMES),
+        resources: {
+          food: randInt(60, 160), wood: randInt(60, 200), fuel: randInt(10, 60), scrap: randInt(10, 40), nail: randInt(10, 40), bandage: randInt(0, 4),
+        },
+        coins: randInt(40, 120),
+      };
+    });
+    npc.baseLevel = Math.max(npc.baseLevel, FACTION_BASE.level);
+    return npc;
+  }
+
+  /** （v15.13 以前）依控制點數即時算出的勢力據點 */
+  factionSlotLegacy(f, slot, now = Date.now()) {
+    const cps = this.game.cp?.factionCps(f) || [];
+    const count = Math.min(FACTION_BASE.max, Math.floor(cps.length / FACTION_BASE.perCps));
     // 沒有任何據點時，改由大本營出兵（大本營不能攻打、不會探索）
     if (!count) return slot === 0 ? this.factionHqNpc(f) : null;
     if (slot >= count) return null;
@@ -231,7 +336,8 @@ export class NpcSystem {
    * 只依控制點與起始角度決定（所有玩家相同）。
    */
   factionSpot(cp, ang0 = 0) {
-    const R = 60 + NPC_CONFIG.maxLevel + 10;
+    // 位置計算沿用 Lv40 的警戒範圍（v15.14 上限提高後已經建好的據點位置不變）
+    const R = 60 + 40 + 10;
     const kLat = 111320;
     const kLon = 111320 * Math.cos((cp.lat * Math.PI) / 180);
     const at = (lat, lon, r, a) => ({ lat: lat + (Math.sin(a) * r) / kLat, lon: lon + (Math.cos(a) * r) / kLon });
@@ -272,12 +378,20 @@ export class NpcSystem {
     };
   }
 
+  /** v15.14：等級上限依所在區域（安全 25、一般 35、警戒 40、危險 45、其他 50） */
+  levelCap(n) {
+    // 勢力大本營在地圖外的勢力領地（區域判斷不適用）
+    if (n?.hq) return NPC_CONFIG.maxLevel;
+    const z = Number.isFinite(n?.lat) ? zoneAt(n.lat, n.lon)?.id : null;
+    return Math.min(NPC_CONFIG.maxLevel, NPC_ZONE_MAX[z] ?? NPC_CONFIG.maxLevel);
+  }
+
   /** 最低等級：被攻陷後重生的據點至少 respawnMinLevel 級，其餘 1 級 */
   minLevel(n) {
     if (!((n?.dc || 0) > 0)) return 1;
     // v15.10：重生最低等級依區域（安全區、一般區、警戒區較低）
     const z = Number.isFinite(n.lat) ? zoneAt(n.lat, n.lon)?.id : null;
-    return Math.min(NPC_CONFIG.maxLevel, NPC_CONFIG.respawnMinByZone?.[z] ?? NPC_CONFIG.respawnMinLevel ?? 1);
+    return Math.min(this.levelCap(n), NPC_CONFIG.respawnMinByZone?.[z] ?? NPC_CONFIG.respawnMinLevel ?? 1);
   }
 
   /** 依識別碼找回共用 NPC（不在自己附近時也能重建，例如集結時） */
@@ -305,7 +419,7 @@ export class NpcSystem {
 
   /** 共用 NPC 目前的等級：基礎等級＋存在時間成長（最多 +maxGrowth）－被擊退的損失 */
   sharedLevel(n, now = Date.now()) {
-    return Math.max(this.minLevel(n), Math.min(NPC_CONFIG.maxLevel, n.baseLevel + Math.min(SHARED_NPC.maxGrowth ?? Infinity, Math.floor(Math.max(0, now - n.bornAt) / SHARED_NPC.levelMs)) - (n.levelLoss || 0)));
+    return Math.max(this.minLevel(n), Math.min(this.levelCap(n), n.baseLevel + Math.min(SHARED_NPC.maxGrowth ?? Infinity, Math.floor(Math.max(0, now - n.bornAt) / SHARED_NPC.levelMs)) - (n.levelLoss || 0)));
   }
 
   /** 由共用資料更新 NPC 的狀態（有人改變過才套用） */
@@ -520,7 +634,7 @@ export class NpcSystem {
     return [
       ...g.state.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: g.territory.alertRadius(b) })),
       ...(g.world?.others || []).flatMap((p) => p.bases.map((b) => ({ lat: b.lat, lon: b.lon, r: b.alert || 80 }))),
-      ...this.list.map((n) => ({ lat: n.lat, lon: n.lon, r: 60 + n.level })),
+      ...this.list.map((n) => ({ lat: n.lat, lon: n.lon, r: 60 + Math.min(40, n.level || 0) })),
     ];
   }
 
@@ -571,6 +685,8 @@ export class NpcSystem {
     const sh = this.game.shared;
     if (sh?.online && !sh.backend && !sh.listedAt?.npc) return;
     const st = this.state;
+    // v15.14：勢力據點清單（第一次建立、移除已失去的控制點）
+    if (now >= (this.recSyncAt || 0)) { this.recSyncAt = now + 60000; this.syncFactionRecs(now).catch(() => {}); }
     if (now >= (st.nextSpawnAt || 0)) {
       // 第一次（或重新掃描後）一次補齊，不逐一記錄
       const first = !this.list.some((n) => n.sid);
@@ -595,7 +711,7 @@ export class NpcSystem {
       let guard = 0;
       while (now >= n.nextLevelAt && guard < 20) {
         guard += 1;
-        if (n.level < Math.min(NPC_CONFIG.maxLevel, (n.startLevel ?? n.level) + (SHARED_NPC.maxGrowth ?? Infinity))) n.level += 1;
+        if (n.level < Math.min(this.levelCap(n), (n.startLevel ?? n.level) + (SHARED_NPC.maxGrowth ?? Infinity))) n.level += 1;
         n.nextLevelAt += rand(NPC_CONFIG.levelUpMs);
       }
       if (n.trip) this.checkCrossings(n, now);
@@ -1114,6 +1230,14 @@ export class NpcSystem {
       d.dc = n.dc + 1;
       return true;
     });
+    // v15.14：勢力據點被打掉：從勢力據點清單移除（不再計時重生，要等勢力再打下控制點才蓋新的）
+    if (n.faction && n.cp && !n.hq && this.game.shared) {
+      this.game.shared.update(CP_KIND, `fbase:${n.faction}`, (x) => {
+        if (!x) return { fail: 'none' };
+        const list = (x.list || []).filter((b) => b.cp !== n.cp);
+        return list.length === (x.list || []).length ? { fail: 'same' } : { data: { ...x, list } };
+      }, { lat: null, lon: null }).catch(() => {});
+    }
     if (r && n.sid) {
       // 本機先反映（伺服器確認前也不會再出現）
       const obj = this.game.shared.cache.get(`npc:${n.sid}`);

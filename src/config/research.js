@@ -143,7 +143,7 @@ export const RESEARCH = {
   c_tech: r('crafting', 1, '製作技術', '製作出高品級裝備的機率提升（滿級時傳奇 3%）', { craftTech: 1 }),
   c_cost: r('crafting', 1, '材料節約', '製作裝備、彈藥與藥品的材料降低', { craftCostReduce: 0.03 }),
   c_gun: r('crafting', 2, '槍械製造', '解鎖槍械製作：Lv1 手槍、Lv2 十字弓、Lv3 衝鋒槍、Lv4 散彈槍、Lv5 步槍、Lv7 狙擊槍、Lv9 輕機槍', { gunCraft: 1 }, { req: [['c_tech', 1]] }),
-  c_level: r('crafting', 2, '精工', '製作的裝備等級提升', { craftLevelAdd: 1 }, { req: [['c_tech', 2]] }),
+  c_level: r('crafting', 2, '精工', '製作的裝備等級提升（每 3 級 +2，最高 +10；工作台與精工都升滿可做出 Lv70 裝備）', { craftLevelAdd: 1 }, { req: [['c_tech', 2]] }),
   c_bp: r('crafting', 3, '設計圖解析', '用設計圖製作時有機會提升一個品級', { craftBpBoost: 0.01 }, { req: [['c_tech', 3]] }),
   c_quality: r('crafting', 3, '品質控管', '製作裝備的素質提升', { craftQualityAdd: 0.03 }, { req: [['c_level', 2]] }),
   // ---- 招募 ----
@@ -208,7 +208,7 @@ dismantlePct: (v) => `拆解材料 +${pct(v)}`, sellPct: (v) => `商人回收價
   vehicleCargoPct: (v) => `載具運載 +${pct(v)}`, vehicleFindPct: (v) => `找到載具 +${pct(v)}`, garageSlots: (v) => `車庫 +${Math.floor(v)}`,
   storeSlots: (v) => `物品格子 +${v}`, intel: (v) => `偵查 Lv${Math.round(v)}`,
   craftTech: (v) => `製作技術 Lv${v}`, craftCostReduce: (v) => `製作費用 −${pct(v)}`, gunCraft: (v) => `槍械製造 Lv${v}`,
-  craftLevelAdd: (v) => `製作裝備等級 +${v}`, craftBpBoost: (v) => `設計圖升階 ${pct(v)}`, craftQualityAdd: (v) => `製作素質 +${pct(v)}`,
+  craftLevelAdd: (v) => `製作裝備等級 +${Math.min(10, Math.floor((v * 2) / 3))}（最高 +10）`, craftBpBoost: (v) => `設計圖升階 ${pct(v)}`, craftQualityAdd: (v) => `製作素質 +${pct(v)}`,
   recruitTech: (v) => `招募技術 Lv${v}`, recruitCostReduce: (v) => `招募費用 −${pct(v)}`, boardSlots: (v) => `每小時倖存者 +${Math.floor(v)}`,
   washCostReduce: (v) => `洗鍊費用 −${pct(v)}`, lockDropAdd: (v) => `鎖你掉落 +${pct(v)}`, washFloor: (v) => `素質保底 ${Math.round(v)}%`,
   xpPct: (v) => `經驗 +${pct(v)}`, recruitLevelAdd: (v) => `招募等級 +${Math.floor(v)}`, outposts: (v) => `前哨站 ${v} 座`,

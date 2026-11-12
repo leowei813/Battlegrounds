@@ -60,6 +60,7 @@ export class InventoryPanel {
         ${item('meds', null, '💊 藥品', Object.keys(MED_RECIPES).length)}
         ${item('vehicles', null, '🚗 載具', Object.values(VEHICLES).filter((d) => d.craft).length)}
         ${item('blueprints', null, '📜 設計圖', bpN || '')}
+        ${item('dgcraft', null, '✨ 副本裝備', g.state.inventory.blueprints.filter((b) => b.dg).length || '')}
       </div>
     </nav>`;
     const body = view === 'craft' ? this.renderCraft() : view === 'ammo' ? this.renderAmmoCraft() : view === 'meds' ? this.renderMedCraft() : view === 'vehicles' ? this.renderVehicleCraft() : view === 'dgcraft' ? `<div class="sh-fac"><div class="sh-fac-main"><h3 class="sh-title">✨ 副本裝備</h3>${dgCraftHtml(g)}</div></div>` : this.renderBlueprints();
