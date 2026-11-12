@@ -5448,7 +5448,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     sv.loadout = { ammo: { key: 'ammo9', qty: 300 }, med: { key: 'mediumKit', qty: 10 } };
     return { g: gx, sv };
   };
-  const day0 = DungeonSystem.dayStart(Date.UTC(2026, 10, 12, 4));
+  const day0 = DungeonSystem.dayStart(Date.UTC(2099, 10, 12, 4)); // 固定在未來：倖存者是否鎖定是用現在時間判斷，寫死成過去的日期會在當天 17:50 之後一直失敗
   const T = DungeonSystem.times(day0);
   // 時程：台灣時間
   {
@@ -5460,7 +5460,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     const near = gq.npcs.list.filter((n) => Object.values(DGC.DUNGEONS).some((d) => haversine(n.lat, n.lon, d.lat, d.lon) < DGC.DG_CLEAR_M - 1));
     assert(gq.npcs.list.length > 0 && !near.length && NPCC, `NPC 據點不會出現在副本入口 ${DGC.DG_CLEAR_M} 公尺內`);
   }
-  assert(DungeonSystem.dayKey(day0) === '20261112' && new Date(T.start).getUTCHours() === 10 && T.end - T.start === 3 * 3600 * 1000, '副本時程：台灣時間 18:00 開打、20 層共 3 小時');
+  assert(DungeonSystem.dayKey(day0) === '20991112' && new Date(T.start).getUTCHours() === 10 && T.end - T.start === 3 * 3600 * 1000, '副本時程：台灣時間 18:00 開打、20 層共 3 小時');
   assert(DungeonSystem.phase(T.open - 1) === 'after' && DungeonSystem.phase(T.open) === 'signup' && DungeonSystem.phase(T.close) === 'closed' && DungeonSystem.phase(T.lock) === 'locked' && DungeonSystem.phase(T.depart) === 'gather' && DungeonSystem.phase(T.start) === 'run' && DungeonSystem.phase(T.end) === 'after', '副本各階段：00:00 換日後報名、17:40 截止、17:50 鎖定、17:55 集結、18:00 開打');
   // 分團：依報名先後平均分配，每團 3～8 人
   const fakeList = (n) => ({ list: Array.from({ length: n }, (_, i) => ({ p: `p${i}`, s: `s${i}`, c: 'warrior', at: 1000 - i, u: { maxHp: 100 } })) });
@@ -5565,6 +5565,18 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   a.g.dungeon.cache.clear();
   assert(JSON.stringify(a.g.dungeon.results('lab', day).runs.map((r) => [r.result, r.endFloor, r.stat, r.rewards])) === sig[0], '重新計算（重新開啟遊戲）結果相同');
   const run = a.g.dungeon.results('lab', day).runs[0];
+  {
+    // v15.15.1：沒報名的玩家（左上角資訊框）也依實際戰況顯示：團打完（失敗）就是今日已結束，不會一直攻略中到 21:00
+    const { hudHtml } = await import('../src/ui/DungeonView.js');
+    const sid = DungeonSystem.objId('lab', day);
+    const keep = a.g.dungeon.state.sign[sid];
+    delete a.g.dungeon.state.sign[sid];
+    const r0 = a.g.dungeon.results('lab', day).runs[0];
+    const row = (t) => (hudHtml(a.g, t).match(/data-dg="lab">.*?<span class="tag [^"]*">([^<]*)</) || [])[1];
+    assert(row(r0.start + 1000) === '攻略中', `沒報名的副本開打中顯示攻略中（${row(r0.start + 1000)}）`);
+    if (r0.endAt < T.end) assert(row(r0.endAt + 1000) === '今日已結束', `沒報名的副本提早結束時顯示今日已結束（${row(r0.endAt + 1000)}）`);
+    a.g.dungeon.state.sign[sid] = keep;
+  }
   assert(run.floors.length === run.endFloor && run.floors.every((f) => f.obs.length >= 1 && f.obs.length <= 3), '每層 1～3 個障礙並記錄每一層');
   assert(run.floors.every((f) => f.waves.length >= 1) && run.mvp && run.stat.length === 5, '每層戰報、每人輸出／承傷／治療／障礙與 MVP');
   {
