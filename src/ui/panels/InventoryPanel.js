@@ -265,25 +265,38 @@ export class InventoryPanel {
     const g = this.game;
     const eq = g.equipment;
     const extra = (bp) => `${btn(`出售 💰${g.blackMarket.blueprintBuyback(bp).toLocaleString()}`, 'bpSell', { id: bp.id }, { cls: 'btn-sm btn-ghost bp-sell' })}`;
-    const cards = g.state.inventory.blueprints.map((bp) => {
+    // v15.15：同型號、同保底品級的設計圖合併成一張卡片（×數量）
+    const groups = [];
+    g.state.inventory.blueprints.forEach((bp) => {
+      const key = `${bp.dg ? 'dg' : ''}:${bp.model}:${bp.rarity}`;
+      const hit = groups.find((x) => x.key === key);
+      if (hit) hit.list.push(bp); else groups.push({ key, list: [bp] });
+    });
+    const cards = groups.map(({ list }) => {
+      const bp = list[0];
+      const n = list.length > 1 ? `<span class="bp-count">×${list.length}</span>` : '';
       const info = eq.blueprintInfo(bp);
       if (!info) return '';
       if (info.dungeon) {
         const st = g.dungeon.canCraft(bp.model).ok ? 'ok' : 'short';
         if (!this.passFilter(st)) return '';
         return `<div class="fac-card2 dg-bp">
-        <div class="fac2-head"><span class="fac-icon">📜</span><b class="dg-name">${escapeHtml(info.name)}</b>${slotTag(null, DG_GEAR[bp.model]?.slot)}<span class="dg-tag">副本圖紙</span></div>
+        <div class="fac2-head"><span class="fac-icon">📜</span><b class="dg-name">${escapeHtml(info.name)}</b>${n}${slotTag(null, DG_GEAR[bp.model]?.slot)}<span class="dg-tag">副本圖紙</span></div>
         <div class="stat-line muted">${escapeHtml(g.dungeon.gearLine(bp.model))}</div>
         <div class="row-between bp-acts"><span></span><span class="btn-row">${btn('製作', 'view', { v: 'dgcraft' }, { cls: 'btn-sm btn-primary' })}${extra(bp)}</span></div>
       </div>`;
       }
       const md = ITEM_MODELS[bp.model];
+      const t = ITEM_TYPES[md.type];
       const check = eq.canCraftModel(bp.model, true);
       const cost = eq.craftCost(bp.model, true);
       const st = this.craftState(check, cost);
       if (!this.passFilter(st)) return '';
-      return `<div class="fac-card2 ${st === 'lock' ? 'unbuilt' : ''}">
-        <div class="fac2-head"><span class="fac-icon">📜</span><b>${md.name}</b>${slotTag(md.type)}<span style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</span></div>
+      const r = RARITIES[bp.rarity];
+      const bench = benchFor(md);
+      return `<div class="fac-card2 bp-card ${st === 'lock' ? 'unbuilt' : ''}" style="--rc:${r.color}">
+        <div class="fac2-head"><span class="fac-icon">${md.icon || t.icon}</span><b>${md.name}</b><span class="tier">${'★'.repeat(Math.ceil(md.tier / 2))}</span>${n}<span class="bp-rarity">📜 保底${r.name}</span></div>
+        <small class="muted bp-sub">${slotTag(md.type)} 強度 T${md.tier}・${bench ? `工作台 Lv${bench}` : '不需工作台'}・裝備 Lv${eq.craftLevel(bp.model)}</small>
         <div class="stat-line range">${statRangeLine(eq.craftStatRange(bp.model, bp.rarity))}</div>
         <div class="fac2-cost"><small class="muted">所需材料（擁有/需要）</small><div class="needs">${needHtml(g.state, cost)}</div>
           <div class="row-between bp-acts"><span></span><span class="btn-row">${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, check.reason)}${extra(bp)}</span></div></div>

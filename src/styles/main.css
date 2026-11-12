@@ -1761,3 +1761,9 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 /* v15.11：黑市基礎物資：按鈕放第二行（手機也放得下） */
 .bm-row.bm-res { flex-wrap: wrap; }
 .bm-row.bm-res .bm-act { flex: 1 1 100%; justify-content: flex-end; flex-wrap: wrap; }
+
+/* v15.15：設計圖卡片：保底品級色邊框、彩色品級標籤、同款合併數量 */
+.fac-card2.bp-card { border-left: 4px solid var(--rc); }
+.bp-card .bp-rarity { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--rc); border: 1px solid var(--rc); border-radius: 10px; padding: 1px 8px; white-space: nowrap; background: color-mix(in srgb, var(--rc) 12%, transparent); }
+.bp-count { font-size: 12px; font-weight: 700; color: var(--accent); background: #ffb30022; border-radius: 8px; padding: 0 6px; }
+.bp-card .bp-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
