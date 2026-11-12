@@ -1775,3 +1775,7 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 .bp-auto .bp-auto-chip.active { background: color-mix(in srgb, var(--rc) 22%, transparent); border-color: var(--rc); color: var(--rc); }
 .bp-auto small { flex-basis: 100%; }
 .bp-auto-sum { margin-bottom: 4px; }
+
+/* v15.15：副本視窗切換箭頭（地下感染區那一行兩端） */
+.dg-head .grow { flex: 1; }
+.dg-head .dg-arrow { min-width: 36px; padding: 2px 10px; font-size: 18px; line-height: 1.2; }

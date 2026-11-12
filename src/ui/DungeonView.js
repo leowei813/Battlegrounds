@@ -260,8 +260,8 @@ export function openDungeon(ui, dg, tab0 = 'sign') {
     const i = DUNGEON_KEYS.indexOf(dg);
     const prev = DUNGEON_KEYS[(i - 1 + DUNGEON_KEYS.length) % DUNGEON_KEYS.length];
     const next = DUNGEON_KEYS[(i + 1) % DUNGEON_KEYS.length];
-    const nav = `<div class="sv-swipe-nav dg-nav">${btn(`‹ ${escapeHtml(DUNGEONS[prev].name)}`, 'dgNav', { d: prev }, { cls: 'btn-sm btn-ghost' })}<span class="muted">${i + 1} / ${DUNGEON_KEYS.length}</span>${btn(`${escapeHtml(DUNGEONS[next].name)} ›`, 'dgNav', { d: next }, { cls: 'btn-sm btn-ghost' })}</div>`;
-    return `${nav}<div class="dg-head">${dgIcon()}<b>地下感染區</b></div><p class="muted">產出 ${CLASSES[d.cls].icon} ${CLASSES[d.cls].name}副本裝備・${DG_FLOORS} 層・每天 18:00 開打</p><div class="chips">${tabs}</div>${content}`;
+    const arrow = (t, d2) => btn(t, 'dgNav', { d: d2 }, { cls: 'btn-sm btn-ghost dg-arrow', title: DUNGEONS[d2].name });
+    return `<div class="dg-head">${arrow('‹', prev)}${dgIcon()}<b>地下感染區</b><span class="grow"></span><small class="muted">${i + 1} / ${DUNGEON_KEYS.length}</small>${arrow('›', next)}</div><p class="muted">產出 ${CLASSES[d.cls].icon} ${CLASSES[d.cls].name}副本裝備・${DG_FLOORS} 層・每天 18:00 開打</p><div class="chips">${tabs}</div>${content}`;
   };
   g.shared.list('dg', 5).then(() => ui.refresh(true)).catch(() => {});
   const go = (m, to) => {
