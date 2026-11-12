@@ -334,7 +334,7 @@ export function openStatus(ui, dg0) {
     dg = rec.dg;
     const s = statusOf(g, rec, now);
     const tabs = recs.length > 1 ? `<div class="chips">${recs.map((r) => `<button class="chip ${r.dg === dg ? 'active' : ''}" data-action="dgPick" data-dg="${r.dg}">${clsIcon(g.survivors.get(r.svId)?.classId)} ${DUNGEONS[r.dg].short}</button>`).join('')}</div>` : '';
-    const head = `<h4>${dgIcon()}${escapeHtml(DUNGEONS[dg].name)}${s.run ? `・第 ${s.run.group + 1} 團` : ''} <span class="tag ${s.cls}">${s.tag}</span></h4>`;
+    const head = `<h4>${dgIcon()}${escapeHtml(DUNGEONS[dg].name)} <span class="tag ${s.cls}">${s.tag}</span></h4>`;
     if (!s.run) {
       const data = g.dungeon.data(dg, DungeonSystem.dayKey(now));
       const gp = data?.list?.length ? DungeonSystem.groupsOf(data) : null;
@@ -403,7 +403,7 @@ export function dungeonReportHtml(g, r, open, fresh, NEW, hhmm) {
       <small class="muted block">🏁 最終結算：副本中重傷不扣經驗；${fin?.sev ? '結束時仍是重傷，回家後依一般重傷規則休養。' : '倖存者已回到避難所。'}${r.status === 'fail' ? `第 ${run.endFloor} 層${run.reason === 'infection' ? '感染值滿 100 全隊撤退' : run.reason === 'timeout' ? '時間內沒能擊敗敵人' : '全隊倒下'}；已通過層數的獎勵全部保留。` : ''}</small>`;
   } else if (open) detail = '<p class="muted">副本資料已清除，無法顯示逐層紀錄。</p>';
   return `<div class="card report dg-rep ${glow} ${r.status === 'fail' ? 'fail' : ''} ${fresh ? 'unread' : ''}">
-    <div class="row-between" data-action="toggleReport" data-id="${r.id}"><b>${fresh ? NEW : ''}${icon} ${dgIcon()}${escapeHtml(d.name)}${r.group != null ? `・第 ${r.group + 1} 團` : ''} ${badge}${(r.bps || []).length ? '<span class="dg-tag">✨ 副本圖紙</span>' : ''}</b><small class="muted">${hhmm(r.at)} ${open ? '▲' : '▼'}</small></div>
+    <div class="row-between" data-action="toggleReport" data-id="${r.id}"><b>${fresh ? NEW : ''}${icon} ${dgIcon()}${escapeHtml(d.name)} ${badge}${(r.bps || []).length ? '<span class="dg-tag">✨ 副本圖紙</span>' : ''}</b><small class="muted">${hhmm(r.at)} ${open ? '▲' : '▼'}</small></div>
     <div class="gains dg-chips">${chips}</div>${detail}</div>`;
 }
 
