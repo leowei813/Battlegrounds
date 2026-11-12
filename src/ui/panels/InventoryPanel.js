@@ -100,11 +100,17 @@ export class InventoryPanel {
     const bps = g.state.inventory.blueprints.filter((bp) => ITEM_MODELS[bp.model] && !bp.dg);
     return `<aside class="sh-fac-side">
       <section class="sh-card"><h3>製作品級機率</h3>${odds}<small class="muted">研究「製作技術」可提高高品級機率（Lv${eq.craftTech()}/15）</small></section>
-      <section class="sh-card sh-rates"><h3>設計圖 ${bps.length}</h3>${bps.slice(0, 6).map((bp) => {
-        const md = ITEM_MODELS[bp.model];
-        const st = this.craftState(eq.canCraftModel(bp.model, true), eq.craftCost(bp.model, true));
-        return `<div class="row-between bp-row"><span><b>${md.name}</b><small class="block" style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</small></span>${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, eq.canCraftModel(bp.model, true).reason)}</div>`;
-      }).join('') || '<p class="muted">探索時有機會找到設計圖（製作時保底品級）。</p>'}${bps.length > 6 ? btn('查看全部', 'view', { v: 'blueprints' }, { cls: 'btn-xs' }) : ''}</section>
+      <section class="sh-card sh-rates"><h3>設計圖 ${bps.length}</h3>${(() => {
+        // v15.15：同型號、同保底品級合併（×數量）
+        const groups = [];
+        bps.forEach((bp) => { const hit = groups.find((x) => x.bp.model === bp.model && x.bp.rarity === bp.rarity); if (hit) hit.n += 1; else groups.push({ bp, n: 1 }); });
+        const auto = g.blackMarket.bpAutoSell();
+        return `${auto.length ? `<small class="muted block bp-auto-sum">🔁 自動出售：${RARITY_ORDER.filter((r) => auto.includes(r)).map((r) => `<span style="color:${RARITIES[r].color}">${RARITIES[r].name}</span>`).join('、')}</small>` : ''}${groups.slice(0, 6).map(({ bp, n }) => {
+          const md = ITEM_MODELS[bp.model];
+          const st = this.craftState(eq.canCraftModel(bp.model, true), eq.craftCost(bp.model, true));
+          return `<div class="row-between bp-row"><span><b>${md.name}</b>${n > 1 ? ` <span class="bp-count">×${n}</span>` : ''}<small class="block" style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</small></span>${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, eq.canCraftModel(bp.model, true).reason)}</div>`;
+        }).join('') || '<p class="muted">探索時有機會找到設計圖（製作時保底品級）。</p>'}${groups.length > 6 ? btn('查看全部', 'view', { v: 'blueprints' }, { cls: 'btn-xs' }) : ''}`;
+      })()}</section>
     </aside>`;
   }
 
@@ -265,25 +271,38 @@ export class InventoryPanel {
     const g = this.game;
     const eq = g.equipment;
     const extra = (bp) => `${btn(`出售 💰${g.blackMarket.blueprintBuyback(bp).toLocaleString()}`, 'bpSell', { id: bp.id }, { cls: 'btn-sm btn-ghost bp-sell' })}`;
-    const cards = g.state.inventory.blueprints.map((bp) => {
+    // v15.15：同型號、同保底品級的設計圖合併成一張卡片（×數量）
+    const groups = [];
+    g.state.inventory.blueprints.forEach((bp) => {
+      const key = `${bp.dg ? 'dg' : ''}:${bp.model}:${bp.rarity}`;
+      const hit = groups.find((x) => x.key === key);
+      if (hit) hit.list.push(bp); else groups.push({ key, list: [bp] });
+    });
+    const cards = groups.map(({ list }) => {
+      const bp = list[0];
+      const n = list.length > 1 ? `<span class="bp-count">×${list.length}</span>` : '';
       const info = eq.blueprintInfo(bp);
       if (!info) return '';
       if (info.dungeon) {
         const st = g.dungeon.canCraft(bp.model).ok ? 'ok' : 'short';
         if (!this.passFilter(st)) return '';
         return `<div class="fac-card2 dg-bp">
-        <div class="fac2-head"><span class="fac-icon">📜</span><b class="dg-name">${escapeHtml(info.name)}</b>${slotTag(null, DG_GEAR[bp.model]?.slot)}<span class="dg-tag">副本圖紙</span></div>
+        <div class="fac2-head"><span class="fac-icon">📜</span><b class="dg-name">${escapeHtml(info.name)}</b>${n}${slotTag(null, DG_GEAR[bp.model]?.slot)}<span class="dg-tag">副本圖紙</span></div>
         <div class="stat-line muted">${escapeHtml(g.dungeon.gearLine(bp.model))}</div>
         <div class="row-between bp-acts"><span></span><span class="btn-row">${btn('製作', 'view', { v: 'dgcraft' }, { cls: 'btn-sm btn-primary' })}${extra(bp)}</span></div>
       </div>`;
       }
       const md = ITEM_MODELS[bp.model];
+      const t = ITEM_TYPES[md.type];
       const check = eq.canCraftModel(bp.model, true);
       const cost = eq.craftCost(bp.model, true);
       const st = this.craftState(check, cost);
       if (!this.passFilter(st)) return '';
-      return `<div class="fac-card2 ${st === 'lock' ? 'unbuilt' : ''}">
-        <div class="fac2-head"><span class="fac-icon">📜</span><b>${md.name}</b>${slotTag(md.type)}<span style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</span></div>
+      const r = RARITIES[bp.rarity];
+      const bench = benchFor(md);
+      return `<div class="fac-card2 bp-card ${st === 'lock' ? 'unbuilt' : ''}" style="--rc:${r.color}">
+        <div class="fac2-head"><span class="fac-icon">${md.icon || t.icon}</span><b>${md.name}</b><span class="tier">${'★'.repeat(Math.ceil(md.tier / 2))}</span>${n}<span class="bp-rarity">📜 保底${r.name}</span></div>
+        <small class="muted bp-sub">${slotTag(md.type)} 強度 T${md.tier}・${bench ? `工作台 Lv${bench}` : '不需工作台'}・裝備 Lv${eq.craftLevel(bp.model)}</small>
         <div class="stat-line range">${statRangeLine(eq.craftStatRange(bp.model, bp.rarity))}</div>
         <div class="fac2-cost"><small class="muted">所需材料（擁有/需要）</small><div class="needs">${needHtml(g.state, cost)}</div>
           <div class="row-between bp-acts"><span></span><span class="btn-row">${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, check.reason)}${extra(bp)}</span></div></div>
@@ -292,9 +311,18 @@ export class InventoryPanel {
     return `<div class="sh-fac"><div class="sh-fac-main">
       <h3 class="sh-title">📜 設計圖</h3>
       ${this.filterChips()}
+      ${this.bpAutoHtml()}
       <div class="fac-grid">${cards || '<p class="muted">沒有設計圖。探索時有機會找到，用設計圖製作時保底品級。</p>'}</div>
       <small class="muted">設計圖也可以在交易所的交易市場刊登，賣給其他玩家。</small>
     </div>${this.craftSide()}</div>`;
+  }
+
+  /** v15.15：設計圖自動出售：勾選的保底品級拿到時自動賣到黑市 */
+  bpAutoHtml() {
+    const auto = this.game.blackMarket.bpAutoSell();
+    const chips = RARITY_ORDER.map((r) => `<button class="chip bp-auto-chip ${auto.includes(r) ? 'active' : ''}" style="--rc:${RARITIES[r].color}" data-action="bpAuto" data-r="${r}">${auto.includes(r) ? '✓ ' : ''}${RARITIES[r].name}</button>`).join('');
+    return `<div class="bp-auto"><b>🔁 自動出售</b><div class="chips">${chips}</div>
+      <small class="muted block">勾選的保底品級，拿到時自動賣到黑市（副本圖紙、交易所買來或撤回的不會賣）。</small></div>`;
   }
 
   /** 丟棄設計圖前確認（可以改賣黑市） */
@@ -568,6 +596,17 @@ export class InventoryPanel {
         break;
       }
       case 'bpDiscard': this.confirmBpDiscard(data.id); break;
+      case 'bpAuto': {
+        const bm = g.blackMarket;
+        const on = !bm.bpAutoSell().includes(data.r);
+        const now = on ? bm.bpAutoTargets([data.r]) : [];
+        const coins = now.reduce((t, b) => t + bm.blueprintBuyback(b), 0);
+        if (on && now.length && !confirm(`開啟「保底${RARITIES[data.r].name}」自動出售：現有 ${now.length} 張也會一起賣掉（💰${coins.toLocaleString()}），確定？`)) break;
+        const r = bm.toggleBpAutoSell(data.r);
+        if (r.n) this.ui.result({ ok: true, msg: r.msg });
+        else this.ui.toastEl.show(on ? `🔁 已開啟「保底${RARITIES[data.r].name}」設計圖自動出售` : `已關閉「保底${RARITIES[data.r].name}」設計圖自動出售`, 'info');
+        break;
+      }
       case 'dgCraft': {
         const r = g.dungeon.craft(data.id);
         this.ui.result(r);

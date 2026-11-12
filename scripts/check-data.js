@@ -7601,6 +7601,28 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(gb.npcs.levelCap({ hq: true, lat: 0, lon: 0 }) === 50, '大本營上限 Lv50');
 }
 
+// ---- v15.15：設計圖自動出售（依保底品級；副本圖紙、交易買來的不賣） ----
+{
+  const ga = Game.newGame({ playerName: 'AS', classId: 'warrior', lat: 25, lon: 121 });
+  const bps = ga.state.inventory.blueprints;
+  bps.length = 0;
+  bps.push({ id: 'b1', model: 'mini14', rarity: 'common' }, { id: 'b2', model: 'mini14', rarity: 'rare' }, { id: 'b3', model: 'mini14', rarity: 'common', keep: true }, { id: 'b4', model: 'x', rarity: 'dungeon', dg: true });
+  const { ITEM_MODELS: IM2 } = await import('../src/config/equipment.js');
+  const model = Object.keys(IM2).find((k) => !IM2[k].dg && IM2[k].tier >= 3);
+  bps.forEach((b) => { if (!b.dg) b.model = model; });
+  const c0 = ga.state.player.coins;
+  const r = ga.blackMarket.toggleBpAutoSell('common');
+  const now1 = ga.state.inventory.blueprints;
+  assert(r.n === 1 && !now1.some((b) => b.id === 'b1') && now1.some((b) => b.id === 'b3') && now1.some((b) => b.id === 'b2') && ga.state.player.coins > c0, `開啟「保底一般」自動出售：現有的一般設計圖賣掉，交易買來的保留（賣出 ${r.n} 張）`);
+  ga.state.inventory.blueprints.push({ id: 'b5', model, rarity: 'common' });
+  ga.tick();
+  assert(!ga.state.inventory.blueprints.some((b) => b.id === 'b5'), '之後拿到的一般設計圖自動賣掉');
+  ga.blackMarket.toggleBpAutoSell('common');
+  ga.state.inventory.blueprints.push({ id: 'b6', model, rarity: 'common' });
+  ga.tick();
+  assert(ga.state.inventory.blueprints.some((b) => b.id === 'b6') && ga.state.inventory.blueprints.some((b) => b.id === 'b4'), '關閉後不再自動出售，副本圖紙不受影響');
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);

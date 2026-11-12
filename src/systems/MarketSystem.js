@@ -143,7 +143,7 @@ export class MarketSystem {
       if (p <= 0) return { ok: false, reason: '請輸入價格' };
       const copy = { ...bp };
       g.state.inventory.blueprints = list.filter((b) => b.id !== bpId);
-      undo = () => { g.state.inventory.blueprints.push(copy); };
+      undo = () => { g.state.inventory.blueprints.push({ ...copy, keep: true }); };
       data = { bp: copy, bpName: info.name, qty: 1, price: p };
     } else if (side === 'sell' && itemId) {
       const it = g.equipment.getItem(itemId);
@@ -206,7 +206,8 @@ export class MarketSystem {
       g.state.player.coins -= total;
       undo = () => { g.state.player.coins += total; };
       deliver = (d) => {
-        if (d.bp) g.state.inventory.blueprints.push({ ...d.bp, id: uid('bp') });
+        // 交易買來的設計圖不會被自動出售
+        if (d.bp) g.state.inventory.blueprints.push({ ...d.bp, id: uid('bp'), keep: true });
         else if (d.item) g.equipment.addItem({ ...JSON.parse(JSON.stringify(d.item)), id: uid('it') }, '交易市場');
         else this.give(d.key, n);
       };
@@ -286,7 +287,7 @@ export class MarketSystem {
     if (remain > 0) {
       if (m.side === 'sell') {
         if (m.bp) {
-          if (!g.state.inventory.blueprints.some((b) => b.id === m.bp.id)) g.state.inventory.blueprints.push({ ...m.bp });
+          if (!g.state.inventory.blueprints.some((b) => b.id === m.bp.id)) g.state.inventory.blueprints.push({ ...m.bp, keep: true }); // 撤回的設計圖不會被自動出售
         } else if (m.item) {
           const copy = { ...JSON.parse(JSON.stringify(m.item)), loc: 'store' };
           if (!g.equipment.getItem(copy.id)) g.equipment.items.push(copy);

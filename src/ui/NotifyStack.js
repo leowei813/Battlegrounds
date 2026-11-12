@@ -1,6 +1,10 @@
 import { escapeHtml } from '../utils/dom.js';
 import { formatDuration } from '../utils/math.js';
-import { rallyFlag } from './components.js';
+import { rallyFlag, btn } from './components.js';
+import { DungeonSystem } from '../systems/DungeonSystem.js';
+import { DUNGEONS, DUNGEON_KEYS } from '../config/dungeons.js';
+import { openDungeon } from './DungeonView.js';
+
 
 /** 聊天預覽顯示時間 */
 export const CHAT_POP_MS = 5000;
@@ -27,6 +31,7 @@ export class NotifyStack {
       if (!card) return;
       if (card.dataset.kind === 'chat') this.ui.chatView?.open();
       if (card.dataset.kind === 'rally') this.ui.panels.map.openRally(card.dataset.id);
+      if (card.dataset.kind === 'dg' && DUNGEONS[card.dataset.id]) openDungeon(this.ui, card.dataset.id);
       card.remove();
     });
   }
@@ -49,11 +54,44 @@ export class NotifyStack {
         }
       }
     }
+    this.dungeonRemind(now);
     // 集結邀請：好友剛發起、自己還沒參加
     (g.rally?.invites(now) || []).forEach((d) => {
       if (this.rallySeen.has(d.id)) return;
       this.rallySeen.add(d.id);
       this.show('rally', d.id, `<span class="nc-ic">${rallyFlag(26)}</span><div><b>好友「${escapeHtml(d.ownerName)}」發起集結</b><p>目標：${escapeHtml(d.target.name)}</p><small>${formatDuration(Math.max(0, d.departAt - now))}後出發・隊伍 ${(d.teams || []).length}/${d.maxTeams}・點一下查看並參加</small></div>`, RALLY_POP_MS);
+    });
+  }
+
+  /**
+   * v15.15：每天地下城開放報名後第一次開遊戲（或遊戲開著跨過 00:00）：一個副本都還沒報名就跳出視窗提醒一次（報名截止前）。
+   * 已經有其他視窗開著（更新內容、離線收益…）時，等它關掉再跳出。
+   */
+  dungeonRemind(now = Date.now()) {
+    const g = this.game;
+    const ui = this.ui;
+    const dgs = g.dungeon;
+    if (!dgs || !g.shelter?.hasShelter?.() || DungeonSystem.phase(now) !== 'signup') return;
+    const day = DungeonSystem.dayKey(now);
+    if (g.state.dgRemindDay === day || ui.modal.current) return;
+    g.state.dgRemindDay = day;
+    const left = DUNGEON_KEYS.filter((dg) => { const r = dgs.record(dg, now); return !r || r.cancelled; });
+    // 一個副本都還沒報名才提醒（已經報名其中一個就不打擾）
+    if (left.length < DUNGEON_KEYS.length) return;
+    const close = DungeonSystem.times(DungeonSystem.dayStart(now)).close;
+    const rows = DUNGEON_KEYS.map((dg) => {
+      const r = dgs.record(dg, now);
+      const ok = r && !r.cancelled;
+      return `<div class="row-between dg-remind-row"><span>🕳️ ${escapeHtml(DUNGEONS[dg].name)}</span>${ok ? `<span class="tag tag-green">已報名・${escapeHtml(r.svName || '')}</span>` : btn('前往報名', 'dgGo', { d: dg }, { cls: 'btn-sm btn-primary' })}</div>`;
+    }).join('');
+    ui.modal.open({
+      title: '🕳️ 今天還沒報名地下城',
+      body: `<p>今天還沒有報名任何地下城副本，<b>${formatDuration(Math.max(0, close - now))}</b>後（17:40）截止。</p>
+        <div class="dg-remind">${rows}</div>
+        <div class="btn-row end">${btn('稍後再說', 'close', {}, { cls: 'btn-ghost' })}${btn('前往報名', 'dgGo', { d: left[0] }, { cls: 'btn-primary' })}</div>`,
+      onAction: (action, data) => {
+        if (action === 'dgGo' && DUNGEONS[data.d]) openDungeon(ui, data.d);
+      },
     });
   }
 

@@ -258,6 +258,8 @@ export class Game {
       this.zombies.refresh(now);
       bus.emit(EVT.PHASE_CHANGED, phase);
     }
+    // v15.15：設計圖自動出售
+    this.blackMarket?.autoSellBlueprints?.();
     bus.emit(EVT.TICK, now);
     bus.emit(EVT.STATE_CHANGED);
     // v15.10：最後在線時間（畫面開著才算）：不在線時被 NPC 掠奪損失減半
