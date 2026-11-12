@@ -1548,6 +1548,8 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 .notify-card .nc-ic { font-size: 22px; line-height: 1; }
 .notify-card b { color: #81d4fa; }
 .notify-card.rally b { color: #ffe082; }
+.notify-card.dg { border-color: #ef5350; background: #3a1016f2; }
+.notify-card.dg b { color: #ff8a80; }
 .notify-card p { margin: 2px 0 0; font-size: 13px; word-break: break-word; }
 .notify-card small { display: block; color: #90a4ae; margin-top: 3px; font-size: 11px; }
 @keyframes nc-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }

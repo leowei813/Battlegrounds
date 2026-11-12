@@ -1,6 +1,12 @@
 import { escapeHtml } from '../utils/dom.js';
 import { formatDuration } from '../utils/math.js';
 import { rallyFlag } from './components.js';
+import { DungeonSystem } from '../systems/DungeonSystem.js';
+import { DUNGEONS, DUNGEON_KEYS } from '../config/dungeons.js';
+import { openDungeon } from './DungeonView.js';
+
+/** v15.15：地下城未報名提醒顯示時間 */
+export const DG_REMIND_MS = 15000;
 
 /** 聊天預覽顯示時間 */
 export const CHAT_POP_MS = 5000;
@@ -27,6 +33,7 @@ export class NotifyStack {
       if (!card) return;
       if (card.dataset.kind === 'chat') this.ui.chatView?.open();
       if (card.dataset.kind === 'rally') this.ui.panels.map.openRally(card.dataset.id);
+      if (card.dataset.kind === 'dg' && DUNGEONS[card.dataset.id]) openDungeon(this.ui, card.dataset.id);
       card.remove();
     });
   }
@@ -49,12 +56,30 @@ export class NotifyStack {
         }
       }
     }
+    this.dungeonRemind(now);
     // 集結邀請：好友剛發起、自己還沒參加
     (g.rally?.invites(now) || []).forEach((d) => {
       if (this.rallySeen.has(d.id)) return;
       this.rallySeen.add(d.id);
       this.show('rally', d.id, `<span class="nc-ic">${rallyFlag(26)}</span><div><b>好友「${escapeHtml(d.ownerName)}」發起集結</b><p>目標：${escapeHtml(d.target.name)}</p><small>${formatDuration(Math.max(0, d.departAt - now))}後出發・隊伍 ${(d.teams || []).length}/${d.maxTeams}・點一下查看並參加</small></div>`, RALLY_POP_MS);
     });
+  }
+
+  /**
+   * v15.15：每天地下城開放報名後第一次開遊戲（或遊戲開著跨過 00:00）：還有副本沒報名就提醒一次（報名截止前）。
+   */
+  dungeonRemind(now = Date.now()) {
+    const g = this.game;
+    const dgs = g.dungeon;
+    if (!dgs || !g.shelter?.hasShelter?.() || DungeonSystem.phase(now) !== 'signup') return;
+    const day = DungeonSystem.dayKey(now);
+    if (g.state.dgRemindDay === day) return;
+    g.state.dgRemindDay = day;
+    const left = DUNGEON_KEYS.filter((dg) => { const r = dgs.record(dg, now); return !r || r.cancelled; });
+    if (!left.length) return;
+    const close = DungeonSystem.times(DungeonSystem.dayStart(now)).close;
+    const names = left.map((dg) => escapeHtml(DUNGEONS[dg].name)).join('、');
+    this.show('dg', left[0], `<span class="nc-ic">🕳️</span><div><b>今天的地下城還沒報名（${left.length}/${DUNGEON_KEYS.length}）</b><p>${names}</p><small>${formatDuration(Math.max(0, close - now))}後截止（17:40）・點一下前往報名</small></div>`, DG_REMIND_MS);
   }
 
   show(kind, id, html, ms) {
