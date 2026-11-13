@@ -89,7 +89,7 @@ export function blackMarketBody(ui, view = 'buy') {
     const mine = boughtIds.includes(x.id);
     const soldTag = mine ? '<span class="bm-tag mine">✅ 你買了</span>' : x.soldTo ? `<span class="bm-tag">已被 ${escapeHtml(String(x.soldTo).slice(0, 8))} 買走</span>` : '';
     const buyBtn = x.soldTo || mine ? '' : bought ? btn('本輪已購買', 'bmBuy', { id: x.id }, { cls: 'btn-xs', disabled: true })
-      : btn(`💰${x.price} 購買`, 'bmBuy', { id: x.id }, { cls: 'btn-xs btn-primary', disabled: !afford || ui.bmBusy === x.id });
+      : btn(`${x.basePrice ? `<s class="muted">${x.basePrice}</s> ` : ""}💰${x.price} 購買`, 'bmBuy', { id: x.id }, { cls: 'btn-xs btn-primary', disabled: !afford || ui.bmBusy === x.id });
     // 已售出的裝備沒有購買鈕，把「已被買走」放進卡片內，避免掉到格子外面
     const cls = mine ? 'bm-mine' : x.soldTo ? 'sold-out' : '';
     const right = x.soldTo || mine ? soldTag : buyBtn;

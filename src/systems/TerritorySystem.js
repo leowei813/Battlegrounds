@@ -10,6 +10,7 @@ import { cpAt, CONTROL_POINTS } from '../config/controlPoints.js';
 import {
   uid, chance, randFloat, haversine, unitPower,
 } from '../utils/math.js';
+import { WorldEventSystem } from './WorldEventSystem.js';
 
 /** 驗證攻擊事件裡附帶的協防結果 */
 function cleanHelpers(h) {
@@ -29,7 +30,7 @@ function cleanHelpers(h) {
 
 /** NPC 據點的警戒範圍（公尺） */
 /** v15.14：NPC 等級上限提高到 50，警戒範圍仍以 Lv40 為上限（勢力據點的警戒範圍不超出自己的控制點） */
-export const npcAlert = (n) => 60 + Math.min(40, n.level || 0);
+export const npcAlert = (n) => Math.round((60 + Math.min(40, n.level || 0)) * WorldEventSystem.fx('alert')); // v15.18：濃霧 −30%
 /** 攻擊其他玩家成功時，對方損失的資源比例 */
 export const PVP_LOSS = 0.1;
 
@@ -58,7 +59,7 @@ export class TerritorySystem {
 
   /** 自己據點的警戒範圍：依規模，探照燈每級 +3 公尺 */
   alertRadius(base) {
-    return (BASE_SIZES[base.size]?.alert || 55) + base.facilities.watchtower.level * 3;
+    return Math.round(((BASE_SIZES[base.size]?.alert || 55) + base.facilities.watchtower.level * 3) * WorldEventSystem.fx('alert')); // v15.18：濃霧 −30%
   }
 
   /** 自己據點的駐守人員：避難所為「防禦駐守」工作的人與瞭望塔駐守；前哨站只有瞭望塔駐守 */

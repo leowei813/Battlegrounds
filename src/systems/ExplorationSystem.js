@@ -39,6 +39,7 @@ import { pathLength, pointAlong } from '../map/routing.js';
 import {
   SUPPLIES, AMMO_FOR, AMMO_PACK_FIGHTS, unitWeight,
 } from '../config/supplies.js';
+import { WorldEventSystem } from './WorldEventSystem.js';
 
 /** 每公里單程移動時間（分鐘，未套用速度加成） */
 const MIN_PER_KM_ONE_WAY = 1.2;
@@ -1328,7 +1329,7 @@ export class ExplorationSystem {
       phase,
       level: this.game.zombies.buildingLevel(poi, phase),
       zoneMul: phase.zombies ? this.game.zombies.encounterMul(poi.lat, poi.lon) : DAY_ZONE.encounter[zoneAt(poi.lat, poi.lon).id] ?? 1,
-      lootMul: phase.lootMul * ctx.lootBase,
+      lootMul: phase.lootMul * ctx.lootBase * WorldEventSystem.fx('loot', at), // v15.18：酸雨搜刮量 +20%
     };
   }
 

@@ -9,6 +9,7 @@ import { Modal } from './Modal.js';
 import { openSiegeResult, openRaidResult } from './SiegeResult.js';
 import { progressBar, metaOf, rallyFlag } from './components.js';
 import { NotifyStack } from './NotifyStack.js';
+import { openWeather } from './WeatherDialog.js';
 import { MapPanel } from './panels/MapPanel.js';
 import { ShelterPanel } from './panels/ShelterPanel.js';
 import { ExplorePanel } from './panels/ExplorePanel.js';
@@ -173,6 +174,7 @@ export class UIManager {
       if (action === 'openCiv') this.switchTab('shelter');
       if (action === 'openSurvivors') this.switchTab('survivors');
       if (action === 'openChangelog') showChangelog(this);
+      if (action === 'openWeather') openWeather(this);
     });
 
     bus.on(EVT.TOAST, ({ msg, type }) => this.toastEl.show(msg, type));
@@ -394,6 +396,7 @@ export class UIManager {
         ${this.cloudBadge()}
         <button class="ver-badge" data-action="openChangelog" title="查看更新內容">v${APP_VERSION}</button>
         ${st.starving ? '<button class="starve-badge" data-action="openSurvivors" title="食物耗盡，人員持續扣血">🍽️ 飢餓中</button>' : ''}
+        ${this.weatherBadge()}
         <button class="civ-badge" data-action="openCiv" title="文明度：建築、玩家等級、裝備越高，屍潮越強">${tier.icon} 文明 ${g.civilization.value()}</button>
         </div>
         <div class="wallhp" title="主要據點圍牆耐久">🧱${progressBar(wallRatio, wallRatio < 0.3 ? 'danger' : '', hasBase ? `${Math.floor(g.shelter.wallHp())}/${g.shelter.wallMax()}` : '—')}</div>
@@ -446,6 +449,13 @@ export class UIManager {
         void m;
       },
     });
+  }
+
+  /** v15.18：狀態列的今日天候標籤 */
+  weatherBadge() {
+    const w = this.game.worldEvent?.today();
+    if (!w) return '';
+    return `<button class="wx-badge wx-${w.id}" data-action="openWeather" title="今日天候：${w.name}（${w.short}）">${w.icon} ${w.name}</button>`;
   }
 
   renderBadges() {

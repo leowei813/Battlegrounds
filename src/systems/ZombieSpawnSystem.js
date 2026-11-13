@@ -12,6 +12,8 @@ import {
 } from '../utils/math.js';
 import { seeded, cellOf, cellBox, cellsAround } from '../multiplayer/worldGrid.js';
 import { WORLD_CENTER, WORLD_HALF_DIAG_M, inWorld } from '../config/world.js';
+import { TimeSystem } from './TimeSystem.js';
+import { WorldEventSystem } from './WorldEventSystem.js';
 
 /**
  * 夜晚地圖殭屍群：依「格子＋夜晚編號」決定（所有玩家看到相同的殭屍群、精英與 Boss），
@@ -92,13 +94,20 @@ export class ZombieSpawnSystem {
     }
     if (!map.pois.length) return;
     map.zombieNight = night;
-    map.zombieGroups = this.sharedGroups(night);
+    // v15.18：天候以「這一晚入夜（20:00）」的時刻決定，所有玩家相同
+    const ms = TimeSystem.dayMs(now);
+    const dusk = now - ((((this.game.time.hour(now) - 20) % 24) + 24) % 24) * (ms / 24);
+    map.zombieGroups = this.sharedGroups(night, dusk);
     this.applyShared();
     this.game.bus.emit('map:changed');
   }
 
   /** 決定性產生某一晚避難所附近的殭屍群 */
-  sharedGroups(night) {
+  sharedGroups(night, at = Date.now()) {
+    // v15.18：血月：殭屍群數量與等級提高、獵殺獎勵增加
+    const wxCount = WorldEventSystem.fx('nightCount', at);
+    const wxLevel = WorldEventSystem.fx('nightLevel', at);
+    const wxReward = WorldEventSystem.fx('killReward', at);
     const map = this.game.state.map;
     // v13：整張固定世界地圖（所有玩家相同）
     const c = WORLD_CENTER;
@@ -132,10 +141,12 @@ export class ZombieSpawnSystem {
           const boss = zone.danger >= 1 && chance(0.03 + d * 0.01);
           if (boss) enemyId = pick(Object.keys(BOSSES).sort());
           if (!inWorld(lat, lon)) continue;
-          const count = boss ? 1 : Math.min(NIGHT_GROUP_MAX, Math.max(1, Math.round(randInt(1, 2 + d + 1) * this.encounterMul(lat, lon) * NIGHT_GROUP_COUNT_MUL)));
+          const count0 = boss ? 1 : Math.min(NIGHT_GROUP_MAX, Math.max(1, Math.round(randInt(1, 2 + d + 1) * this.encounterMul(lat, lon) * NIGHT_GROUP_COUNT_MUL)));
+          const count = boss ? 1 : Math.min(NIGHT_GROUP_MAX, Math.max(1, Math.round(count0 * wxCount)));
           // v15.11：等級依區域（對齊控制點守軍）
-          const [lo, hi] = NIGHT_GROUP_LEVEL[zone.id] || [1, 5];
-          const level = randInt(lo, hi);
+          const [lo0, hi0] = NIGHT_GROUP_LEVEL[zone.id] || [1, 5];
+          const level = randInt(lo0, hi0) + wxLevel;
+          const hi = hi0 + wxLevel;
           out.push({
             id: `zg_${night}_${key.replace(':', '_')}_${k}`,
             cell: key,
@@ -150,6 +161,7 @@ export class ZombieSpawnSystem {
             elite: !boss && zone.danger >= 0 && chance(0.05 * (2 + d)),
             boss,
             night,
+            ...(wxReward !== 1 ? { reward: wxReward, moon: true } : {}),
           });
         }
       });
@@ -297,7 +309,7 @@ export class ZombieSpawnSystem {
 
   groupLabel(g) {
     const e = ALL_ENEMIES[g.enemyId];
-    return `${g.elite ? '精英' : ''}${e.name} ×${g.count}（Lv${g.level}）${g.minions ? `＋${ALL_ENEMIES[g.minionId]?.name || '殭屍'} ×${g.minions}` : ''}`;
+    return `${g.moon ? '🌕' : ''}${g.elite ? '精英' : ''}${e.name} ×${g.count}（Lv${g.level}）${g.minions ? `＋${ALL_ENEMIES[g.minionId]?.name || '殭屍'} ×${g.minions}` : ''}`;
   }
 
   /**
@@ -326,6 +338,11 @@ export class ZombieSpawnSystem {
     for (let i = 0; i < (g.minions || 0); i += 1) enemies.push(this.game.combat.createEnemy(g.minionId || 'walker', g.minionLv || g.level, false, this.groupMul({ ...g, boss: false, elite: false })));
     const firstStrike = this.game.shelter.primary().facilities.watchtower.level * 0.04;
     const result = this.game.combat.simulate(members, enemies, { firstStrikeBonus: firstStrike, title: `🧟 攻擊 ${this.groupLabel(g)}` });
+    // v15.18：血月的殭屍群：金錢與經驗 +50%
+    if (g.reward) {
+      result.coins = Math.round((result.coins || 0) * g.reward);
+      result.xp = Math.round((result.xp || 0) * g.reward);
+    }
     this.game.combat.applyOutcome(members, result, at);
 
     const loot = { items: [] };

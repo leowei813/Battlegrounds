@@ -97,6 +97,15 @@ export class BaseSiege {
 
   set nightBoss(v) { this.nightStats().boss = v; }
 
+  /** v15.18：今晚擊殺的屍潮變種（種類 → 數量）與自爆次數，存在據點上，重新整理也不會遺失 */
+  get nightVariants() { return this.nightStats().variants || null; }
+
+  set nightVariants(v) { this.nightStats().variants = v; }
+
+  get nightBlasts() { return this.nightStats().blasts || 0; }
+
+  set nightBlasts(v) { this.nightStats().blasts = v; }
+
   /** 今晚的編號（夜晚跨過午夜，以入夜那天計） */
   nightKey(now = Date.now()) {
     return this.game.time.nightKey(now);
@@ -173,6 +182,8 @@ export class BaseSiege {
       this.wave = waves;
       const reward = this.dawnReward();
       reward.recovered = this.collectRecovered();
+      if (this.nightVariants) reward.variants = { ...this.nightVariants };
+      if (this.nightBlasts) reward.blasts = this.nightBlasts;
       const entry = this.game.shelter.recordDefense({
         base: this.base, attacker: '屍潮', success: true, waves: this.wave, kills: this.nightKills,
         wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)), assists: this.assistList('ok', st?.night ?? this.nightKey()),
@@ -847,10 +858,12 @@ export class BaseSiege {
     const scored = dead.filter((z) => !z.noReward);
     this.nightKills += scored.length;
     // v15.18：變種擊殺數（守城報告用）
-    scored.filter((z) => SIEGE_VARIANTS[z.enemyId]).forEach((z) => {
-      this.nightVariants = this.nightVariants || {};
-      this.nightVariants[z.enemyId] = (this.nightVariants[z.enemyId] || 0) + 1;
-    });
+    const vk = scored.filter((z) => SIEGE_VARIANTS[z.enemyId]);
+    if (vk.length) {
+      const m = { ...(this.nightVariants || {}) };
+      vk.forEach((z) => { m[z.enemyId] = (m[z.enemyId] || 0) + 1; });
+      this.nightVariants = m;
+    }
     scored.forEach((z) => {
       st.kills += 1;
       st.siegeKills += 1;
@@ -952,6 +965,7 @@ export class BaseSiege {
       wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note, assists: this.assistList('breached'),
       siege: {
         lossPct: pct, wave: this.wave, maxWaves: this.maxWaves(), materials, injuries, boss: this.nightBoss, recovered,
+        ...(this.nightVariants ? { variants: { ...this.nightVariants } } : {}), ...(this.nightBlasts ? { blasts: this.nightBlasts } : {}),
       },
     });
     const dmgText = damaged.length ? `，${damaged.length} 棟建築損毀` : '';

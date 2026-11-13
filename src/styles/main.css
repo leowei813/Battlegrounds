@@ -386,6 +386,17 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 }
 
 /* ---------- Civilization / bases ---------- */
+/* v15.18：今日天候 */
+.wx-badge { border: 1px solid #4fc3f766; background: #4fc3f71a; color: #b3e5fc; border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; align-self: flex-start; white-space: nowrap; }
+.wx-badge.wx-bloodMoon { border-color: #ef535088; background: #ef53501f; color: #ffcdd2; }
+.wx-badge.wx-calm { border-color: #ffffff33; background: #ffffff0d; color: #e0e0e0; }
+.wx-list { display: grid; gap: 4px; }
+.wx-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; opacity: 0.75; }
+.wx-row small { text-align: right; }
+.wx-row.on { opacity: 1; background: #4fc3f722; border: 1px solid #4fc3f7; }
+.wx-brief { display: flex; gap: 10px; align-items: center; padding: 8px 10px; margin-bottom: 10px; border: 1px solid #4fc3f7; border-radius: 10px; background: #4fc3f71a; }
+.wx-brief .wx-ic { font-size: 26px; }
+.wx-brief.wx-bloodMoon { border-color: #ef5350; background: #ef53501a; }
 .civ-badge { border: 1px solid #ffb30066; background: #ffb30018; color: #ffe082; border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; align-self: flex-start; white-space: nowrap; }
 .civ-card { margin: 8px 0; padding: 10px 12px; border-radius: var(--radius); border: 1px solid #ffb30055; background: linear-gradient(135deg, #3e2f0a55, #26291f); }
 .civ-parts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; margin: 4px 0; }

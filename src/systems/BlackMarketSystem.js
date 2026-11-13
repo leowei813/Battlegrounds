@@ -9,6 +9,7 @@ import { sha256 } from '../utils/sha256.js';
 import { RESOURCES } from '../config/constants.js';
 import { exchangeValues, scarcity } from './MaterialBalance.js';
 import { baseSupplyWeight } from './LootStock.js';
+import { WorldEventSystem } from './WorldEventSystem.js';
 
 /** 設計圖回收價：同型號、同保底品級裝備回收價的倍數 */
 export const BLUEPRINT_PRICE_MUL = 1.5;
@@ -115,13 +116,17 @@ export class BlackMarketSystem {
   }
 
   /** 由（格子, 世代）決定性產生商品：所有玩家看到的完全相同 */
-  good(slot, gen) {
+  good(slot, gen, now = Date.now()) {
     const id = `${slot}:${gen}`;
-    if (this.goodsCache.has(id)) return this.goodsCache.get(id);
-    const good = withOwnSeed(seedOf(`jdqs-bm:${id}`), () => this.makeGood(id, slot, gen));
-    if (this.goodsCache.size > 200) this.goodsCache.clear();
-    this.goodsCache.set(id, good);
-    return good;
+    let good = this.goodsCache.get(id);
+    if (!good) {
+      good = withOwnSeed(seedOf(`jdqs-bm:${id}`), () => this.makeGood(id, slot, gen));
+      if (this.goodsCache.size > 200) this.goodsCache.clear();
+      this.goodsCache.set(id, good);
+    }
+    // v15.18：黑市大促：售價 −20%
+    const sale = WorldEventSystem.fx('bmSell', now);
+    return sale === 1 ? good : { ...good, price: Math.max(1, Math.round(good.price * sale)), basePrice: good.price };
   }
 
   /** 隨機產生一項商品（種類、品級機率與價格：一般黑市與專屬保留區相同） */
@@ -157,7 +162,7 @@ export class BlackMarketSystem {
   shelf(now = Date.now()) {
     const sold = this.soldMap();
     return Array.from({ length: BLACK_MARKET.slots }, (_, slot) => {
-      const gd = this.good(slot, this.genOf(slot, now));
+      const gd = this.good(slot, this.genOf(slot, now), now);
       return { ...gd, soldTo: sold[gd.id] || null };
     });
   }
@@ -172,7 +177,7 @@ export class BlackMarketSystem {
     const g = this.game;
     const [slot, gen] = String(goodId).split(':').map(Number);
     if (!(slot >= 0 && slot < BLACK_MARKET.slots) || this.genOf(slot, now) !== gen) return { ok: false, reason: '這項商品已經下架了' };
-    const good = this.good(slot, gen);
+    const good = this.good(slot, gen, now);
     if (this.soldMap()[good.id]) return { ok: false, reason: '已經被其他玩家買走了' };
     if (this.boughtThisRound(now)) return { ok: false, reason: `這一輪已經買了 ${BLACK_MARKET.perRound} 件，下次換貨後可以再買` };
     if (g.state.player.coins < good.price) return { ok: false, reason: `金錢不足（需要 💰${good.price}）` };
@@ -238,14 +243,14 @@ export class BlackMarketSystem {
 
   /** 回收單價（可能有小數，成交時總價取整數）；研究「以物易物」提高回收價 */
   buybackUnit(key) {
-    return this.baseSupplyPrice(key) * this.buybackRate(key) * (1 + this.game.research.bonus('sellPct'));
+    return this.baseSupplyPrice(key) * this.buybackRate(key) * (1 + this.game.research.bonus('sellPct')) * WorldEventSystem.fx('bmBuy'); // v15.18：黑市大促收購 +20%
   }
 
   /** 裝備回收價：約為商人賣價的 1/8，品級越高比例越好（劣質 10% → 傳奇 15%） */
   gearBuyback(item) {
     const idx = Math.max(0, RARITY_ORDER.indexOf(item.rarity));
     const rate = (0.8 + 0.08 * idx) / 8;
-    return Math.max(1, Math.round(this.baseGearPrice(item) * rate * (1 + this.game.research.bonus('sellPct'))));
+    return Math.max(1, Math.round(this.baseGearPrice(item) * rate * (1 + this.game.research.bonus('sellPct')) * WorldEventSystem.fx('bmBuy')));
   }
 
   /**
@@ -253,7 +258,7 @@ export class BlackMarketSystem {
    * 副本圖紙固定 BLUEPRINT_DUNGEON_PRICE。研究「以物易物」提高回收價。
    */
   blueprintBuyback(bp) {
-    const bonus = 1 + this.game.research.bonus('sellPct');
+    const bonus = (1 + this.game.research.bonus('sellPct')) * WorldEventSystem.fx('bmBuy'); // v15.18：黑市大促收購 +20%
     if (bp?.dg) return Math.round(BLUEPRINT_DUNGEON_PRICE * bonus);
     const md = ITEM_MODELS[bp?.model];
     if (!md || !RARITIES[bp.rarity]) return 0;
@@ -405,7 +410,7 @@ export class BlackMarketSystem {
 
   /** 基礎物資賣出總價（研究「以物易物」提高回收價） */
   resourcePrice(key, qty) {
-    return Math.floor((RESOURCE_BUYBACK.price[key] || 0) * qty * (1 + this.game.research.bonus('sellPct')));
+    return Math.floor((RESOURCE_BUYBACK.price[key] || 0) * qty * (1 + this.game.research.bonus('sellPct')) * WorldEventSystem.fx('bmBuy'));
   }
 
   /** v15.11：把基礎物資（食物、木材、燃料）賣到黑市 */

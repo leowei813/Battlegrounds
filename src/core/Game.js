@@ -24,6 +24,7 @@ import { generateWorldPois } from '../map/WorldGen.js';
 import { WORLD_CENTER } from '../config/world.js';
 import { PoiShareSystem } from '../systems/PoiShareSystem.js';
 import { DungeonSystem } from '../systems/DungeonSystem.js';
+import { WorldEventSystem } from '../systems/WorldEventSystem.js';
 import { AutoHomeSystem } from '../systems/AutoHomeSystem.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import { haversine } from '../utils/math.js';
@@ -59,6 +60,7 @@ export class Game {
     this.poiShare = new PoiShareSystem(this);
     this.autoHome = new AutoHomeSystem(this);
     this.dungeon = new DungeonSystem(this);
+    this.worldEvent = new WorldEventSystem(this);
     this.chat = new ChatSystem(this);
     this.time = new TimeSystem(this);
     this.research = new ResearchSystem(this);

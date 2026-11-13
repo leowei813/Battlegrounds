@@ -4,6 +4,7 @@ import { SUPPLIES, AMMO_RECOVER, recoverKeyOf, rollRecover } from '../config/sup
 import { ALL_ENEMIES, ELITE_MUL, defReduce, HOME_DEFENSE_DOWN } from '../config/enemies.js';
 import { chance, randFloat, pick, uid } from '../utils/math.js';
 import { xpToNext } from '../config/survivors.js';
+import { WorldEventSystem } from './WorldEventSystem.js';
 
 const STEP = 0.1; // 秒
 const MAX_TIME = 90;
@@ -470,7 +471,12 @@ export class CombatSystem {
       const bonus = attackXp && result.victory ? Math.round(xpToNext(sv.level) * attackXp.winPct) : 0;
       if (bonus > 0) (result.winBonus = result.winBonus || []).push(`${sv.name} +${bonus.toLocaleString()}`);
       this.game.survivors.gainXp(sv, xpEach + bonus);
-      if (u) this.game.survivors.setHp(sv, u.hp);
+      if (u) {
+        // v15.18：酸雨：探索與野外戰鬥受到的傷害增加（據點防守不受影響）
+        const hurt = homeDefense ? 1 : WorldEventSystem.fx('hurt', at);
+        const taken = Math.max(0, (u.hpStart ?? u.hp) - u.hp);
+        this.game.survivors.setHp(sv, hurt > 1 && taken > 0 ? Math.max(1, u.hp - taken * (hurt - 1)) : u.hp);
+      }
     });
     this.game.grant({ coins: Math.round(result.coins * COIN_GAIN_MUL), parts: result.parts });
     // 戰鬥後：生命低於 70% 的人從藥品欄吃藥補到不溢出

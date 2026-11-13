@@ -60,6 +60,9 @@ const fillSupplies = (game, n = 900) => {
 const { InfectedSystem: InfSys } = await import('../src/systems/InfectedSystem.js');
 const { RallySystem: RallySys } = await import('../src/systems/RallySystem.js');
 const { tripProgress } = await import('../src/systems/ExplorationSystem.js');
+// v15.18：天候事件依真實日期決定；測試一律固定為平靜日，專門的測試再指定其他天候
+const { WorldEventSystem: WXS } = await import('../src/systems/WorldEventSystem.js');
+WXS.force = 'calm';
 const realBlocking = InfSys.prototype.blocking;
 // v14：重度感染據點已停用；測試仍檢查原本的機制
 { const { INFECTED: INF0 } = await import('../src/systems/InfectedSystem.js'); INF0.disabled = false; }
@@ -7451,6 +7454,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(light > 25, `倒下只受輕傷的機率生效（40 次中 ${light} 次輕傷）`);
   sv.severe = false;
   gr.research.bonus = (k) => (k === 'severeAvoid' ? 0 : k === 'downXpReduce' ? 0.5 : b0(k));
+  sv.level = 20; sv.xp = Math.round(x2(20) / 2); // 前面 40 次倒下偶爾會扣到降級：重設後再量
   const t0 = gr.survivors.totalXp(sv);
   gr.survivors.battleDown(sv, '測試', Date.now(), 0.1);
   const lost = t0 - gr.survivors.totalXp(sv);
@@ -7649,6 +7653,130 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const mg = SM.migrate({ version: 37, bpAutoSell: ['poor', 'rare'], inventory: { blueprints: [{ id: 'z' }] } });
   const mg3 = SM.migrate({ version: 38, bpAutoSell: { r: 'rare', s: 3 } });
   assert(mg.bpAutoSell?.r === 'rare' && mg.bpAutoSell.s === null && mg.inventory.blueprints[0].held && mg3.bpAutoSell.s === 3, `舊存檔：勾選品級轉成最高品級以下、全部星級改成不設定、已選的星級保留（${JSON.stringify(mg.bpAutoSell)}）`);
+}
+
+// ---- v15.18：天候事件日 ----
+{
+  const { WORLD_EVENTS: WE } = await import('../src/config/worldEvents.js');
+  const { npcAlert: npcAlertF } = await import('../src/systems/TerritorySystem.js');
+  WXS.force = null;
+  const t0 = Date.UTC(2026, 0, 1, 4);
+  const seen = {};
+  for (let d = 0; d < 730; d += 1) { const id = WXS.at(t0 + d * 864e5).id; seen[id] = (seen[id] || 0) + 1; }
+  assert(Object.keys(WE).filter((k) => WE[k].weight > 0).every((k) => seen[k] > 0) && !seen.supply, `每天抽一種天候，全部都會出現、補給日（空投）還沒上線前不會出現（${JSON.stringify(seen)}）`);
+  assert(WXS.at(t0 + 3600e3).id === WXS.at(t0 + 10 * 3600e3).id, '同一天（台灣時間）天候相同，所有玩家算出一樣的結果');
+  const gw = Game.newGame({ playerName: 'WX', classId: 'farmer', lat: 25, lon: 121 });
+  gw.state.map.pois = fillPois([], 25, 121);
+  gw.shelter.establish(gw.state.map.pois.find((p) => gw.shelter.canEstablish(p).ok));
+  const at = Date.now();
+  const with_ = (id, fn) => { WXS.force = id; try { return fn(); } finally { WXS.force = 'calm'; } };
+  // 酸雨：搜刮量
+  const ctx = { poi: gw.state.map.pois[0], lootBase: 1 };
+  const l0 = with_('calm', () => gw.exploration.atPhase(ctx, at).lootMul);
+  const l1 = with_('acidRain', () => gw.exploration.atPhase(ctx, at).lootMul);
+  assert(Math.abs(l1 / l0 - 1.2) < 1e-9, `酸雨：探索搜刮量 +20%（${(l1 / l0).toFixed(2)}）`);
+  // 酸雨：戰鬥受到的傷害
+  const sv = gw.survivors.leader();
+  const hurtTest = (id) => with_(id, () => {
+    gw.survivors.setHp(sv, 100);
+    gw.combat.applyOutcome([sv], { team: [{ id: sv.id, hp: 60, hpStart: 100 }], kills: [], bossKills: 0, eliteKills: 0, xp: 0, coins: 0, parts: 0, victory: true }, at);
+    return gw.survivors.hp ? gw.survivors.hp(sv) : sv.hp;
+  });
+  const h0 = hurtTest('calm');
+  const h1 = hurtTest('acidRain');
+  assert(Math.round(h0) === 60 && Math.round(h1) === 48, `酸雨：探索戰鬥受到的傷害 +30%（失血 40 → ${Math.round(100 - h1)}）`);
+  // 濃霧：警戒範圍
+  const a0 = with_('calm', () => [npcAlertF({ level: 10 }), gw.territory?.alertRadius ? gw.territory.alertRadius(gw.shelter.primary()) : null]);
+  const a1 = with_('fog', () => [npcAlertF({ level: 10 }), gw.territory?.alertRadius ? gw.territory.alertRadius(gw.shelter.primary()) : null]);
+  assert(a0[0] === 70 && a1[0] === 49 && (a0[1] == null || a1[1] === Math.round(a0[1] * 0.7)), `濃霧：NPC 與玩家警戒範圍 −30%（${a0.join('/')} → ${a1.join('/')}）`);
+  // 熱浪：食物消耗、移動速度
+  const f0 = with_('calm', () => gw.resources.rates().upkeep.food);
+  const f1 = with_('heatWave', () => gw.resources.rates().upkeep.food);
+  const m0 = with_('calm', () => gw.time.exploreSpeedMul(at));
+  const m1 = with_('heatWave', () => gw.time.exploreSpeedMul(at));
+  assert(Math.abs(f1 / f0 - 1.25) < 1e-9 && Math.abs(m1 / m0 - 0.85) < 1e-9, `熱浪：食物消耗 +25%、移動速度 −15%（${(f1 / f0).toFixed(2)}、${(m1 / m0).toFixed(2)}）`);
+  // 豐收：食物產量
+  sv.job = 'farm';
+  const p0 = with_('calm', () => gw.resources.rates().gross.food);
+  const p1 = with_('harvest', () => gw.resources.rates().gross.food);
+  assert(p1 > p0 * 1.15, `豐收：食物產量提高（${p0.toFixed(1)} → ${p1.toFixed(1)}）`);
+  sv.job = 'idle';
+  // 黑市大促
+  const g0 = with_('calm', () => gw.blackMarket.shelf(at)[0].price);
+  const g1 = with_('blackSale', () => gw.blackMarket.shelf(at)[0].price);
+  const it = gw.equipment.generate({ level: 10, rarity: 'rare' });
+  const b0 = with_('calm', () => gw.blackMarket.gearBuyback(it));
+  const b1 = with_('blackSale', () => gw.blackMarket.gearBuyback(it));
+  assert(Math.abs(g1 - g0 * 0.8) <= 1 && Math.abs(b1 - b0 * 1.2) <= 1, `黑市大促：售價 −20%、收購 +20%（${g0}→${g1}、${b0}→${b1}）`);
+  // 血月：夜間殭屍群、獵殺獎勵、屍潮變種
+  const night = gw.time.nightKey(at);
+  const z0 = with_('calm', () => gw.zombies.sharedGroups(night, at));
+  const z1 = with_('bloodMoon', () => gw.zombies.sharedGroups(night, at));
+  const sum = (l, k) => l.reduce((s2, x) => s2 + x[k], 0);
+  assert(z0.length === z1.length && sum(z1, 'count') > sum(z0, 'count') && sum(z1, 'level') === sum(z0, 'level') + 3 * z1.length && z1.every((x) => x.reward === 1.5 && x.moon) && z0.every((x) => !x.reward),
+    `血月：同樣的殭屍群數量 +30%、等級 +3、獵殺獎勵 +50%（數量 ${sum(z0, 'count')} → ${sum(z1, 'count')}）`);
+  assert(with_('bloodMoon', () => gw.siege.of().variantMul()) === 2 && with_('calm', () => gw.siege.of().variantMul()) === 1, '血月：屍潮變種出現權重加倍');
+  WXS.force = 'calm';
+}
+
+// ---- v15.18：屍潮變種 ----
+{
+  const { SIEGE_VARIANTS: SV, SIEGE_VARIANT_KEYS: SVK } = await import('../src/config/enemies.js');
+  const gv = Game.newGame({ playerName: 'VR', classId: 'warrior', lat: 25, lon: 121 });
+  gv.state.map.pois = fillPois([], 25, 121);
+  gv.shelter.establish(gv.state.map.pois.find((p) => gv.shelter.canEstablish(p).ok));
+  setHour(gv, 23);
+  const s = gv.siege.of();
+  const civ = (v) => { gv.civilization.value = () => v; };
+  civ(50);
+  const pick50 = new Set(Array.from({ length: 400 }, () => s.pickEnemy()));
+  civ(300);
+  const pick300 = new Set(Array.from({ length: 1500 }, () => s.pickEnemy()));
+  assert(SVK.every((k) => !pick50.has(k)) && SVK.every((k) => pick300.has(k)), `變種依文明度解鎖（文明 50 沒有、300 全部出現：${[...pick300].filter((k) => SV[k]).join('、')}）`);
+  const base = gv.shelter.primary();
+  const W = WORLDC.WALL_R;
+  const fresh = (id) => { s.zombies = []; s.spawn(id); const z = s.zombies[0]; z.x = W + 1; z.y = 0; return z; };
+  // 自爆者：碰到圍牆爆炸，扣牆血、不給獎勵
+  base.wallHp = null;
+  const w0 = gv.shelter.wallHp(base);
+  const kills0 = s.nightKills;
+  const ze = fresh('exploder');
+  s.step(0.1);
+  assert(gv.shelter.wallHp(base) < w0 - ze.atk * 2 && !s.zombies.includes(ze) && s.nightKills === kills0, `自爆者碰到圍牆自爆（牆 ${Math.round(w0)} → ${Math.round(gv.shelter.wallHp(base))}，不算擊殺獎勵）`);
+  // 裝甲殭屍：一般傷害減半，火焰塔無視裝甲
+  const za = fresh('armored');
+  const hp0 = za.hp;
+  s.src = 'machineGun'; s.damage(za, 100);
+  const d1 = hp0 - za.hp;
+  s.src = 'flameTower'; s.damage(za, 100);
+  const d2 = hp0 - d1 - za.hp;
+  assert(d1 === 50 && d2 === 100, `裝甲殭屍：機槍傷害 −50%、火焰塔無視裝甲（${d1}／${d2}）`);
+  // 拆牆者：對牆傷害較高
+  base.wallHp = null;
+  const zb = fresh('breaker'); zb.atkCd = 0;
+  const wb0 = gv.shelter.wallHp(base);
+  s.step(0.1);
+  const dmgB = wb0 - gv.shelter.wallHp(base);
+  assert(Math.abs(dmgB - zb.atk * 0.25 * (1 - gv.shelter.wallReduction(base)) * SV.breaker.ability.wallMul) < 1, `拆牆者對圍牆傷害 ×${SV.breaker.ability.wallMul}`);
+  // 爬牆者：貼牆幾秒後翻進圍牆
+  base.wallHp = null;
+  const zc = fresh('climber');
+  for (let i = 0; i < 60 && !zc.inside; i += 1) s.step(0.1);
+  assert(zc.inside && Math.hypot(zc.x, zc.y) < W, '爬牆者貼牆後翻進圍牆');
+  // 尖叫者：周圍殭屍加速
+  s.zombies = [];
+  s.spawn('screamer'); s.spawn('walker');
+  const [q, wk] = s.zombies;
+  q.x = 120; q.y = 0; wk.x = 125; wk.y = 0; wk.speed = 10; q.speed = 0;
+  s.step(0.1);
+  const moved = 125 - Math.hypot(wk.x, wk.y);
+  assert(Math.abs(moved - 10 * 1.15 * 0.1) < 0.02, `尖叫者讓附近殭屍加速 15%（移動 ${moved.toFixed(3)}）`);
+  // 變種擊殺記錄在今晚統計，天亮寫進守城報告
+  s.zombies = [];
+  s.spawn('armored');
+  s.zombies[0].hp = 0;
+  s.collectDead();
+  assert(s.nightVariants?.armored >= 1 && base.nightStats?.variants?.armored >= 1, '變種擊殺數記在據點的今晚統計（重新整理不會遺失）');
 }
 
 if (failures) {
