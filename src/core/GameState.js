@@ -3,6 +3,7 @@ import {
 } from '../config/constants.js';
 import { FACILITIES } from '../config/facilities.js';
 import { CLASSES, rollQualities } from '../config/survivors.js';
+import { rollTraits, traitRandom } from '../config/traits.js';
 import { emptyEquipment } from '../config/equipment.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 import { uid, newSeed, randFloat } from '../utils/math.js';
@@ -61,6 +62,10 @@ export function createLeader(name, classId = 'warrior') {
     zeroSince: 0, // 飢餓且生命為 0 的起始時間（永久死亡倒數）
     bag: {}, // 個人背包攜帶的資源
     equipment: emptyEquipment(),
+    // v16：指揮官固定「領袖氣質」＋1 個正面特質
+    traits: rollTraits(null, traitRandom(`t:leader:${name}`), true),
+    pq: {},
+    adv: null,
   };
 }
 
@@ -76,6 +81,10 @@ export function createSurvivor(name, classId, level = 1, rarity = 'common') {
     rarity,
     // 能力素質 0～100%（每項各自隨機）
     quality: rollQualities(() => randFloat(0, 1)),
+    // v16：特質（品級決定數量）、個人任務計數與轉職
+    traits: rollTraits(rarity, () => randFloat(0, 1)),
+    pq: {},
+    adv: null,
     status: 'idle',
     job: 'scavenge',
     hp: null,

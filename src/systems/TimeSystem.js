@@ -2,6 +2,7 @@ import {
   DAY_REAL_MS, DAY_REAL_MS_OLD, DAY_SWITCH_AT, WORLD_EPOCH_MS, WORLD_START,
 } from '../config/constants.js';
 import { TIME_PHASES, phaseForHour, isSiegeHour } from '../config/timePhases.js';
+import { WorldEventSystem } from './WorldEventSystem.js';
 
 /**
  * 日夜系統（v9：世界時間）：所有玩家共用同一個日曆，從 WORLD_EPOCH_MS（2050/1/1 06:00）起算，
@@ -91,9 +92,10 @@ export class TimeSystem {
    */
   exploreSpeedMul(at = Date.now()) {
     const p = this.phase(at);
-    if (p.exploreSpeed >= 1) return p.exploreSpeed;
+    const wx = WorldEventSystem.fx('move', at); // v15.18：熱浪移動 −15%
+    if (p.exploreSpeed >= 1) return p.exploreSpeed * wx;
     const reduce = this.game.research.bonus('nightPenaltyReduce');
-    return 1 - (1 - p.exploreSpeed) * (1 - reduce);
+    return (1 - (1 - p.exploreSpeed) * (1 - reduce)) * wx;
   }
 }
 

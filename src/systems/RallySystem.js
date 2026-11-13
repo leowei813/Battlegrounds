@@ -96,6 +96,7 @@ export class RallySystem {
     if (t.kind === 'npc') return g.npcs.get(t.id) || g.npcs.byIdent?.(t.ident) || null;
     if (t.kind === 'inf') return g.infected.get(t.id) || g.infected.byId?.(t.id) || null;
     if (t.kind === 'cp') { const c = cpById(t.id); return c && { ...c, ...g.cp.markerSpot(c.id) }; }
+    if (t.kind === 'ad') return g.airdrop?.get(t.id) || null; // v15.19：全服空投
     return null;
   }
 
@@ -116,6 +117,10 @@ export class RallySystem {
     if (t.kind === 'inf') {
       const s = g.infected.siteById(t.id);
       return !!(s && g.infected.cleared(s, now));
+    }
+    if (t.kind === 'ad') {
+      const d = g.airdrop?.get(t.id);
+      return !d || ['taken', 'npc', 'gone'].includes(g.airdrop.status(d, now).state);
     }
     return false;
   }
@@ -139,7 +144,7 @@ export class RallySystem {
     const cap = this.maxConcurrent();
     if (mine.length >= cap) return { ok: false, reason: `同時進行中的集結已達上限（${cap} 個；廣播塔 Lv5 起 2 個、Lv10 起 3 個）` };
     if (target && mine.some((d) => d.target?.kind === target.kind && d.target?.id === target.id)) return { ok: false, reason: '已經對這個目標發起集結了' };
-    if (target && !['npc', 'inf', 'cp'].includes(target.kind)) return { ok: false, reason: '只能對 NPC 據點、控制點發起集結' };
+    if (target && !['npc', 'inf', 'cp', 'ad'].includes(target.kind)) return { ok: false, reason: '只能對 NPC 據點、控制點、空投發起集結' };
     if (target?.kind === 'cp') { const c = g.cp.canAttack(target.id); if (!c.ok) return c; }
     if (target?.kind === 'npc' && g.npcs.get(target.id)?.hq) return { ok: false, reason: '大本營不能攻打' };
     return { ok: true };
@@ -657,6 +662,35 @@ export class RallySystem {
         if (result) g.npcs.assaultWound(n, result.kills.length, now); // 沒打破圍牆就沒有擊倒守軍
         res.summary = `💀 集結攻打「${n.name}」失敗（${as.breached ? '與守軍交戰落敗' : '沒能打破圍牆'}）`;
       }
+    } else if (d.target.kind === 'ad') {
+      // v15.19：集結搶空投：打贏守衛後寫入共用資料（先到先得），戰利品平分
+      const drop = tg;
+      const st = g.airdrop.status(drop, now);
+      if (st.state !== 'landed') {
+        res.summary = st.state === 'taken' ? `抵達時空投已經被「${st.by}」搶走` : st.state === 'npc' ? '抵達時空投已經被 NPC 勢力拿走' : '抵達時空投不在了';
+        teams.forEach((t) => { res.teams[t.player].units = (t.units || []).map((u) => ({ i: u.i, hp: u.hp, down: false })); });
+        return res;
+      }
+      result = g.combat.simulate([], g.airdrop.guards(drop), { allies: units, record: false, capture: RALLY_LOG, title: '🚩 集結搶奪空投' });
+      if (result.entry) res.battle = result.entry;
+      units.forEach((u) => {
+        const r = result.team.find((x) => x.id === u.id);
+        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: Math.round(r?.hp ?? 0), down: !!r?.down, dealt: Math.round(r?.dealt || 0), kills: r?.kills || 0, maxHp: u.maxHp, meds: r?.medsUsed || 0 });
+      });
+      res.detail = [`⚔️ 空投守衛 ${result.foes.length} 隻，擊倒 ${result.foes.filter((f) => f.down).length} 隻，我方 ${units.length} 人中倒下 ${result.team.filter((x) => x.down).length} 人`, ...teamLines(teams, res)];
+      res.victory = false;
+      if (result.victory) {
+        const c = await g.airdrop.claim(drop, d.ownerName || g.state.player.name || '集結隊', now);
+        if (c?.ok) {
+          const loot = g.airdrop.loot(drop);
+          const { coins = 0, ...mats } = loot.gained;
+          share(coins, [], mats);
+          // 設計圖給發起人
+          if (loot.blueprints.length && res.teams[d.owner]) res.teams[d.owner].blueprints = loot.blueprints;
+          res.victory = true;
+          res.summary = `🏆 集結搶到空投（${people} 人參戰）`;
+        } else res.summary = `🏳️ 打贏守衛但晚了一步：${c?.reason || '空投已經被拿走了'}`;
+      } else res.summary = '💀 集結搶奪空投失敗（沒能打贏守衛殭屍）';
     } else if (d.target.kind === 'cp') {
       // v14：集結攻打控制點，打下後為所有參加者共同擁有
       const cp = tg;
@@ -768,6 +802,11 @@ export class RallySystem {
       if (g.equipment.addItem(item, '集結')) report.items.push(item);
     });
     report.resources = g.grant({ ...(r.mats || {}), coins: r.coins || 0 });
+    // v15.19：集結搶空投的設計圖（給發起人）
+    if (r.blueprints?.length) {
+      g.state.inventory.blueprints.push(...r.blueprints);
+      report.blueprints = [...r.blueprints];
+    }
     if (report.resources.locks > 0) {
       report.locks = report.resources.locks;
       report.events.push(`🔒 集結戰利品中分到「就是要鎖你」×${report.locks}`);

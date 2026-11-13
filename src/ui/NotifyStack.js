@@ -2,6 +2,8 @@ import { escapeHtml } from '../utils/dom.js';
 import { formatDuration } from '../utils/math.js';
 import { rallyFlag, btn } from './components.js';
 import { DungeonSystem } from '../systems/DungeonSystem.js';
+import { weatherBrief } from './WeatherDialog.js';
+import { CLASS_QUESTS } from '../config/traits.js';
 import { DUNGEONS, DUNGEON_KEYS } from '../config/dungeons.js';
 import { openDungeon } from './DungeonView.js';
 
@@ -55,6 +57,7 @@ export class NotifyStack {
       }
     }
     this.dungeonRemind(now);
+    this.advRemind();
     // 集結邀請：好友剛發起、自己還沒參加
     (g.rally?.invites(now) || []).forEach((d) => {
       if (this.rallySeen.has(d.id)) return;
@@ -64,7 +67,8 @@ export class NotifyStack {
   }
 
   /**
-   * v15.15：每天地下城開放報名後第一次開遊戲（或遊戲開著跨過 00:00）：一個副本都還沒報名就跳出視窗提醒一次（報名截止前）。
+   * v15.18：每天第一次開遊戲（或遊戲開著跨過 00:00）跳出「今日情報」：一定有今日天候；
+   * 地下城報名時間內、一個副本都還沒報名時，再加上地下城報名提醒。
    * 已經有其他視窗開著（更新內容、離線收益…）時，等它關掉再跳出。
    */
   dungeonRemind(now = Date.now()) {
@@ -72,32 +76,62 @@ export class NotifyStack {
     const ui = this.ui;
     const dgs = g.dungeon;
     // v15.15.1：登入流程（離線收益、更新內容…）全部開完之後才檢查，否則提醒會被接著跳出的視窗蓋掉
-    if (!this.ready || !dgs || !g.shelter?.hasShelter?.() || DungeonSystem.phase(now) !== 'signup') return;
+    if (!this.ready || !dgs || !g.shelter?.hasShelter?.()) return;
     const day = DungeonSystem.dayKey(now);
-    if (g.state.dgRemindDay === day || ui.modal.current) return;
-    g.state.dgRemindDay = day;
+    if (g.state.briefDay === day || ui.modal.current) return;
+    g.state.briefDay = day;
+    const w = g.worldEvent.today(now);
     const left = DUNGEON_KEYS.filter((dg) => { const r = dgs.record(dg, now); return !r || r.cancelled; });
-    // 一個副本都還沒報名才提醒（已經報名其中一個就不打擾）
-    if (left.length < DUNGEON_KEYS.length) return;
-    const close = DungeonSystem.times(DungeonSystem.dayStart(now)).close;
-    const rows = DUNGEON_KEYS.map((dg) => {
-      const r = dgs.record(dg, now);
-      const ok = r && !r.cancelled;
-      return `<div class="row-between dg-remind-row"><span>🕳️ ${escapeHtml(DUNGEONS[dg].name)}</span>${ok ? `<span class="tag tag-green">已報名・${escapeHtml(r.svName || '')}</span>` : btn('前往報名', 'dgGo', { d: dg }, { cls: 'btn-sm btn-primary' })}</div>`;
-    }).join('');
+    // 地下城：報名時間內、一個副本都還沒報名才提醒
+    const remind = DungeonSystem.phase(now) === 'signup' && g.state.dgRemindDay !== day && left.length === DUNGEON_KEYS.length;
+    if (remind) g.state.dgRemindDay = day;
+    let dgHtml = '';
+    if (remind) {
+      const close = DungeonSystem.times(DungeonSystem.dayStart(now)).close;
+      const rows = DUNGEON_KEYS.map((dg) => `<div class="row-between dg-remind-row"><span>🕳️ ${escapeHtml(DUNGEONS[dg].name)}</span>${btn('前往報名', 'dgGo', { d: dg }, { cls: 'btn-sm btn-primary' })}</div>`).join('');
+      dgHtml = `<p>今天還沒有報名任何地下城副本，<b>${formatDuration(Math.max(0, close - now))}</b>後（17:40）截止。</p>
+        <div class="dg-remind">${rows}</div>`;
+    }
+    const foot = remind
+      ? `${btn('稍後再說', 'close', {}, { cls: 'btn-ghost' })}${btn('前往報名', 'dgGo', { d: left[0] }, { cls: 'btn-primary' })}`
+      : btn('知道了', 'close', {}, { cls: 'btn-primary' });
     let went = false;
     const m = ui.modal.open({
-      title: '🕳️ 今天還沒報名地下城',
-      body: `<p>今天還沒有報名任何地下城副本，<b>${formatDuration(Math.max(0, close - now))}</b>後（17:40）截止。</p>
-        <div class="dg-remind">${rows}</div>
-        <div class="btn-row end">${btn('稍後再說', 'close', {}, { cls: 'btn-ghost' })}${btn('前往報名', 'dgGo', { d: left[0] }, { cls: 'btn-primary' })}</div>`,
+      title: remind ? '🕳️ 今天還沒報名地下城' : '📰 今日情報',
+      body: `${weatherBrief(w)}${dgHtml}<div class="btn-row end">${foot}</div>`,
       onAction: (action, data) => {
         if (action === 'dgGo' && DUNGEONS[data.d]) { went = true; openDungeon(ui, data.d); }
       },
       // 被其他自動跳出的視窗取代（不是玩家關掉或前往報名）：那個視窗關掉後再提醒一次
       onClose: () => queueMicrotask(() => {
-        if (!went && ui.modal.current && ui.modal.current !== m && g.state.dgRemindDay === day) delete g.state.dgRemindDay;
+        if (!went && ui.modal.current && ui.modal.current !== m && g.state.briefDay === day) {
+          delete g.state.briefDay;
+          if (remind) delete g.state.dgRemindDay;
+        }
       }),
+    });
+  }
+
+  /** v16：倖存者完成個人任務：跳出轉職二選一（每位只自動跳一次，之後在技能頁選） */
+  advRemind() {
+    const g = this.game;
+    const ui = this.ui;
+    if (!this.ready || ui.modal.current) return;
+    const sv = g.state.survivors.find((x) => x.pqDone && !x.adv && !x.advPrompted && g.survivors.questDone(x));
+    if (!sv) return;
+    sv.advPrompted = true;
+    const q = CLASS_QUESTS[sv.classId];
+    const cards = q.adv.map((a, i) => `<div class="spec ${i === 0 ? 'pick' : ''}"><b style="font-size:16px">${a.icon} ${a.name}</b><small class="muted block">${escapeHtml(a.desc)}</small>${btn(`轉職為${a.name}`, 'advPick', { adv: a.id }, { cls: `btn-sm ${i === 0 ? 'btn-primary' : ''}` })}</div>`).join('');
+    ui.modal.open({
+      title: `🎖️ ${sv.name}完成個人任務：轉職`,
+      body: `<p>完成「${q.name}」！選擇轉職方向（<b>永久</b>，之後不能更換）。轉職後職業名稱與圖示會改變，原本的技能全部保留：</p>
+        <div class="spec-grid">${cards}</div>
+        <p class="muted">沒選之前可以先關掉，之後在倖存者的「技能」頁再選。</p>`,
+      onAction: (action, data, m) => {
+        if (action !== 'advPick') return;
+        const r = ui.result(g.survivors.chooseAdv(sv.id, data.adv));
+        if (r?.ok) m.close();
+      },
     });
   }
 

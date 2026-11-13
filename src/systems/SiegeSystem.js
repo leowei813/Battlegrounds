@@ -1,5 +1,7 @@
 import { DEFENSES } from '../config/defenses.js';
-import { ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR, defReduce } from '../config/enemies.js';
+import {
+  ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR, defReduce, SIEGE_VARIANTS, SIEGE_VARIANT_KEYS, ARMOR_PIERCE, VARIANT_WEIGHT,
+} from '../config/enemies.js';
 import { RESOURCE_KEYS, COIN_GAIN_MUL } from '../config/constants.js';
 import {
   SIEGE_SCALING, BREACH_LOSS, BASE_SIZES, SIEGE_REWARD, SIEGE_PENALTY,
@@ -95,6 +97,15 @@ export class BaseSiege {
 
   set nightBoss(v) { this.nightStats().boss = v; }
 
+  /** v15.18：今晚擊殺的屍潮變種（種類 → 數量）與自爆次數，存在據點上，重新整理也不會遺失 */
+  get nightVariants() { return this.nightStats().variants || null; }
+
+  set nightVariants(v) { this.nightStats().variants = v; }
+
+  get nightBlasts() { return this.nightStats().blasts || 0; }
+
+  set nightBlasts(v) { this.nightStats().blasts = v; }
+
   /** 今晚的編號（夜晚跨過午夜，以入夜那天計） */
   nightKey(now = Date.now()) {
     return this.game.time.nightKey(now);
@@ -171,6 +182,10 @@ export class BaseSiege {
       this.wave = waves;
       const reward = this.dawnReward();
       reward.recovered = this.collectRecovered();
+      // v16：個人任務「擔任守衛撐過屍潮」
+      (this.base.nightDefenders?.ids || []).forEach((id) => this.game.survivors.pqAdd(this.game.survivors.get(id), 'guardNights'));
+      if (this.nightVariants) reward.variants = { ...this.nightVariants };
+      if (this.nightBlasts) reward.blasts = this.nightBlasts;
       const entry = this.game.shelter.recordDefense({
         base: this.base, attacker: '屍潮', success: true, waves: this.wave, kills: this.nightKills,
         wallLost: Math.max(0, this.nightWallStart - this.game.shelter.wallHp(this.base)), assists: this.assistList('ok', st?.night ?? this.nightKey()),
@@ -305,15 +320,18 @@ export class BaseSiege {
     return Math.max(1, Math.min(SIEGE_SCALING.maxZombieLevel ?? Infinity, lv));
   }
 
-  /** 屍潮數量倍率：據點越大越難防守、區域越危險屍潮越多 */
+  /** 屍潮數量倍率：v14 起避難所一律比照巨型（×1.55）；安全區 ×0.75，所有避難所都是 ×1.16 */
   sizeMul() {
-    return (BASE_SIZES[this.base.size]?.siegeMul || 1) * this.zone().siegeMul;
+    const size = this.game.shelter.isPrimary(this.base) ? 'huge' : this.base.size;
+    return (BASE_SIZES[size]?.siegeMul || 1) * this.zone().siegeMul;
   }
 
   /** 每波殭屍數：讓整晚的平均強度等同「每 spawnInterval 秒一隻」 */
   waveSize() {
     // 文明度越低每波越少（新手只有一小波）
-    const n = (WAVE_SIZE_SECS / this.spawnInterval()) * (1 + Math.min(0.6, this.wave * (SIEGE_SCALING.waveGrowth ?? 0.08))) * this.game.civilization.waveSizeMul();
+    // v15.18：每解鎖一種變種，每波數量略減（變種比普通殭屍強，總威脅維持不變）
+    const cut = 1 - VARIANT_WEIGHT.sizeCut * SIEGE_VARIANT_KEYS.filter((k) => this.game.civilization.unlocked(k)).length;
+    const n = (WAVE_SIZE_SECS / this.spawnInterval()) * (1 + Math.min(0.6, this.wave * (SIEGE_SCALING.waveGrowth ?? 0.08))) * this.game.civilization.waveSizeMul() * cut;
     return Math.max(2, Math.round(n * randFloat(0.85, 1.15)));
   }
 
@@ -368,12 +386,20 @@ export class BaseSiege {
     return Math.max(0.5, 9 / (phase.zombieMul * this.game.civilization.spawnMul() * dangerMul * this.sizeMul()));
   }
 
-  /** 敵人種類依文明度解鎖 */
+  /** v15.18：屍潮變種權重倍率（血月加倍） */
+  variantMul() {
+    return this.game.worldEvent?.mul('variant') ?? 1;
+  }
+
+  /** 敵人種類依文明度解鎖；已解鎖的變種取代一部分普通殭屍 */
   pickEnemy() {
     const civ = this.game.civilization;
     const phase = this.game.time.phase();
+    const vs = SIEGE_VARIANT_KEYS.filter((k) => civ.unlocked(k));
+    const vw = VARIANT_WEIGHT.each * this.variantMul();
     return weightedPick({
-      walker: 10,
+      ...Object.fromEntries(vs.map((k) => [k, vw])),
+      walker: Math.max(VARIANT_WEIGHT.minWalker, 10 - vw * vs.length),
       infected: civ.unlocked('infected') ? 6 : 1,
       berserker: civ.unlocked('berserker') || (phase.danger > 1.5 && civ.unlocked('infected')) ? 3 : 0,
       mutant: civ.unlocked('mutant') ? 2 : 0,
@@ -382,7 +408,7 @@ export class BaseSiege {
   }
 
   spawn(enemyId, isBoss = false) {
-    const def = isBoss ? BOSSES[enemyId] : ENEMIES[enemyId];
+    const def = isBoss ? BOSSES[enemyId] : (ENEMIES[enemyId] || SIEGE_VARIANTS[enemyId]);
     const e = this.game.combat.createEnemy(enemyId, this.zombieLevel() + (isBoss ? 3 : 0));
     const a = randFloat(0, Math.PI * 2);
     // 屍潮殭屍額外受文明度強化（地圖戰鬥的敵人不受此影響）
@@ -410,6 +436,8 @@ export class BaseSiege {
       coins: e.coins,
       partsChance: def.partsChance,
       t: 0,
+      icon: def.icon,
+      ability: def.ability || null,
     });
     if (isBoss) this.game.toast(`⚠️ Boss「${def.name}」正在接近「${this.base.name}」！`, 'danger');
   }
@@ -508,15 +536,28 @@ export class BaseSiege {
     // 移動與攻擊圍牆（圍牆耐久歸零時被殭屍攻擊 → 防線突破）
     const reduction = sh.wallReduction(base);
     let breached = false;
+    // v15.18：尖叫者讓周圍的殭屍加速
+    const screamers = this.zombies.filter((z) => z.ability?.scream && z.hp > 0);
     for (const z of this.zombies) {
       z.t += dt;
       const dist = Math.hypot(z.x, z.y);
       z.slow = 0;
+      const haste = screamers.some((q) => q !== z && Math.hypot(q.x - z.x, q.y - z.y) <= q.ability.scream.range)
+        ? 1 + Math.max(...screamers.map((q) => q.ability.scream.pct)) : 1;
       // 路障、陷阱圍繞整座據點：接近圍牆的殭屍都會被減速
       auras.forEach((a) => {
         if (dist < WORLD.WALL_R + a.range) z.slow = Math.max(z.slow, a.slow);
       });
       if (now < z.stunUntil) continue;
+      if (z.inside && active && sh.wallHp(base) > 0) {
+        // 爬牆者：翻進圍牆後直接攻擊守衛（沒有守衛時從內側破壞圍牆）
+        z.atkCd -= dt;
+        if (z.atkCd <= 0) {
+          z.atkCd = 1 / z.atkSpeed;
+          this.insideHit(z, reduction);
+        }
+        continue;
+      }
       if (!active) {
         // 天亮：殭屍撤回建築內（往外退出地圖，不給獎勵）
         const v = z.speed * 1.4 * dt;
@@ -524,14 +565,25 @@ export class BaseSiege {
         z.y += (z.y / dist) * v;
         if (dist > WORLD.SPAWN_R + 4) z.retreated = true;
       } else if (dist > WORLD.WALL_R + 2) {
-        const v = z.speed * (1 - z.slow) * dt;
+        const v = z.speed * haste * (1 - z.slow) * dt;
         z.x -= (z.x / dist) * v;
         z.y -= (z.y / dist) * v;
+      } else if (z.ability?.blast) {
+        // 自爆者：碰到圍牆就爆炸（不給擊殺獎勵）
+        this.explode(z, reduction);
+        if (sh.wallHp(base) <= 0) breached = true;
+      } else if (z.ability?.climb && sh.wallHp(base) > 0 && (z.climbT = (z.climbT || 0) + dt) >= z.ability.climb) {
+        // 爬牆者：貼牆一段時間後翻進來
+        z.inside = true;
+        const k = (WORLD.WALL_R - 8) / Math.max(1, dist);
+        z.x *= k;
+        z.y *= k;
+        this.pushFx({ type: 'wallHit', x: z.x, y: z.y, dmg: 0 });
       } else {
         z.atkCd -= dt;
         if (z.atkCd <= 0) {
           z.atkCd = 1 / z.atkSpeed;
-          const dmg = z.atk * WALL_DMG_MUL * (1 - reduction);
+          const dmg = z.atk * WALL_DMG_MUL * (1 - reduction) * (z.ability?.wallMul || 1);
           base.wallHp = Math.max(0, sh.wallHp(base) - dmg);
           if (sh.wallHp(base) <= 0) breached = true; // 圍牆被打破：還要打贏據點裡的人員才算攻破
           this.pushFx({ type: 'wallHit', x: z.x, y: z.y, dmg: Math.round(dmg) });
@@ -579,7 +631,9 @@ export class BaseSiege {
         const t = targets.reduce((a, b) => (Math.hypot(a.x, a.y) < Math.hypot(b.x, b.y) ? a : b));
         const atk = this.attackPower(sv, stats);
         const crit = chance(stats.crit);
-        this.damage(t, atk.value * 0.6 * this.guardMul() * (crit ? stats.critDmg : 1), crit);
+        this.src = 'guard';
+        // v16：特質「戀家」：擔任守衛時屍潮傷害 +12%
+        this.damage(t, atk.value * 0.6 * this.guardMul() * (1 + (stats.skills?.guardPct || 0)) * (crit ? stats.critDmg : 1), crit);
         this.pushFx({ type: 'shot', kind: atk.ranged ? 'guard' : 'melee', x1: 0, y1: 0, x2: t.x, y2: t.y });
         // 近戰防守的人會被貼在牆邊的殭屍反擊受傷（即使圍牆還在）
         if (!atk.ranged && t.hp > 0) {
@@ -601,6 +655,7 @@ export class BaseSiege {
         const log = this.assistLog();
         const rec = log.list[h.id] || (log.list[h.id] = { name: h.name, kind: h.kind, dmg: 0, kills: 0 });
         const before = t.hp;
+        this.src = 'assist';
         this.damage(t, h.dps);
         rec.dmg += Math.round(Math.min(before, h.dps));
         if (t.hp <= 0) rec.kills += 1;
@@ -645,6 +700,7 @@ export class BaseSiege {
 
   fire(d, st, pos, target, inRange, dmgMul) {
     const base = st.damage * dmgMul * this.typeMul(d.type);
+    this.src = d.type; // 傷害來源（裝甲殭屍判斷用）
     switch (d.type) {
       case 'trap':
         inRange.forEach((z) => this.damage(z, base / st.fireRate));
@@ -754,9 +810,44 @@ export class BaseSiege {
   }
 
   damage(z, amount, crit = false) {
-    const dmg = Math.max(1, Math.round(amount));
+    // v15.18：裝甲殭屍減免一般傷害（火焰塔、電網無視裝甲）
+    const armor = z.ability?.armor && !ARMOR_PIERCE.includes(this.src) ? z.ability.armor : 0;
+    const dmg = Math.max(1, Math.round(amount * (1 - armor)));
     z.hp -= dmg;
     if (this.game.state.settings.showDamage) this.pushFx({ type: 'dmg', x: z.x, y: z.y, dmg, crit });
+  }
+
+  /** 自爆者碰到圍牆：對圍牆造成大量傷害，並波及近戰守衛 */
+  explode(z, reduction) {
+    const sh = this.game.shelter;
+    const base = this.base;
+    const dmg = z.atk * z.ability.blast * (1 - reduction);
+    base.wallHp = Math.max(0, sh.wallHp(base) - dmg);
+    z.hp = 0;
+    z.noReward = true;
+    this.nightBlasts = (this.nightBlasts || 0) + 1;
+    this.pushFx({ type: 'flame', x1: z.x, y1: z.y, x2: z.x, y2: z.y, r: 14 });
+    this.pushFx({ type: 'wallHit', x: z.x, y: z.y, dmg: Math.round(dmg) });
+    this.guards().forEach(({ sv, stats }) => {
+      if (this.canShoot(sv)) return;
+      this.game.survivors.damage(sv, Math.max(1, z.atk * 1.5 * defReduce(stats.def)), '被自爆殭屍波及');
+    });
+  }
+
+  /** 翻進圍牆的爬牆者：攻擊一名守衛；沒有守衛時從內側破壞圍牆 */
+  insideHit(z, reduction) {
+    const sh = this.game.shelter;
+    const base = this.base;
+    const gs = this.guards();
+    if (gs.length) {
+      const { sv, stats } = pick(gs);
+      if (!chance(stats.dodge)) this.game.survivors.damage(sv, Math.max(1, z.atk * ZOMBIE_VS_SURVIVOR.atk * defReduce(stats.def)), '被翻進圍牆的殭屍攻擊');
+      this.pushFx({ type: 'shot', kind: 'melee', x1: z.x, y1: z.y, x2: 0, y2: 0 });
+      return;
+    }
+    const dmg = z.atk * WALL_DMG_MUL * (1 - reduction);
+    base.wallHp = Math.max(0, sh.wallHp(base) - dmg);
+    this.pushFx({ type: 'wallHit', x: z.x, y: z.y, dmg: Math.round(dmg) });
   }
 
   collectDead() {
@@ -767,8 +858,16 @@ export class BaseSiege {
     let coins = 0;
     let parts = 0;
     let xp = 0;
-    this.nightKills += dead.length;
-    dead.forEach((z) => {
+    const scored = dead.filter((z) => !z.noReward);
+    this.nightKills += scored.length;
+    // v15.18：變種擊殺數（守城報告用）
+    const vk = scored.filter((z) => SIEGE_VARIANTS[z.enemyId]);
+    if (vk.length) {
+      const m = { ...(this.nightVariants || {}) };
+      vk.forEach((z) => { m[z.enemyId] = (m[z.enemyId] || 0) + 1; });
+      this.nightVariants = m;
+    }
+    scored.forEach((z) => {
       st.kills += 1;
       st.siegeKills += 1;
       if (z.boss) st.bossKills += 1;
@@ -869,6 +968,7 @@ export class BaseSiege {
       wallLost: Math.max(0, this.nightWallStart || sh.wallMax(base)), note, assists: this.assistList('breached'),
       siege: {
         lossPct: pct, wave: this.wave, maxWaves: this.maxWaves(), materials, injuries, boss: this.nightBoss, recovered,
+        ...(this.nightVariants ? { variants: { ...this.nightVariants } } : {}), ...(this.nightBlasts ? { blasts: this.nightBlasts } : {}),
       },
     });
     const dmgText = damaged.length ? `，${damaged.length} 棟建築損毀` : '';

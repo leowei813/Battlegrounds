@@ -1,5 +1,4 @@
 import { LOCK_ITEM } from '../../config/rebirth.js';
-import { FACILITIES } from '../../config/facilities.js';
 import { RARITY_ORDER } from '../../config/equipment.js';
 import { DUNGEONS } from '../../config/dungeons.js';
 import { CLASSES } from '../../config/survivors.js';
@@ -10,7 +9,7 @@ import {
 import { MapService } from '../../map/MapService.js';
 import { POI_TYPES, LOOT_CATS } from '../../config/poiTypes.js';
 import { ALL_ENEMIES } from '../../config/enemies.js';
-import { BASE_SIZES, FACILITY_COUNT } from '../../config/civilization.js';
+import { BASE_SIZES } from '../../config/civilization.js';
 import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
 import { POI_SHARE } from '../../systems/PoiShareSystem.js';
@@ -466,6 +465,7 @@ export class MapPanel {
     if (Date.now() - this.lastRender > 5000) this.renderMap(true);
     this.service.renderCps(this.game);
     this.service.renderConvoys(this.game.cp.convoyView());
+    this.renderDrops();
     this.ui.mapRoot.dataset.phase = this.game.time.phaseId(); // 地圖依日夜變暗
     const st = this.game.state;
     const has = this.game.shelter.hasShelter();
@@ -948,8 +948,8 @@ export class MapPanel {
 
   showLegend() {
     const rows = Object.values(POI_TYPES).map((p) => `<div class="legend-row"><span class="poi-pin" style="--c:${p.color}">${p.icon}</span> ${p.name} <span class="danger">${stars(p.danger)}</span><small>${Object.keys(p.loot).map((k) => LOOT_CATS[k].icon).join('')}</small></div>`).join('');
-    const sizes = Object.entries(BASE_SIZES).map(([k, z]) => `<div class="legend-row"><span class="shelter-pin size-${k}" style="--d:${z.pin}px">${z.icon}<i class="size-tag">${z.name[0]}</i></span> ${z.name}據點 <small>可建 ${FACILITY_COUNT + z.slots} 棟</small></div>`).join('');
-    this.ui.modal.open({ title: '🧾 圖例', body: `${rows}<h4>據點規模</h4>${sizes}<h4>區域危險度</h4>${ZONES.map((z) => `<div class="legend-row"><span class="zone-tag" style="--zc:${z.color}">${z.name}</span><small>物資 ×${z.lootMul}・屍潮 ×${z.siegeMul}・殭屍 +${z.siegeLevel} 級</small></div>`).join('')}<div class="legend-row"><span class="npc-pin" style="width:28px;height:28px;font-size:14px">🏴‍☠️</span> NPC 據點：會升級、探索與掠奪，可攻打搶奪資源</div><p class="muted">金框是你的據點（⭐ 為主要據點），青框是其他玩家的據點。</p><p class="muted">☠ 越多越危險；距離避難所越遠危險度越高。紅框為探索範圍。</p><p class="muted">地圖底色代表區域危險度，區域交界有細邊界線；建築圓點與圖示的顏色代表建築類型。右側 ☣️ 按鈕可開關危險度圖層。</p>` });
+    // v15.18：避難所沒有大小之分、只能建在安全區，圖例不再列據點規模與各區屍潮倍率
+    this.ui.modal.open({ title: '🧾 圖例', body: `${rows}<h4>區域危險度</h4>${ZONES.map((z) => `<div class="legend-row"><span class="zone-tag" style="--zc:${z.color}">${z.name}</span><small>物資 ×${z.lootMul}</small></div>`).join('')}<div class="legend-row"><span class="npc-pin" style="width:28px;height:28px;font-size:14px">🏴‍☠️</span> NPC 據點：會升級、探索與掠奪，可攻打搶奪資源</div><p class="muted">金框是你的據點（⭐ 為主要據點），青框是其他玩家的據點。</p><p class="muted">☠ 越多越危險；距離避難所越遠危險度越高。紅框為探索範圍。</p><p class="muted">地圖底色代表區域危險度，區域交界有細邊界線；建築圓點與圖示的顏色代表建築類型。右側 ☣️ 按鈕可開關危險度圖層。</p>` });
   }
 
   poiBody(poi) {
@@ -965,17 +965,16 @@ export class MapPanel {
     const actions = [];
     let establish = '';
     const z = g.shelter.sizeInfo(poi);
-    const sizeLine = `<small class="muted block"><span class="size-chip" style="--sc:${BASE_SIZES[z.id].color}">${BASE_SIZES[z.id].icon} ${z.name}</span>據點：屍潮 ×${BASE_SIZES[z.id].siegeMul}・警戒範圍 ${BASE_SIZES[z.id].alert} 公尺</small>`;
+    void z;
+    // v15.18：避難所沒有大小之分（一律 11 格防禦）；只有建築危險度會影響屍潮
+    const sizeLine = `<small class="muted block">🏠 建立後一律為避難所：防禦欄位 ${BASE_SIZES.huge.slots} 格・警戒範圍 ${BASE_SIZES.huge.alert} 公尺・據點危險度 ${pt.danger} 起（隨文明度增加；越高屍潮殭屍等級與頻率越高）</small>`;
     if (base) {
       actions.push(btn('🏠 進入據點', 'enterShelter', {}, { cls: 'btn-primary' }));
       actions.push(btn(base.kind === 'outpost' ? '🏚️ 放棄' : '🚚 搬遷', 'abandon', {}, { cls: 'btn-ghost' }));
     } else if (!g.shelter.hasShelter()) {
       actions.push(btn('🏠 設為避難所', 'setShelter', {}, { cls: 'btn-primary' }));
       // 搬遷中：這個地點較小時，超過上限的設施會降級
-      const cp = g.shelter.relocationCapPreview(poi);
-      establish = `${sizeLine}${g.state.relocation ? (cp.changes.length
-        ? `<small class="block neg">⚠️ 這裡設施最高 Lv${cp.cap}：${cp.changes.map((c) => `${FACILITIES[c.id].name} Lv${c.from}→Lv${c.to}`).join('、')}，降掉的等級退還 50% 建造材料</small>`
-        : '<small class="block pos">✅ 搬遷保留的設施都不會降級</small>') : ''}`;
+      establish = `${sizeLine}${g.state.relocation ? '<small class="block pos">✅ 搬遷保留的設施等級全部不變</small>' : ''}`;
     } else {
       {
         const ve = g.poiShare.view(poi);
@@ -1103,6 +1102,84 @@ export class MapPanel {
         </div>
       </div>
       <div class="btn-row">${btn('⚔️ 派隊攻擊', 'attack', { id: gr.id }, { cls: 'btn-danger', disabled: !this.game.shelter.hasShelter() })}</div>`;
+  }
+
+  /** v15.19：全服空投的地圖圖示（預告倒數、剩餘時間、守衛數；被搶走的顯示誰拿走） */
+  renderDrops(now = Date.now()) {
+    const ad = this.game.airdrop;
+    if (!ad) return;
+    const min = (ms) => `${Math.max(0, Math.ceil(ms / 60000))} 分`;
+    const list = ad.list(now).map((d) => {
+      const st = ad.status(d, now);
+      const label = st.state === 'falling' ? `空投 ${min(d.landAt - now)}後降落`
+        : st.state === 'landed' ? `空投・剩 ${min(Math.min(d.expireAt, d.npcAt) - now)}・🧟×${ad.zoneOf(d).guard.n}`
+          : st.state === 'taken' ? `${st.by} 已搶走` : 'NPC 勢力已拿走';
+      return { id: d.id, lat: d.lat, lon: d.lon, state: st.state, label };
+    }).filter((x) => x.state !== 'gone');
+    this.service.renderDrops(list);
+  }
+
+  /** 空投資訊：狀態、可能內容、守衛、派隊搶奪或發起集結 */
+  dropBody(d) {
+    const g = this.game;
+    const ad = g.airdrop;
+    const now = Date.now();
+    const st = ad.status(d, now);
+    const Z = ad.zoneOf(d);
+    const zone = zoneAt(d.lat, d.lon);
+    const dist = ad.distanceTo(d);
+    const left = (ms) => formatDuration(Math.max(0, ms));
+    const tag = st.state === 'falling' ? `<span class="tag tag-blue">🪂 降落中</span> ${left(d.landAt - now)}後降落`
+      : st.state === 'landed' ? `<span class="tag tag-amber">已降落</span> 剩 <b>${left(Math.min(d.expireAt, d.npcAt) - now)}</b>（之後會被 NPC 勢力拿走）`
+        : st.state === 'taken' ? `<span class="tag">已被「${escapeHtml(st.by)}」搶走</span>` : '<span class="tag">已被 NPC 勢力拿走</span>';
+    const cats = [...new Set(Object.keys(d.mats).map((k) => SUPPLIES[k]?.cat))];
+    const tiers = `${Z.tiers[0]}～${Z.tiers[1]} 階`;
+    const what = [cats.includes('part') ? `🔩 ${tiers}零件` : '', cats.includes('fabric') ? `🧵 ${tiers}布料` : '', '⚙️ 稀有材料', '💰 金錢'].filter(Boolean).join('、');
+    const ok = st.state === 'landed' || st.state === 'falling';
+    const fmt = (n) => (n >= 10000 ? `${(n / 10000).toFixed(n % 10000 ? 1 : 0)} 萬` : n.toLocaleString());
+    return `<p>${tag}・<span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span>・距避難所 ${dist.toLocaleString()} 公尺</p>
+      <div class="label">可能內容</div>
+      <p>${what}${Z.bp ? `<br><small class="muted">${Math.round(Z.bp * 100)}% 機率有設計圖${Z.bpMin ? '（保底精良以上）' : ''}</small>` : ''}</p>
+      <div class="label">守衛殭屍</div>
+      <p>🧟 ${Z.guard.n} 隻（Lv${Z.guard.lv}）・<b>建議隊伍總戰力 ${fmt(Z.power)} 以上</b><br><small class="muted">打贏才能拿走空投</small></p>
+      <p class="muted">第一支抵達並打贏守衛的隊伍拿走全部；之後抵達的隊伍直接返回。帶著空投回程的隊伍可能被其他玩家攔截。</p>
+      ${ok ? `<div class="btn-row">${btn('🚀 派隊搶奪', 'dropGo', { id: d.id }, { cls: 'btn-primary', disabled: !g.shelter.hasShelter() })}${btn('🚩 發起集結', 'dropRally', { id: d.id })}</div>` : ''}`;
+  }
+
+  openDrop(id) {
+    const g = this.game;
+    const d = g.airdrop?.get(id);
+    if (!d) return;
+    this.ui.modal.open({
+      title: `📦 空投補給・${zoneAt(d.lat, d.lon).name}`,
+      body: this.dropBody(d),
+      live: () => this.dropBody(d),
+      onAction: (action, data, m) => {
+        if (action === 'dropGo') this.attackDrop(data.id);
+        if (action === 'dropRally') { m.close(); this.openRallySetup(g.airdrop.asTarget(d)); }
+      },
+    });
+  }
+
+  attackDrop(id) {
+    const g = this.game;
+    const d = g.airdrop?.get(id);
+    if (!d) return;
+    const sh = g.shelter.primary();
+    openTeamPicker(this.ui, {
+      title: '📦 搶奪空投',
+      intro: `<p class="muted">隊伍會先移動到空投落點，抵達時和守衛殭屍交戰（建議隊伍總戰力 ${g.airdrop.zoneOf(d).power.toLocaleString()} 以上），打贏就背著空投返回避難所。晚到或空投已被拿走時直接返回。</p>`,
+      vehicles: true,
+      distanceM: sh ? haversine(sh.lat, sh.lon, d.lat, d.lon) : 0,
+      trip: { poi: { id: `drop:${d.id}`, lat: d.lat, lon: d.lon, type: 'military', drop: true }, searchMin: 0 },
+      routeOption: true,
+      confirmLabel: '出發搶奪！',
+      onConfirm: (ids, _dur, _auto, vids, opts) => {
+        const r = this.ui.result(g.exploration.startDrop(id, ids, { vehicleIds: vids, ...opts }));
+        if (r.ok) this.renderMap(true);
+        return r;
+      },
+    });
   }
 
   openZombie(groupId) {

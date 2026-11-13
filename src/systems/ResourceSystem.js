@@ -6,6 +6,7 @@ import {
   JOBS, FOOD_PER_SURVIVOR_HOUR, FOOD_PER_SURVIVOR_HOUR_OFFLINE, foodLevelMul,
 } from '../config/survivors.js';
 import { isSupply } from '../config/supplies.js';
+import { WorldEventSystem } from './WorldEventSystem.js';
 
 /**
  * 資源系統：計算每小時產出/消耗並套用到狀態上。
@@ -64,19 +65,26 @@ export class ResourceSystem {
       if (this.game.survivors.isGarrisoned(sv.id)) return;
       const job = JOBS[sv.job] || JOBS.idle;
       const mul = (job.classBonus?.[sv.classId] || 1) * (1 + sv.level * 0.03);
-      Object.entries(job.produce).forEach(([k, v]) => { gross[k] += v * mul; });
+      // v15.18：豐收日農夫（耕作職務）產量 +30%
+      const farmMul = sv.job === 'farm' ? WorldEventSystem.fx('farm') : 1;
+      Object.entries(job.produce).forEach(([k, v]) => { gross[k] += v * mul * (k === 'food' ? farmMul : 1); });
       const fx = this.game.survivors.skillEffects(sv);
       if (sv.job !== 'idle') gross.gauze += fx.medicinePerHour || 0;
       if (sv.job === 'farm') foodPct += fx.foodPct || 0;
     });
-    gross.food *= 1 + foodPct;
+    gross.food *= (1 + foodPct) * WorldEventSystem.fx('foodProd'); // v15.18：豐收日食物產量 +15%
 
     const perHead = offline ? FOOD_PER_SURVIVOR_HOUR_OFFLINE : FOOD_PER_SURVIVOR_HOUR;
     // 每人依等級吃得不同：等級越高消耗越多
-    const heads = st.survivors.reduce((s, sv) => s + foodLevelMul(sv.level), 0);
+    // v16：特質「鐵胃／貪吃」：自己的食物消耗 −20%／+20%
+    const heads = st.survivors.reduce((s, sv) => s + foodLevelMul(sv.level) * Math.max(0, 1 + (this.game.survivors.skillEffects(sv).foodUse || 0)), 0);
     // 研究與宿舍居住品質都能減少食物消耗（最多減半）
     const dormLv = this.game.shelter.maxLevel('dormitory');
-    upkeep.food += heads * perHead * Math.max(0.5, 1 - (rb.foodUpkeepReduce || 0) - dormFoodReduce(dormLv));
+    upkeep.food += heads * perHead * Math.max(0.5, 1 - (rb.foodUpkeepReduce || 0) - dormFoodReduce(dormLv)) * WorldEventSystem.fx('food'); // v15.18：熱浪 +25%
+
+    // v16：轉職「生產家」在家時避難所所有產量 +20%（多位不疊加）
+    const prod = Math.max(0, ...st.survivors.filter((sv) => sv.status === 'idle' && !sv.severe).map((sv) => this.game.survivors.skillEffects(sv).prodAll || 0));
+    if (prod > 0) Object.keys(gross).forEach((k) => { if (gross[k] > 0) gross[k] *= 1 + prod; });
 
     const keys = [...new Set([...RESOURCE_KEYS, ...Object.keys(gross), ...Object.keys(upkeep)])].filter((k) => gross[k] || upkeep[k] || RESOURCE_KEYS.includes(k));
     const plain = (o) => Object.fromEntries(keys.map((k) => [k, o[k]]));
@@ -90,6 +98,10 @@ export class ResourceSystem {
    * `lastStarvingMs` 為本區間內處於飢餓的時間（飢餓發生在區間末段）。
    */
   apply(dtMs, { offline = false } = {}) {
+    // v16：個人任務「耕作累計時間」（現實時間，離線也算）
+    this.game.state.survivors.forEach((sv) => {
+      if (sv.job === 'farm' && sv.status === 'idle' && !sv.severe) this.game.survivors.pqAdd(sv, 'farmMin', dtMs / 60000);
+    });
     const { net } = this.rates({ offline });
     const foodBefore = this.game.state.resources.food;
     const cap = this.storageCap();

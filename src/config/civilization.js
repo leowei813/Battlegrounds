@@ -69,7 +69,9 @@ export const SIEGE_SCALING = {
   weakMin: 0.6,
   weakCiv: 100,
   /** 文明度達到門檻後，該種敵人才會加入屍潮 */
-  unlock: { infected: 20, berserker: 60, mutant: 140, nightStalker: 90, boss: 200 },
+  unlock: {
+    infected: 20, berserker: 60, mutant: 140, nightStalker: 90, boss: 200, exploder: 80, armored: 110, screamer: 120, breaker: 160, climber: 220,
+  },
 };
 
 /**

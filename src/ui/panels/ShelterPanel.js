@@ -1,8 +1,7 @@
 import { shareBtn, openShareDialog } from '../ShareDialog.js';
 import { FACILITIES, FACILITY_MAX_LEVEL, OUTPOST_FACILITIES } from '../../config/facilities.js';
 import { DEFENSES, DEFENSE_MAX_LEVEL, defenseBuildTime } from '../../config/defenses.js';
-import { CLASSES } from '../../config/survivors.js';
-import { PRIMARY_DANGER_COEF, MAX_OUTPOSTS, BASE_SIZES, SIEGE_SCALING } from '../../config/civilization.js';
+import { PRIMARY_DANGER_COEF, MAX_OUTPOSTS, SIEGE_SCALING } from '../../config/civilization.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
 import { siegeDetailHtml, raidRewardHtml } from '../SiegeResult.js';
 import { escapeHtml } from '../../utils/dom.js';
@@ -57,7 +56,7 @@ export class ShelterPanel {
           <small class="muted">${siege.active() ? `殭屍 Lv${siege.zombieLevel()}・每波約 ${Math.round(siege.waveSize())} 隻` : `22:00 屍潮來襲・殭屍約 Lv${Math.min(SIEGE_SCALING.maxZombieLevel ?? Infinity, siege.zombieLevel() + 1)}`}</small>
         </div>
         <details class="civ-more" ${this.civOpen ? 'open' : ''}><summary>計算方式</summary>
-          <p class="muted">屍潮強度隨文明度提升（殭屍 +${civ.levelBonus()} 級、頻率 ×${civ.spawnMul().toFixed(2)}），與天數無關。${BASE_SIZES[base.size]?.name || ''}據點屍潮 ×${siege.sizeMul().toFixed(2)}（據點越大、區域越危險，屍潮越多）。危險度 = ${isPrimary ? `基礎 ${baseDanger} + 文明度 ${b.total} × ${PRIMARY_DANGER_COEF}` : `基礎 ${baseDanger}（前哨站不受文明度加成）`}。</p>
+          <p class="muted">屍潮強度隨文明度提升（殭屍 +${civ.levelBonus()} 級、頻率 ×${civ.spawnMul().toFixed(2)}），與天數無關；避難所屍潮倍率 ×${siege.sizeMul().toFixed(2)}（所有避難所相同）。危險度 = 建築基礎 ${baseDanger} + 文明度 ${b.total} × ${PRIMARY_DANGER_COEF}${isPrimary ? '' : '（前哨站不受文明度加成）'}；危險度越高，殭屍等級與屍潮頻率越高。</p>
         </details>
       </section>`;
   }
@@ -380,9 +379,9 @@ export class ShelterPanel {
       const cur = d.garrisonId ? g.survivors.get(d.garrisonId) : null;
       const ts = g.shelter.towerStatus(base, d);
       const chip = { on: '<span class="tw-st on">🟢 在塔上</span>', standby: '<span class="tw-st off">⚪ 待命</span>', none: '<span class="tw-st off">未設定</span>' }[ts.state];
-      garrison = `<div class="def-gar"><div class="row-between"><small class="muted">👤 駐守人員：${cur ? `${CLASSES[cur.classId].icon} ${escapeHtml(cur.name)}（攻擊 ${g.survivors.stats(cur).atk}）` : '未設定'}</small>${chip}</div>
+      garrison = `<div class="def-gar"><div class="row-between"><small class="muted">👤 駐守人員：${cur ? `${g.survivors.classIcon(cur)} ${escapeHtml(cur.name)}（攻擊 ${g.survivors.stats(cur).atk}）` : '未設定'}</small>${chip}</div>
         ${ts.why ? `<small class="${ts.state === 'on' ? 'pos' : 'warn-text'} block">${escapeHtml(ts.why)}</small>` : ''}
-        <select class="def-gar-sel" data-slot="${slot}" aria-label="駐守人員"><option value="">${cur ? '清除設定' : '選擇駐守人員'}</option>${st.survivors.filter((sv) => sv.id === d.garrisonId || !sv.severe).map((sv) => `<option value="${sv.id}" ${sv.id === d.garrisonId ? 'selected' : ''}>${CLASSES[sv.classId].icon} ${escapeHtml(sv.name)}</option>`).join('')}</select></div>`;
+        <select class="def-gar-sel" data-slot="${slot}" aria-label="駐守人員"><option value="">${cur ? '清除設定' : '選擇駐守人員'}</option>${st.survivors.filter((sv) => sv.id === d.garrisonId || !sv.severe).map((sv) => `<option value="${sv.id}" ${sv.id === d.garrisonId ? 'selected' : ''}>${g.survivors.classIcon(sv)} ${escapeHtml(sv.name)}</option>`).join('')}</select></div>`;
     }
     const cost = max ? null : g.shelter.defenseCost(type, lv + 1);
     const lack = cost && !affordable(st, cost);
@@ -431,9 +430,9 @@ export class ShelterPanel {
       const cur = d.garrisonId ? g.survivors.get(d.garrisonId) : null;
       const ts = g.shelter.towerStatus(this.ui.viewBase(), d);
       garrison = `<h4>駐守人員</h4>
-        <p>${cur ? `設定：${CLASSES[cur.classId].icon} ${escapeHtml(cur.name)}（攻擊 ${g.survivors.stats(cur).atk}）・${ts.state === 'on' ? '🟢 在塔上' : '⚪ 待命'}` : '未設定'}</p>
+        <p>${cur ? `設定：${g.survivors.classIcon(cur)} ${escapeHtml(cur.name)}（攻擊 ${g.survivors.stats(cur).atk}）・${ts.state === 'on' ? '🟢 在塔上' : '⚪ 待命'}` : '未設定'}</p>
         ${ts.why ? `<small class="muted block">${escapeHtml(ts.why)}</small>` : ''}
-        <div class="chips">${st.survivors.filter((sv) => sv.status !== 'exploring').map((sv) => `<button class="chip ${sv.id === d.garrisonId ? 'active' : ''}" data-action="garrison" data-id="${sv.id}">${CLASSES[sv.classId].icon} ${escapeHtml(sv.name)}</button>`).join('')}
+        <div class="chips">${st.survivors.filter((sv) => sv.status !== 'exploring').map((sv) => `<button class="chip ${sv.id === d.garrisonId ? 'active' : ''}" data-action="garrison" data-id="${sv.id}">${g.survivors.classIcon(sv)} ${escapeHtml(sv.name)}</button>`).join('')}
         ${cur ? '<button class="chip" data-action="garrison" data-id="">撤回</button>' : ''}</div>`;
     }
     return `

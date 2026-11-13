@@ -17,6 +17,9 @@ export const LOADOUT_MAX = { ammo: 300, med: 10 };
 export const AMMO_CAP_OPTIONS = [100, 150, 200, 250, 300];
 import { createSurvivor } from '../core/GameState.js';
 import {
+  TRAITS, CLASS_QUESTS, ADVANCED, QUEST_LEVEL, rollTraits, traitRandom,
+} from '../config/traits.js';
+import {
   withSeed,
   clamp, pick, randInt, weightedPick, chance, unitPower,
 } from '../utils/math.js';
@@ -125,15 +128,92 @@ export class SurvivorSystem {
     return CLASSES[sv.classId].skills.slice(0, this.skillSlots(sv)).filter((sk) => sv.level >= sk.unlock);
   }
 
-  /** 合併所有已解鎖技能效果 */
+  /** 合併所有已解鎖技能效果（v16：再加上特質與轉職） */
   skillEffects(sv) {
     const fx = {};
-    this.activeSkills(sv).forEach((sk) => {
-      Object.entries(sk.effect).forEach(([k, v]) => {
-        fx[k] = typeof v === 'number' ? (fx[k] || 0) + v : v;
-      });
+    const add = (effect) => Object.entries(effect || {}).forEach(([k, v]) => {
+      fx[k] = typeof v === 'number' ? (fx[k] || 0) + v : v;
     });
+    this.activeSkills(sv).forEach((sk) => add(sk.effect));
+    this.traitsOf(sv).forEach((k) => add(TRAITS[k].fx));
+    add(this.advOf(sv)?.fx);
     return fx;
+  }
+
+  // ---------------- v16：特質、個人任務與轉職 ----------------
+
+  /** 倖存者的特質（舊存檔沒有時依編號固定抽出） */
+  traitsOf(sv) {
+    if (!sv || SurvivorSystem.disableTraits) return [];
+    if (!Array.isArray(sv.traits)) sv.traits = rollTraits(sv.isLeader ? null : sv.rarity, traitRandom(sv.isLeader ? `t:leader:${sv.name}` : `t:${sv.id}`), !!sv.isLeader);
+    return sv.traits.filter((k) => TRAITS[k]);
+  }
+
+  /** 已轉職的職業（沒有則 null） */
+  advOf(sv) {
+    const a = sv && ADVANCED[sv.adv];
+    return a && a.cls === sv.classId ? a : null;
+  }
+
+  /** 顯示用的職業圖示與名稱（轉職後換成新職業） */
+  classIcon(sv) {
+    return this.advOf(sv)?.icon || CLASSES[sv.classId]?.icon || '❔';
+  }
+
+  className(sv) {
+    return this.advOf(sv)?.name || CLASSES[sv.classId]?.name || '';
+  }
+
+  /** 個人任務解鎖等級：精良以上（含指揮官）Lv30，其他 Lv40 */
+  questLevel(sv) {
+    return sv.isLeader || ['rare', 'epic', 'legendary'].includes(sv.rarity) ? QUEST_LEVEL.high : QUEST_LEVEL.low;
+  }
+
+  questUnlocked(sv) {
+    return !!sv && sv.level >= this.questLevel(sv);
+  }
+
+  /** 任務步驟與進度 */
+  questSteps(sv) {
+    const q = CLASS_QUESTS[sv.classId];
+    if (!q) return [];
+    const pq = sv.pq || {};
+    return q.steps.map((st) => {
+      const have = Math.min(st.need, Math.floor(pq[st.key] || 0));
+      return { ...st, have, done: have >= st.need };
+    });
+  }
+
+  questDone(sv) {
+    const steps = this.questSteps(sv);
+    return steps.length > 0 && steps.every((st) => st.done);
+  }
+
+  /** 任務計數（解鎖後、轉職前才算）；三個步驟同時計算 */
+  pqAdd(sv, key, n = 1) {
+    if (!sv || !(n > 0) || sv.adv || !this.questUnlocked(sv)) return;
+    if (!CLASS_QUESTS[sv.classId]?.steps.some((st) => st.key === key)) return;
+    sv.pq = sv.pq || {};
+    sv.pq[key] = (sv.pq[key] || 0) + n;
+    if (!sv.pqDone && this.questDone(sv)) {
+      sv.pqDone = true;
+      this.game.log(`🎖️ ${sv.name} 完成個人任務「${CLASS_QUESTS[sv.classId].name}」，可以轉職了！`, 'success');
+      this.game.toast(`🎖️ ${sv.name} 完成個人任務，可以轉職了！`, 'success');
+    }
+  }
+
+  /** 轉職（二選一，永久） */
+  chooseAdv(id, advId) {
+    const sv = this.get(id);
+    if (!sv) return { ok: false, reason: '找不到倖存者' };
+    if (sv.adv) return { ok: false, reason: '已經轉職了' };
+    if (!this.questDone(sv)) return { ok: false, reason: '還沒完成個人任務' };
+    const a = CLASS_QUESTS[sv.classId].adv.find((x) => x.id === advId);
+    if (!a) return { ok: false, reason: '沒有這個轉職' };
+    sv.adv = a.id;
+    this.game.log(`🎖️ ${sv.name} 轉職為「${a.icon} ${a.name}」`, 'success');
+    this.game.bus?.emit?.('survivors:changed');
+    return { ok: true, msg: `${sv.name} 轉職為「${a.name}」` };
   }
 
   /**

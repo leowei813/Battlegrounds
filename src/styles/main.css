@@ -386,6 +386,17 @@ textarea.export { width: 100%; height: 140px; background: #0006; color: var(--te
 }
 
 /* ---------- Civilization / bases ---------- */
+/* v15.18：今日天候 */
+.wx-badge { border: 1px solid #4fc3f766; background: #4fc3f71a; color: #b3e5fc; border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; align-self: flex-start; white-space: nowrap; }
+.wx-badge.wx-bloodMoon { border-color: #ef535088; background: #ef53501f; color: #ffcdd2; }
+.wx-badge.wx-calm { border-color: #ffffff33; background: #ffffff0d; color: #e0e0e0; }
+.wx-list { display: grid; gap: 4px; }
+.wx-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; opacity: 0.75; }
+.wx-row small { text-align: right; }
+.wx-row.on { opacity: 1; background: #4fc3f722; border: 1px solid #4fc3f7; }
+.wx-brief { display: flex; gap: 10px; align-items: center; padding: 8px 10px; margin-bottom: 10px; border: 1px solid #4fc3f7; border-radius: 10px; background: #4fc3f71a; }
+.wx-brief .wx-ic { font-size: 26px; }
+.wx-brief.wx-bloodMoon { border-color: #ef5350; background: #ef53501a; }
 .civ-badge { border: 1px solid #ffb30066; background: #ffb30018; color: #ffe082; border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; align-self: flex-start; white-space: nowrap; }
 .civ-card { margin: 8px 0; padding: 10px 12px; border-radius: var(--radius); border: 1px solid #ffb30055; background: linear-gradient(135deg, #3e2f0a55, #26291f); }
 .civ-parts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; margin: 4px 0; }
@@ -1766,6 +1777,10 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 
 /* v15.15：設計圖卡片：保底品級色邊框、彩色品級標籤、同款合併數量 */
 .fac-card2.bp-card { border-left: 4px solid var(--rc); }
+/* v15.17：名稱太長時，星級、數量、保底品級換到下一行，不會超出卡片 */
+.bp-card .fac2-head { flex-wrap: wrap; row-gap: 4px; }
+.bp-card .fac2-head b { min-width: 0; overflow-wrap: anywhere; }
+.bp-card .fac2-head .tier { white-space: nowrap; }
 .bp-card .bp-rarity { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--rc); border: 1px solid var(--rc); border-radius: 10px; padding: 1px 8px; white-space: nowrap; background: color-mix(in srgb, var(--rc) 12%, transparent); }
 .bp-count { font-size: 12px; font-weight: 700; color: var(--accent); background: #ffb30022; border-radius: 8px; padding: 0 6px; }
 .bp-card .bp-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -1783,3 +1798,32 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 /* v15.15：地下城未報名提醒視窗 */
 .dg-remind { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
 .dg-remind-row { padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+
+/* v15.19：全服空投地圖圖示 */
+.drop-pin { display: flex; flex-direction: column; align-items: center; gap: 2px; filter: drop-shadow(0 2px 4px #000c); cursor: pointer; }
+.drop-pin .ic { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; background: #3e2723; border: 3px solid #ffca28; box-shadow: 0 0 12px #ffca28aa; }
+.drop-pin.fall .ic { border-style: dashed; background: #263238; animation: drop-pulse 1.4s infinite; }
+.drop-pin.gone .ic { filter: grayscale(1); opacity: 0.6; border-color: #9e9e9e; box-shadow: none; }
+.drop-pin i { font-style: normal; font-size: 11px; font-weight: 700; color: #fff8e1; background: #000b; border: 1px solid #ffca2888; border-radius: 8px; padding: 1px 6px; white-space: nowrap; }
+.drop-pin.gone i { color: #bdbdbd; border-color: #9e9e9e66; }
+@keyframes drop-pulse { 50% { box-shadow: 0 0 22px #ffca28; } }
+
+/* v16：特質、個人任務與轉職 */
+.trait-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.trait { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 10px; border: 1px solid; white-space: nowrap; }
+.trait.pos { color: #a5d6a7; border-color: #66bb6a88; background: #66bb6a1a; }
+.trait.mix { color: #ffe082; border-color: #ffb30088; background: #ffb3001a; }
+.trait.neg { color: #ef9a9a; border-color: #ef535088; background: #ef53501a; }
+.pq-step { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed #ffffff1a; }
+.pq-step .n { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: #ffffff14; }
+.pq-step.done .n { background: #66bb6a; color: #102; }
+.pq-step .t { flex: 1; min-width: 0; }
+.pq-step small { display: block; }
+.pq-bar { height: 6px; border-radius: 4px; background: #ffffff14; overflow: hidden; margin-top: 3px; }
+.pq-bar i { display: block; height: 100%; background: #ffb300; }
+.spec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.spec { border: 1px solid #ffffff2a; border-radius: 10px; padding: 8px; opacity: 0.85; }
+.spec b { display: block; }
+.spec .btn { margin-top: 6px; }
+.spec.pick { border-color: #ffb300; background: #ffb3001a; opacity: 1; }
+@media (max-width: 520px) { .spec-grid { grid-template-columns: 1fr; } }

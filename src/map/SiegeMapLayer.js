@@ -182,7 +182,7 @@ export const SiegeMapLayer = L.Layer.extend({
         ctx.stroke();
         if (showGlyph) {
           ctx.font = `${Math.round(rad * 1.5)}px sans-serif`;
-          ctx.fillText(z.boss ? '👹' : '🧟', x, y + 0.5);
+          ctx.fillText(z.boss ? '👹' : z.icon && z.ability ? z.icon : '🧟', x, y + 0.5); // v15.18：屍潮變種顯示專屬圖示
         }
         if (k > 1.1 && z.hp < z.maxHp) {
           const w = (z.boss ? 26 : 12) * Math.min(k, 2);

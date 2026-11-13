@@ -224,10 +224,10 @@ export function survivorCard(game, sv, { actions = '', selected = false } = {}) 
   return `
   <div class="sv-card r-${sv.rarity} ${sv.severe ? 'severe' : ''} ${selected ? 'selected' : ''}" style="--cc:${cls.color};--rc:${r.color}">
     <div class="sv-head">
-      <span class="sv-icon">${cls.icon}</span>
+      <span class="sv-icon">${game.survivors.classIcon(sv)}</span>
       <div class="sv-title">
         <b>${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b>
-        <small>${sv.isLeader ? '' : rarityTag(sv.rarity)} ${cls.name} Lv${sv.level} · 戰力 ${s.power} · 成長 ×${game.survivors.growthMul(sv)}</small>
+        <small>${sv.isLeader ? '' : rarityTag(sv.rarity)} ${game.survivors.className(sv)} Lv${sv.level} · 戰力 ${s.power} · 成長 ×${game.survivors.growthMul(sv)}</small>
       </div>
     </div>
     <div class="sv-status">${survivorStatus(game, sv)}</div>

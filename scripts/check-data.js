@@ -60,6 +60,12 @@ const fillSupplies = (game, n = 900) => {
 const { InfectedSystem: InfSys } = await import('../src/systems/InfectedSystem.js');
 const { RallySystem: RallySys } = await import('../src/systems/RallySystem.js');
 const { tripProgress } = await import('../src/systems/ExplorationSystem.js');
+// v15.18：天候事件依真實日期決定；測試一律固定為平靜日，專門的測試再指定其他天候
+const { WorldEventSystem: WXS } = await import('../src/systems/WorldEventSystem.js');
+WXS.force = 'calm';
+// v16：特質會隨機影響數值；既有測試一律關閉特質，專門的測試再打開
+const { SurvivorSystem: SVS } = await import('../src/systems/SurvivorSystem.js');
+SVS.disableTraits = true;
 const realBlocking = InfSys.prototype.blocking;
 // v14：重度感染據點已停用；測試仍檢查原本的機制
 { const { INFECTED: INF0 } = await import('../src/systems/InfectedSystem.js'); INF0.disabled = false; }
@@ -516,7 +522,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   base.size = 'small';
   const small = sw.spawnInterval();
   base.size = 'huge';
-  assert(sw.spawnInterval() < small * 0.6, '巨型據點屍潮比小型據點多');
+  assert(Math.abs(sw.spawnInterval() - small) < 1e-9, 'v15.18：避難所沒有大小之分，屍潮頻率一律比照巨型');
 
   // 生產下修、升級成本變陡
   const { FACILITIES: F } = await import('../src/config/facilities.js');
@@ -7451,6 +7457,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(light > 25, `倒下只受輕傷的機率生效（40 次中 ${light} 次輕傷）`);
   sv.severe = false;
   gr.research.bonus = (k) => (k === 'severeAvoid' ? 0 : k === 'downXpReduce' ? 0.5 : b0(k));
+  sv.level = 20; sv.xp = Math.round(x2(20) / 2); // 前面 40 次倒下偶爾會扣到降級：重設後再量
   const t0 = gr.survivors.totalXp(sv);
   gr.survivors.battleDown(sv, '測試', Date.now(), 0.1);
   const lost = t0 - gr.survivors.totalXp(sv);
@@ -7613,49 +7620,305 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(gb.npcs.levelCap({ hq: true, lat: 0, lon: 0 }) === 50, '大本營上限 Lv50');
 }
 
-// ---- v15.15：設計圖自動出售（依保底品級；副本圖紙、交易買來的不賣） ----
+// ---- v15.17：設計圖自動出售（品級＋星級都設定才啟用、只賣新拿到的；一鍵出售才賣現有的）與全部出售 ----
 {
   const ga = Game.newGame({ playerName: 'AS', classId: 'warrior', lat: 25, lon: 121 });
-  const bps = ga.state.inventory.blueprints;
-  bps.length = 0;
-  bps.push({ id: 'b1', model: 'mini14', rarity: 'common' }, { id: 'b2', model: 'mini14', rarity: 'rare' }, { id: 'b3', model: 'mini14', rarity: 'common', keep: true }, { id: 'b4', model: 'x', rarity: 'dungeon', dg: true });
+  const BM = ga.blackMarket.constructor;
   const { ITEM_MODELS: IM2 } = await import('../src/config/equipment.js');
-  const model = Object.keys(IM2).find((k) => !IM2[k].dg && IM2[k].tier >= 3);
-  bps.forEach((b) => { if (!b.dg) b.model = model; });
+  const lo = Object.keys(IM2).find((k) => !IM2[k].dg && BM.bpStars({ model: k }) === 1);
+  const hi = Object.keys(IM2).find((k) => !IM2[k].dg && BM.bpStars({ model: k }) === 3);
+  const bps = () => ga.state.inventory.blueprints;
+  const ids = () => bps().map((b) => b.id);
+  bps().length = 0;
+  bps().push({ id: 'old1', model: lo, rarity: 'common' }, { id: 'old2', model: hi, rarity: 'common' });
+  assert(ga.blackMarket.bpAutoSell().r === null && ga.blackMarket.bpAutoSell().s === null, '預設品級、星級都是不設定');
   const c0 = ga.state.player.coins;
-  const r = ga.blackMarket.setBpAutoSell({ r: 'common', s: 0 });
-  const now1 = ga.state.inventory.blueprints;
-  assert(r.n === 1 && !now1.some((b) => b.id === 'b1') && now1.some((b) => b.id === 'b3') && now1.some((b) => b.id === 'b2') && ga.state.player.coins > c0, `開啟「保底一般」自動出售：現有的一般設計圖賣掉，交易買來的保留（賣出 ${r.n} 張）`);
-  ga.state.inventory.blueprints.push({ id: 'b5', model, rarity: 'common' });
+  ga.blackMarket.setBpAutoSell({ r: 'uncommon' });
+  assert(ids().includes('old1') && ids().includes('old2') && ga.state.player.coins === c0, '改下拉選單不會賣掉現有的設計圖');
+  bps().push({ id: 'n0', model: hi, rarity: 'common' }, { id: 'n0r', model: lo, rarity: 'rare' });
   ga.tick();
-  assert(!ga.state.inventory.blueprints.some((b) => b.id === 'b5'), '之後拿到的一般設計圖自動賣掉');
-  ga.blackMarket.setBpAutoSell({ r: null });
-  ga.state.inventory.blueprints.push({ id: 'b6', model, rarity: 'common' });
+  assert(!ids().includes('n0') && ids().includes('n0r'), '只設定品級：之後拿到的優良以下設計圖就自動賣（不看星級）');
+  ga.blackMarket.setBpAutoSell({ r: null, s: 1 });
+  bps().push({ id: 'n0s', model: lo, rarity: 'epic' }, { id: 'n0h', model: hi, rarity: 'poor' });
   ga.tick();
-  assert(ga.state.inventory.blueprints.some((b) => b.id === 'b6') && ga.state.inventory.blueprints.some((b) => b.id === 'b4'), '關閉後不再自動出售，副本圖紙不受影響');
-  // v15.15.1：全部出售：金額＝單張價格 × 張數
-  ga.state.inventory.blueprints.push({ id: 'b7', model, rarity: 'common' }, { id: 'b8', model, rarity: 'common' });
-  const one = ga.blackMarket.blueprintBuyback({ model, rarity: 'common' });
+  assert(!ids().includes('n0s') && ids().includes('n0h'), '只設定星級：之後拿到的 ★ 設計圖就自動賣（不看品級）');
+  ga.blackMarket.setBpAutoSell({ r: 'uncommon', s: 2 });
+  bps().push({ id: 'n1', model: lo, rarity: 'common', held: true });
+  bps().push({ id: 'n2', model: lo, rarity: 'uncommon' }, { id: 'n3', model: hi, rarity: 'common' }, { id: 'n4', model: lo, rarity: 'rare' }, { id: 'n5', model: lo, rarity: 'common', keep: true }, { id: 'n6', model: 'x', rarity: 'dungeon', dg: true });
+  ga.tick();
+  assert(!ids().includes('n2') && ['n3', 'n4', 'n5', 'n6', 'old1', 'n1'].every((x) => ids().includes(x)), `兩項都設定：品級和星級都符合才自動賣（剩 ${ids().join(',')}）`);
+  const one = ga.blackMarket.blueprintBuyback({ model: lo, rarity: 'common' });
   const c1 = ga.state.player.coins;
-  const ra = ga.blackMarket.sellBlueprints(['b6', 'b7', 'b8']);
-  assert(ra.ok && ra.n === 3 && ga.state.player.coins - c1 === one * 3 && !ga.state.inventory.blueprints.some((b) => ['b6', 'b7', 'b8'].includes(b.id)), `全部出售：3 張一起賣、金額是單張的 3 倍（💰${ga.state.player.coins - c1}）`);
-  // v15.16：品級「X 以下」＋星級「★ 以下」
-  {
-    const BM = ga.blackMarket.constructor;
-    const lo = Object.keys(IM2).find((k) => !IM2[k].dg && BM.bpStars({ model: k }) === 1);
-    const hi = Object.keys(IM2).find((k) => !IM2[k].dg && BM.bpStars({ model: k }) === 3);
-    const list = ga.state.inventory.blueprints;
-    list.push({ id: 'c1', model: lo, rarity: 'poor' }, { id: 'c2', model: lo, rarity: 'uncommon' }, { id: 'c3', model: hi, rarity: 'poor' }, { id: 'c4', model: lo, rarity: 'rare' });
-    ga.blackMarket.setBpAutoSell({ r: 'uncommon', s: 2 });
-    const left = ga.state.inventory.blueprints.map((b) => b.id);
-    assert(!left.includes('c1') && !left.includes('c2') && left.includes('c3') && left.includes('c4'), `優良以下＋★★ 以下：低星低品級賣掉、★★★ 與精良保留（剩 ${left.filter((x) => x[0] === 'c').join(',')}）`);
-    ga.blackMarket.setBpAutoSell({ s: 0 });
-    assert(!ga.state.inventory.blueprints.some((b) => b.id === 'c3') && ga.state.inventory.blueprints.some((b) => b.id === 'c4'), '星級改成全部星級：★★★ 的劣質也賣掉，精良仍保留');
-    const SM = (await import('../src/core/SaveManager.js')).SaveManager;
-    const mg = SM.migrate({ version: 37, bpAutoSell: ['poor', 'rare'] });
-    const mg2 = SM.migrate({ version: 37, bpAutoSell: [] });
-    assert(mg.bpAutoSell?.r === 'rare' && mg.bpAutoSell.s === 0 && mg2.bpAutoSell?.r === null, `舊存檔的勾選品級轉成「最高品級以下」（${JSON.stringify(mg.bpAutoSell)}）`);
+  const rr = ga.blackMarket.sellBpByRule();
+  assert(rr.ok && !ids().includes('old1') && !ids().includes('n1') && ids().includes('old2') && ids().includes('n4') && ga.state.player.coins - c1 === one * rr.n, `一鍵出售：現有符合條件的一起賣（${rr.n} 張）`);
+  // 全部出售：金額＝單張價格 × 張數
+  bps().push({ id: 'a1', model: hi, rarity: 'common', held: true }, { id: 'a2', model: hi, rarity: 'common', held: true });
+  const one2 = ga.blackMarket.blueprintBuyback({ model: hi, rarity: 'common' });
+  const c2 = ga.state.player.coins;
+  const ra = ga.blackMarket.sellBlueprints(['old2', 'a1', 'a2']);
+  assert(ra.ok && ra.n === 3 && ga.state.player.coins - c2 === one2 * 3, `全部出售：3 張一起賣、金額是單張的 3 倍（💰${ga.state.player.coins - c2}）`);
+  const SM = (await import('../src/core/SaveManager.js')).SaveManager;
+  const mg = SM.migrate({ version: 37, bpAutoSell: ['poor', 'rare'], inventory: { blueprints: [{ id: 'z' }] } });
+  const mg3 = SM.migrate({ version: 38, bpAutoSell: { r: 'rare', s: 3 } });
+  assert(mg.bpAutoSell?.r === 'rare' && mg.bpAutoSell.s === null && mg.inventory.blueprints[0].held && mg3.bpAutoSell.s === 3, `舊存檔：勾選品級轉成最高品級以下、全部星級改成不設定、已選的星級保留（${JSON.stringify(mg.bpAutoSell)}）`);
+}
+
+// ---- v15.18：天候事件日 ----
+{
+  const { WORLD_EVENTS: WE } = await import('../src/config/worldEvents.js');
+  const { npcAlert: npcAlertF } = await import('../src/systems/TerritorySystem.js');
+  WXS.force = null;
+  const t0 = Date.UTC(2026, 0, 1, 4);
+  const seen = {};
+  for (let d = 0; d < 730; d += 1) { const id = WXS.at(t0 + d * 864e5).id; seen[id] = (seen[id] || 0) + 1; }
+  const totalW = Object.values(WE).reduce((s0, e) => s0 + e.weight, 0);
+  assert(Object.keys(WE).every((k) => Math.abs(seen[k] / 730 - WE[k].weight / totalW) < 0.05), `每天抽一種天候，出現比例接近權重（${JSON.stringify(seen)}）`);
+  assert(WXS.at(t0 + 3600e3).id === WXS.at(t0 + 10 * 3600e3).id, '同一天（台灣時間）天候相同，所有玩家算出一樣的結果');
+  const gw = Game.newGame({ playerName: 'WX', classId: 'farmer', lat: 25, lon: 121 });
+  gw.state.map.pois = fillPois([], 25, 121);
+  gw.shelter.establish(gw.state.map.pois.find((p) => gw.shelter.canEstablish(p).ok));
+  const at = Date.now();
+  const with_ = (id, fn) => { WXS.force = id; try { return fn(); } finally { WXS.force = 'calm'; } };
+  // 酸雨：搜刮量
+  const ctx = { poi: gw.state.map.pois[0], lootBase: 1 };
+  const l0 = with_('calm', () => gw.exploration.atPhase(ctx, at).lootMul);
+  const l1 = with_('acidRain', () => gw.exploration.atPhase(ctx, at).lootMul);
+  assert(Math.abs(l1 / l0 - 1.2) < 1e-9, `酸雨：探索搜刮量 +20%（${(l1 / l0).toFixed(2)}）`);
+  // 酸雨：戰鬥受到的傷害
+  const sv = gw.survivors.leader();
+  const hurtTest = (id) => with_(id, () => {
+    gw.survivors.setHp(sv, 100);
+    gw.combat.applyOutcome([sv], { team: [{ id: sv.id, hp: 60, hpStart: 100 }], kills: [], bossKills: 0, eliteKills: 0, xp: 0, coins: 0, parts: 0, victory: true }, at);
+    return gw.survivors.hp ? gw.survivors.hp(sv) : sv.hp;
+  });
+  const h0 = hurtTest('calm');
+  const h1 = hurtTest('acidRain');
+  assert(Math.round(h0) === 60 && Math.round(h1) === 48, `酸雨：探索戰鬥受到的傷害 +30%（失血 40 → ${Math.round(100 - h1)}）`);
+  // 濃霧：警戒範圍
+  const a0 = with_('calm', () => [npcAlertF({ level: 10 }), gw.territory?.alertRadius ? gw.territory.alertRadius(gw.shelter.primary()) : null]);
+  const a1 = with_('fog', () => [npcAlertF({ level: 10 }), gw.territory?.alertRadius ? gw.territory.alertRadius(gw.shelter.primary()) : null]);
+  assert(a0[0] === 70 && a1[0] === 49 && (a0[1] == null || a1[1] === Math.round(a0[1] * 0.7)), `濃霧：NPC 與玩家警戒範圍 −30%（${a0.join('/')} → ${a1.join('/')}）`);
+  // 熱浪：食物消耗、移動速度
+  const f0 = with_('calm', () => gw.resources.rates().upkeep.food);
+  const f1 = with_('heatWave', () => gw.resources.rates().upkeep.food);
+  const m0 = with_('calm', () => gw.time.exploreSpeedMul(at));
+  const m1 = with_('heatWave', () => gw.time.exploreSpeedMul(at));
+  assert(Math.abs(f1 / f0 - 1.25) < 1e-9 && Math.abs(m1 / m0 - 0.85) < 1e-9, `熱浪：食物消耗 +25%、移動速度 −15%（${(f1 / f0).toFixed(2)}、${(m1 / m0).toFixed(2)}）`);
+  // 豐收：食物產量
+  sv.job = 'farm';
+  const p0 = with_('calm', () => gw.resources.rates().gross.food);
+  const p1 = with_('harvest', () => gw.resources.rates().gross.food);
+  assert(p1 > p0 * 1.15, `豐收：食物產量提高（${p0.toFixed(1)} → ${p1.toFixed(1)}）`);
+  sv.job = 'idle';
+  // 黑市大促
+  const g0 = with_('calm', () => gw.blackMarket.shelf(at)[0].price);
+  const g1 = with_('blackSale', () => gw.blackMarket.shelf(at)[0].price);
+  const it = gw.equipment.generate({ level: 10, rarity: 'rare' });
+  const b0 = with_('calm', () => gw.blackMarket.gearBuyback(it));
+  const b1 = with_('blackSale', () => gw.blackMarket.gearBuyback(it));
+  assert(Math.abs(g1 - g0 * 0.8) <= 1 && Math.abs(b1 - b0 * 1.2) <= 1, `黑市大促：售價 −20%、收購 +20%（${g0}→${g1}、${b0}→${b1}）`);
+  // 血月：夜間殭屍群、獵殺獎勵、屍潮變種
+  const night = gw.time.nightKey(at);
+  const z0 = with_('calm', () => gw.zombies.sharedGroups(night, at));
+  const z1 = with_('bloodMoon', () => gw.zombies.sharedGroups(night, at));
+  const sum = (l, k) => l.reduce((s2, x) => s2 + x[k], 0);
+  assert(z0.length === z1.length && sum(z1, 'count') > sum(z0, 'count') && sum(z1, 'level') === sum(z0, 'level') + 3 * z1.length && z1.every((x) => x.reward === 1.5 && x.moon) && z0.every((x) => !x.reward),
+    `血月：同樣的殭屍群數量 +30%、等級 +3、獵殺獎勵 +50%（數量 ${sum(z0, 'count')} → ${sum(z1, 'count')}）`);
+  assert(with_('bloodMoon', () => gw.siege.of().variantMul()) === 2 && with_('calm', () => gw.siege.of().variantMul()) === 1, '血月：屍潮變種出現權重加倍');
+  WXS.force = 'calm';
+}
+
+// ---- v15.18：屍潮變種 ----
+{
+  const { SIEGE_VARIANTS: SV, SIEGE_VARIANT_KEYS: SVK } = await import('../src/config/enemies.js');
+  const gv = Game.newGame({ playerName: 'VR', classId: 'warrior', lat: 25, lon: 121 });
+  gv.state.map.pois = fillPois([], 25, 121);
+  gv.shelter.establish(gv.state.map.pois.find((p) => gv.shelter.canEstablish(p).ok));
+  setHour(gv, 23);
+  const s = gv.siege.of();
+  const civ = (v) => { gv.civilization.value = () => v; };
+  civ(50);
+  const pick50 = new Set(Array.from({ length: 400 }, () => s.pickEnemy()));
+  civ(300);
+  const pick300 = new Set(Array.from({ length: 1500 }, () => s.pickEnemy()));
+  assert(SVK.every((k) => !pick50.has(k)) && SVK.every((k) => pick300.has(k)), `變種依文明度解鎖（文明 50 沒有、300 全部出現：${[...pick300].filter((k) => SV[k]).join('、')}）`);
+  const base = gv.shelter.primary();
+  const W = WORLDC.WALL_R;
+  const fresh = (id) => { s.zombies = []; s.spawn(id); const z = s.zombies[0]; z.x = W + 1; z.y = 0; return z; };
+  // 自爆者：碰到圍牆爆炸，扣牆血、不給獎勵
+  base.wallHp = null;
+  const w0 = gv.shelter.wallHp(base);
+  const kills0 = s.nightKills;
+  const ze = fresh('exploder');
+  s.step(0.1);
+  assert(gv.shelter.wallHp(base) < w0 - ze.atk * 2 && !s.zombies.includes(ze) && s.nightKills === kills0, `自爆者碰到圍牆自爆（牆 ${Math.round(w0)} → ${Math.round(gv.shelter.wallHp(base))}，不算擊殺獎勵）`);
+  // 裝甲殭屍：一般傷害減半，火焰塔無視裝甲
+  const za = fresh('armored');
+  const hp0 = za.hp;
+  s.src = 'machineGun'; s.damage(za, 100);
+  const d1 = hp0 - za.hp;
+  s.src = 'flameTower'; s.damage(za, 100);
+  const d2 = hp0 - d1 - za.hp;
+  assert(d1 === 50 && d2 === 100, `裝甲殭屍：機槍傷害 −50%、火焰塔無視裝甲（${d1}／${d2}）`);
+  // 拆牆者：對牆傷害較高
+  base.wallHp = null;
+  const zb = fresh('breaker'); zb.atkCd = 0;
+  const wb0 = gv.shelter.wallHp(base);
+  s.step(0.1);
+  const dmgB = wb0 - gv.shelter.wallHp(base);
+  assert(Math.abs(dmgB - zb.atk * 0.25 * (1 - gv.shelter.wallReduction(base)) * SV.breaker.ability.wallMul) < 1, `拆牆者對圍牆傷害 ×${SV.breaker.ability.wallMul}`);
+  // 爬牆者：貼牆幾秒後翻進圍牆
+  base.wallHp = null;
+  const zc = fresh('climber');
+  for (let i = 0; i < 60 && !zc.inside; i += 1) s.step(0.1);
+  assert(zc.inside && Math.hypot(zc.x, zc.y) < W, '爬牆者貼牆後翻進圍牆');
+  // 尖叫者：周圍殭屍加速
+  s.zombies = [];
+  s.spawn('screamer'); s.spawn('walker');
+  const [q, wk] = s.zombies;
+  q.x = 120; q.y = 0; wk.x = 125; wk.y = 0; wk.speed = 10; q.speed = 0;
+  s.step(0.1);
+  const moved = 125 - Math.hypot(wk.x, wk.y);
+  assert(Math.abs(moved - 10 * 1.15 * 0.1) < 0.02, `尖叫者讓附近殭屍加速 15%（移動 ${moved.toFixed(3)}）`);
+  // 變種擊殺記錄在今晚統計，天亮寫進守城報告
+  s.zombies = [];
+  s.spawn('armored');
+  s.zombies[0].hp = 0;
+  s.collectDead();
+  assert(s.nightVariants?.armored >= 1 && base.nightStats?.variants?.armored >= 1, '變種擊殺數記在據點的今晚統計（重新整理不會遺失）');
+}
+
+// ---- v15.19：全服空投 ----
+{
+  const { AIRDROP: AD, AIRDROP_ZONE: ADZ } = await import('../src/config/airdrops.js');
+  const { AirdropSystem: ADS } = await import('../src/systems/AirdropSystem.js');
+  const ga = Game.newGame({ playerName: 'AD', classId: 'warrior', lat: 25, lon: 121 });
+  ga.state.map.pois = fillPois([], 25, 121);
+  ga.shelter.establish(ga.state.map.pois.find((p) => ga.shelter.canEstablish(p).ok));
+  const ad = ga.airdrop;
+  const s0 = ADS.slotOf(Date.now());
+  const cells = ad.cells().length;
+  let n = 0;
+  for (let k = 0; k < 80; k += 1) n += ad.slotDrops(s0 + k).length;
+  const expect = cells * AD.chance * 80;
+  assert(Math.abs(n - expect) < expect * 0.35, `每格每輪 ${AD.chance * 100}% 機率掉空投（80 輪 ${n} 箱，預期約 ${Math.round(expect)}）`);
+  const ga2 = Game.newGame({ playerName: 'AD2', classId: 'warrior', lat: 25, lon: 121 });
+  ga2.state.map.pois = ga.state.map.pois;
+  assert(JSON.stringify(ga2.airdrop.slotDrops(s0 + 3)) === JSON.stringify(ad.slotDrops(s0 + 3)), '所有玩家算出的空投位置、時間、內容完全相同');
+  WXS.force = 'supply';
+  ad.slotCache.clear();
+  let n2 = 0;
+  for (let k = 0; k < 80; k += 1) n2 += ad.slotDrops(s0 + k).length;
+  WXS.force = 'calm';
+  ad.slotCache.clear();
+  assert(n2 > n * 1.6, `補給日空投機率加倍（${n} → ${n2}）`);
+  // 找一箱空投
+  let d = null;
+  for (let k = 0; !d && k < 50; k += 1) d = ad.slotDrops(s0 + k)[0];
+  assert(d && d.announceAt < d.landAt && d.landAt < d.npcAt && d.npcAt < d.expireAt && Object.keys(d.mats).length > 0, '空投有預告、降落、NPC 拿走、消失的時間與內容');
+  const Z = ADZ[d.zone];
+  assert(ad.status(d, d.announceAt + 1).state === 'falling' && ad.status(d, d.landAt + 1).state === 'landed' && ad.status(d, d.npcAt + 1).state === 'npc' && ad.status(d, d.expireAt + 1).state === 'gone', '狀態：降落中 → 可搶 → 被 NPC 拿走 → 消失');
+  assert(ad.guards(d).length === Z.guard.n, `守衛殭屍數量依區域（${d.zone} ${Z.guard.n} 隻）`);
+  // 派隊搶奪：守衛換成空的（必勝），抵達後寫入共用資料、背著回家
+  const realGuards = ad.guards.bind(ad);
+  ad.guards = () => [];
+  const sv = ga.survivors.leader();
+  const t0 = d.landAt + 1000;
+  const r0 = ga.exploration.start(`drop:${d.id}`, [sv.id], 0, false, t0, { kind: 'drop' });
+  assert(r0.ok && r0.exp.kind === 'drop' && r0.exp.dropTarget?.id === d.id, `可以派隊搶空投（${r0.reason || ''}）`);
+  const arrive = r0.exp.startAt + r0.exp.travelMs;
+  const coins0 = ga.state.player.coins;
+  ga.exploration.dropArrive(r0.exp, arrive);
+  await new Promise((r) => setTimeout(r, 20));
+  assert(r0.exp.dropResult?.win && !r0.exp.dropResult.pending && r0.exp.carried && ad.status(d, arrive).state === 'taken', '打贏守衛後搶下空投，戰利品背在身上');
+  const rep = ga.exploration.dropReport(r0.exp);
+  assert(rep.success && ga.state.player.coins > coins0 && Object.keys(rep.resources).some((k) => d.mats[k]), `回到避難所後空投物資入庫（金錢 +${ga.state.player.coins - coins0}）`);
+  // 已被搶走：後到的隊伍撲空
+  const r1 = ga2.exploration.start(`drop:${d.id}`, [ga2.survivors.leader().id], 0, false, t0, { kind: 'drop' });
+  ga2.shared.cache = ga.shared.cache; // 共用同一份資料（測試用）
+  if (r1.ok) {
+    ga2.airdrop.guards = () => [];
+    ga2.exploration.dropArrive(r1.exp, r1.exp.startAt + r1.exp.travelMs);
+    assert(r1.exp.dropResult?.missed && !r1.exp.carried, '空投已被搶走：後到的隊伍撲空，不用交戰');
   }
+  // 守衛強度：致死區守衛打得贏一般隊伍嗎（弱隊必輸）
+  ad.guards = realGuards;
+  const lethal = { ...d, zone: 'lethal' };
+  const weak = ga.combat.simulate([sv], ad.guards(lethal), { record: false });
+  assert(!weak.victory, '致死區空投守衛很強，新手隊伍打不贏');
+}
+
+// ---- v16：倖存者特質、個人任務與轉職 ----
+{
+  SVS.disableTraits = false;
+  const { TRAITS: TR, CLASS_QUESTS: CQ, rollTraits: rollT, traitRandom: trR } = await import('../src/config/traits.js');
+  const { createSurvivor: mkSv } = await import('../src/core/GameState.js');
+  // 抽特質：劣質～優良 1 個、精良以上 2 個（第 2 個不會是負面）
+  let ok1 = true; let negSecond = 0; const typeCount = { pos: 0, mix: 0, neg: 0 };
+  for (let i = 0; i < 600; i += 1) {
+    const r = ['poor', 'common', 'uncommon', 'rare', 'epic', 'legendary'][i % 6];
+    const t = rollT(r, trR(`x${i}`));
+    if (t.length !== (['rare', 'epic', 'legendary'].includes(r) ? 2 : 1) || new Set(t).size !== t.length) ok1 = false;
+    if (t[1] && TR[t[1]].type === 'neg') negSecond += 1;
+    typeCount[TR[t[0]].type] += 1;
+  }
+  assert(ok1 && negSecond === 0, '特質數量：劣質～優良 1 個、精良以上 2 個，第 2 個不會是負面');
+  assert(typeCount.pos > typeCount.mix && typeCount.mix > typeCount.neg && typeCount.neg > 0, `抽中比例接近 正面:混合:負面 = 3:2:1（${JSON.stringify(typeCount)}）`);
+  assert(JSON.stringify(rollT('rare', trR('t:sv_1'))) === JSON.stringify(rollT('rare', trR('t:sv_1'))), '同一位倖存者的特質固定');
+  const gt = Game.newGame({ playerName: 'TR', classId: 'warrior', lat: 25, lon: 121 });
+  const ld = gt.survivors.leader();
+  assert(gt.survivors.traitsOf(ld)[0] === 'leader' && TR[gt.survivors.traitsOf(ld)[1]].type === 'pos', `指揮官固定領袖氣質＋1 個正面特質（${gt.survivors.traitsOf(ld).join('、')}）`);
+  // 特質效果併入能力
+  const sv = mkSv('測試', 'warrior', 35, 'rare');
+  gt.state.survivors.push(sv);
+  sv.traits = [];
+  const hp0 = gt.survivors.stats(sv).hp;
+  sv.traits = ['sturdy'];
+  const hpR = gt.survivors.stats(sv).hp / hp0;
+  assert(hpR > 1.05 && hpR <= 1.081, `特質「壯碩」生命 +8%（與技能的生命加成相加，實際 ×${hpR.toFixed(3)}）`);
+  // 戰鬥條件效果：領袖氣質（同隊）、獨行俠（單人）
+  const unit = (id, sk) => ({ id, atk: 100, def: 100, maxHp: 1000, hp: 1000, skills: sk });
+  const team = [unit('a', { teamAtk: 0.03, teamDef: 0.03 }), unit('b', {})];
+  gt.combat.applyTeamTraits(team);
+  const solo = [unit('c', { soloAll: 0.15, groupAll: -0.03 })];
+  gt.combat.applyTeamTraits(solo);
+  assert(Math.abs(team[1].atk - 103) < 1e-6 && Math.abs(solo[0].atk - 115) < 1e-6 && solo[0].maxHp === 1150, '領袖氣質讓同隊全員 +3%、獨行俠單人出隊 +15%');
+  // 個人任務：未解鎖不計數；解鎖後三步驟同時計算；完成後轉職
+  sv.traits = [];
+  sv.level = 29;
+  gt.survivors.pqAdd(sv, 'wins', 5);
+  assert(!(sv.pq?.wins > 0), '精良以上 Lv30 才解鎖個人任務（之前不計數）');
+  const sv2 = mkSv('一般', 'warrior', 35, 'common');
+  assert(gt.survivors.questLevel(sv2) === 40 && gt.survivors.questLevel(sv) === 30, '劣質、一般、優良要 Lv40 解鎖');
+  sv.level = 30;
+  CQ.warrior.steps.forEach((st) => gt.survivors.pqAdd(sv, st.key, st.need));
+  assert(gt.survivors.questDone(sv) && sv.pqDone, '三個步驟都完成：個人任務完成');
+  const p0 = gt.survivors.stats(sv).power;
+  const r = gt.survivors.chooseAdv(sv.id, 'tank');
+  assert(r.ok && sv.adv === 'tank' && gt.survivors.classIcon(sv) === '🦾' && gt.survivors.className(sv) === '重裝兵' && gt.survivors.stats(sv).power > p0, `轉職為重裝兵：換圖示與名稱、能力提升（戰力 ${p0} → ${gt.survivors.stats(sv).power}）`);
+  assert(!gt.survivors.chooseAdv(sv.id, 'berserker').ok, '轉職是永久的，不能再換');
+  // 任務計數掛點：戰鬥（擊殺、打贏、沒倒下）、耕作時間
+  const sv3 = mkSv('農', 'farmer', 40, 'rare'); sv3.traits = []; sv3.job = 'farm'; gt.state.survivors.push(sv3);
+  gt.resources.apply(30 * 60000);
+  assert(Math.round(sv3.pq.farmMin) === 30, `耕作累計時間依現實時間（${Math.round(sv3.pq.farmMin)} 分鐘）`);
+  const sv4 = mkSv('醫', 'medic', 40, 'rare'); sv4.traits = []; gt.state.survivors.push(sv4);
+  gt.combat.applyOutcome([sv4], { team: [{ id: sv4.id, hp: 100, hpStart: 100, kills: 3 }], kills: [], bossKills: 0, eliteKills: 0, xp: 0, coins: 0, parts: 0, victory: true }, Date.now());
+  assert(sv4.pq.cleanWins === 1, '打贏且沒倒下：醫生任務計數');
+  // 轉職：生產家所有產量 +20%（多位不疊加）、鐵胃食物消耗
+  sv3.adv = null;
+  const f0 = gt.resources.rates().gross.wood;
+  sv3.adv = 'producer';
+  const f1 = gt.resources.rates().gross.wood;
+  assert(f0 > 0 && Math.abs(f1 / f0 - 1.2) < 1e-6, `生產家在家：所有產量 +20%（木材 ${f0.toFixed(1)} → ${f1.toFixed(1)}）`);
+  sv3.adv = null;
+  const u0 = gt.resources.rates().upkeep.food;
+  sv3.traits = ['ironGut'];
+  const u1 = gt.resources.rates().upkeep.food;
+  assert(u1 < u0, '鐵胃：自己的食物消耗減少');
+  // 舊存檔遷移：補上特質（依編號固定）
+  const mg = SaveManager.migrate({ version: 39, survivors: [{ id: 'sv_x', rarity: 'epic', classId: 'scout' }, { id: 'leader', isLeader: true, name: '老大', classId: 'warrior' }] });
+  assert(mg.survivors[0].traits.length === 2 && mg.survivors[1].traits[0] === 'leader' && mg.survivors[0].pq && mg.survivors[0].adv === null, '舊存檔遷移：補上特質、任務進度與轉職欄位');
+  SVS.disableTraits = true;
 }
 
 if (failures) {

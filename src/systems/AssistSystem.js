@@ -15,8 +15,11 @@ export const ASSIST_DAY_STAY_MS = 60 * 60 * 1000;
 /** 公開的協防隊員戰鬥數值上限（防止竄改） */
 const UNIT_CAP = { hp: 500000, atk: 100000, def: 50000 };
 /** 戰鬥會用到的技能效果（公開給其他玩家計算戰鬥） */
-const SKILL_KEYS = ['cleaveChance', 'rage', 'firstStrikeCrit', 'healEvery', 'healPct'];
-const SKILL_CAP = { cleaveChance: 1, rage: 3, firstStrikeCrit: 1, healEvery: 60, healPct: 1 };
+// v16：特質與轉職的戰鬥條件效果（同隊加成、夜間、單人）也帶給協防與副本戰鬥
+const SKILL_KEYS = ['cleaveChance', 'rage', 'firstStrikeCrit', 'healEvery', 'healPct', 'teamAtk', 'teamDef', 'teamHp', 'nightAtk', 'dayAtk', 'soloAll', 'groupAll'];
+const SKILL_CAP = {
+  cleaveChance: 1, rage: 3, firstStrikeCrit: 1, healEvery: 60, healPct: 1, teamAtk: 0.1, teamDef: 0.1, teamHp: 0.2, nightAtk: 0.2, dayAtk: 0.2, soloAll: 0.3, groupAll: 0.1,
+};
 const clampNum = (v, min, max, d = min) => (Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d);
 
 /** 協防隊回家後多久內收到的戰果還會補進協防報告 */
@@ -241,7 +244,7 @@ export class AssistSystem {
       crit: clampNum(u.crit, 0, 0.8, 0.05), critDmg: clampNum(u.critDmg, 1, 4, 1.5), dodge: clampNum(u.dodge, 0, 0.6, 0.02), atkSpeed: clampNum(u.atkSpeed, 0.2, 4, 1),
       level: clampNum(u.lv, 1, 60, 1), xp: 0, coins: 0, partsChance: 0, icon: '🛡️',
       // 技能、吸血、藥品欄（v10.13.1：與自己出戰時相同）
-      skills: Object.fromEntries(SKILL_KEYS.filter((k) => Number.isFinite(u.skills?.[k])).map((k) => [k, clampNum(u.skills[k], 0, SKILL_CAP[k] ?? 1, 0)])),
+      skills: Object.fromEntries(SKILL_KEYS.filter((k) => Number.isFinite(u.skills?.[k])).map((k) => [k, clampNum(u.skills[k], ['nightAtk', 'dayAtk', 'groupAll'].includes(k) ? -(SKILL_CAP[k] ?? 1) : 0, SKILL_CAP[k] ?? 1, 0)])),
       lifeSteal: clampNum(u.ls, 0, 0.5, 0),
       meds: u.meds && Number.isFinite(u.meds.qty) && u.meds.qty > 0 ? { key: String(u.meds.key || '').slice(0, 20), qty: clampNum(u.meds.qty, 0, 99, 0), heal: clampNum(u.meds.heal, 0, UNIT_CAP.hp, 0) } : null,
     };

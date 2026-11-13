@@ -2,12 +2,25 @@ import { escapeHtml } from '../utils/dom.js';
 import { metaOf } from './components.js';
 import { SUPPLIES } from '../config/supplies.js';
 import { RARITIES } from '../config/equipment.js';
+import { SIEGE_VARIANTS } from '../config/enemies.js';
 
 const chip = (text, cls = '') => `<span class="sr-chip ${cls}">${text}</span>`;
 const itemChips = (items, sign, cls = '') => Object.entries(items || {})
   .map(([k, v]) => chip(`${metaOf(k).icon} ${escapeHtml(metaOf(k).name)} ${sign}${v}`, cls));
 
 /** Boss 戰利品 */
+/** v15.18：今晚擊殺的屍潮變種（與自爆次數） */
+function variantList(s) {
+  const v = Object.entries(s?.variants || {}).filter(([k]) => SIEGE_VARIANTS[k]);
+  const out = v.map(([k, n]) => `${SIEGE_VARIANTS[k].icon} ${SIEGE_VARIANTS[k].name} ×${n}`);
+  if (s?.blasts) out.push(`💥 自爆 ${s.blasts} 次`);
+  return out;
+}
+function variantHtml(s) {
+  const list = variantList(s);
+  return list.length ? `<div class="sr-sec">🧬 屍潮變種</div><div class="sr-items">${list.map((x) => chip(escapeHtml(x))).join('')}</div>` : '';
+}
+
 function bossHtml(boss, compact) {
   if (!boss) return '';
   const list = [...itemChips(boss.items, '×')];
@@ -72,6 +85,7 @@ function recordDetailHtml(e) {
       ${groupRow('📜 設計圖', null, (s.blueprints || []).map(escapeHtml).join('・'))}
       ${groupRow('🥉 戰後回收', sum(s.recovered || {}), plainList(s.recovered || {}))}
       ${s.boss ? groupRow(`👑 Boss「${escapeHtml(s.boss.name)}」`, null, boss || '（沒有戰利品）') : ''}
+      ${groupRow('🧬 屍潮變種', null, variantList(s).map(escapeHtml).join('・'))}
       ${groupRow('🎖️ 駐守經驗', null, (s.xp || []).map((x) => `${escapeHtml(x.name)} Lv${x.level} <span class="pos">+${x.xp}</span>`).join('・'))}
       <small class="muted block">評價依城牆剩餘：≥80% 優秀 ×1.5・50～80% 良好 ×1.2・20～50% 普通 ×1.0・&lt;20% 勉強 ×0.7</small>
     </div>`;
@@ -111,6 +125,7 @@ export function siegeDetailHtml(e, compact = false) {
       <div class="sr-bar"><i style="width:${s.wallPct}%"></i></div>
       <small class="muted block">城牆剩 ≥80% 優秀 ×1.5・50～80% 良好 ×1.2・20～50% 普通 ×1.0・&lt;20% 勉強 ×0.7</small>
       <div class="sr-sec">📦 防守物資箱</div><div class="sr-items">${gains.join('')}</div>
+      ${variantHtml(s)}
       ${bossHtml(s.boss)}
       ${s.xp?.length ? `<div class="sr-sec">🎖️ 駐守經驗（今晚參與防守、天亮仍在駐守的人，各得升級所需 5%）</div>
         ${s.xp.map((x) => `<div class="sr-row"><span>${escapeHtml(x.name)} Lv${x.level}</span><span class="pos">+${x.xp} 經驗</span></div>`).join('')}` : ''}`;
@@ -133,6 +148,7 @@ export function siegeDetailHtml(e, compact = false) {
     ${mats.length ? `<div class="sr-sec">🧰 材料損失（部分零件、布料被奪走或損壞）</div><div class="sr-items">${mats.join('')}</div>` : ''}
     ${recoveredChips(s) ? `<div class="sr-sec">🥉 戰後回收</div><div class="sr-items">${recoveredChips(s)}</div>` : ''}
     ${e.damaged?.length ? `<div class="sr-sec">🏚️ 防禦設施</div>${e.damaged.map((d) => `<div class="sr-row"><span class="neg">${escapeHtml(d)}</span></div>`).join('')}` : ''}
+    ${variantHtml(s)}
     ${s.injuries?.length ? `<div class="sr-sec">🩹 駐守人員傷勢</div>${s.injuries.map((x) => `<div class="sr-row"><span>${escapeHtml(x.name)}</span><span class="${x.ok ? 'muted' : 'neg'}">${x.severe ? '重傷（需醫療站治療）' : x.light ? '輕傷（生命 −30%）' : x.cellar ? '🕳️ 躲進地窖・無傷' : '無傷'}</span></div>`).join('')}` : ''}
     ${bossHtml(s.boss)}`;
 }

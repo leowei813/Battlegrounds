@@ -39,6 +39,7 @@ import { pathLength, pointAlong } from '../map/routing.js';
 import {
   SUPPLIES, AMMO_FOR, AMMO_PACK_FIGHTS, unitWeight,
 } from '../config/supplies.js';
+import { WorldEventSystem } from './WorldEventSystem.js';
 
 /** 每公里單程移動時間（分鐘，未套用速度加成） */
 const MIN_PER_KM_ONE_WAY = 1.2;
@@ -121,7 +122,7 @@ export const EXP_PHASES = {
 };
 
 /** 抵達後是交戰的行動（攻打控制點、NPC 據點、玩家、感染據點、攔截、獵殺） */
-const FIGHT_KINDS = ['cp', 'raid', 'pvp', 'infect', 'intercept', 'hunt'];
+const FIGHT_KINDS = ['cp', 'raid', 'pvp', 'infect', 'intercept', 'hunt', 'drop'];
 
 /** 隊伍狀態圖示：交戰中改為兩把交叉劍 */
 export function phaseIcon(exp, phase) {
@@ -192,7 +193,7 @@ export class ExplorationSystem {
 
   poi(id) {
     return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id)
-      || this.game.intercept?.asPoi(id) || this.game.assist?.asPoi(id) || this.game.infected?.asPoi(id) || this.game.rally?.asPoi(id) || this.game.cp?.asPoi(id) || this.huntPoi(id) || null;
+      || this.game.intercept?.asPoi(id) || this.game.assist?.asPoi(id) || this.game.infected?.asPoi(id) || this.game.rally?.asPoi(id) || this.game.cp?.asPoi(id) || this.huntPoi(id) || this.dropPoi(id) || null;
   }
 
   /**
@@ -506,7 +507,7 @@ export class ExplorationSystem {
     if (!v.ok) return v;
     if (kind === 'raid' && this.game.npcs.get?.(poiId)?.hq) return { ok: false, reason: '大本營不能攻打' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'assist' || kind === 'rally' || kind === 'cpGuard' ? 0 : kind === 'pvp' || kind === 'infect' ? 2 : kind === 'raid' || kind === 'cp' ? 0 : this.searchMinutes(v.poi); // v15.9.2：攻打 NPC 據點、控制點抵達就交戰（同集結）
+    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'drop' || kind === 'assist' || kind === 'rally' || kind === 'cpGuard' ? 0 : kind === 'pvp' || kind === 'infect' ? 2 : kind === 'raid' || kind === 'cp' ? 0 : this.searchMinutes(v.poi); // v15.9.2：攻打 NPC 據點、控制點抵達就交戰（同集結）
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile, from });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
@@ -547,6 +548,7 @@ export class ExplorationSystem {
       ...(v.poi.pvp ? { pvpTarget: v.poi } : {}),
       ...(v.poi.intercept ? { icptTarget: v.poi.target } : {}),
       ...(v.poi.hunt ? { huntTarget: v.poi.target } : {}),
+      ...(v.poi.drop ? { dropTarget: v.poi.target } : {}),
       ...(v.poi.trade ? { tradeTarget: v.poi.target } : {}),
       vehicleIds: [...vehicleIds], cargo: plan.trip.cargo, ambushes: 0,
       // 攻擊目標的殭屍群不算途中遭遇
@@ -591,6 +593,7 @@ export class ExplorationSystem {
     [...this.list].forEach((exp) => this.checkThreats(exp, now));
     this.game.intercept?.checkArrivals(now);
     this.checkHunts(now);
+    this.checkDrops(now);
     this.list.forEach((exp) => this.runCheckpoints(exp, now));
     const out = [];
     const groups = this.game.state.map.zombieGroups;
@@ -1076,6 +1079,7 @@ export class ExplorationSystem {
           : exp.recalled ? (exp.kind === 'explore' ? this.finishExplore(exp, { recalled: true }) : this.recalledReport(exp))
           : exp.defeated ? this.game.intercept.defeatedReport(exp)
           : exp.kind === 'hunt' ? this.huntReport(exp)
+          : exp.kind === 'drop' ? this.dropReport(exp)
           : exp.kind === 'intercept' ? this.game.intercept.report(exp)
             : exp.kind === 'raid' ? (exp.raidReport ? { ...exp.raidReport, at: exp.endAt } : this.game.npcs.resolveRaid(exp))
             : exp.kind === 'infect' ? this.game.infected.resolveAttack(exp)
@@ -1083,6 +1087,8 @@ export class ExplorationSystem {
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp)));
         // 召回（手動召回、自動回家、集結取消走回家）：標記為召回，不是探索失敗
         if (exp.recalled && !report.success && !exp.defeated) report.recalled = true;
+        // v16：個人任務「完成探索」（一般探索、成功回來才算）
+        if (exp.kind === 'explore' && report.success !== false && !exp.defeated && !exp.recalled) exp.memberIds.forEach((id) => this.game.survivors.pqAdd(this.game.survivors.get(id), 'explores'));
         report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
         this.tagZone(report, exp);
         this.attachXp(report, exp);
@@ -1197,10 +1203,104 @@ export class ExplorationSystem {
         ? `⚔️ 擊退${t.label}！（擊殺 ${result.kills.length}，💰${Math.round(result.coins * COIN_GAIN_MUL)}）`
         : `💀 攻擊${t.label}失敗，隊伍撤退`],
     };
+    if (result.victory) exp.memberIds.forEach((id) => this.game.survivors.pqAdd(this.game.survivors.get(id), 'hunts')); // v16：個人任務
     const msg = result.victory ? `⚔️ 攻擊隊擊退了${t.label}` : `💀 攻擊隊被${t.label}擊退`;
     this.game.log(msg, result.victory ? 'success' : 'danger');
     this.game.toast(msg, result.victory ? 'success' : 'danger');
     this.game.bus.emit('map:changed');
+  }
+
+  // ---------- v15.19：全服空投 ----------
+
+  /** 空投當成目的地：id = drop:空投ID */
+  dropPoi(id) {
+    if (!String(id).startsWith('drop:')) return null;
+    const did = String(id).slice(5);
+    const d = this.game.airdrop?.get(did) || this.list.find((e) => e.poiId === id)?.dropTarget;
+    return d && {
+      id, name: '📦 空投補給', lat: d.lat, lon: d.lon, type: 'military', icon: '📦', drop: true, target: { id: d.id, lat: d.lat, lon: d.lon, zone: d.zone },
+    };
+  }
+
+  /** 派隊搶空投 */
+  startDrop(dropId, memberIds, opts = {}) {
+    const ad = this.game.airdrop;
+    const d = ad?.get(dropId);
+    const st = ad?.status(d);
+    if (!d || st.state === 'gone') return { ok: false, reason: '空投已經消失了' };
+    if (st.state === 'taken') return { ok: false, reason: `已經被「${st.by}」搶走了` };
+    if (st.state === 'npc') return { ok: false, reason: '已經被 NPC 勢力拿走了' };
+    const id = `drop:${dropId}`;
+    if (this.list.some((e) => e.poiId === id)) return { ok: false, reason: '已經有隊伍前往這個空投' };
+    return this.start(id, memberIds, 0, false, Date.now(), { ...opts, kind: 'drop' });
+  }
+
+  /** 搶空投的隊伍抵達：先看是否已被搶走，再和守衛交戰；打贏後寫入共用資料（先到先得） */
+  checkDrops(now = Date.now()) {
+    this.list.forEach((exp) => {
+      if (exp.kind !== 'drop' || exp.dropDone) return;
+      const at = exp.startAt + (exp.travelMs || 0);
+      if (now >= at) this.dropArrive(exp, at);
+    });
+  }
+
+  dropArrive(exp, at) {
+    exp.dropDone = true;
+    const ad = this.game.airdrop;
+    const d = ad.get(exp.dropTarget?.id);
+    const st = ad.status(d, at);
+    const miss = (why) => { exp.dropResult = { win: false, missed: true, events: [`🏳️ 抵達時${why}，撲空了。`] }; };
+    if (!d || st.state === 'gone') return miss('空投已經消失');
+    if (st.state === 'taken') return miss(`空投已經被「${st.by}」搶走`);
+    if (st.state === 'npc') return miss('空投已經被 NPC 勢力拿走');
+    if (st.state === 'falling') return miss('空投還沒降落');
+    const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+    const result = this.game.combat.within(exp, () => {
+      const r = this.game.combat.simulate(members, ad.guards(d), { title: '📦 搶奪空投：迎戰守衛殭屍' });
+      this.game.combat.applyOutcome(members, r, at);
+      return r;
+    });
+    exp.travelKills = (exp.travelKills || 0) + result.kills.length;
+    exp.travelXp = (exp.travelXp || 0) + result.xp;
+    if (!result.victory) {
+      exp.dropResult = { win: false, events: [`💀 沒能打贏空投的守衛殭屍，隊伍撤退`] };
+      this.game.log('💀 搶空投的隊伍被守衛殭屍擊退', 'danger');
+      return;
+    }
+    // 打贏：戰利品先背在身上（回程可能被攔截），同時寫入共用資料搶下空投
+    exp.carried = ad.loot(d);
+    exp.dropResult = { win: true, pending: true, events: [`⚔️ 擊退守衛殭屍（擊殺 ${result.kills.length}）`] };
+    ad.claim(d, this.game.state.player.name || '倖存者', at).then((r) => {
+      exp.dropResult.pending = false;
+      if (r?.ok) {
+        exp.memberIds.forEach((id) => this.game.survivors.pqAdd(this.game.survivors.get(id), 'hunts')); // v16：個人任務
+        exp.dropResult.events.push('📦 搶到空投！隊伍正背著物資返回避難所');
+        this.game.log('📦 搶到空投！隊伍正背著物資返回', 'success');
+        this.game.toast('📦 搶到空投！', 'success');
+      } else {
+        exp.carried = null;
+        exp.dropResult.win = false;
+        exp.dropResult.events.push(`🏳️ 晚了一步：${r?.reason || '空投已經被拿走了'}`);
+      }
+      this.game.bus.emit('map:changed');
+    });
+    this.game.bus.emit('map:changed');
+  }
+
+  /** 搶空投的隊伍返回時的報告 */
+  dropReport(exp) {
+    if (!exp.dropDone) this.dropArrive(exp, exp.startAt + (exp.travelMs || 0));
+    const r = exp.dropResult || { win: false, events: [] };
+    const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
+    const blueprints = [...(exp.carried?.blueprints || [])];
+    const gained = { ...(exp.carried?.gained || {}) };
+    const note = r.win && !r.pending ? this.bringCarried(exp, 1, members) : '';
+    if (r.pending) exp.carried = null; // 還沒確認搶到就回到家（離線很久）：不算
+    return {
+      id: uid('rp'), poiName: '📦 空投補給', poiType: 'military', at: exp.endAt,
+      events: [...(exp.travelEvents || []), ...r.events, ...(note ? [note] : [])], resources: r.win && note ? gained : {}, items: [], blueprints: r.win && note ? blueprints : [],
+      kills: exp.travelKills || 0, xp: exp.travelXp || 0, success: !!r.win, members: members.map((m) => m.name),
+    };
   }
 
   /** 攻擊殭屍群的隊伍返回時的報告 */
@@ -1328,7 +1428,7 @@ export class ExplorationSystem {
       phase,
       level: this.game.zombies.buildingLevel(poi, phase),
       zoneMul: phase.zombies ? this.game.zombies.encounterMul(poi.lat, poi.lon) : DAY_ZONE.encounter[zoneAt(poi.lat, poi.lon).id] ?? 1,
-      lootMul: phase.lootMul * ctx.lootBase,
+      lootMul: phase.lootMul * ctx.lootBase * WorldEventSystem.fx('loot', at), // v15.18：酸雨搜刮量 +20%
     };
   }
 
