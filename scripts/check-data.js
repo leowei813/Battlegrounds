@@ -7664,16 +7664,16 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   bps().push({ id: 'n1', model: lo, rarity: 'common', held: true });
   bps().push({ id: 'n2', model: lo, rarity: 'uncommon' }, { id: 'n3', model: hi, rarity: 'common' }, { id: 'n4', model: lo, rarity: 'rare' }, { id: 'n5', model: lo, rarity: 'common', keep: true }, { id: 'n6', model: 'x', rarity: 'dungeon', dg: true });
   ga.tick();
-  assert(!ids().includes('n2') && ['n3', 'n4', 'n5', 'n6', 'old1', 'n1'].every((x) => ids().includes(x)), `兩項都設定：品級和星級都符合才自動賣（剩 ${ids().join(',')}）`);
+  assert(['n2', 'n3', 'n4'].every((x) => !ids().includes(x)) && ['n5', 'n6', 'old1', 'n1'].every((x) => ids().includes(x)), `兩項都設定：品級或星級符合其中一項就自動賣（剩 ${ids().join(',')}）`);
   const one = ga.blackMarket.blueprintBuyback({ model: lo, rarity: 'common' });
   const c1 = ga.state.player.coins;
   const rr = ga.blackMarket.sellBpByRule();
-  assert(rr.ok && !ids().includes('old1') && !ids().includes('n1') && ids().includes('old2') && ids().includes('n4') && ga.state.player.coins - c1 === one * rr.n, `一鍵出售：現有符合條件的一起賣（${rr.n} 張）`);
+  assert(rr.ok && rr.n === 5 && ['old1', 'n1', 'old2', 'n0r', 'n0h'].every((x) => !ids().includes(x)), `一鍵出售：現有符合任一條件的一起賣（${rr.n} 張）`);
   // 全部出售：金額＝單張價格 × 張數
-  bps().push({ id: 'a1', model: hi, rarity: 'common', held: true }, { id: 'a2', model: hi, rarity: 'common', held: true });
+  bps().push({ id: 'a0', model: hi, rarity: 'common', held: true }, { id: 'a1', model: hi, rarity: 'common', held: true }, { id: 'a2', model: hi, rarity: 'common', held: true });
   const one2 = ga.blackMarket.blueprintBuyback({ model: hi, rarity: 'common' });
   const c2 = ga.state.player.coins;
-  const ra = ga.blackMarket.sellBlueprints(['old2', 'a1', 'a2']);
+  const ra = ga.blackMarket.sellBlueprints(['a0', 'a1', 'a2']);
   assert(ra.ok && ra.n === 3 && ga.state.player.coins - c2 === one2 * 3, `全部出售：3 張一起賣、金額是單張的 3 倍（💰${ga.state.player.coins - c2}）`);
   const SM = (await import('../src/core/SaveManager.js')).SaveManager;
   const mg = SM.migrate({ version: 37, bpAutoSell: ['poor', 'rare'], inventory: { blueprints: [{ id: 'z' }] } });
