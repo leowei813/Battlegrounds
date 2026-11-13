@@ -1,6 +1,6 @@
 import { TimeSystem } from './TimeSystem.js';
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_POWER, CP_GARRISON, CP_LEVEL, CP_MAX_PLAYERS, CP_BUILDINGS, CP_BUILD, CP_INCOME_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT, CP_SHIELD, FACTION_FORCE_SCALE,
+  CONTROL_POINTS, cpById, cpAt, CP_POWER, CP_GARRISON, CP_LEVEL, CP_MAX_PLAYERS, CP_BUILDINGS, CP_BUILD, CP_INCOME_MUL, CP_RECOVER_MS, CP_FOLLOW_MS, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT, CP_SHIELD, FACTION_FORCE_SCALE,
 } from '../config/controlPoints.js';
 import { inNpcHome, ZONES } from '../config/zones.js';
 import { xpToNext } from '../config/survivors.js';
@@ -201,7 +201,8 @@ export class ControlPointSystem {
     if (this.owners(id).length && !this.factionOf(id)) {
       // 記下是哪一支駐防隊（h.e）的第幾位，交戰後依此判斷誰倒下、誰拿防守經驗
       return this.guardsAt(id, now).flatMap((h) => (h.units || []).slice(0, CP_GUARD_MAX).map((u) => {
-        const x = AssistSystem.unitOf({ id: h.p, name: h.n }, u);
+        // v17：戰損保留（交戰後剩餘的生命，約 2 小時回滿）
+        const x = AssistSystem.unitOf({ id: h.p, name: h.n }, { ...u, hp: ControlPointSystem.regenHp(u, h.hpAt, now) });
         x.ally.e = h.e;
         return x;
       }));
@@ -358,9 +359,49 @@ export class ControlPointSystem {
    */
   assault(id, attackers, at = Date.now()) {
     const df = this.defenseOf(id, at);
-    if (!df.wall && !df.dps) return { alive: attackers, killed: 0, breached: true, sec: 0, df };
-    const as = this.game.combat.wallAssault(attackers, df.wall, df.dps);
-    return { ...as, df };
+    const left = this.wallLeft(id, at, df.wall);
+    if (!left && !df.dps) return { alive: attackers, killed: 0, breached: true, sec: 0, df, wallLeft: 0, wallMax: df.wall };
+    const as = this.game.combat.wallAssault(attackers, left, df.dps);
+    return { ...as, df, wallMax: df.wall };
+  }
+
+  /** v17：戰損保留：駐防隊員目前的生命（交戰後的剩餘生命，約 2 小時回滿） */
+  static regenHp(u, hpAt, now = Date.now()) {
+    const max = Math.max(1, Number(u.maxHp) || 1);
+    const hp = Math.min(max, Math.max(1, Number(u.hp) || max));
+    if (!hpAt || hp >= max) return hp;
+    return Math.min(max, Math.round(hp + (max * Math.max(0, now - hpAt)) / CP_RECOVER_MS));
+  }
+
+  /** v17：路障目前的耐久（被打掉的部分約 2 小時修好） */
+  wallLeft(id, now = Date.now(), max = null) {
+    const full = max ?? this.defenseOf(id, now).wall;
+    const d = this.data(id);
+    if (!full || !d?.wd) return full;
+    const dmg = Math.max(0, d.wd - (full * Math.max(0, now - (d.wdAt || now))) / CP_RECOVER_MS);
+    return Math.max(0, Math.round(full - dmg));
+  }
+
+  /**
+   * v17：把交戰造成的戰損寫進共用資料（data 為要寫入的資料）：路障被打掉的耐久、駐防隊員剩餘的生命。
+   * as：assault 的結果；foes：戰鬥結果中的防守方（id、hp、ally.e、ally.i）。
+   */
+  static keepDamage(data, as, foes, at) {
+    if (as?.wallMax) {
+      data.wd = Math.max(0, Math.round(as.wallMax - (as.breached ? 0 : (as.wallLeft ?? as.wallMax))));
+      data.wdAt = at;
+    }
+    const hit = new Map((foes || []).filter((f) => f.ally?.e != null).map((f) => [`${f.ally.e}:${f.ally.i}`, f.hp]));
+    data.guards = (data.guards || []).map((h) => ({
+      ...h,
+      hpAt: at,
+      units: (h.units || []).map((u) => {
+        const now = ControlPointSystem.regenHp(u, h.hpAt, at);
+        const k = `${h.e}:${u.i}`;
+        return { ...u, hp: hit.has(k) ? Math.max(1, Math.round(hit.get(k))) : now };
+      }),
+    }));
+    return data;
   }
 
   /**
@@ -742,7 +783,10 @@ export class ControlPointSystem {
     await g.shared.update(CP_KIND, id, (x) => {
       const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
       if (data.owners?.length && !data.faction) data.fight = fightOf(data, false);
-      if (data.owners?.length && !data.faction) data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
+      if (data.owners?.length && !data.faction) {
+        data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
+        ControlPointSystem.keepDamage(data, as, result.foes, at);
+      }
       else { const full = this.garrisonFull(id); data.lost = Math.min(full, (full - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
       return { data };
     }, { lat: cp.lat, lon: cp.lon });
@@ -1081,7 +1125,7 @@ export class ControlPointSystem {
         // eslint-disable-next-line no-await-in-loop
         const claim = await g.shared.update(CP_KIND, cp.id, (x) => (x?.march?.arriveAt === m.arriveAt ? { data: { ...x, march: null } } : { fail: 'done' }), { lat: cp.lat, lon: cp.lon });
         // eslint-disable-next-line no-await-in-loop
-        if (claim.ok) await this.npcAttack(m.f, cp.id, m.arriveAt);
+        if (claim.ok) await this.npcAttack(m.f, cp.id, m.arriveAt, { follow: !!m.fu });
       } finally {
         this.busy.delete(`march:${cp.id}`);
       }
@@ -1186,7 +1230,7 @@ export class ControlPointSystem {
     return out;
   }
 
-  async npcAttack(f, id, at = Date.now()) {
+  async npcAttack(f, id, at = Date.now(), { follow = false } = {}) {
     const g = this.game;
     const cp = cpById(id);
     // v16.1：部隊抵達時控制點剛被別人打下（保護期內）：撲空返回
@@ -1221,7 +1265,16 @@ export class ControlPointSystem {
         return { data: { owners: [], guards: [], bld: {}, faction: f, lost: full - Math.round((CP_POWER.npc.start / CP_POWER.npc.full) * full), lostAt: at, takenAt: at, by: f, fight } };
       }
       data.fight = fight;
-      if (data.owners?.length && !data.faction) data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
+      if (data.owners?.length && !data.faction) {
+        data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
+        // v17：戰損保留（路障被打掉的耐久、駐防隊員剩餘生命）
+        ControlPointSystem.keepDamage(data, as, r.foes, at);
+      }
+      // v17：被擊退後約 30 分鐘追加一波（每次最多 1 波）
+      if (!follow && !data.march) {
+        const to = this.markerSpot(id);
+        data.march = { f, from: this.marchFrom(f, to), at, arriveAt: at + CP_FOLLOW_MS, fu: 1 };
+      }
       else { const full = this.garrisonFull(id); data.lost = Math.min(full, (full - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
       return { data };
     }, { lat: cp.lat, lon: cp.lon });

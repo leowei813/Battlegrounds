@@ -717,6 +717,7 @@ export class DungeonSystem {
     }
     const { run, i } = mine;
     rec.paid = true;
+    this.game.survivors.pqAdd(sv, 'dungeons'); // v16：個人任務「完成一次地下城」
     const recovering = !!rec.noRun;
     // 先前誤判「沒有分配到隊伍」的報告換成正式報告
     if (rec.noRun) {
@@ -726,8 +727,6 @@ export class DungeonSystem {
     }
     const rw = run.rewards[i];
     const fin = run.final[i];
-    // v16.1：個人任務「打贏一次地下城 Boss」（自己有參與並打贏任一層首領）
-    if (sv && run.stat?.[i]?.boss?.length) g.survivors.pqAdd(sv, 'dgBoss');
     // 經驗、金錢、材料、核心材料、圖紙
     const xpMul = 1 + g.research.bonus('xpPct');
     if (sv) {

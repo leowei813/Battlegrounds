@@ -598,14 +598,6 @@ export class SaveManager {
         if (sv.adv === undefined) sv.adv = null;
       });
     }
-    // v16.1：個人任務「完成一次地下城」改為「打贏一次地下城 Boss」：已經完成的進度保留
-    if (v < 41) {
-      (data.survivors || []).forEach((sv) => {
-        if (!sv?.pq || !(sv.pq.dungeons > 0)) return;
-        sv.pq.dgBoss = Math.max(sv.pq.dgBoss || 0, sv.pq.dungeons);
-        delete sv.pq.dungeons;
-      });
-    }
     data.version = SAVE_VERSION;
     return data;
   }

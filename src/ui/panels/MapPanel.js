@@ -308,7 +308,7 @@ export class MapPanel {
       const others = Object.entries(bld).filter(([pid]) => pid !== me).map(([pid, x]) => `<div class="cpd-row ${friends.has(pid) ? 'ally' : ''}"><div class="who">${friends.has(pid) ? '🤝 好友' : ''}「${escapeHtml(x?.n || '玩家')}」</div><div class="cpd-sum">${CP_BUILDINGS.map((k) => `${ICON[k]} ${x?.b?.[k] ? `Lv${x.b[k]}` : '—'}`).join('・')}</div></div>`).join('');
       bldHtml = `<div class="label">防禦建築（每位玩家各 1 座・效果為避難所的 3 倍並套用各自的科技・費用為一半・立即完成）</div>
         <div class="cpd-list">${myRow}${others}</div>
-        <p class="muted">總防禦：路障耐久 ${df.wall.toLocaleString()}・防禦火力每秒 ${df.dps.toLocaleString()}。敵人要先打破路障才能和駐防隊交戰；和佔領者變成敵對時，該玩家的建築會被拆除、駐防隊遣返。駐防與建築最多 ${CP_MAX_PLAYERS} 位玩家（目前 ${g.cp.members(id).length} 位）。</p>`;
+        <p class="muted">總防禦：路障耐久 ${(() => { const wl = g.cp.wallLeft(id, Date.now(), df.wall); return wl < df.wall ? `${wl.toLocaleString()}/${df.wall.toLocaleString()}（修復中）` : df.wall.toLocaleString(); })()}・防禦火力每秒 ${df.dps.toLocaleString()}。交戰後路障與駐防隊員的戰損會保留，約 2 小時回滿；勢力被擊退後約 30 分鐘會追加一波。敵人要先打破路障才能和駐防隊交戰；和佔領者變成敵對時，該玩家的建築會被拆除、駐防隊遣返。駐防與建築最多 ${CP_MAX_PLAYERS} 位玩家（目前 ${g.cp.members(id).length} 位）。</p>`;
     }
     return `<p><span class="zone-tag" style="--zc:${cp.side === 'left' ? '#fdd835' : '#8e24aa'}">${cp.name}（${cp.side === 'left' ? '一般～危險' : '危險～深淵'}）</span> <span class="tag" style="color:${tagCol};border:1px solid ${tagCol}">${sm.label}</span></p>
       ${sl > 0 ? `<div class="cp-shield-row">🛡️ <b>保護中</b>・剩 <b>${formatDuration(sl)}</b>：剛被「${fac ? `${escapeHtml(FACTIONS[fac].name)}勢力` : sm.owners.map((o) => escapeHtml(o.n)).join('、') || '—'}」打下，1 小時內任何人都不能攻打</div>` : ''}

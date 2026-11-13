@@ -40,7 +40,7 @@ export function cpIndexAt(lat, lon) {
 export const CP_POWER = {
   neutral: { left: 150000, right: 400000 },
   npc: { start: 700000, full: 900000 },
-  attack: { left: 300000, right: 600000 },
+  attack: { left: 300000, right: 500000 },
 };
 /** 守軍人數：中立左側 10、右側 12；勢力留守滿編 18（打下時 14 人＝70 萬） */
 export const CP_GARRISON = { neutral: { left: 10, right: 12 }, npc: 18, attackN: 12 };
@@ -52,6 +52,10 @@ export const CP_REFILL_PER_HOUR = 6; // 現實每 10 分鐘補回 1 人
 export const CP_SHIELD = { ms: 3600000 };
 /** v17：勢力進攻部隊強度跟著勢力的控制點數：每擁有 1 個 +step，範圍 min～max（4 個時 ×1.4） */
 export const FACTION_FORCE_SCALE = { base: 0, step: 0.1, min: 1, max: 1.4 };
+/** v17：戰損保留：駐防隊員的生命與路障耐久在交戰後保留，約現實 2 小時回滿 */
+export const CP_RECOVER_MS = 2 * 3600000;
+/** v17：勢力進攻被擊退後，約 30 分鐘後追加一波（每次被擊退最多追加 1 波） */
+export const CP_FOLLOW_MS = 30 * 60000;
 /** 每名玩家每個控制點最多駐防人數 */
 export const CP_GUARD_MAX = 3;
 /** v17：每個控制點最多幾位玩家駐防或蓋防禦建築 */

@@ -6515,7 +6515,8 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     forceWin(false);
     await A.cp.resolveMarches(Date.now());
     A.combat.simulate = sim0;
-    assert(!A.cp.factionOf(cp.id) && A.cp.owners(cp.id).some((o) => o.p === 'A') && !A.cp.data(cp.id)?.march, '部隊被擊退：控制點維持原本的佔領者');
+    assert(!A.cp.factionOf(cp.id) && A.cp.owners(cp.id).some((o) => o.p === 'A') && A.cp.data(cp.id)?.march?.fu, '部隊被擊退：控制點維持原本的佔領者（v17：30 分鐘後追加一波）');
+    await A.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, march: null } }));
     // v15.6：交戰結果：佔領者與駐防者都收到戰報（同一人只一則、不重複）
     A.cp.reportFights(); A.cp.reportFights();
     const fa = A.state.log.filter((l) => /擊退了「/.test(l.msg) && l.msg.includes(`#${cp.no}`));
@@ -7077,7 +7078,10 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     force(who, win, downGuards);
     await who.cp.resolveMarches(Date.now());
     unforce();
-    assert(!who.cp.data(cp.id)?.march, '勢力部隊抵達後完成結算');
+    const mm = who.cp.data(cp.id)?.march;
+    assert(!mm || (mm.fu && mm.arriveAt > Date.now()), '勢力部隊抵達後完成結算（被擊退時只會排定追加的那一波）');
+    // 測試情境之間不讓追加的那一波影響下一個情境
+    if (mm) await who.shared.update(CPC.CP_KIND, cp.id, (x) => ({ data: { ...x, march: null } }));
     await pollAll();
   };
   /** 隊伍回到避難所：取得報告 */
@@ -7385,7 +7389,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(Math.abs(scaleAt(0) - 1) < 1e-9 && Math.abs(scaleAt(2) - 1.2) < 1e-9 && Math.abs(scaleAt(4) - 1.4) < 1e-9 && Math.abs(scaleAt(9) - 1.4) < 1e-9, 'v17：勢力進攻部隊強度跟著控制點數（×1～×1.4）');
   const { unitPower: uP2 } = await import('../src/utils/math.js');
   const pw = (n, id) => { scaleAt(n); return gx.cp.attackForce('red', id).reduce((t, u) => t + uP2(u), 0); };
-  assert(Math.abs(pw(0, 'cp1') - 300000) < 9000 && Math.abs(pw(0, 'cp3') - 600000) < 18000 && Math.abs(pw(4, 'cp3') / pw(0, 'cp3') - 1.4) < 0.02, `v17：進攻部隊 左側 30 萬、右側 60 萬（${Math.round(pw(0, 'cp1')).toLocaleString()}／${Math.round(pw(0, 'cp3')).toLocaleString()}），控制點多時較強`);
+  assert(Math.abs(pw(0, 'cp1') - 300000) < 9000 && Math.abs(pw(0, 'cp3') - 500000) < 15000 && Math.abs(pw(4, 'cp3') / pw(0, 'cp3') - 1.4) < 0.02, `v17：進攻部隊 左側 30 萬、右側 50 萬（${Math.round(pw(0, 'cp1')).toLocaleString()}／${Math.round(pw(0, 'cp3')).toLocaleString()}），控制點多時較強`);
   // 不在線超過 30 分鐘被掠奪：資源與圍牆損失減半
   const run = (offline) => {
     const g = Game.newGame({ playerName: 'O4', classId: 'warrior', lat: 25, lon: 121 });
@@ -8042,6 +8046,31 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const na = await A.cp.npcAttack('red', id, Date.now());
   delete A.cp.defenseOf;
   assert(!na.win && A.cp.owners(id).some((o) => o.p === 'BA'), `勢力部隊打不破路障：控制點維持原佔領者（耐久 ${strong.wall}）`);
+  // 戰損保留與追加一波：路障打不破時保留被打掉的耐久、約 2 小時修好；被擊退後 30 分鐘追加一波（只 1 波）
+  {
+    const t0 = Date.now() - 1000;
+    await A.shared.update(CPC.CP_KIND, id, (x) => ({ data: { ...x, bld: { BA: { n: 'BA', b: { barricade: 15 } } }, guards: [], wd: 0, march: null } }));
+    const wmax = A.cp.defenseOf(id, t0).wall;
+    const dfo = A.cp.defenseOf.bind(A.cp);
+    A.cp.defenseOf = (i, at) => ({ ...dfo(i, at), wall: 5e6, dps: 5e6 });
+    const r1 = await A.cp.npcAttack('red', id, t0);
+    const d1 = A.cp.data(id);
+    assert(!r1.win && d1.wd > 0 && d1.march?.fu && d1.march.arriveAt === t0 + CPC.CP_FOLLOW_MS, `被擊退：路障保留戰損、30 分鐘後追加一波（戰損 ${d1.wd}）`);
+    const F = d1.wd;
+    const left0 = A.cp.wallLeft(id, t0, F);
+    const left1 = A.cp.wallLeft(id, t0 + CPC.CP_RECOVER_MS / 2, F);
+    const left2 = A.cp.wallLeft(id, t0 + CPC.CP_RECOVER_MS + 1, F);
+    assert(left0 < left1 && left1 < left2 && left2 === F, `路障戰損約 2 小時修好（${left0} → ${left1} → ${left2}）`);
+    await A.shared.update(CPC.CP_KIND, id, (x) => ({ data: { ...x, march: null } }));
+    const r2 = await A.cp.npcAttack('red', id, t0 + 1000, { follow: true });
+    assert(!r2.win && !A.cp.data(id).march, '追加的那一波被擊退後不再追加');
+    A.cp.defenseOf = dfo;
+    void wmax;
+    // 駐防隊員剩餘生命保留，約 2 小時回滿
+    const u = { i: 0, hp: 100, maxHp: 1000 };
+    const R = A.cp.constructor.regenHp;
+    assert(R(u, t0, t0) === 100 && R(u, t0, t0 + CPC.CP_RECOVER_MS / 2) === 600 && R(u, t0, t0 + CPC.CP_RECOVER_MS * 2) === 1000, '駐防隊員的戰損約 2 小時回滿');
+  }
   // 收益：每位駐防者各得完整一份（×6、含布料）
   const inc = A.cp.rollIncome(CPC.cpById('cp3'));
   assert(inc.food === CPC.CP_INCOME[5].food * 6 && inc.wood === CPC.CP_INCOME[5].wood * 6, `右側收益為深淵區基準 ×6（食物 ${inc.food}）`);
@@ -8117,10 +8146,6 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   // 舊存檔遷移：補上特質（依編號固定）
   const mg = SaveManager.migrate({ version: 39, survivors: [{ id: 'sv_x', rarity: 'epic', classId: 'scout' }, { id: 'leader', isLeader: true, name: '老大', classId: 'warrior' }] });
   assert(mg.survivors[0].traits.length === 2 && mg.survivors[1].traits[0] === 'leader' && mg.survivors[0].pq && mg.survivors[0].adv === null, '舊存檔遷移：補上特質、任務進度與轉職欄位');
-  // v16.1：「完成一次地下城」改為「打贏一次地下城 Boss」：已完成的進度保留
-  assert(Object.values(CQ).every((q) => q.steps.some((st) => st.key === 'dgBoss') && !q.steps.some((st) => st.key === 'dungeons')), '各職業個人任務第三步改為打贏地下城 Boss');
-  const mg2 = SaveManager.migrate({ version: 40, survivors: [{ id: 'a', traits: [], pq: { dungeons: 1, wins: 3 } }, { id: 'b', traits: [], pq: {} }] });
-  assert(mg2.survivors[0].pq.dgBoss === 1 && !('dungeons' in mg2.survivors[0].pq) && mg2.survivors[0].pq.wins === 3 && !mg2.survivors[1].pq.dgBoss, '舊存檔遷移：已完成地下城的進度改記為打贏 Boss');
   SVS.disableTraits = true;
 }
 

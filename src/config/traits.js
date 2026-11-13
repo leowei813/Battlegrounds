@@ -39,7 +39,7 @@ export const QUEST_LEVEL = { high: 30, low: 40 };
 /**
  * 個人任務（各職業 3 步驟，同時計算）與轉職（二選一，永久）。
  * 步驟 key：wins 打贏的戰鬥、cleanWins 打贏且自己沒倒下、kills 擊殺、explores 完成探索、
- *   guardNights 擔任守衛撐過的屍潮夜晚、farmMin 耕作分鐘（現實時間）、hunts 獵殺殭屍群或搶到空投、dgBoss 打贏地下城 Boss（v16.1：原本的「完成地下城」太難達成）
+ *   guardNights 擔任守衛撐過的屍潮夜晚、farmMin 耕作分鐘（現實時間）、hunts 獵殺殭屍群或搶到空投、dungeons 完成地下城
  */
 export const CLASS_QUESTS = {
   warrior: {
@@ -47,7 +47,7 @@ export const CLASS_QUESTS = {
     steps: [
       { key: 'wins', need: 20, name: '身經百戰', desc: '打贏 20 場戰鬥' },
       { key: 'kills', need: 300, name: '屍山血海', desc: '擊殺 300 隻殭屍' },
-      { key: 'dgBoss', need: 1, name: '地底獵首', desc: '打贏一次地下城 Boss' },
+      { key: 'dungeons', need: 1, name: '深入地底', desc: '完成一次地下城' },
     ],
     adv: [
       { id: 'tank', name: '重裝兵', icon: '🦾', desc: '防禦 +20%、生命 +10%', fx: { defPct: 0.2, hpPct: 0.1 } },
@@ -59,7 +59,7 @@ export const CLASS_QUESTS = {
     steps: [
       { key: 'explores', need: 20, name: '四處行醫', desc: '完成探索 20 次' },
       { key: 'cleanWins', need: 30, name: '屹立不倒', desc: '打贏 30 場且自己沒倒下' },
-      { key: 'dgBoss', need: 1, name: '地底獵首', desc: '打贏一次地下城 Boss' },
+      { key: 'dungeons', need: 1, name: '深入地底', desc: '完成一次地下城' },
     ],
     adv: [
       { id: 'surgeon', name: '外科醫生', icon: '🩺', desc: '急救治療量 +10%', fx: { healPct: 0.1 } },
@@ -71,7 +71,7 @@ export const CLASS_QUESTS = {
     steps: [
       { key: 'guardNights', need: 10, name: '堅守防線', desc: '擔任守衛撐過 10 晚屍潮' },
       { key: 'kills', need: 200, name: '火力壓制', desc: '擊殺 200 隻殭屍' },
-      { key: 'dgBoss', need: 1, name: '地底獵首', desc: '打贏一次地下城 Boss' },
+      { key: 'dungeons', need: 1, name: '深入地底', desc: '完成一次地下城' },
     ],
     adv: [
       { id: 'demolition', name: '爆破專家', icon: '💣', desc: '防禦塔傷害 +20%', fx: { towerDmg: 0.2 } },
@@ -83,7 +83,7 @@ export const CLASS_QUESTS = {
     steps: [
       { key: 'farmMin', need: 24 * 60, name: '日出而作', desc: '耕作累計 24 小時（現實時間）' },
       { key: 'explores', need: 30, name: '遍地尋糧', desc: '完成探索 30 次' },
-      { key: 'dgBoss', need: 1, name: '地底獵首', desc: '打贏一次地下城 Boss' },
+      { key: 'dungeons', need: 1, name: '深入地底', desc: '完成一次地下城' },
     ],
     adv: [
       { id: 'producer', name: '生產家', icon: '🏭', desc: '在家時避難所所有產量 +20%（多位不疊加）', fx: { prodAll: 0.2 } },
@@ -95,7 +95,7 @@ export const CLASS_QUESTS = {
     steps: [
       { key: 'explores', need: 40, name: '踏遍廢墟', desc: '完成探索 40 次' },
       { key: 'hunts', need: 10, name: '獵手的眼睛', desc: '獵殺殭屍群或搶到空投 10 次' },
-      { key: 'dgBoss', need: 1, name: '地底獵首', desc: '打贏一次地下城 Boss' },
+      { key: 'dungeons', need: 1, name: '深入地底', desc: '完成一次地下城' },
     ],
     adv: [
       { id: 'sniper', name: '狙擊手', icon: '🎯', desc: '攻擊 +12%、暴擊率 +3%', fx: { atkPct: 0.12, critAdd: 0.03 } },
