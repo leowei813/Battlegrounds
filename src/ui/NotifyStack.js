@@ -71,7 +71,8 @@ export class NotifyStack {
     const g = this.game;
     const ui = this.ui;
     const dgs = g.dungeon;
-    if (!dgs || !g.shelter?.hasShelter?.() || DungeonSystem.phase(now) !== 'signup') return;
+    // v15.15.1：登入流程（離線收益、更新內容…）全部開完之後才檢查，否則提醒會被接著跳出的視窗蓋掉
+    if (!this.ready || !dgs || !g.shelter?.hasShelter?.() || DungeonSystem.phase(now) !== 'signup') return;
     const day = DungeonSystem.dayKey(now);
     if (g.state.dgRemindDay === day || ui.modal.current) return;
     g.state.dgRemindDay = day;
@@ -84,14 +85,19 @@ export class NotifyStack {
       const ok = r && !r.cancelled;
       return `<div class="row-between dg-remind-row"><span>🕳️ ${escapeHtml(DUNGEONS[dg].name)}</span>${ok ? `<span class="tag tag-green">已報名・${escapeHtml(r.svName || '')}</span>` : btn('前往報名', 'dgGo', { d: dg }, { cls: 'btn-sm btn-primary' })}</div>`;
     }).join('');
-    ui.modal.open({
+    let went = false;
+    const m = ui.modal.open({
       title: '🕳️ 今天還沒報名地下城',
       body: `<p>今天還沒有報名任何地下城副本，<b>${formatDuration(Math.max(0, close - now))}</b>後（17:40）截止。</p>
         <div class="dg-remind">${rows}</div>
         <div class="btn-row end">${btn('稍後再說', 'close', {}, { cls: 'btn-ghost' })}${btn('前往報名', 'dgGo', { d: left[0] }, { cls: 'btn-primary' })}</div>`,
       onAction: (action, data) => {
-        if (action === 'dgGo' && DUNGEONS[data.d]) openDungeon(ui, data.d);
+        if (action === 'dgGo' && DUNGEONS[data.d]) { went = true; openDungeon(ui, data.d); }
       },
+      // 被其他自動跳出的視窗取代（不是玩家關掉或前往報名）：那個視窗關掉後再提醒一次
+      onClose: () => queueMicrotask(() => {
+        if (!went && ui.modal.current && ui.modal.current !== m && g.state.dgRemindDay === day) delete g.state.dgRemindDay;
+      }),
     });
   }
 

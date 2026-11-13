@@ -112,13 +112,19 @@ export function hudHtml(g, now = Date.now()) {
       return { dg, rec, st, icon: clsIcon(g.survivors.get(rec.svId)?.classId), tag: st.tag, cls: st.cls, right: st.floor };
     }
     const icon = clsIcon(DUNGEONS[dg].cls);
-    if (ph === 'run') return { dg, icon, tag: n >= DG_TEAM.min ? '攻略中' : '今日休息', cls: n >= DG_TEAM.min ? 't-run' : 't-cancel', right: cntHtml(n) };
+    if (ph === 'run') {
+      // 沒報名的副本也依實際戰況顯示：全部的團都打完（通關或失敗）就顯示今日已結束，不要一直顯示攻略中到 21:00
+      const res = n >= DG_TEAM.min ? g.dungeon.results(dg, day) : null;
+      if (res?.cancelled || n < DG_TEAM.min) return { dg, icon, tag: '今日休息', cls: 't-cancel', right: cntHtml(n), done: true };
+      if (res?.runs?.length && res.runs.every((r) => now >= r.endAt)) return { dg, icon, tag: '今日已結束', cls: 't-cancel', right: cntHtml(n), done: true };
+      return { dg, icon, tag: '攻略中', cls: 't-run', right: cntHtml(n) };
+    }
     if (ph === 'after') return { dg, icon, tag: n >= DG_TEAM.min ? '今日已結束' : '今日休息', cls: 't-cancel', right: cntHtml(n) };
     return { dg, icon, tag: ph === 'signup' || ph === 'before' ? '未報名' : '未參加', cls: 't-none', right: cntHtml(n) };
   });
   const sts = rows.filter((r) => r.st).map((r) => r.st);
   const any = sts.find((x) => x.time);
-  const right = any ? `⏱ ${any.time}` : ph === 'signup' ? '17:40 截止' : ph === 'closed' ? '17:50 鎖定' : ph === 'locked' || ph === 'gather' ? '18:00 開打' : ph === 'run' ? '攻略中' : '00:00 開放報名';
+  const right = any ? `⏱ ${any.time}` : ph === 'signup' ? '17:40 截止' : ph === 'closed' ? '17:50 鎖定' : ph === 'locked' || ph === 'gather' ? '18:00 開打' : ph === 'run' && !rows.every((r) => r.done || r.st?.done) ? '攻略中' : '00:00 開放報名';
   const glow = sts.some((x) => x.cls === 't-boss') ? 'boss-glow' : sts.some((x) => x.cls === 't-win') ? 'win-glow' : '';
   // 點標題列收合／展開（不會直接打開某一個副本）
   const head = `<div class="t" data-action="dgFold"><span class="dg-ic">${DG_PIN_SVG}</span>地下感染區<span class="fl">${right}</span>${foldBtn(open)}</div>`;
