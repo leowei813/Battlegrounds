@@ -12,10 +12,9 @@ const hhmm = (t) => { const d = new Date(t); return `${String(d.getHours()).padS
 const eventsSeen = (seen) => seen.events ?? seen.base ?? 0;
 
 /** 各分頁的未讀數：探索報告、避難所紀錄（遭襲紀錄）；事件紀錄只做記錄，不計未讀 */
-/** v15.9：控制點的報告（攻打、集結攻打、駐防）放在「🚩 控制點」分頁；舊報告依名稱判斷 */
-export const isCpReport = (r) => !!r.cp || /控制點 #\d+/.test(String(r.poiName || ''));
-/** v15.15：地下城（副本）報告放在「🕳️ 地下城」分頁 */
-export const isDgReport = (r) => r.kind === 'dungeon';
+import { isCpReport, isDgReport } from '../systems/reportList.js';
+
+export { isCpReport, isDgReport };
 /** 探索報告分頁：不含控制點與地下城的報告 */
 const isExploreReport = (r) => !isCpReport(r) && !isDgReport(r);
 

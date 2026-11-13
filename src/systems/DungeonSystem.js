@@ -1,4 +1,5 @@
 import { unitPower } from '../utils/math.js';
+import { trimReports } from './reportList.js';
 import {
   DG_TZ_MS, DG_TIME, DG_FLOORS, DG_TEAM, DG_MAX_SIGNUPS, DG_RULES, DG_DIFF, DG_ROSTER, DG_OBSTACLES, DG_BOSSES, DG_DROPS,
   DG_FLOOR_LOOT, DUNGEONS, DUNGEON_KEYS, DG_CORES, DG_GEAR, DG_SLOTS, DG_CRAFT, DG_RECIPES, DG_SET, DG_SET_STAT,
@@ -761,7 +762,7 @@ export class DungeonSystem {
     st.reports.unshift({
       id: uid('rp'), items: [], blueprints: [], events: [], resources: {}, members: [], kills: 0, success: r.status === 'clear', ...r, poiName: DUNGEONS[r.dg]?.name,
     });
-    if (st.reports.length > 20) st.reports.length = 20;
+    st.reports = trimReports(st.reports);
   }
 
   /** 報告展開時重新算出的完整過程（同樣的種子＝同樣的結果） */

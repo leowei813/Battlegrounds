@@ -7945,8 +7945,22 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   SVS.disableTraits = true;
 }
 
+// ---- v16.1：報告依分頁各自保留 20 筆，地下城報告不會被探索報告擠掉 ----
+{
+  const { trimReports: tr, REPORT_KEEP: RK } = await import('../src/systems/reportList.js');
+  const dg = Array.from({ length: 3 }, (_, i) => ({ id: `d${i}`, kind: 'dungeon' }));
+  const cp = Array.from({ length: 2 }, (_, i) => ({ id: `c${i}`, cp: true }));
+  const ex = Array.from({ length: 40 }, (_, i) => ({ id: `e${i}`, poiName: '超市' }));
+  const out = tr([...ex, ...dg, ...cp]);
+  assert(out.filter((r) => r.kind === 'dungeon').length === 3 && out.filter((r) => r.cp).length === 2, '探索報告很多時，地下城與控制點報告仍保留');
+  assert(out.filter((r) => !r.cp && r.kind !== 'dungeon').length === RK && out.find((r) => !r.cp && r.kind !== 'dungeon').id === 'e0', '探索報告保留最新 20 筆');
+  const many = tr(Array.from({ length: 30 }, (_, i) => ({ id: `d${i}`, kind: 'dungeon' })));
+  assert(many.length === RK && many[0].id === 'd0', '地下城報告也最多保留最新 20 筆');
+}
+
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);
   process.exit(1);
 }
 console.log(`✓ 全部通過（擊殺 ${g.state.stats.siegeKills}，探索事件 ${reports[0].events.length}）`);
+

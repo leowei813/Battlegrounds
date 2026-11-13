@@ -36,6 +36,7 @@ import {
 import { zoneAt } from '../config/zones.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 import { pathLength, pointAlong } from '../map/routing.js';
+import { trimReports } from './reportList.js';
 import {
   SUPPLIES, AMMO_FOR, AMMO_PACK_FIGHTS, unitWeight,
 } from '../config/supplies.js';
@@ -679,7 +680,7 @@ export class ExplorationSystem {
     report.retreated = true;
     this.tagZone(report, exp);
     this.attachXp(report, exp);
-    this.game.state.reports = [report, ...(this.game.state.reports || [])].slice(0, 20);
+    this.game.state.reports = trimReports([report, ...(this.game.state.reports || [])]);
     this.game.bus.emit('expedition:done', [report]);
     return report;
   }
@@ -734,7 +735,7 @@ export class ExplorationSystem {
     };
     this.tagZone(report, exp);
     this.attachXp(report, exp);
-    this.game.state.reports = [report, ...(this.game.state.reports || [])].slice(0, 20);
+    this.game.state.reports = trimReports([report, ...(this.game.state.reports || [])]);
     this.game.bus.emit('expedition:done', [report]);
     return { exp, group: g, result, aborted: true };
   }
@@ -1142,7 +1143,7 @@ export class ExplorationSystem {
     if (reports.length) {
       const st = this.game.state;
       // 撤退的報告已經記錄過，不重複加入
-      st.reports = [...reports.filter((r) => !r.retreated).reverse(), ...(st.reports || [])].slice(0, 20);
+      st.reports = trimReports([...reports.filter((r) => !r.retreated).reverse(), ...(st.reports || [])]);
       if (!silent) {
         reports.forEach((r) => this.game.toast(r.success ? `✅ ${r.poiName} 探索完成` : r.recalled ? `🏠 ${r.poiName} 隊伍已召回` : `⚠️ ${r.poiName} 探索受挫`, r.success ? 'success' : r.recalled ? 'info' : 'danger'));
       }
