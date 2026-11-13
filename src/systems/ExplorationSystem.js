@@ -1087,6 +1087,8 @@ export class ExplorationSystem {
               : exp.kind === 'pvp' ? this.game.territory.resolvePvp(exp) : this.resolve(exp)));
         // 召回（手動召回、自動回家、集結取消走回家）：標記為召回，不是探索失敗
         if (exp.recalled && !report.success && !exp.defeated) report.recalled = true;
+        // v16：個人任務「完成探索」（一般探索、成功回來才算）
+        if (exp.kind === 'explore' && report.success !== false && !exp.defeated && !exp.recalled) exp.memberIds.forEach((id) => this.game.survivors.pqAdd(this.game.survivors.get(id), 'explores'));
         report.events.push(...this.game.vehicles.returnHome(exp.vehicleIds || [], exp.distanceM || 0, exp.ambushes || 0));
         this.tagZone(report, exp);
         this.attachXp(report, exp);
@@ -1201,6 +1203,7 @@ export class ExplorationSystem {
         ? `⚔️ 擊退${t.label}！（擊殺 ${result.kills.length}，💰${Math.round(result.coins * COIN_GAIN_MUL)}）`
         : `💀 攻擊${t.label}失敗，隊伍撤退`],
     };
+    if (result.victory) exp.memberIds.forEach((id) => this.game.survivors.pqAdd(this.game.survivors.get(id), 'hunts')); // v16：個人任務
     const msg = result.victory ? `⚔️ 攻擊隊擊退了${t.label}` : `💀 攻擊隊被${t.label}擊退`;
     this.game.log(msg, result.victory ? 'success' : 'danger');
     this.game.toast(msg, result.victory ? 'success' : 'danger');
@@ -1270,6 +1273,7 @@ export class ExplorationSystem {
     ad.claim(d, this.game.state.player.name || '倖存者', at).then((r) => {
       exp.dropResult.pending = false;
       if (r?.ok) {
+        exp.memberIds.forEach((id) => this.game.survivors.pqAdd(this.game.survivors.get(id), 'hunts')); // v16：個人任務
         exp.dropResult.events.push('📦 搶到空投！隊伍正背著物資返回避難所');
         this.game.log('📦 搶到空投！隊伍正背著物資返回', 'success');
         this.game.toast('📦 搶到空投！', 'success');

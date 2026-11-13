@@ -145,6 +145,33 @@ export class CombatSystem {
   }
 
   /**
+   * v16：特質與轉職的戰鬥條件效果（不算進顯示的戰力）：
+   * 同隊加成（領袖氣質、老中醫，同隊有多位只算一次）、夜間／白天攻擊（夜貓子、夜盲）、單人／組隊（獨行俠）
+   */
+  applyTeamTraits(team) {
+    if (!team.length) return;
+    const night = ['night', 'midnight'].includes(this.game.time?.phaseId?.());
+    const best = (k) => Math.max(0, ...team.map((u) => u.skills?.[k] || 0));
+    const tAtk = best('teamAtk');
+    const tDef = best('teamDef');
+    const tHp = best('teamHp');
+    const solo = team.length === 1;
+    team.forEach((u) => {
+      const sk = u.skills || {};
+      const all = (solo ? sk.soloAll : sk.groupAll) || 0;
+      const atkM = 1 + tAtk + all + ((night ? sk.nightAtk : sk.dayAtk) || 0);
+      const defM = 1 + tDef + all;
+      const hpM = 1 + tHp + all;
+      if (atkM === 1 && defM === 1 && hpM === 1) return;
+      u.atk *= atkM;
+      u.def *= defM;
+      const ratio = u.maxHp > 0 ? u.hp / u.maxHp : 1;
+      u.maxHp = Math.round(u.maxHp * hpM);
+      u.hp = Math.round(u.maxHp * ratio);
+    });
+  }
+
+  /**
    * @param {object[]} survivors 倖存者資料
    * @param {object[]} enemies   createEnemy 產生的敵人
    * @param {{firstStrikeBonus?:number}} opts
@@ -158,6 +185,7 @@ export class CombatSystem {
       ...a, side: 'team', skills: a.skills || {}, cd: randFloat(0, 0.3), healCd: a.skills?.healEvery || 0, firstHit: true, lifeSteal: a.lifeSteal || 0, medsUsed: 0,
     }))];
     const foes = enemies.map((e) => ({ ...e, side: 'enemy', hp: e.maxHp, cd: randFloat(0.3, 1), skills: {} }));
+    this.applyTeamTraits(team);
     // 戰前生命（戰鬥紀錄顯示戰前→戰後）
     [...team, ...foes].forEach((u) => { u.hpStart = u.hp; });
     const log = [];
@@ -459,6 +487,10 @@ export class CombatSystem {
     result.xpEach = Math.round(xpEach * (1 + this.game.research.bonus('xpPct')));
     survivors.forEach((sv) => {
       const u = result.team.find((x) => x.id === sv.id);
+      // v16：個人任務計數（擊殺、打贏、打贏且沒倒下）
+      const svs = this.game.survivors;
+      if (u?.kills) svs.pqAdd(sv, 'kills', u.kills);
+      if (result.victory) { svs.pqAdd(sv, 'wins'); if (!u?.down) svs.pqAdd(sv, 'cleanWins'); }
       this.consumeMeds(sv, u);
       if (u?.down) {
         if (homeDefense && !chance(HOME_DEFENSE_DOWN.severeChance)) {

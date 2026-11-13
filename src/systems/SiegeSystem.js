@@ -182,6 +182,8 @@ export class BaseSiege {
       this.wave = waves;
       const reward = this.dawnReward();
       reward.recovered = this.collectRecovered();
+      // v16：個人任務「擔任守衛撐過屍潮」
+      (this.base.nightDefenders?.ids || []).forEach((id) => this.game.survivors.pqAdd(this.game.survivors.get(id), 'guardNights'));
       if (this.nightVariants) reward.variants = { ...this.nightVariants };
       if (this.nightBlasts) reward.blasts = this.nightBlasts;
       const entry = this.game.shelter.recordDefense({
@@ -630,7 +632,8 @@ export class BaseSiege {
         const atk = this.attackPower(sv, stats);
         const crit = chance(stats.crit);
         this.src = 'guard';
-        this.damage(t, atk.value * 0.6 * this.guardMul() * (crit ? stats.critDmg : 1), crit);
+        // v16：特質「戀家」：擔任守衛時屍潮傷害 +12%
+        this.damage(t, atk.value * 0.6 * this.guardMul() * (1 + (stats.skills?.guardPct || 0)) * (crit ? stats.critDmg : 1), crit);
         this.pushFx({ type: 'shot', kind: atk.ranged ? 'guard' : 'melee', x1: 0, y1: 0, x2: t.x, y2: t.y });
         // 近戰防守的人會被貼在牆邊的殭屍反擊受傷（即使圍牆還在）
         if (!atk.ranged && t.hp > 0) {

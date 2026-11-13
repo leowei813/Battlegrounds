@@ -3,6 +3,7 @@ import { formatDuration } from '../utils/math.js';
 import { rallyFlag, btn } from './components.js';
 import { DungeonSystem } from '../systems/DungeonSystem.js';
 import { weatherBrief } from './WeatherDialog.js';
+import { CLASS_QUESTS } from '../config/traits.js';
 import { DUNGEONS, DUNGEON_KEYS } from '../config/dungeons.js';
 import { openDungeon } from './DungeonView.js';
 
@@ -56,6 +57,7 @@ export class NotifyStack {
       }
     }
     this.dungeonRemind(now);
+    this.advRemind();
     // 集結邀請：好友剛發起、自己還沒參加
     (g.rally?.invites(now) || []).forEach((d) => {
       if (this.rallySeen.has(d.id)) return;
@@ -107,6 +109,29 @@ export class NotifyStack {
           if (remind) delete g.state.dgRemindDay;
         }
       }),
+    });
+  }
+
+  /** v16：倖存者完成個人任務：跳出轉職二選一（每位只自動跳一次，之後在技能頁選） */
+  advRemind() {
+    const g = this.game;
+    const ui = this.ui;
+    if (!this.ready || ui.modal.current) return;
+    const sv = g.state.survivors.find((x) => x.pqDone && !x.adv && !x.advPrompted && g.survivors.questDone(x));
+    if (!sv) return;
+    sv.advPrompted = true;
+    const q = CLASS_QUESTS[sv.classId];
+    const cards = q.adv.map((a, i) => `<div class="spec ${i === 0 ? 'pick' : ''}"><b style="font-size:16px">${a.icon} ${a.name}</b><small class="muted block">${escapeHtml(a.desc)}</small>${btn(`轉職為${a.name}`, 'advPick', { adv: a.id }, { cls: `btn-sm ${i === 0 ? 'btn-primary' : ''}` })}</div>`).join('');
+    ui.modal.open({
+      title: `🎖️ ${sv.name}完成個人任務：轉職`,
+      body: `<p>完成「${q.name}」！選擇轉職方向（<b>永久</b>，之後不能更換）。轉職後職業名稱與圖示會改變，原本的技能全部保留：</p>
+        <div class="spec-grid">${cards}</div>
+        <p class="muted">沒選之前可以先關掉，之後在倖存者的「技能」頁再選。</p>`,
+      onAction: (action, data, m) => {
+        if (action !== 'advPick') return;
+        const r = ui.result(g.survivors.chooseAdv(sv.id, data.adv));
+        if (r?.ok) m.close();
+      },
     });
   }
 

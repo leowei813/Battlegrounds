@@ -63,6 +63,9 @@ const { tripProgress } = await import('../src/systems/ExplorationSystem.js');
 // v15.18：天候事件依真實日期決定；測試一律固定為平靜日，專門的測試再指定其他天候
 const { WorldEventSystem: WXS } = await import('../src/systems/WorldEventSystem.js');
 WXS.force = 'calm';
+// v16：特質會隨機影響數值；既有測試一律關閉特質，專門的測試再打開
+const { SurvivorSystem: SVS } = await import('../src/systems/SurvivorSystem.js');
+SVS.disableTraits = true;
 const realBlocking = InfSys.prototype.blocking;
 // v14：重度感染據點已停用；測試仍檢查原本的機制
 { const { INFECTED: INF0 } = await import('../src/systems/InfectedSystem.js'); INF0.disabled = false; }
@@ -7838,6 +7841,79 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const lethal = { ...d, zone: 'lethal' };
   const weak = ga.combat.simulate([sv], ad.guards(lethal), { record: false });
   assert(!weak.victory, '致死區空投守衛很強，新手隊伍打不贏');
+}
+
+// ---- v16：倖存者特質、個人任務與轉職 ----
+{
+  SVS.disableTraits = false;
+  const { TRAITS: TR, CLASS_QUESTS: CQ, rollTraits: rollT, traitRandom: trR } = await import('../src/config/traits.js');
+  const { createSurvivor: mkSv } = await import('../src/core/GameState.js');
+  // 抽特質：劣質～優良 1 個、精良以上 2 個（第 2 個不會是負面）
+  let ok1 = true; let negSecond = 0; const typeCount = { pos: 0, mix: 0, neg: 0 };
+  for (let i = 0; i < 600; i += 1) {
+    const r = ['poor', 'common', 'uncommon', 'rare', 'epic', 'legendary'][i % 6];
+    const t = rollT(r, trR(`x${i}`));
+    if (t.length !== (['rare', 'epic', 'legendary'].includes(r) ? 2 : 1) || new Set(t).size !== t.length) ok1 = false;
+    if (t[1] && TR[t[1]].type === 'neg') negSecond += 1;
+    typeCount[TR[t[0]].type] += 1;
+  }
+  assert(ok1 && negSecond === 0, '特質數量：劣質～優良 1 個、精良以上 2 個，第 2 個不會是負面');
+  assert(typeCount.pos > typeCount.mix && typeCount.mix > typeCount.neg && typeCount.neg > 0, `抽中比例接近 正面:混合:負面 = 3:2:1（${JSON.stringify(typeCount)}）`);
+  assert(JSON.stringify(rollT('rare', trR('t:sv_1'))) === JSON.stringify(rollT('rare', trR('t:sv_1'))), '同一位倖存者的特質固定');
+  const gt = Game.newGame({ playerName: 'TR', classId: 'warrior', lat: 25, lon: 121 });
+  const ld = gt.survivors.leader();
+  assert(gt.survivors.traitsOf(ld)[0] === 'leader' && TR[gt.survivors.traitsOf(ld)[1]].type === 'pos', `指揮官固定領袖氣質＋1 個正面特質（${gt.survivors.traitsOf(ld).join('、')}）`);
+  // 特質效果併入能力
+  const sv = mkSv('測試', 'warrior', 35, 'rare');
+  gt.state.survivors.push(sv);
+  sv.traits = [];
+  const hp0 = gt.survivors.stats(sv).hp;
+  sv.traits = ['sturdy'];
+  const hpR = gt.survivors.stats(sv).hp / hp0;
+  assert(hpR > 1.05 && hpR <= 1.081, `特質「壯碩」生命 +8%（與技能的生命加成相加，實際 ×${hpR.toFixed(3)}）`);
+  // 戰鬥條件效果：領袖氣質（同隊）、獨行俠（單人）
+  const unit = (id, sk) => ({ id, atk: 100, def: 100, maxHp: 1000, hp: 1000, skills: sk });
+  const team = [unit('a', { teamAtk: 0.03, teamDef: 0.03 }), unit('b', {})];
+  gt.combat.applyTeamTraits(team);
+  const solo = [unit('c', { soloAll: 0.15, groupAll: -0.03 })];
+  gt.combat.applyTeamTraits(solo);
+  assert(Math.abs(team[1].atk - 103) < 1e-6 && Math.abs(solo[0].atk - 115) < 1e-6 && solo[0].maxHp === 1150, '領袖氣質讓同隊全員 +3%、獨行俠單人出隊 +15%');
+  // 個人任務：未解鎖不計數；解鎖後三步驟同時計算；完成後轉職
+  sv.traits = [];
+  sv.level = 29;
+  gt.survivors.pqAdd(sv, 'wins', 5);
+  assert(!(sv.pq?.wins > 0), '精良以上 Lv30 才解鎖個人任務（之前不計數）');
+  const sv2 = mkSv('一般', 'warrior', 35, 'common');
+  assert(gt.survivors.questLevel(sv2) === 40 && gt.survivors.questLevel(sv) === 30, '劣質、一般、優良要 Lv40 解鎖');
+  sv.level = 30;
+  CQ.warrior.steps.forEach((st) => gt.survivors.pqAdd(sv, st.key, st.need));
+  assert(gt.survivors.questDone(sv) && sv.pqDone, '三個步驟都完成：個人任務完成');
+  const p0 = gt.survivors.stats(sv).power;
+  const r = gt.survivors.chooseAdv(sv.id, 'tank');
+  assert(r.ok && sv.adv === 'tank' && gt.survivors.classIcon(sv) === '🦾' && gt.survivors.className(sv) === '重裝兵' && gt.survivors.stats(sv).power > p0, `轉職為重裝兵：換圖示與名稱、能力提升（戰力 ${p0} → ${gt.survivors.stats(sv).power}）`);
+  assert(!gt.survivors.chooseAdv(sv.id, 'berserker').ok, '轉職是永久的，不能再換');
+  // 任務計數掛點：戰鬥（擊殺、打贏、沒倒下）、耕作時間
+  const sv3 = mkSv('農', 'farmer', 40, 'rare'); sv3.traits = []; sv3.job = 'farm'; gt.state.survivors.push(sv3);
+  gt.resources.apply(30 * 60000);
+  assert(Math.round(sv3.pq.farmMin) === 30, `耕作累計時間依現實時間（${Math.round(sv3.pq.farmMin)} 分鐘）`);
+  const sv4 = mkSv('醫', 'medic', 40, 'rare'); sv4.traits = []; gt.state.survivors.push(sv4);
+  gt.combat.applyOutcome([sv4], { team: [{ id: sv4.id, hp: 100, hpStart: 100, kills: 3 }], kills: [], bossKills: 0, eliteKills: 0, xp: 0, coins: 0, parts: 0, victory: true }, Date.now());
+  assert(sv4.pq.cleanWins === 1, '打贏且沒倒下：醫生任務計數');
+  // 轉職：生產家所有產量 +20%（多位不疊加）、鐵胃食物消耗
+  sv3.adv = null;
+  const f0 = gt.resources.rates().gross.wood;
+  sv3.adv = 'producer';
+  const f1 = gt.resources.rates().gross.wood;
+  assert(f0 > 0 && Math.abs(f1 / f0 - 1.2) < 1e-6, `生產家在家：所有產量 +20%（木材 ${f0.toFixed(1)} → ${f1.toFixed(1)}）`);
+  sv3.adv = null;
+  const u0 = gt.resources.rates().upkeep.food;
+  sv3.traits = ['ironGut'];
+  const u1 = gt.resources.rates().upkeep.food;
+  assert(u1 < u0, '鐵胃：自己的食物消耗減少');
+  // 舊存檔遷移：補上特質（依編號固定）
+  const mg = SaveManager.migrate({ version: 39, survivors: [{ id: 'sv_x', rarity: 'epic', classId: 'scout' }, { id: 'leader', isLeader: true, name: '老大', classId: 'warrior' }] });
+  assert(mg.survivors[0].traits.length === 2 && mg.survivors[1].traits[0] === 'leader' && mg.survivors[0].pq && mg.survivors[0].adv === null, '舊存檔遷移：補上特質、任務進度與轉職欄位');
+  SVS.disableTraits = true;
 }
 
 if (failures) {

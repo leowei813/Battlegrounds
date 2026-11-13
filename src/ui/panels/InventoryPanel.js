@@ -2,7 +2,6 @@ import { dgCraftHtml } from '../DungeonView.js';
 import {
   SLOTS, ITEM_TYPES, RARITIES, RARITY_ORDER, ITEM_MODELS, benchFor, rarityIndex,
 } from '../../config/equipment.js';
-import { CLASSES } from '../../config/survivors.js';
 import { escapeHtml } from '../../utils/dom.js';
 import {
   btn, itemCard, costHtml, needHtml, progressBar, statRangeLine, affordable, metaOf,
@@ -675,7 +674,7 @@ export class InventoryPanel {
         ? `<small class="muted">背包 ${eq.bagSlotsUsed(sv)}/${eq.bagSlotCap(sv)} 格・負重 ${Math.floor(g.survivors.bagLoad(sv))}/${g.survivors.bagCap(sv)}</small>`
         : `<small class="muted">目前：${cur ? escapeHtml(cur.name) : '無'}</small><span class="${diff >= 0 ? 'pos' : 'neg'}">${diff >= 0 ? '▲' : '▼'}${Math.abs(diff)}</span>`;
       return `<button class="pick-row" data-action="give" data-id="${sv.id}" ${sv.status === 'exploring' ? 'disabled' : ''}>
-        <span>${CLASSES[sv.classId].icon} <b>${escapeHtml(sv.name)}</b> Lv${sv.level}</span>${info}
+        <span>${g.survivors.classIcon(sv)} <b>${escapeHtml(sv.name)}</b> Lv${sv.level}</span>${info}
       </button>`;
     }).join('');
     this.ui.modal.open({

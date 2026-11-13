@@ -8,6 +8,13 @@ import { RESOURCE_KEYS } from '../../config/constants.js';
 import { SUPPLIES, SUPPLY_KEYS, SUPPLY_CATS, unitWeight } from '../../config/supplies.js';
 import { SLOT_KEYS, SLOTS } from '../../config/equipment.js';
 import { escapeHtml } from '../../utils/dom.js';
+import { TRAITS, CLASS_QUESTS } from '../../config/traits.js';
+
+/** v16：特質標籤（綠＝正面、黃＝混合、紅＝負面） */
+export function traitChips(game, sv) {
+  const list = game.survivors.traitsOf(sv);
+  return list.length ? `<div class="trait-row">${list.map((k) => `<span class="trait ${TRAITS[k].type}" title="${escapeHtml(TRAITS[k].desc)}">${TRAITS[k].icon} ${TRAITS[k].name}</span>`).join('')}</div>` : '';
+}
 import { LOADOUT_MAX, AMMO_CAP_OPTIONS, MED_NONE, KEEP_ORDER } from '../../systems/SurvivorSystem.js';
 import {
   btn, costHtml, survivorCard, compareHtml, itemCard, statLine, progressBar, rarityTag, hpBar, survivorStatus, metaOf, affixChips, towerTag, rallyFlag,
@@ -75,7 +82,7 @@ export class SurvivorPanel {
     this.cdActions[c.id] = actions;
     return `${this.candidateMini(c, s, avg, ring, actions)}<div class="card recruit sv-card cd-card r-${c.rarity}" style="--rc:${r.color};--cc:${cls.color}">
       <div class="cd-head"><span class="sv-icon">${cls.icon}</span>
-        <div class="sv-title"><b>${escapeHtml(c.name)}</b><small>${rarityTag(c.rarity)} ${cls.name} Lv${c.level}・成長 ×${g.survivors.growthMul(c)}</small></div>
+        <div class="sv-title"><b>${escapeHtml(c.name)}</b><small>${rarityTag(c.rarity)} ${cls.name} Lv${c.level}・成長 ×${g.survivors.growthMul(c)}</small>${traitChips(g, c)}</div>
         <div class="cd-avg" title="平均素質"><span class="cd-ring" style="--p:${avg};--ring:${ring}"><span>${avg}%</span></span><small>平均素質</small></div></div>
       ${this.abilityGrid(c, s)}
       <div class="cd-skill">✨ 可解放技能 ${g.survivors.skillSlots(c)}/${cls.skills.length}・${cls.skills[0].name}：${cls.skills[0].desc}</div>
@@ -218,8 +225,8 @@ export class SurvivorPanel {
         <span class="sv-qe-btn up" role="button" data-action="miniQuickEquip" data-id="${sv.id}" title="快速換裝">👕<i>▲</i></span>
         <span class="sv-qe-btn down" role="button" data-action="miniQuickUnequip" data-id="${sv.id}" title="快速脫裝">👕<i>▼</i></span></span>` : '';
     return `<button class="sv-mini v2 ${this.selId === sv.id ? 'on' : ''}" data-action="selSv" data-id="${sv.id}" data-sv="${sv.id}" style="--rc:${r}" title="長按可拖移調整順序">
-      <span class="sv-mini-top"><b>${cls.icon} ${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b></span>
-      <small class="muted sv-mini-sub">${cls.name} Lv${sv.level}・戰力 <b>${s.power}</b></small>
+      <span class="sv-mini-top"><b>${g.survivors.classIcon(sv)} ${escapeHtml(sv.name)}${sv.isLeader ? ' 👑' : ''}</b></span>
+      <small class="muted sv-mini-sub">${g.survivors.className(sv)} Lv${sv.level}・戰力 <b>${s.power}</b></small>
       ${this.hpRow(sv, hp)}
       <span class="sv-mini-act"><span class="sv-mini-actl">${act}</span>${qe}</span>
       <span class="sv-mini-foot"><small class="muted">🎒 ${load}/${g.survivors.bagCap(sv)}</small>${sv.isLeader ? '' : this.qTag(g.survivors.avgQuality(sv))}${tag}</span>
@@ -421,6 +428,10 @@ export class SurvivorPanel {
       this.view = 'detail';
     }
     if (action === 'svTab') this.tab = data.t;
+    if (action === 'advPick') {
+      const a = CLASS_QUESTS[this.game.survivors.get(data.id)?.classId]?.adv.find((x) => x.id === data.adv);
+      if (a && confirm(`轉職為「${a.name}」？\n${a.desc}\n\n轉職是永久的，之後不能更換。`)) this.ui.result(this.game.survivors.chooseAdv(data.id, data.adv));
+    }
     if (action === 'accept') this.ui.result(g.survivors.acceptCandidate(data.id));
     if (action === 'reject') this.ui.result(g.survivors.rejectCandidate(data.id));
     if (action === 'recruit') this.ui.result(g.survivors.recruitRoll());
@@ -562,6 +573,35 @@ export class SurvivorPanel {
       <details class="job-help" data-keep="jobs" ${this.keepOpen?.jobs ? 'open' : ''}><summary>ℹ️ 所有工作說明（含這位倖存者的每小時產出）</summary><ul class="skill-list">${rows}</ul></details>`;
   }
 
+  /** v16：特質卡片 */
+  traitCard(sv) {
+    const list = this.game.survivors.traitsOf(sv);
+    if (!list.length) return '';
+    return `<section class="sh-card"><h3>🧬 特質</h3><ul class="skill-list">${list.map((k) => `<li class="on"><b>${TRAITS[k].icon} ${TRAITS[k].name}</b>　${TRAITS[k].desc}</li>`).join('')}</ul></section>`;
+  }
+
+  /** v16：個人任務與轉職 */
+  questCard(sv) {
+    const g = this.game;
+    const svs = g.survivors;
+    const q = CLASS_QUESTS[sv.classId];
+    if (!q) return '';
+    const lv = svs.questLevel(sv);
+    const adv = svs.advOf(sv);
+    const steps = svs.questSteps(sv);
+    const done = svs.questDone(sv);
+    const fmt = (st) => (st.key === 'farmMin' ? `${Math.floor(st.have / 60)}/${st.need / 60} 小時` : `${st.have}/${st.need}`);
+    const rows = steps.map((st, i) => `<div class="pq-step ${st.done ? 'done' : ''}"><span class="n">${st.done ? '✓' : i + 1}</span><div class="t"><b>${st.name}</b><small class="muted">${st.desc}（${fmt(st)}）</small>${!st.done && svs.questUnlocked(sv) && !adv ? `<div class="pq-bar"><i style="width:${Math.round((st.have / st.need) * 100)}%"></i></div>` : ''}</div></div>`).join('');
+    const opts = q.adv.map((a) => {
+      const pick = adv?.id === a.id;
+      const action = !adv && done ? btn(`轉職為${a.name}`, 'advPick', { id: sv.id, adv: a.id }, { cls: 'btn-sm btn-primary' }) : '';
+      return `<div class="spec ${pick ? 'pick' : ''}"><b>${a.icon} ${a.name}</b><small class="muted block">${a.desc}</small>${action}</div>`;
+    }).join('');
+    const sub = adv ? '（已轉職）' : !svs.questUnlocked(sv) ? `（Lv${lv} 解鎖）` : done ? '（已完成，可以轉職）' : '（三個步驟同時計算・完成後轉職）';
+    return `<section class="sh-card pq-card"><h3>📜 個人任務：${q.name} <small class="muted">${sub}</small></h3>${rows}
+      <div class="label">${adv ? '已轉職' : '完成後可選擇的轉職（二選一，永久）'}</div><div class="spec-grid">${opts}</div></section>`;
+  }
+
   /** 右側（手機版為全頁）的倖存者詳情：概要／裝備／背包／技能 */
   detailBody(id) {
     const g = this.game;
@@ -582,9 +622,9 @@ export class SurvivorPanel {
     const tabBtn = (t, label) => `<button class="sv-tab ${tab === t ? 'active' : ''}" data-action="svTab" data-t="${t}">${label}</button>`;
     const head = `<div class="sv-pane-head">
         ${btn('‹', 'svBack', {}, { cls: 'btn-sm sv-back', title: '返回列表' })}
-        <span class="sv-icon big" style="--cc:${cls.color}">${cls.icon}</span>
+        <span class="sv-icon big" style="--cc:${cls.color}">${g.survivors.classIcon(sv)}</span>
         <div class="grow"><b class="sv-name">${escapeHtml(sv.name)}${sv.isLeader ? ' <small class="tag tag-amber">👑 領袖</small>' : ''}</b>
-          <small class="muted block">${sv.isLeader ? '' : rarityTag(sv.rarity)} ${cls.name} Lv${sv.level}・戰力 ${s.power}・成長 ×${g.survivors.growthMul(sv)}${sv.isLeader ? '' : `・平均素質 ${g.survivors.avgQuality(sv)}%`}</small></div>
+          <small class="muted block">${sv.isLeader ? '' : rarityTag(sv.rarity)} ${g.survivors.advOf(sv) ? `<b style="color:${cls.color}">${g.survivors.className(sv)}</b>（${cls.name}）` : cls.name} Lv${sv.level}・戰力 ${s.power}・成長 ×${g.survivors.growthMul(sv)}${sv.isLeader ? '' : `・平均素質 ${g.survivors.avgQuality(sv)}%`}</small>${traitChips(g, sv)}</div>
         ${survivorStatus(g, sv)}
         ${hurt ? btn('💊 治療', 'healOpen', {}, { cls: 'btn-sm', title: starving ? '飢餓中：治療後生命仍會持續流失' : '' }) : ''}
         ${sv.status === 'idle' ? btn('⚡ 快速換裝', 'quickEquip', {}, { cls: 'btn-sm btn-primary', title: '從倉庫與在家隊員的背包，每個部位換上戰力最高的裝備' }) : ''}
@@ -612,7 +652,7 @@ export class SurvivorPanel {
       const on = !locked && sv.level >= sk.unlock;
       return `<li class="${on ? 'on' : 'off'}"><b>${sk.name}</b>（Lv${sk.unlock}）${sk.desc}${locked ? ' <span class="tag">🔒 品級不足</span>' : ''}</li>`;
     }).join('');
-    const skillsCard = `<section class="sh-card"><h3>技能 <small class="muted">（品級可解放 ${skillSlots}/${cls.skills.length} 個）</small></h3><ul class="skill-list">${skills}</ul></section>`;
+    const skillsCard = `${this.traitCard(sv)}${this.questCard(sv)}<section class="sh-card"><h3>技能 <small class="muted">（品級可解放 ${skillSlots}/${cls.skills.length} 個）</small></h3><ul class="skill-list">${skills}</ul></section>`;
     const foot = sv.isLeader ? '' : `<div class="btn-row end">${btn('🚪 驅逐', 'dismiss', {}, { cls: 'btn-ghost btn-sm', disabled: sv.status === 'exploring' })}</div>`;
     const body = {
       // 概要：工作指派與能力（裝備、背包在各自的分頁）

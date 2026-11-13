@@ -716,6 +716,7 @@ export class DungeonSystem {
     }
     const { run, i } = mine;
     rec.paid = true;
+    this.game.survivors.pqAdd(sv, 'dungeons'); // v16：個人任務「完成一次地下城」
     const recovering = !!rec.noRun;
     // 先前誤判「沒有分配到隊伍」的報告換成正式報告
     if (rec.noRun) {

@@ -1,4 +1,3 @@
-import { CLASSES } from '../config/survivors.js';
 import { EXPLORE_DURATIONS, MAX_TEAM_SIZE } from '../config/constants.js';
 import { escapeHtml } from '../utils/dom.js';
 import { formatDuration, haversine } from '../utils/math.js';
@@ -100,7 +99,7 @@ export function openTeamPicker(ui, opts) {
       const on = selected.has(sv.id);
       return `${sep}<button class="pick-row pk ${on ? 'on' : ''}" data-action="toggle" data-id="${sv.id}" ${ok ? '' : 'disabled'}>
         <span class="check">${on ? '☑' : '☐'}</span>
-        <span class="pk-main"><b class="pk-nm">${CLASSES[sv.classId].icon} ${escapeHtml(sv.name)} Lv${sv.level}</b>
+        <span class="pk-main"><b class="pk-nm">${game.survivors.classIcon(sv)} ${escapeHtml(sv.name)} Lv${sv.level}</b>
           <small class="pk-sub"><span class="${game.survivors.hpOf(sv) < s.hp * 0.3 ? 'neg' : ''}">❤️ ${Math.floor(game.survivors.hpOf(sv))}/${s.hp}</span>・<span class="${game.survivors.bagLoad(sv) >= game.survivors.bagCap(sv) ? 'neg' : ''}">🎒 ${Math.floor(game.survivors.bagLoad(sv))}/${game.survivors.bagCap(sv)}</span>${ok ? '' : ` ${survivorStatus(game, sv)}`}</small></span>
         <span class="pk-side">戰力 <b>${s.power}</b></span>
       </button>`;

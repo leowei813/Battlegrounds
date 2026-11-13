@@ -12,6 +12,7 @@ import { DEFENSES } from '../config/defenses.js';
 import { legacyToSupplies } from '../config/supplies.js';
 import { MAIN_QUESTS } from '../config/quests.js';
 import { rollQualities } from '../config/survivors.js';
+import { rollTraits, traitRandom } from '../config/traits.js';
 
 /** v12 移除的擴張科技 */
 const OUTPOST_RESEARCH = ['e_outpost', 'e_cost', 'e_wall'];
@@ -587,6 +588,15 @@ export class SaveManager {
     if (v < 39) {
       if (data.bpAutoSell && typeof data.bpAutoSell === 'object' && !(Number(data.bpAutoSell.s) >= 1)) data.bpAutoSell.s = null;
       (data.inventory?.blueprints || []).forEach((b) => { b.held = true; });
+    }
+    // v16：倖存者特質（依編號固定抽出）、個人任務計數與轉職
+    if (v < 40) {
+      (data.survivors || []).forEach((sv) => {
+        if (!sv) return;
+        if (!Array.isArray(sv.traits)) sv.traits = rollTraits(sv.isLeader ? null : sv.rarity, traitRandom(sv.isLeader ? `t:leader:${sv.name}` : `t:${sv.id}`), !!sv.isLeader);
+        sv.pq = sv.pq || {};
+        if (sv.adv === undefined) sv.adv = null;
+      });
     }
     data.version = SAVE_VERSION;
     return data;
