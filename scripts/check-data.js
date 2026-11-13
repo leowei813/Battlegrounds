@@ -7613,49 +7613,42 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(gb.npcs.levelCap({ hq: true, lat: 0, lon: 0 }) === 50, '大本營上限 Lv50');
 }
 
-// ---- v15.15：設計圖自動出售（依保底品級；副本圖紙、交易買來的不賣） ----
+// ---- v15.17：設計圖自動出售（品級＋星級都設定才啟用、只賣新拿到的；一鍵出售才賣現有的）與全部出售 ----
 {
   const ga = Game.newGame({ playerName: 'AS', classId: 'warrior', lat: 25, lon: 121 });
-  const bps = ga.state.inventory.blueprints;
-  bps.length = 0;
-  bps.push({ id: 'b1', model: 'mini14', rarity: 'common' }, { id: 'b2', model: 'mini14', rarity: 'rare' }, { id: 'b3', model: 'mini14', rarity: 'common', keep: true }, { id: 'b4', model: 'x', rarity: 'dungeon', dg: true });
+  const BM = ga.blackMarket.constructor;
   const { ITEM_MODELS: IM2 } = await import('../src/config/equipment.js');
-  const model = Object.keys(IM2).find((k) => !IM2[k].dg && IM2[k].tier >= 3);
-  bps.forEach((b) => { if (!b.dg) b.model = model; });
+  const lo = Object.keys(IM2).find((k) => !IM2[k].dg && BM.bpStars({ model: k }) === 1);
+  const hi = Object.keys(IM2).find((k) => !IM2[k].dg && BM.bpStars({ model: k }) === 3);
+  const bps = () => ga.state.inventory.blueprints;
+  const ids = () => bps().map((b) => b.id);
+  bps().length = 0;
+  bps().push({ id: 'old1', model: lo, rarity: 'common' }, { id: 'old2', model: hi, rarity: 'common' });
+  assert(ga.blackMarket.bpAutoSell().r === null && ga.blackMarket.bpAutoSell().s === null, '預設品級、星級都是不設定');
   const c0 = ga.state.player.coins;
-  const r = ga.blackMarket.setBpAutoSell({ r: 'common', s: 0 });
-  const now1 = ga.state.inventory.blueprints;
-  assert(r.n === 1 && !now1.some((b) => b.id === 'b1') && now1.some((b) => b.id === 'b3') && now1.some((b) => b.id === 'b2') && ga.state.player.coins > c0, `開啟「保底一般」自動出售：現有的一般設計圖賣掉，交易買來的保留（賣出 ${r.n} 張）`);
-  ga.state.inventory.blueprints.push({ id: 'b5', model, rarity: 'common' });
+  ga.blackMarket.setBpAutoSell({ r: 'uncommon' });
+  bps().push({ id: 'n1', model: lo, rarity: 'common' });
   ga.tick();
-  assert(!ga.state.inventory.blueprints.some((b) => b.id === 'b5'), '之後拿到的一般設計圖自動賣掉');
-  ga.blackMarket.setBpAutoSell({ r: null });
-  ga.state.inventory.blueprints.push({ id: 'b6', model, rarity: 'common' });
+  assert(ids().includes('n1') && ga.state.player.coins === c0, '只設定品級（星級不設定）：不會自動出售');
+  ga.blackMarket.setBpAutoSell({ s: 2 });
+  assert(ids().includes('old1') && ids().includes('n1') && ga.state.player.coins === c0, '改下拉選單不會賣掉現有的設計圖');
+  bps().push({ id: 'n2', model: lo, rarity: 'uncommon' }, { id: 'n3', model: hi, rarity: 'common' }, { id: 'n4', model: lo, rarity: 'rare' }, { id: 'n5', model: lo, rarity: 'common', keep: true }, { id: 'n6', model: 'x', rarity: 'dungeon', dg: true });
   ga.tick();
-  assert(ga.state.inventory.blueprints.some((b) => b.id === 'b6') && ga.state.inventory.blueprints.some((b) => b.id === 'b4'), '關閉後不再自動出售，副本圖紙不受影響');
-  // v15.15.1：全部出售：金額＝單張價格 × 張數
-  ga.state.inventory.blueprints.push({ id: 'b7', model, rarity: 'common' }, { id: 'b8', model, rarity: 'common' });
-  const one = ga.blackMarket.blueprintBuyback({ model, rarity: 'common' });
+  assert(!ids().includes('n2') && ['n3', 'n4', 'n5', 'n6', 'old1', 'n1'].every((x) => ids().includes(x)), `之後拿到的：品級和星級都符合才自動賣（剩 ${ids().join(',')}）`);
+  const one = ga.blackMarket.blueprintBuyback({ model: lo, rarity: 'common' });
   const c1 = ga.state.player.coins;
-  const ra = ga.blackMarket.sellBlueprints(['b6', 'b7', 'b8']);
-  assert(ra.ok && ra.n === 3 && ga.state.player.coins - c1 === one * 3 && !ga.state.inventory.blueprints.some((b) => ['b6', 'b7', 'b8'].includes(b.id)), `全部出售：3 張一起賣、金額是單張的 3 倍（💰${ga.state.player.coins - c1}）`);
-  // v15.16：品級「X 以下」＋星級「★ 以下」
-  {
-    const BM = ga.blackMarket.constructor;
-    const lo = Object.keys(IM2).find((k) => !IM2[k].dg && BM.bpStars({ model: k }) === 1);
-    const hi = Object.keys(IM2).find((k) => !IM2[k].dg && BM.bpStars({ model: k }) === 3);
-    const list = ga.state.inventory.blueprints;
-    list.push({ id: 'c1', model: lo, rarity: 'poor' }, { id: 'c2', model: lo, rarity: 'uncommon' }, { id: 'c3', model: hi, rarity: 'poor' }, { id: 'c4', model: lo, rarity: 'rare' });
-    ga.blackMarket.setBpAutoSell({ r: 'uncommon', s: 2 });
-    const left = ga.state.inventory.blueprints.map((b) => b.id);
-    assert(!left.includes('c1') && !left.includes('c2') && left.includes('c3') && left.includes('c4'), `優良以下＋★★ 以下：低星低品級賣掉、★★★ 與精良保留（剩 ${left.filter((x) => x[0] === 'c').join(',')}）`);
-    ga.blackMarket.setBpAutoSell({ s: 0 });
-    assert(!ga.state.inventory.blueprints.some((b) => b.id === 'c3') && ga.state.inventory.blueprints.some((b) => b.id === 'c4'), '星級改成全部星級：★★★ 的劣質也賣掉，精良仍保留');
-    const SM = (await import('../src/core/SaveManager.js')).SaveManager;
-    const mg = SM.migrate({ version: 37, bpAutoSell: ['poor', 'rare'] });
-    const mg2 = SM.migrate({ version: 37, bpAutoSell: [] });
-    assert(mg.bpAutoSell?.r === 'rare' && mg.bpAutoSell.s === 0 && mg2.bpAutoSell?.r === null, `舊存檔的勾選品級轉成「最高品級以下」（${JSON.stringify(mg.bpAutoSell)}）`);
-  }
+  const rr = ga.blackMarket.sellBpByRule();
+  assert(rr.ok && rr.n === 2 && !ids().includes('old1') && !ids().includes('n1') && ids().includes('old2') && ids().includes('n4') && ga.state.player.coins - c1 === one * 2, `一鍵出售：現有符合兩個條件的一起賣（${rr.n} 張）`);
+  // 全部出售：金額＝單張價格 × 張數
+  bps().push({ id: 'a1', model: hi, rarity: 'common', held: true }, { id: 'a2', model: hi, rarity: 'common', held: true });
+  const one2 = ga.blackMarket.blueprintBuyback({ model: hi, rarity: 'common' });
+  const c2 = ga.state.player.coins;
+  const ra = ga.blackMarket.sellBlueprints(['old2', 'a1', 'a2']);
+  assert(ra.ok && ra.n === 3 && ga.state.player.coins - c2 === one2 * 3, `全部出售：3 張一起賣、金額是單張的 3 倍（💰${ga.state.player.coins - c2}）`);
+  const SM = (await import('../src/core/SaveManager.js')).SaveManager;
+  const mg = SM.migrate({ version: 37, bpAutoSell: ['poor', 'rare'], inventory: { blueprints: [{ id: 'z' }] } });
+  const mg3 = SM.migrate({ version: 38, bpAutoSell: { r: 'rare', s: 3 } });
+  assert(mg.bpAutoSell?.r === 'rare' && mg.bpAutoSell.s === null && mg.inventory.blueprints[0].held && mg3.bpAutoSell.s === 3, `舊存檔：勾選品級轉成最高品級以下、全部星級改成不設定、已選的星級保留（${JSON.stringify(mg.bpAutoSell)}）`);
 }
 
 if (failures) {

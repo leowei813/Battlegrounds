@@ -293,14 +293,14 @@ export class BlackMarketSystem {
   }
 
   /**
-   * v15.16：設計圖自動出售設定：保底品級「r 以下」且星級「s 以下」（r＝null 不自動出售；s＝0 全部星級）
-   * @returns {{r:string|null, s:number}}
+   * 設計圖自動出售設定：保底品級「r 以下」且星級「s 以下」（v15.17：兩個都設定才啟用，null＝不設定）
+   * @returns {{r:string|null, s:number|null}}
    */
   bpAutoSell() {
     const a = this.game.state.bpAutoSell;
     const r = a && RARITY_ORDER.includes(a.r) ? a.r : null;
-    const s = Math.max(0, Math.min(4, Math.floor(Number(a?.s) || 0)));
-    return { r, s };
+    const n = Math.floor(Number(a?.s));
+    return { r, s: n >= 1 && n <= 5 ? n : null };
   }
 
   /** 設計圖的星級（與卡片上的 ★ 相同：強度每 2 階一顆星） */
@@ -308,27 +308,39 @@ export class BlackMarketSystem {
     return Math.ceil((ITEM_MODELS[bp.model]?.tier || 1) / 2);
   }
 
-  /** 會被自動出售的設計圖：符合品級與星級、不是副本圖紙、不是從交易所買來或撤回的 */
-  bpAutoTargets(cfg = this.bpAutoSell()) {
-    if (!cfg.r) return [];
+  /**
+   * 符合條件的設計圖（不含副本圖紙、交易所買來或撤回的）。
+   * @param {{r:string|null, s:number|null}} cfg
+   * @param {boolean} [onlyNew] 只算設定之後新拿到的（自動出售用；一鍵出售包含現有的）
+   */
+  bpAutoTargets(cfg = this.bpAutoSell(), onlyNew = false) {
+    if (!cfg.r || !cfg.s) return [];
     const max = RARITY_ORDER.indexOf(cfg.r);
-    return this.game.state.inventory.blueprints.filter((b) => !b.dg && !b.keep && RARITY_ORDER.includes(b.rarity) && RARITY_ORDER.indexOf(b.rarity) <= max
-      && (!cfg.s || BlackMarketSystem.bpStars(b) <= cfg.s) && this.blueprintBuyback(b) > 0);
+    return this.game.state.inventory.blueprints.filter((b) => !b.dg && !b.keep && !(onlyNew && b.held) && RARITY_ORDER.includes(b.rarity)
+      && RARITY_ORDER.indexOf(b.rarity) <= max && BlackMarketSystem.bpStars(b) <= cfg.s && this.blueprintBuyback(b) > 0);
   }
 
-  /** 變更自動出售設定；現有符合條件的設計圖也一起賣掉 */
+  /** 變更自動出售設定：不賣任何東西；現有的設計圖標記為「設定前就有」，之後只自動出售新拿到的 */
   setBpAutoSell(cfg) {
     const cur = this.bpAutoSell();
     const r = cfg.r === undefined ? cur.r : (RARITY_ORDER.includes(cfg.r) ? cfg.r : null);
-    const s = cfg.s === undefined ? cur.s : Math.max(0, Math.min(4, Math.floor(Number(cfg.s) || 0)));
-    this.game.state.bpAutoSell = { r, s };
-    return this.autoSellBlueprints();
+    const n = cfg.s === undefined ? cur.s : Math.floor(Number(cfg.s));
+    this.game.state.bpAutoSell = { r, s: n >= 1 && n <= 5 ? n : null };
+    this.game.state.inventory.blueprints.forEach((b) => { b.held = true; });
+    return { ok: true };
+  }
+
+  /** 一鍵出售：依目前的品級＋星級條件，把現有符合的設計圖一起賣掉 */
+  sellBpByRule() {
+    const list = this.bpAutoTargets(this.bpAutoSell(), false);
+    if (!list.length) return { ok: false, reason: '沒有符合條件的設計圖' };
+    return this.sellBlueprints(list.map((b) => b.id));
   }
 
   /** 把符合自動出售設定的設計圖賣到黑市（每秒檢查；有賣出才記錄） */
   autoSellBlueprints() {
     const g = this.game;
-    const list = this.bpAutoTargets();
+    const list = this.bpAutoTargets(this.bpAutoSell(), true);
     if (!list.length) return { ok: true, n: 0, coins: 0 };
     let coins = 0;
     list.forEach((b) => { coins += this.blueprintBuyback(b); });
