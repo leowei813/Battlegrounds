@@ -277,6 +277,21 @@ export class BlackMarketSystem {
     return { ok: true, msg: `賣出設計圖「${name}」，得到 💰${price}` };
   }
 
+  /** v15.15.1：一次出售多張設計圖（同型號、同保底品級合併的卡片「全部出售」） */
+  sellBlueprints(ids) {
+    const g = this.game;
+    const want = new Set(ids);
+    const list = g.state.inventory.blueprints.filter((b) => want.has(b.id) && this.blueprintBuyback(b) > 0);
+    if (!list.length) return { ok: false, reason: '找不到設計圖' };
+    const coins = list.reduce((t, b) => t + this.blueprintBuyback(b), 0);
+    const sold = new Set(list.map((b) => b.id));
+    g.state.inventory.blueprints = g.state.inventory.blueprints.filter((b) => !sold.has(b.id));
+    g.state.player.coins += coins;
+    const name = g.equipment.blueprintInfo(list[0])?.name || list[0].model;
+    g.log(`🕶️ 把 ${list.length} 張設計圖「${name}」賣到黑市（💰${coins.toLocaleString()}）`, 'loot');
+    return { ok: true, n: list.length, coins, msg: `賣出 ${list.length} 張設計圖「${name}」，得到 💰${coins.toLocaleString()}` };
+  }
+
   /** v15.15：自動出售設計圖的保底品級（空陣列＝不自動出售） */
   bpAutoSell() {
     return Array.isArray(this.game.state.bpAutoSell) ? this.game.state.bpAutoSell : [];

@@ -270,7 +270,9 @@ export class InventoryPanel {
   renderBlueprints() {
     const g = this.game;
     const eq = g.equipment;
-    const extra = (bp) => `${btn(`出售 💰${g.blackMarket.blueprintBuyback(bp).toLocaleString()}`, 'bpSell', { id: bp.id }, { cls: 'btn-sm btn-ghost bp-sell' })}`;
+    // v15.15.1：×2 以上多一顆「全部出售」（單張價格 × 張數）
+    const extra = (bp, list = [bp]) => `${btn(`出售 💰${g.blackMarket.blueprintBuyback(bp).toLocaleString()}`, 'bpSell', { id: bp.id }, { cls: 'btn-sm btn-ghost bp-sell' })}${list.length > 1
+      ? btn(`全部 💰${list.reduce((t, b) => t + g.blackMarket.blueprintBuyback(b), 0).toLocaleString()}`, 'bpSellAll', { id: bp.id }, { cls: 'btn-sm btn-ghost bp-sell' }) : ''}`;
     // v15.15：同型號、同保底品級的設計圖合併成一張卡片（×數量）
     const groups = [];
     g.state.inventory.blueprints.forEach((bp) => {
@@ -289,7 +291,7 @@ export class InventoryPanel {
         return `<div class="fac-card2 dg-bp">
         <div class="fac2-head"><span class="fac-icon">📜</span><b class="dg-name">${escapeHtml(info.name)}</b>${n}${slotTag(null, DG_GEAR[bp.model]?.slot)}<span class="dg-tag">副本圖紙</span></div>
         <div class="stat-line muted">${escapeHtml(g.dungeon.gearLine(bp.model))}</div>
-        <div class="row-between bp-acts"><span></span><span class="btn-row">${btn('製作', 'view', { v: 'dgcraft' }, { cls: 'btn-sm btn-primary' })}${extra(bp)}</span></div>
+        <div class="row-between bp-acts"><span></span><span class="btn-row">${btn('製作', 'view', { v: 'dgcraft' }, { cls: 'btn-sm btn-primary' })}${extra(bp, list)}</span></div>
       </div>`;
       }
       const md = ITEM_MODELS[bp.model];
@@ -305,7 +307,7 @@ export class InventoryPanel {
         <small class="muted bp-sub">${slotTag(md.type)} 強度 T${md.tier}・${bench ? `工作台 Lv${bench}` : '不需工作台'}・裝備 Lv${eq.craftLevel(bp.model)}</small>
         <div class="stat-line range">${statRangeLine(eq.craftStatRange(bp.model, bp.rarity))}</div>
         <div class="fac2-cost"><small class="muted">所需材料（擁有/需要）</small><div class="needs">${needHtml(g.state, cost)}</div>
-          <div class="row-between bp-acts"><span></span><span class="btn-row">${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, check.reason)}${extra(bp)}</span></div></div>
+          <div class="row-between bp-acts"><span></span><span class="btn-row">${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, check.reason)}${extra(bp, list)}</span></div></div>
       </div>`;
     }).join('');
     return `<div class="sh-fac"><div class="sh-fac-main">
@@ -593,6 +595,16 @@ export class InventoryPanel {
         const bp = g.state.inventory.blueprints.find((b) => b.id === data.id);
         const info = g.equipment.blueprintInfo(bp);
         if (bp && confirm(`出售設計圖「${info?.name || ''}」，得到 💰${g.blackMarket.blueprintBuyback(bp).toLocaleString()}？`)) this.ui.result(g.blackMarket.sellBlueprint(data.id));
+        break;
+      }
+      case 'bpSellAll': {
+        // 同型號、同保底品級（副本圖紙另外分組）的設計圖一起賣
+        const bp = g.state.inventory.blueprints.find((b) => b.id === data.id);
+        if (!bp) break;
+        const same = g.state.inventory.blueprints.filter((b) => !!b.dg === !!bp.dg && b.model === bp.model && b.rarity === bp.rarity);
+        const coins = same.reduce((t, b) => t + g.blackMarket.blueprintBuyback(b), 0);
+        const info = g.equipment.blueprintInfo(bp);
+        if (confirm(`把 ${same.length} 張設計圖「${info?.name || ''}」一起賣掉，得到 💰${coins.toLocaleString()}？`)) this.ui.result(g.blackMarket.sellBlueprints(same.map((b) => b.id)));
         break;
       }
       case 'bpDiscard': this.confirmBpDiscard(data.id); break;

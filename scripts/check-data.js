@@ -7633,6 +7633,12 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   ga.state.inventory.blueprints.push({ id: 'b6', model, rarity: 'common' });
   ga.tick();
   assert(ga.state.inventory.blueprints.some((b) => b.id === 'b6') && ga.state.inventory.blueprints.some((b) => b.id === 'b4'), '關閉後不再自動出售，副本圖紙不受影響');
+  // v15.15.1：全部出售：金額＝單張價格 × 張數
+  ga.state.inventory.blueprints.push({ id: 'b7', model, rarity: 'common' }, { id: 'b8', model, rarity: 'common' });
+  const one = ga.blackMarket.blueprintBuyback({ model, rarity: 'common' });
+  const c1 = ga.state.player.coins;
+  const ra = ga.blackMarket.sellBlueprints(['b6', 'b7', 'b8']);
+  assert(ra.ok && ra.n === 3 && ga.state.player.coins - c1 === one * 3 && !ga.state.inventory.blueprints.some((b) => ['b6', 'b7', 'b8'].includes(b.id)), `全部出售：3 張一起賣、金額是單張的 3 倍（💰${ga.state.player.coins - c1}）`);
 }
 
 if (failures) {
