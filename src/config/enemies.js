@@ -48,7 +48,48 @@ export const BOSSES = {
   },
 };
 
-export const ALL_ENEMIES = { ...ENEMIES, ...BOSSES };
+/**
+ * v15.18：屍潮變種（只出現在屍潮，依文明度解鎖）。取代一部分普通殭屍，不額外增加數量。
+ *  - blast：碰到圍牆時自爆，對牆傷害＝攻擊 × blast（並波及近戰守衛）
+ *  - armor：一般防禦塔、守衛、協防的傷害減免（火焰塔、電網無視）
+ *  - scream：周圍 range 內的殭屍移動速度 +pct
+ *  - wallMul：對圍牆傷害倍率
+ *  - climb：貼牆幾秒後翻進圍牆，直接攻擊守衛
+ */
+export const SIEGE_VARIANTS = {
+  exploder: {
+    name: '自爆者', icon: '💥', color: 0xff6d00, tier: 2,
+    hp: 70, atk: 12, def: 2, crit: 0, dodge: 0.02, atkSpeed: 0.7, speed: 13,
+    xp: 12, coins: 4, partsChance: 0.05, ability: { blast: 3 },
+  },
+  armored: {
+    name: '裝甲殭屍', icon: '🛡️', color: 0x78909c, tier: 3,
+    hp: 100, atk: 12, def: 16, crit: 0.03, dodge: 0, atkSpeed: 0.6, speed: 7,
+    xp: 28, coins: 10, partsChance: 0.12, ability: { armor: 0.5 },
+  },
+  screamer: {
+    name: '尖叫者', icon: '📣', color: 0xf06292, tier: 2,
+    hp: 55, atk: 5, def: 1, crit: 0, dodge: 0.08, atkSpeed: 0.6, speed: 11,
+    xp: 14, coins: 5, partsChance: 0.05, ability: { scream: { range: 30, pct: 0.15 } },
+  },
+  breaker: {
+    name: '拆牆者', icon: '🔨', color: 0x6d4c41, tier: 3,
+    hp: 160, atk: 14, def: 6, crit: 0.02, dodge: 0, atkSpeed: 0.6, speed: 5,
+    xp: 30, coins: 11, partsChance: 0.12, ability: { wallMul: 2.2 },
+  },
+  climber: {
+    name: '爬牆者', icon: '🧗', color: 0x26a69a, tier: 3,
+    hp: 95, atk: 15, def: 4, crit: 0.08, dodge: 0.12, atkSpeed: 1, speed: 14,
+    xp: 24, coins: 9, partsChance: 0.1, ability: { climb: 5 },
+  },
+};
+export const SIEGE_VARIANT_KEYS = Object.keys(SIEGE_VARIANTS);
+/** 變種不受裝甲減傷的攻擊來源 */
+export const ARMOR_PIERCE = ['flameTower', 'electricFence'];
+/** 每種已解鎖變種在屍潮中的權重（從普通殭屍的權重扣除，普通殭屍至少保留 minWalker）；每解鎖一種，每波數量 −sizeCut（總威脅維持不變） */
+export const VARIANT_WEIGHT = { each: 0.7, minWalker: 2, sizeCut: 0.02 };
+
+export const ALL_ENEMIES = { ...ENEMIES, ...BOSSES, ...SIEGE_VARIANTS };
 
 /** 精英怪倍率 */
 export const ELITE_MUL = { hp: 2.4, atk: 1.6, def: 1.5, xp: 3, coins: 3 };
