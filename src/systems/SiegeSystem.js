@@ -307,9 +307,10 @@ export class BaseSiege {
     return Math.max(1, Math.min(SIEGE_SCALING.maxZombieLevel ?? Infinity, lv));
   }
 
-  /** 屍潮數量倍率：據點越大越難防守、區域越危險屍潮越多 */
+  /** 屍潮數量倍率：v14 起避難所一律比照巨型（×1.55）；安全區 ×0.75，所有避難所都是 ×1.16 */
   sizeMul() {
-    return (BASE_SIZES[this.base.size]?.siegeMul || 1) * this.zone().siegeMul;
+    const size = this.game.shelter.isPrimary(this.base) ? 'huge' : this.base.size;
+    return (BASE_SIZES[size]?.siegeMul || 1) * this.zone().siegeMul;
   }
 
   /** 每波殭屍數：讓整晚的平均強度等同「每 spawnInterval 秒一隻」 */

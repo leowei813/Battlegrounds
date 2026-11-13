@@ -21,7 +21,7 @@ function relocateBody(g, base, p) {
     <ol class="reloc-steps">
       <li><b>進行中的工作先取消</b>：${cancel.length ? `${cancel.join('、')}，依完成度退還材料：<div class="gains">${Object.keys(p.cancelled).length ? gainsHtml(p.cancelled) : '<span class="muted">無</span>'}</div>` : '<span class="muted">目前沒有進行中的研究或施工。</span>'}</li>
       <li><b>防禦建築全部拆除</b>，退還 ${defPct}% 建造材料：${p.defenses.length ? `<small class="muted block">${p.defenses.map((d) => `${DEFENSES[d.type].icon}${DEFENSES[d.type].name} Lv${d.level}`).join('、')}</small><div class="gains">${gainsHtml(p.defRefund)}</div>` : '<span class="muted">沒有防禦建築。</span>'}</li>
-      <li><b>其他設施保留</b>到新的避難所；新地點較小時，超過上限的設施會降到上限，降掉的等級退還 50% 建造材料（設施最高：小型 Lv8、中型 Lv11、大型 Lv13、巨型 Lv15）：<small class="muted block">${p.facilities.map((f) => `${FACILITIES[f.id]?.icon || ''}${FACILITIES[f.id]?.name || f.id} Lv${f.level}`).join('、') || '無'}</small></li>
+      <li><b>其他設施保留</b>到新的避難所，等級不變：<small class="muted block">${p.facilities.map((f) => `${FACILITIES[f.id]?.icon || ''}${FACILITIES[f.id]?.name || f.id} Lv${f.level}`).join('、') || '無'}</small></li>
       <li><b>食物、木材、燃料只能帶走 ${keepPct}%</b>（包含上面退還的部分）：
         <div class="label">搬遷前</div><div class="gains">${res(p.before)}</div>
         <div class="label">帶走</div><div class="gains">${res(p.keep)}</div>

@@ -1,5 +1,4 @@
 import { LOCK_ITEM } from '../../config/rebirth.js';
-import { FACILITIES } from '../../config/facilities.js';
 import { RARITY_ORDER } from '../../config/equipment.js';
 import { DUNGEONS } from '../../config/dungeons.js';
 import { CLASSES } from '../../config/survivors.js';
@@ -10,7 +9,7 @@ import {
 import { MapService } from '../../map/MapService.js';
 import { POI_TYPES, LOOT_CATS } from '../../config/poiTypes.js';
 import { ALL_ENEMIES } from '../../config/enemies.js';
-import { BASE_SIZES, FACILITY_COUNT } from '../../config/civilization.js';
+import { BASE_SIZES } from '../../config/civilization.js';
 import { delegateActions, escapeHtml } from '../../utils/dom.js';
 import { haversine, formatDuration } from '../../utils/math.js';
 import { POI_SHARE } from '../../systems/PoiShareSystem.js';
@@ -948,8 +947,8 @@ export class MapPanel {
 
   showLegend() {
     const rows = Object.values(POI_TYPES).map((p) => `<div class="legend-row"><span class="poi-pin" style="--c:${p.color}">${p.icon}</span> ${p.name} <span class="danger">${stars(p.danger)}</span><small>${Object.keys(p.loot).map((k) => LOOT_CATS[k].icon).join('')}</small></div>`).join('');
-    const sizes = Object.entries(BASE_SIZES).map(([k, z]) => `<div class="legend-row"><span class="shelter-pin size-${k}" style="--d:${z.pin}px">${z.icon}<i class="size-tag">${z.name[0]}</i></span> ${z.name}據點 <small>可建 ${FACILITY_COUNT + z.slots} 棟</small></div>`).join('');
-    this.ui.modal.open({ title: '🧾 圖例', body: `${rows}<h4>據點規模</h4>${sizes}<h4>區域危險度</h4>${ZONES.map((z) => `<div class="legend-row"><span class="zone-tag" style="--zc:${z.color}">${z.name}</span><small>物資 ×${z.lootMul}・屍潮 ×${z.siegeMul}・殭屍 +${z.siegeLevel} 級</small></div>`).join('')}<div class="legend-row"><span class="npc-pin" style="width:28px;height:28px;font-size:14px">🏴‍☠️</span> NPC 據點：會升級、探索與掠奪，可攻打搶奪資源</div><p class="muted">金框是你的據點（⭐ 為主要據點），青框是其他玩家的據點。</p><p class="muted">☠ 越多越危險；距離避難所越遠危險度越高。紅框為探索範圍。</p><p class="muted">地圖底色代表區域危險度，區域交界有細邊界線；建築圓點與圖示的顏色代表建築類型。右側 ☣️ 按鈕可開關危險度圖層。</p>` });
+    // v15.18：避難所沒有大小之分、只能建在安全區，圖例不再列據點規模與各區屍潮倍率
+    this.ui.modal.open({ title: '🧾 圖例', body: `${rows}<h4>區域危險度</h4>${ZONES.map((z) => `<div class="legend-row"><span class="zone-tag" style="--zc:${z.color}">${z.name}</span><small>物資 ×${z.lootMul}</small></div>`).join('')}<div class="legend-row"><span class="npc-pin" style="width:28px;height:28px;font-size:14px">🏴‍☠️</span> NPC 據點：會升級、探索與掠奪，可攻打搶奪資源</div><p class="muted">金框是你的據點（⭐ 為主要據點），青框是其他玩家的據點。</p><p class="muted">☠ 越多越危險；距離避難所越遠危險度越高。紅框為探索範圍。</p><p class="muted">地圖底色代表區域危險度，區域交界有細邊界線；建築圓點與圖示的顏色代表建築類型。右側 ☣️ 按鈕可開關危險度圖層。</p>` });
   }
 
   poiBody(poi) {
@@ -965,17 +964,16 @@ export class MapPanel {
     const actions = [];
     let establish = '';
     const z = g.shelter.sizeInfo(poi);
-    const sizeLine = `<small class="muted block"><span class="size-chip" style="--sc:${BASE_SIZES[z.id].color}">${BASE_SIZES[z.id].icon} ${z.name}</span>據點：屍潮 ×${BASE_SIZES[z.id].siegeMul}・警戒範圍 ${BASE_SIZES[z.id].alert} 公尺</small>`;
+    void z;
+    // v15.18：避難所沒有大小之分（一律 11 格防禦）；只有建築危險度會影響屍潮
+    const sizeLine = `<small class="muted block">🏠 建立後一律為避難所：防禦欄位 ${BASE_SIZES.huge.slots} 格・警戒範圍 ${BASE_SIZES.huge.alert} 公尺・據點危險度 ${pt.danger} 起（隨文明度增加；越高屍潮殭屍等級與頻率越高）</small>`;
     if (base) {
       actions.push(btn('🏠 進入據點', 'enterShelter', {}, { cls: 'btn-primary' }));
       actions.push(btn(base.kind === 'outpost' ? '🏚️ 放棄' : '🚚 搬遷', 'abandon', {}, { cls: 'btn-ghost' }));
     } else if (!g.shelter.hasShelter()) {
       actions.push(btn('🏠 設為避難所', 'setShelter', {}, { cls: 'btn-primary' }));
       // 搬遷中：這個地點較小時，超過上限的設施會降級
-      const cp = g.shelter.relocationCapPreview(poi);
-      establish = `${sizeLine}${g.state.relocation ? (cp.changes.length
-        ? `<small class="block neg">⚠️ 這裡設施最高 Lv${cp.cap}：${cp.changes.map((c) => `${FACILITIES[c.id].name} Lv${c.from}→Lv${c.to}`).join('、')}，降掉的等級退還 50% 建造材料</small>`
-        : '<small class="block pos">✅ 搬遷保留的設施都不會降級</small>') : ''}`;
+      establish = `${sizeLine}${g.state.relocation ? '<small class="block pos">✅ 搬遷保留的設施等級全部不變</small>' : ''}`;
     } else {
       {
         const ve = g.poiShare.view(poi);

@@ -516,7 +516,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   base.size = 'small';
   const small = sw.spawnInterval();
   base.size = 'huge';
-  assert(sw.spawnInterval() < small * 0.6, '巨型據點屍潮比小型據點多');
+  assert(Math.abs(sw.spawnInterval() - small) < 1e-9, 'v15.18：避難所沒有大小之分，屍潮頻率一律比照巨型');
 
   // 生產下修、升級成本變陡
   const { FACILITIES: F } = await import('../src/config/facilities.js');
