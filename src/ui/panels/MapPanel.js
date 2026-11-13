@@ -267,19 +267,22 @@ export class MapPanel {
     const inc = CP_INCOME[cp.zone];
     const tagCol = sm.status === 'mine' ? '#4fc3f7' : sm.status === 'faction' ? '#ef5350' : '#9e9e9e';
     const btns = [];
-    if (atk.ok || atk.locked) {
+    // v16.1：剛被打下的保護期
+    const sl = g.cp.shieldLeft(id);
+    if (atk.ok || atk.locked || atk.shield) {
       btns.push(btn('⚔️ 派隊攻打', 'cpAttack', {}, { cls: 'btn-danger', disabled: !atk.ok, title: atk.reason || '' }));
       btns.push(btn(`${rallyFlag(16)} 發起集結`, 'cpRally', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' }));
     }
     if (sm.status === 'mine') btns.push(btn('🛡️ 派人駐防', 'cpGuard', {}, { cls: 'btn-primary', disabled: !gd.ok, title: gd.reason || '' }));
     if (mine.length) btns.push(btn('↩️ 撤回駐防', 'cpRecall', {}, { cls: 'btn-ghost' }));
     return `<p><span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span> <span class="tag" style="color:${tagCol};border:1px solid ${tagCol}">${sm.label}</span></p>
+      ${sl > 0 ? `<div class="cp-shield-row">🛡️ <b>保護中</b>・剩 <b>${formatDuration(sl)}</b>：剛被「${fac ? `${escapeHtml(FACTIONS[fac].name)}勢力` : sm.owners.map((o) => escapeHtml(o.n)).join('、') || '—'}」打下，1 小時內任何人都不能攻打</div>` : ''}
       <div class="kv-list">
         <div><b>佔領者</b> ${ownTxt}</div>
         ${npc ? `<div><b>守軍</b> ${sm.status === 'faction' ? 'NPC' : '感染者'} ${sm.garrison}/${cp.garrison.count} 人（Lv${cp.garrison.level}）・戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}</div>` : `<div><b>駐防</b> ${guardTxt}</div>`}
         <div><b>每日收益</b> 06:00 運輸隊送回：食物 ${inc.food}、木材 ${inc.wood}、燃料 ${inc.fuel}＋隨機零件 ${inc.parts[0]}～${inc.parts[1]} 種</div>
         ${sm.status === 'mine' ? `<div class="muted">下一次收益約 ${sm.nextIncome} 後出發・每名玩家最多駐防 2 人</div>` : ''}
-        ${!atk.ok && !atk.locked && sm.status !== 'mine' ? `<div class="muted">${escapeHtml(atk.reason)}</div>` : ''}
+        ${!atk.ok && !atk.locked && !atk.shield && sm.status !== 'mine' ? `<div class="muted">${escapeHtml(atk.reason)}</div>` : ''}
       </div>
       ${atk.locked ? `<div class="cp-lock">🔒 ${escapeHtml(atk.reason)}</div>` : ''}
       <div class="btn-row">${btns.join('')}</div>`;

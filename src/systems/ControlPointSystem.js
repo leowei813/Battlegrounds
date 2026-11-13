@@ -1,6 +1,6 @@
 import { TimeSystem } from './TimeSystem.js';
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT, CP_TAKEN_SHIELD_MS, FACTION_FORCE_SCALE,
+  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT, CP_SHIELD, FACTION_FORCE_SCALE,
 } from '../config/controlPoints.js';
 import { inNpcHome, ZONES } from '../config/zones.js';
 import { xpToNext } from '../config/survivors.js';
@@ -170,7 +170,7 @@ export class ControlPointSystem {
    * 能不能進攻：中立、勢力或敵對玩家的控制點，且要和自己或好友佔領的控制點相鄰（最西側一排不受限制）。
    * @param {{reach?:boolean}} [opts] reach=false：不檢查相鄰（隊伍已經出發、抵達時用）
    */
-  canAttack(id, { reach = true } = {}) {
+  canAttack(id, { reach = true, now = Date.now() } = {}) {
     const g = this.game;
     const cp = cpById(id);
     if (!cp) return { ok: false, reason: '找不到控制點' };
@@ -178,6 +178,9 @@ export class ControlPointSystem {
     const s = this.statusOf(id);
     if (s === 'mine') return { ok: false, reason: '這是你或好友的控制點' };
     if (s === 'other') return { ok: false, reason: '只能攻打中立、勢力或敵對玩家的控制點' };
+    // v16.1：剛被打下的控制點保護 1 小時，任何人都不能攻打
+    const left = this.shieldLeft(id, now);
+    if (left > 0) return { ok: false, shield: true, left, reason: `保護中，${Math.ceil(left / 60000)} 分後才能攻打` };
     // v15.3：勢力控制點裡有 NPC 據點時，要先打掉據點才能佔領
     const base = this.factionOf(id) ? (g.npcs?.list || []).find((n) => n.cp === id && n.faction && !n.hq && !n.gone) : null;
     if (base) return { ok: false, locked: true, reason: `需先打掉控制點內的 NPC 據點「${base.name}」才能進攻` };
@@ -491,7 +494,7 @@ export class ControlPointSystem {
     const id = exp.cpId;
     const cp = cpById(id);
     const members = exp.memberIds.map((x) => g.survivors.get(x)).filter(Boolean);
-    const c = this.canAttack(id, { reach: false });
+    const c = this.canAttack(id, { reach: false, now: at });
     if (!c.ok) return { victory: false, events: [`🚩 抵達時控制點 #${cp.no} ${c.reason}`] };
     const foes = this.defenders(id, at);
     const before = foes.length;
@@ -716,7 +719,7 @@ export class ControlPointSystem {
     const own = this.factionCps(f);
     const near = new Set(own.length ? own.flatMap((id) => cpNeighbors(id)) : hqNeighbors(f));
     own.forEach((id) => near.delete(id));
-    // v15.10：玩家剛佔領的控制點有保護期，勢力不會選它
+    // v16.1：剛被打下（保護期內）的控制點，勢力不會選它
     [...near].forEach((id) => { if (this.shielded(id, now)) near.delete(id); });
     const hq = this.hqLatLon(f);
     const list = [...near].map((id) => {
@@ -729,10 +732,16 @@ export class ControlPointSystem {
     return list[0].id;
   }
 
-  /** v15.10：玩家剛佔領（保護期內）的控制點 */
-  shielded(id, now = Date.now()) {
+  /** v16.1：剛被打下（玩家或勢力佔領）1 小時內的控制點：剩餘保護時間（毫秒，0＝沒有保護） */
+  shieldLeft(id, now = Date.now()) {
     const d = this.data(id);
-    return !!(d && (d.owners || []).length && !d.faction && d.takenAt && now - d.takenAt < CP_TAKEN_SHIELD_MS);
+    if (!(CP_SHIELD.ms > 0) || !d?.takenAt || !((d.owners || []).length || d.faction)) return 0;
+    // 不超過保護期本身（各玩家的時鐘略有誤差時也不會多出來）
+    return Math.min(CP_SHIELD.ms, Math.max(0, d.takenAt + CP_SHIELD.ms - now));
+  }
+
+  shielded(id, now = Date.now()) {
+    return this.shieldLeft(id, now) > 0;
   }
 
   /** v15.10：勢力進攻部隊的強度倍率（勢力控制點越多越強） */
@@ -944,6 +953,8 @@ export class ControlPointSystem {
   async npcAttack(f, id, at = Date.now()) {
     const g = this.game;
     const cp = cpById(id);
+    // v16.1：部隊抵達時控制點剛被別人打下（保護期內）：撲空返回
+    if (this.shielded(id, at)) return { win: false, ok: false, shielded: true };
     const foes = this.defenders(id, at);
     const attackers = this.attackForce(f, id);
     const r = g.combat.simulate([], foes, { allies: attackers, record: false, capture: 60, title: `🏴 「${FACTIONS[f].name}」進攻控制點 #${cp.no}` });

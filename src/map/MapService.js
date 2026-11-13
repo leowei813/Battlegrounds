@@ -226,7 +226,7 @@ export class MapService {
     const cols = { mine: '#4fc3f7', other: '#9e9e9e', hostile: '#ef9a9a', neutral: '#bdbdbd', faction: '#ef5350' };
     const z = this.map.getZoom();
     const guardsOf = (id) => game.cp.guardsAt(id).reduce((n, h) => n + ((h.units || []).length || 1), 0);
-    const st = `${z}|${CONTROL_POINTS.map((c) => `${c.id}:${game.cp.statusOf(c.id)}:${game.cp.factionOf(c.id) || ''}:${guardsOf(c.id)}`).join('|')}`;
+    const st = `${z}|${CONTROL_POINTS.map((c) => `${c.id}:${game.cp.statusOf(c.id)}:${game.cp.factionOf(c.id) || ''}:${guardsOf(c.id)}:${game.cp.shielded?.(c.id) ? 1 : 0}`).join('|')}`;
     if (st === this.cpKey) return;
     this.cpKey = st;
     this.layers.cps.clearLayers();
@@ -237,10 +237,10 @@ export class MapService {
       const size = Math.max(10, Math.round((this.poiLayer?.radius?.() || 6) * 1.25 * 2) + 4);
       const spot = game.cp.markerSpot(c.id);
       L.marker([spot.lat, spot.lon], {
-        icon: this.icon(`<div class="cp-dot" style="--c:${col || '#bdbdbd'};--s:${size}px">${CP_ICON}${guardsOf(c.id) ? `<i class="cp-guard">🛡️${guardsOf(c.id)}</i>` : ''}</div>`, 'shelter-icon', size),
+        icon: this.icon(`<div class="cp-dot" style="--c:${col || '#bdbdbd'};--s:${size}px">${CP_ICON}${guardsOf(c.id) ? `<i class="cp-guard">🛡️${guardsOf(c.id)}</i>` : ''}${game.cp.shielded?.(c.id) ? '<i class="cp-shield" title="剛被打下，保護中">🛡️</i>' : ''}</div>`, 'shelter-icon', size),
         zIndexOffset: 850,
       }).on('click', () => bus.emit('ui:openCp', { id: c.id }))
-        .bindTooltip(`🚩 控制點・${game.cp.summary(c.id).label}`, { direction: 'top', offset: [0, -size / 2] })
+        .bindTooltip(`🚩 控制點・${game.cp.summary(c.id).label}${game.cp.shielded?.(c.id) ? '・🛡️ 保護中' : ''}`, { direction: 'top', offset: [0, -size / 2] })
         .addTo(this.layers.cps);
     });
     // 三大勢力大本營（不能攻打；沒有 NPC 據點時從這裡出兵），點擊顯示勢力資訊

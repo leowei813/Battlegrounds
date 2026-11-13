@@ -1827,3 +1827,7 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 .spec .btn { margin-top: 6px; }
 .spec.pick { border-color: #ffb300; background: #ffb3001a; opacity: 1; }
 @media (max-width: 520px) { .spec-grid { grid-template-columns: 1fr; } }
+
+/* v16.1：控制點被打下後的保護期 */
+.cp-dot .cp-shield { position: absolute; top: -10px; right: -12px; font-size: 12px; font-style: normal; background: #000c; border: 1px solid #81d4fa; border-radius: 8px; padding: 0 3px; line-height: 16px; filter: drop-shadow(0 0 3px #4fc3f7); }
+.cp-shield-row { margin: 6px 0; padding: 6px 10px; border-radius: 8px; border: 1px solid #4fc3f7; background: #4fc3f71a; color: #b3e5fc; }

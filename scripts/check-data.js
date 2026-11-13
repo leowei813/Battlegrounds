@@ -66,6 +66,10 @@ WXS.force = 'calm';
 // v16：特質會隨機影響數值；既有測試一律關閉特質，專門的測試再打開
 const { SurvivorSystem: SVS } = await import('../src/systems/SurvivorSystem.js');
 SVS.disableTraits = true;
+// v16.1：控制點被打下後的保護期；既有測試關閉（多數情境是剛佔領就被攻打），專門的測試再打開
+const { CP_SHIELD: CPSH } = await import('../src/config/controlPoints.js');
+const CPSH_MS = CPSH.ms;
+CPSH.ms = 0;
 const realBlocking = InfSys.prototype.blocking;
 // v14：重度感染據點已停用；測試仍檢查原本的機制
 { const { INFECTED: INF0 } = await import('../src/systems/InfectedSystem.js'); INF0.disabled = false; }
@@ -7326,10 +7330,24 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   gx.cp.data = (id) => store[id] || null;
   gx.cp.factionCps = () => [];
   const near = CPX.hqNeighbors('red');
+  // v16.1：保護期改為 1 小時，玩家或勢力打下都算
+  CPSH.ms = CPSH_MS;
+  store[mineId].takenAt = now - 30 * 60000;
   const t1 = gx.cp.pickTarget('red', now);
-  assert(near.length > 1 ? t1 !== mineId : t1 === null, '玩家剛佔領 2 小時內的控制點，勢力不會選它');
-  store[mineId].takenAt = now - 3 * 3600000;
-  assert(gx.cp.shielded(mineId, now) === false, '保護期過後勢力可以選它');
+  assert(near.length > 1 ? t1 !== mineId : t1 === null, '剛被打下 1 小時內的控制點，勢力不會選它');
+  store[mineId].takenAt = now - 61 * 60000;
+  assert(gx.cp.shielded(mineId, now) === false, '保護期（1 小時）過後勢力可以選它');
+  // 勢力打下的也保護 1 小時：玩家不能攻打，倒數正確
+  store[mineId] = { owners: [], guards: [], faction: 'red', takenAt: now - 20 * 60000 };
+  const hs0 = gx.shelter.hasShelter.bind(gx.shelter);
+  gx.shelter.hasShelter = () => true;
+  const ca = gx.cp.canAttack(mineId, { reach: false, now });
+  assert(!ca.ok && ca.shield && Math.round(gx.cp.shieldLeft(mineId, now) / 60000) === 40 && /保護中/.test(ca.reason), `勢力剛打下的控制點也保護 1 小時，玩家不能攻打（${ca.reason}）`);
+  assert(gx.cp.canAttack(mineId, { reach: false, now: now + 41 * 60000 }).shield !== true, '保護期過後玩家可以攻打');
+  const na = await gx.cp.npcAttack('blue', mineId, now);
+  assert(na.shielded && !na.win, '保護期內勢力部隊抵達也撲空，不會交戰');
+  gx.shelter.hasShelter = hs0;
+  CPSH.ms = 0;
   // 勢力部隊強度：以 4 個控制點為準，每個 ±5%，範圍 ×0.8～×1.4
   const scaleAt = (n) => { gx.cp.factionCps = () => Array.from({ length: n }, (_, i) => `x${i}`); return gx.cp.forceScale('red'); };
   assert(Math.abs(scaleAt(4) - 1) < 1e-9 && Math.abs(scaleAt(8) - 1.2) < 1e-9 && Math.abs(scaleAt(0) - 0.8) < 1e-9 && Math.abs(scaleAt(20) - 1.4) < 1e-9, '勢力進攻部隊強度跟著控制點數（×0.8～×1.4）');

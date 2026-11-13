@@ -694,6 +694,12 @@ export class RallySystem {
     } else if (d.target.kind === 'cp') {
       // v14：集結攻打控制點，打下後為所有參加者共同擁有
       const cp = tg;
+      // v16.1：抵達時控制點剛被別人打下（保護期內）：撲空，不交戰
+      if (g.cp.shielded(cp.id, now)) {
+        res.summary = `抵達時控制點 #${cp.no} 剛被打下、保護中，無法攻打`;
+        teams.forEach((t) => { res.teams[t.player].units = (t.units || []).map((u) => ({ i: u.i, hp: u.hp, down: false })); });
+        return res;
+      }
       const foes = g.cp.defenders(cp.id, now);
       const before = foes.length;
       result = g.combat.simulate([], foes, { allies: units, record: false, capture: RALLY_LOG, title: `🚩 集結攻打控制點 #${cp.no}` });
