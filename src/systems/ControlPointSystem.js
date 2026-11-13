@@ -1,6 +1,6 @@
 import { TimeSystem } from './TimeSystem.js';
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_GARRISON_MUL, CP_PLAYER_SIDE_MUL, CP_ZONE_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT, CP_SHIELD, FACTION_FORCE_SCALE,
+  CONTROL_POINTS, cpById, cpAt, CP_POWER, CP_GARRISON, CP_LEVEL, CP_MAX_PLAYERS, CP_BUILDINGS, CP_BUILD, CP_INCOME_MUL, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT, CP_SHIELD, FACTION_FORCE_SCALE,
 } from '../config/controlPoints.js';
 import { inNpcHome, ZONES } from '../config/zones.js';
 import { xpToNext } from '../config/survivors.js';
@@ -8,8 +8,10 @@ import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { RAID_TRAVEL } from '../config/constants.js';
 import { NPC_CONFIG, npcQuietSpan, NPC_QUIET, NPC_DAY_SLOW, RALLY_XP } from '../config/npcs.js';
 import {
-  uid, haversine, randInt, weightedPick, formatDuration, unitPower, unitPowerV1,
+  uid, haversine, randInt, weightedPick, formatDuration, unitPower,
 } from '../utils/math.js';
+import { DEFENSES, DEFENSE_MAX_LEVEL } from '../config/defenses.js';
+import { canAfford, payCost, scaleCost, grant as grantCost } from './costUtils.js';
 import { AssistSystem } from './AssistSystem.js';
 import { balanceMultipliers } from './MaterialBalance.js';
 import { baseSupplyWeight } from './LootStock.js';
@@ -93,8 +95,31 @@ export class ControlPointSystem {
     if (this.factionOf(id)) return 'faction';
     if (!own.length) return 'neutral';
     if (own.some((o) => this.isAlly(o.p))) return 'mine';
-    if (own.every((o) => this.game.territory?.relation?.(o.p) === 'hostile')) return 'hostile';
+    if (own.some((o) => this.hostileTo(o.p))) return 'hostile';
     return 'other';
+  }
+
+  /** v17：和這位玩家是敵對關係 */
+  hostileTo(pid) {
+    return pid !== this.myId() && this.game.territory?.relation?.(pid) === 'hostile';
+  }
+
+  /** v17：可以進入（探索、路線穿越）：中立，或佔領者都不是敵對；勢力佔領的不行 */
+  canEnter(id) {
+    if (this.factionOf(id)) return false;
+    return !this.owners(id).some((o) => this.hostileTo(o.p));
+  }
+
+  /** v17：可以駐防、蓋防禦建築：有玩家佔領，且佔領者都不是敵對 */
+  canJoin(id) {
+    const own = this.owners(id);
+    return !this.factionOf(id) && own.length > 0 && !own.some((o) => this.hostileTo(o.p));
+  }
+
+  /** v17：在這個控制點駐防或有建築的玩家 */
+  members(id) {
+    const d = this.data(id) || {};
+    return [...new Set([...(d.guards || []).map((h) => h.p), ...Object.keys(d.bld || {})])];
   }
 
   /**
@@ -106,38 +131,61 @@ export class ControlPointSystem {
     if (inNpcHome(poi.lat, poi.lon)) return { ok: false, reason: '這裡是三大勢力的大本營領地，不能探索' };
     const cp = cpAt(poi.lat, poi.lon);
     if (!cp) return { ok: true };
-    if (this.statusOf(cp.id) === 'mine') return { ok: true };
-    return { ok: false, reason: `要先佔領控制點 #${cp.no}，才能探索這個區域` };
+    if (this.canEnter(cp.id)) return { ok: true };
+    return { ok: false, reason: this.factionOf(cp.id) ? `控制點 #${cp.no}（${cp.name}）被勢力佔領，要先打下才能探索這個區域` : `控制點 #${cp.no}（${cp.name}）被敵對玩家佔領，不能探索這個區域` };
+  }
+
+  /** v17：滿編守軍人數（勢力佔領 18 人、中立左側 10／右側 12） */
+  garrisonFull(id) {
+    const cp = cpById(id);
+    return this.factionOf(id) ? CP_GARRISON.npc : CP_GARRISON.neutral[cp.side];
   }
 
   /** 目前的守軍人數（被打下後每小時補回） */
   garrisonCount(id, now = Date.now()) {
-    const cp = cpById(id);
     const d = this.data(id);
-    const full = cp.garrison.count;
+    const full = this.garrisonFull(id);
     if (!d?.lost) return full;
     const back = Math.floor(((now - (d.lostAt || now)) / 3600000) * CP_REFILL_PER_HOUR);
     return Math.max(0, Math.min(full, full - d.lost + back));
   }
 
-  /** NPC／感染者守軍（中立與勢力的控制點） */
+  /** v17：把敵人調整到指定戰力（倍率依種類與目標快取） */
+  scaledEnemy(type, level, power, elite = false) {
+    const cb = this.game.combat;
+    this.scaleCache = this.scaleCache || new Map();
+    const key = `${type}|${level}|${Math.round(power)}|${elite ? 1 : 0}`;
+    const e = cb.createEnemy(type, level, elite);
+    let k = this.scaleCache.get(key);
+    if (!k) {
+      const h0 = e.maxHp;
+      const a0 = e.atk;
+      let lo = 0.01;
+      let hi = 2000;
+      for (let i = 0; i < 50; i += 1) {
+        const m = Math.sqrt(lo * hi);
+        e.maxHp = Math.round(h0 * m); e.atk = Math.round(a0 * m);
+        if (unitPower(e) < power) lo = m; else hi = m;
+      }
+      k = Math.sqrt(lo * hi);
+      this.scaleCache.set(key, k);
+      e.maxHp = h0; e.atk = a0;
+    }
+    e.maxHp = Math.round(e.maxHp * k); e.hp = e.maxHp; e.atk = Math.round(e.atk * k);
+    return e;
+  }
+
+  /** NPC／感染者守軍（中立與勢力的控制點）：v17 依總戰力換算（中立左 15 萬、右 40 萬；勢力滿編 90 萬） */
   npcGarrison(id, now = Date.now()) {
     const cp = cpById(id);
-    const d = this.data(id);
     const n = this.garrisonCount(id, now);
-    const cb = this.game.combat;
     const fac = this.factionOf(id);
-    const list = Array.from({ length: n }, (_, i) => (fac
-      ? cb.createEnemy(i === 0 ? 'raiderChief' : 'raider', cp.garrison.level)
-      : cb.createEnemy(NEUTRAL_TYPES[i % NEUTRAL_TYPES.length], cp.garrison.level, i === 0)));
-    // 感染者守軍校正成同等級掠奪者的強度，再乘上控制點倍率（強度表見 docs/v14-plan.md）
-    // 守軍強度換算沿用舊版戰力公式（維持 v15.12 的平衡）
-    const ref = unitPowerV1(cb.createEnemy('raider', cp.garrison.level));
-    list.forEach((e) => {
-      const k = (fac ? 1 : ref / Math.max(1, unitPowerV1(e))) * CP_GARRISON_MUL * (CP_ZONE_MUL[cp.zone] ?? 1) * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1);
-      e.maxHp = Math.round(e.maxHp * k); e.hp = e.maxHp; e.atk = Math.round(e.atk * k);
-    });
-    return list;
+    const full = this.garrisonFull(id);
+    const each = (fac ? CP_POWER.npc.full : CP_POWER.neutral[cp.side]) / full;
+    const lv = fac ? CP_LEVEL.npc : cp.garrison.level;
+    return Array.from({ length: n }, (_, i) => (fac
+      ? this.scaledEnemy(i === 0 ? 'raiderChief' : 'raider', lv, each)
+      : this.scaledEnemy(NEUTRAL_TYPES[i % NEUTRAL_TYPES.length], lv, each)));
   }
 
   /**
@@ -164,6 +212,117 @@ export class ControlPointSystem {
   /** 防守方戰力（顯示用） */
   defensePower(id, now = Date.now()) {
     return this.defenders(id, now).reduce((s, u) => s + unitPower(u), 0);
+  }
+
+  // ================= v17：控制點防禦建築（每位玩家路障、機槍塔、瞭望台各 1 座） =================
+
+  /** 某位玩家在這個控制點的建築等級 { barricade, machineGun, watchPost } */
+  bldOf(id, pid = this.myId()) {
+    return { ...(this.data(id)?.bld?.[pid]?.b || {}) };
+  }
+
+  /** 建造或升級到 lv 的費用：避難所同等級的一半 */
+  bldCost(key, lv) {
+    return scaleCost(DEFENSES[key].cost(lv), CP_BUILD.costMul);
+  }
+
+  /** 單座建築的效果（避難所的 3 倍）：wall 路障耐久、dps 機槍每秒傷害、mul 瞭望台射擊倍率 */
+  static bldEffect(key, lv, guardAtk = 0) {
+    if (!lv) return { wall: 0, dps: 0 };
+    const st = DEFENSES[key].stats(lv);
+    const m = CP_BUILD.effectMul;
+    if (key === 'barricade') return { wall: st.wallBonus * m, dps: 0 };
+    if (key === 'machineGun') return { wall: 0, dps: st.damage * st.fireRate * m };
+    if (key === 'watchPost') return { wall: 0, dps: guardAtk * st.garrisonMul * st.fireRate * m };
+    return { wall: 0, dps: 0 };
+  }
+
+  /** 控制點的總防禦（玩家佔領時）：路障耐久、每秒傷害（機槍＋瞭望台以該玩家最強駐防隊員射擊） */
+  defenseOf(id, at = Date.now()) {
+    const d = this.data(id);
+    const out = { wall: 0, dps: 0 };
+    if (!d || d.faction || !(d.owners || []).length) return out;
+    const guards = this.guardsAt(id, at);
+    Object.entries(d.bld || {}).forEach(([pid, x]) => {
+      const atk = Math.max(0, ...guards.filter((h) => h.p === pid).flatMap((h) => h.units || []).map((u) => Number(u.atk) || 0));
+      CP_BUILDINGS.forEach((k) => {
+        const e = ControlPointSystem.bldEffect(k, Math.min(DEFENSE_MAX_LEVEL, Number(x?.b?.[k]) || 0), atk);
+        out.wall += e.wall;
+        out.dps += e.dps;
+      });
+    });
+    out.wall = Math.round(out.wall);
+    out.dps = Math.round(out.dps);
+    return out;
+  }
+
+  /** 能不能在這個控制點加入（駐防或蓋建築）：佔領者不是敵對，且玩家數未滿 */
+  joinCheck(id) {
+    if (!this.game.shelter.hasShelter()) return { ok: false, reason: '請先建立避難所' };
+    if (!this.canJoin(id)) return { ok: false, reason: this.factionOf(id) ? '勢力佔領的控制點不能駐防' : this.owners(id).length ? '佔領者是你的敵對玩家' : '要先有玩家佔領才能駐防或蓋建築' };
+    const ms = this.members(id);
+    if (!ms.includes(this.myId()) && ms.length >= CP_MAX_PLAYERS) return { ok: false, reason: `這個控制點已經有 ${CP_MAX_PLAYERS} 位玩家駐防或蓋建築` };
+    return { ok: true };
+  }
+
+  /** 建造或升級：檢查研究、等級上限與資源 */
+  canBuild(id, key) {
+    const g = this.game;
+    if (!CP_BUILDINGS.includes(key)) return { ok: false, reason: '不能蓋這種建築' };
+    const j = this.joinCheck(id);
+    if (!j.ok) return j;
+    if (!g.shelter.isDefenseUnlocked(key)) return { ok: false, reason: g.shelter.defenseLockReason(key) };
+    const lv = (this.bldOf(id)[key] || 0) + 1;
+    if (lv > DEFENSE_MAX_LEVEL) return { ok: false, reason: '已經是最高等級' };
+    const cost = this.bldCost(key, lv);
+    if (!canAfford(g.state, cost)) return { ok: false, reason: '資源不足', cost, lv };
+    return { ok: true, cost, lv };
+  }
+
+  /** 建造或升級（立即完成；先扣自己的資源，寫入共用資料失敗時退還） */
+  async build(id, key) {
+    const g = this.game;
+    const c = this.canBuild(id, key);
+    if (!c.ok) return c;
+    if (this.busy.has(`b:${id}`)) return { ok: false, reason: '處理中，請稍候' };
+    this.busy.add(`b:${id}`);
+    const me = this.myId();
+    const name = g.state.player.name || '倖存者';
+    const cp = cpById(id);
+    payCost(g.state, c.cost);
+    try {
+      const r = await g.shared.update(CP_KIND, id, (x) => {
+        const data = x || { owners: [], guards: [] };
+        if (data.faction || !(data.owners || []).length || data.owners.some((o) => this.hostileTo(o.p))) return { fail: '控制點已經不能蓋建築' };
+        const ms = new Set([...(data.guards || []).map((h) => h.p), ...Object.keys(data.bld || {})]);
+        if (!ms.has(me) && ms.size >= CP_MAX_PLAYERS) return { fail: `這個控制點已經有 ${CP_MAX_PLAYERS} 位玩家` };
+        data.bld = data.bld || {};
+        const cur = data.bld[me]?.b || {};
+        if ((cur[key] || 0) + 1 !== c.lv) return { fail: '等級已經改變，請再試一次' };
+        data.bld[me] = { n: name, b: { ...cur, [key]: c.lv } };
+        return { data };
+      }, { lat: cp.lat, lon: cp.lon });
+      if (!r.ok) {
+        grantCost(g.state, c.cost);
+        return r;
+      }
+      g.log(`🏗️ 在控制點 #${cp.no} ${c.lv === 1 ? '建造' : '升級'}${DEFENSES[key].name}（Lv${c.lv}）`, 'success');
+      g.changed?.();
+      return { ok: true, msg: `${DEFENSES[key].name}${c.lv === 1 ? '建造完成' : `升級到 Lv${c.lv}`}` };
+    } finally {
+      this.busy.delete(`b:${id}`);
+    }
+  }
+
+  /**
+   * v17：進攻方先攻打路障（期間機槍塔、瞭望台持續射擊），打破後才和駐防隊交戰。
+   * attackers：有 maxHp、atk 的物件（會被改寫 hp）。回傳仍存活的進攻者與攻牆資訊。
+   */
+  assault(id, attackers, at = Date.now()) {
+    const df = this.defenseOf(id, at);
+    if (!df.wall && !df.dps) return { alive: attackers, killed: 0, breached: true, sec: 0, df };
+    const as = this.game.combat.wallAssault(attackers, df.wall, df.dps);
+    return { ...as, df };
   }
 
   /**
@@ -334,8 +493,8 @@ export class ControlPointSystem {
   }
 
   canGuard(id, n = 1) {
-    if (!this.game.shelter.hasShelter()) return { ok: false, reason: '請先建立避難所' };
-    if (this.statusOf(id) !== 'mine') return { ok: false, reason: '只能駐防自己或好友佔領的控制點' };
+    const j = this.joinCheck(id);
+    if (!j.ok) return j;
     if (this.myGuards(id) + n > CP_GUARD_MAX) return { ok: false, reason: `每名玩家每個控制點最多駐防 ${CP_GUARD_MAX} 人` };
     return { ok: true };
   }
@@ -348,6 +507,7 @@ export class ControlPointSystem {
     if (!st.ok) return st;
     const exp = st.exp;
     exp.cpId = id;
+    exp.cpKind = CP_KIND;
     exp.searchMs = GUARD_STAY_MS;
     exp.endAt = exp.startAt + exp.travelMs * 2 + exp.searchMs;
     // v15.7：出發時就寫進共用資料（含抵達時間）：抵達時玩家離線，交戰時也算得到這支駐防隊
@@ -367,7 +527,8 @@ export class ControlPointSystem {
       if (this.guardFought(e, ft)) return `🏴 控制點 #${no} 被${who}（${ft.atk} 人）攻下：守軍 ${ft.total} 人全數被擊倒，駐防隊撤回`;
       return `🏴 駐防隊還沒抵達，控制點 #${no} 已被${who}（${ft.atk} 人）攻下，駐防隊撤回`;
     }
-    return `🛡️ 控制點 #${no}已不是你或好友的控制點，駐防隊撤回`;
+    if (e.cpKind !== CP_KIND) return `🛡️ 控制點改版（改為 4 個控制點），駐防隊撤回避難所`;
+    return `🛡️ 控制點 #${no}的佔領者已經是你的敵對玩家或已易主，駐防隊撤回`;
   }
 
   /** v15.10：戰鬥明細寫進共用資料前縮小（逐筆紀錄過多時保留頭尾） */
@@ -395,7 +556,7 @@ export class ControlPointSystem {
     const g = this.game;
     // 控制點不再是自己或好友的（例如共同佔領的好友解除關係、被打下）：駐防隊撤回
     // （連線時要等讀到共用的控制點資料，否則剛開遊戲時所有控制點看起來都是中立）
-    if (this.ready()) g.state.expeditions.filter((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated && e.cpId && this.statusOf(e.cpId) !== 'mine').forEach((e) => {
+    if (this.ready()) g.state.expeditions.filter((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated && e.cpId && (e.cpKind !== CP_KIND || !this.canJoin(e.cpId))).forEach((e) => {
       if (!g.exploration.canRecall(e, now)) return;
       const r = g.exploration.recall(e.id, now);
       if (!r.ok) return;
@@ -415,7 +576,7 @@ export class ControlPointSystem {
   /** 已抵達的駐防隊（寫入共用資料，讓攻打方能讀到守軍） */
   async syncGuards(now = Date.now()) {
     const g = this.game;
-    for (const exp of g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId)) {
+    for (const exp of g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId && e.cpKind === CP_KIND)) {
       const arrived = now >= exp.startAt + exp.travelMs;
       const d = this.data(exp.cpId);
       const listed = (d?.guards || []).some((x) => x.e === exp.id);
@@ -453,7 +614,9 @@ export class ControlPointSystem {
       const arr = exp.startAt + (exp.travelMs || 0);
       const r = await g.shared.update(CP_KIND, exp.cpId, (x) => {
         const data = x || { owners: [], guards: [] };
-        if (!(data.owners || []).some((o) => this.isAlly(o.p))) return { fail: '控制點已經不是你或好友的' };
+        if (data.faction || !(data.owners || []).length || data.owners.some((o) => this.hostileTo(o.p))) return { fail: '控制點已經不能駐防' };
+        const ms = new Set([...(data.guards || []).map((h) => h.p), ...Object.keys(data.bld || {})]);
+        if (!ms.has(me) && ms.size >= CP_MAX_PLAYERS) return { fail: `這個控制點已經有 ${CP_MAX_PLAYERS} 位玩家` };
         data.guards = [...(data.guards || []).filter((h) => h.e !== exp.id), { p: me, n: name, e: exp.id, units, at: now, arr }];
         return { data };
       }, { lat: cpById(exp.cpId).lat, lon: cpById(exp.cpId).lon });
@@ -498,12 +661,22 @@ export class ControlPointSystem {
     if (!c.ok) return { victory: false, events: [`🚩 抵達時控制點 #${cp.no} ${c.reason}`] };
     const foes = this.defenders(id, at);
     const before = foes.length;
-    const result = g.combat.simulate(members, foes, { title: `🚩 攻打控制點 #${cp.no}`, capture: 60 });
-    g.combat.applyOutcome(members, result, at, { attackXp: RALLY_XP });
+    // v17：先攻打路障（防禦建築射擊），被擊倒的隊員重傷
+    const att = members.map((m) => ({ sv: m, maxHp: Math.max(1, g.survivors.hpOf(m)), atk: g.survivors.stats(m).atk }));
+    const as = this.assault(id, att, at);
+    const wallEvents = as.df.wall || as.df.dps ? [`🧱 攻打路障 ${as.sec} 秒（耐久 ${as.df.wall.toLocaleString()}、防禦火力每秒 ${as.df.dps.toLocaleString()}）${att.length - as.alive.length ? `，${att.length - as.alive.length} 名隊員被擊倒` : ''}${as.breached ? '・路障被打破' : '・沒能打破路障'}`] : [];
+    att.forEach((a) => {
+      if (!as.alive.includes(a)) g.survivors.battleDown(a.sv, '攻打控制點時被防禦建築擊倒', at);
+      else if (as.df.wall || as.df.dps) g.survivors.setHp(a.sv, a.hp);
+    });
+    const fighters = as.breached ? as.alive.map((a) => a.sv) : [];
+    const result = fighters.length ? g.combat.simulate(fighters, foes, { title: `🚩 攻打控制點 #${cp.no}`, capture: 60 })
+      : { victory: false, foes: foes.map((f) => ({ id: f.id, ally: f.ally, down: false, hp: f.hp })), team: [], kills: [], xp: 0 };
+    if (fighters.length) g.combat.applyOutcome(fighters, result, at, { attackXp: RALLY_XP });
     const me = this.myId();
     const name = g.state.player.name || '倖存者';
     const killed = result.foes.filter((f) => f.down).length;
-    const events = [`⚔️ 控制點 #${cp.no}：守軍 ${before} 人，擊倒 ${killed} 人`];
+    const events = [...wallEvents, ...(fighters.length ? [`⚔️ 控制點 #${cp.no}：守軍 ${before} 人，擊倒 ${killed} 人`] : [])];
     if (result.winBonus?.length) events.push(`🏆 勝利經驗：${result.winBonus.join('、')}`);
     // v15.8：玩家攻打有人佔領的控制點也留下交戰紀錄，佔領者與駐防者會收到戰報、駐防隊報告寫出原因
     const fightOf = (x, win) => {
@@ -520,7 +693,7 @@ export class ControlPointSystem {
     };
     if (result.victory) {
       const r = await g.shared.update(CP_KIND, id, (x) => ({
-        data: { ...(x || {}), owners: [{ p: me, n: name }], faction: null, guards: [], lost: cp.garrison.count, lostAt: at, takenAt: at, fight: fightOf(x, true) },
+        data: { ...(x || {}), owners: [{ p: me, n: name }], faction: null, guards: [], bld: {}, lost: CP_GARRISON.neutral[cp.side], lostAt: at, takenAt: at, fight: fightOf(x, true) },
       }), { lat: cp.lat, lon: cp.lon });
       events.push(r.ok ? `🏆 佔領控制點 #${cp.no}！這個區域的建築現在可以探索了` : `⚠️ 佔領失敗：${r.reason}`);
       if (r.ok) g.log(`🚩 佔領控制點 #${cp.no}`, 'success');
@@ -532,7 +705,7 @@ export class ControlPointSystem {
       const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
       if (data.owners?.length && !data.faction) data.fight = fightOf(data, false);
       if (data.owners?.length && !data.faction) data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
-      else { data.lost = Math.min(cp.garrison.count, (cp.garrison.count - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
+      else { const full = this.garrisonFull(id); data.lost = Math.min(full, (full - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
       return { data };
     }, { lat: cp.lat, lon: cp.lon });
     events.push(`💀 沒能打下控制點 #${cp.no}`);
@@ -575,18 +748,24 @@ export class ControlPointSystem {
 
   /** 收益內容（食物、木材、燃料＋隨機零件：階級越高機率越低、數量越少） */
   rollIncome(cp, rnd = Math.random) {
-    const inc = CP_INCOME[cp.zone] || CP_INCOME[2];
-    const out = { food: inc.food, wood: inc.wood, fuel: inc.fuel };
+    const inc = CP_INCOME[cp.zone] || CP_INCOME[5];
+    const M = CP_INCOME_MUL;
+    const out = { food: inc.food * M, wood: inc.wood * M, fuel: inc.fuel * M };
     const bal = balanceMultipliers(baseSupplyWeight);
+    // v17：零件（每種數量 ×6）＋布料（種類約零件的一半）
+    const roll = (cat, kinds) => {
+      for (let i = 0; i < kinds; i += 1) {
+        const tier = 1 + Number(weightedPick(Object.fromEntries(inc.tiers.map((w, k) => [k, w]))));
+        const keys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === cat && SUPPLIES[k].tier === tier && SUPPLIES[k].tag !== 'ammo');
+        if (!keys.length) continue;
+        const k = weightedPick(Object.fromEntries(keys.map((x) => [x, baseSupplyWeight(x) * (bal[x] ?? 1)])));
+        const [a, b] = CP_PART_QTY[tier];
+        out[k] = (out[k] || 0) + randInt(a, b) * M;
+      }
+    };
     const kinds = randInt(inc.parts[0], inc.parts[1]);
-    for (let i = 0; i < kinds; i += 1) {
-      const tier = 1 + Number(weightedPick(Object.fromEntries(inc.tiers.map((w, k) => [k, w]))));
-      const keys = SUPPLY_KEYS.filter((k) => SUPPLIES[k].cat === 'part' && SUPPLIES[k].tier === tier && SUPPLIES[k].tag !== 'ammo');
-      if (!keys.length) continue;
-      const k = weightedPick(Object.fromEntries(keys.map((x) => [x, baseSupplyWeight(x) * (bal[x] ?? 1)])));
-      const [a, b] = CP_PART_QTY[tier];
-      out[k] = (out[k] || 0) + randInt(a, b);
-    }
+    roll('part', kinds);
+    roll('fabric', Math.ceil(kinds / 2));
     void rnd;
     return out;
   }
@@ -621,7 +800,7 @@ export class ControlPointSystem {
       const guard = (d.guards || []).some((h) => h.p === me);
       const got = g.grant(this.rollIncome(cp));
       Object.entries(got).forEach(([k, v]) => { if (v > 0) total[k] = (total[k] || 0) + v; });
-      return { id: cp.id, no: cp.no, zone: ZONES[cp.zone]?.name || '', role: own && guard ? '佔領・駐防' : own ? '佔領' : '駐防', goods: got, text: goodsText(got) };
+      return { id: cp.id, no: cp.no, zone: cp.name, role: own && guard ? '佔領・駐防' : own ? '佔領' : '駐防', goods: got, text: goodsText(got) };
     });
     if (!list.length) return null;
     const res = { list, total, text: goodsText(total) };
@@ -684,14 +863,33 @@ export class ControlPointSystem {
     const me = this.myId();
     for (const cp of CONTROL_POINTS) {
       const own = this.owners(cp.id);
-      if (!own.some((o) => o.p === me) || own.length < 2) continue;
-      if (!own.some((o) => o.p !== me && g.territory?.relation?.(o.p) === 'hostile')) continue;
-      if (this.busy.has(`h:${cp.id}`)) continue;
-      this.busy.add(`h:${cp.id}`);
+      const d = this.data(cp.id);
+      if (!d || d.faction) continue;
+      const iOwn = own.some((o) => o.p === me);
+      // 共同擁有者變成敵對：控制點回到中立
+      if (iOwn && own.length >= 2 && own.some((o) => o.p !== me && this.hostileTo(o.p))) {
+        if (this.busy.has(`h:${cp.id}`)) continue;
+        this.busy.add(`h:${cp.id}`);
+        // eslint-disable-next-line no-await-in-loop
+        const r = await g.shared.update(CP_KIND, cp.id, (x) => ({ data: { ...(x || {}), owners: [], guards: [], bld: {}, faction: null, lost: CP_GARRISON.neutral[cp.side], lostAt: now } }), { lat: cp.lat, lon: cp.lon });
+        this.busy.delete(`h:${cp.id}`);
+        if (r.ok) g.log(`🚩 控制點 #${cp.no} 的共同佔領者變成敵對，控制點回到中立`, 'danger');
+        continue;
+      }
+      // v17：和佔領者敵對的玩家：拆除他的防禦建築、遣返駐防隊（佔領者或該玩家任一方處理）
+      const bad = iOwn ? this.members(cp.id).filter((p) => p !== me && !own.some((o) => o.p === p) && this.hostileTo(p))
+        : (own.some((o) => this.hostileTo(o.p)) && this.members(cp.id).includes(me) ? [me] : []);
+      if (!bad.length || this.busy.has(`hb:${cp.id}`)) continue;
+      this.busy.add(`hb:${cp.id}`);
       // eslint-disable-next-line no-await-in-loop
-      const r = await g.shared.update(CP_KIND, cp.id, (x) => ({ data: { ...(x || {}), owners: [], guards: [], faction: null, lost: cp.garrison.count, lostAt: now } }), { lat: cp.lat, lon: cp.lon });
-      this.busy.delete(`h:${cp.id}`);
-      if (r.ok) g.log(`🚩 控制點 #${cp.no} 的共同佔領者變成敵對，控制點回到中立`, 'danger');
+      const r = await g.shared.update(CP_KIND, cp.id, (x) => {
+        if (!x) return { fail: 'none' };
+        x.guards = (x.guards || []).filter((h) => !bad.includes(h.p));
+        x.bld = Object.fromEntries(Object.entries(x.bld || {}).filter(([p]) => !bad.includes(p)));
+        return { data: x };
+      }, { lat: cp.lat, lon: cp.lon });
+      this.busy.delete(`hb:${cp.id}`);
+      if (r.ok) g.log(iOwn ? `🚩 控制點 #${cp.no}：敵對玩家的防禦建築已拆除、駐防隊遣返` : `🚩 你和控制點 #${cp.no} 的佔領者成為敵對：你的防禦建築已拆除、駐防隊撤回`, 'danger');
     }
   }
 
@@ -754,18 +952,18 @@ export class ControlPointSystem {
     return factionHq(f);
   }
 
-  /** 進攻部隊：目標控制點守軍規模 ×1.2、同等級的掠奪者 */
+  /** v17 進攻部隊：左側 30 萬、右側 60 萬 × 勢力控制點數加成（最多 ×1.4） */
   attackForce(f, id) {
     const cp = cpById(id);
-    const cb = this.game.combat;
-    const n = Math.round(cp.garrison.count * 1.2);
+    const n = CP_GARRISON.attackN;
+    const each = (CP_POWER.attack[cp.side] * this.forceScale(f)) / n;
+    const lv = CP_LEVEL[cp.side];
     return Array.from({ length: n }, (_, i) => {
-      const e = cb.createEnemy(i === 0 ? 'raiderChief' : 'raider', cp.garrison.level);
-      const k = CP_GARRISON_MUL * (CP_ZONE_MUL[cp.zone] ?? 1) * (cp.side === 'player' ? CP_PLAYER_SIDE_MUL : 1) * this.forceScale(f);
+      const e = this.scaledEnemy(i === 0 ? 'raiderChief' : 'raider', lv, each);
       return {
         id: `fx:${f}:${i}`, ally: { player: `npc:${f}`, i }, name: `${FACTIONS[f].name}${e.name}`,
-        maxHp: Math.round(e.maxHp * k), hp: Math.round(e.maxHp * k), atk: Math.round(e.atk * k), def: e.def || 0,
-        crit: e.crit || 0.05, critDmg: e.critDmg || 1.5, dodge: e.dodge || 0.02, atkSpeed: e.atkSpeed || 1, level: cp.garrison.level, skills: {}, lifeSteal: 0,
+        maxHp: e.maxHp, hp: e.maxHp, atk: e.atk, def: e.def || 0,
+        crit: e.crit || 0.05, critDmg: e.critDmg || 1.5, dodge: e.dodge || 0.02, atkSpeed: e.atkSpeed || 1, level: lv, skills: {}, lifeSteal: 0,
       };
     });
   }
@@ -956,16 +1154,20 @@ export class ControlPointSystem {
     // v16.1：部隊抵達時控制點剛被別人打下（保護期內）：撲空返回
     if (this.shielded(id, at)) return { win: false, ok: false, shielded: true };
     const foes = this.defenders(id, at);
-    const attackers = this.attackForce(f, id);
-    const r = g.combat.simulate([], foes, { allies: attackers, record: false, capture: 60, title: `🏴 「${FACTIONS[f].name}」進攻控制點 #${cp.no}` });
-    const win = !!r.victory || !foes.length;
+    const attackers0 = this.attackForce(f, id);
+    // v17：先攻打玩家的路障（防禦建築射擊），打破後才和駐防隊交戰
+    const as = this.assault(id, attackers0, at);
+    const attackers = as.breached ? as.alive : [];
+    const r = attackers.length ? g.combat.simulate([], foes, { allies: attackers, record: false, capture: 60, title: `🏴 「${FACTIONS[f].name}」進攻控制點 #${cp.no}` })
+      : { victory: false, foes: foes.map((x) => ({ id: x.id, ally: x.ally, down: false })), team: attackers0.map((u) => ({ id: u.id, down: true })) };
+    const win = attackers.length > 0 && (!!r.victory || !foes.length);
     const killed = r.foes.filter((x) => x.down).length;
     const downIds = new Set(r.foes.filter((x) => x.down).map((x) => x.ally?.player).filter(Boolean));
     const res = await g.shared.update(CP_KIND, id, (x) => {
       const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
       // v15.6：交戰結果記在共用資料，佔領者與駐防者（不在線也一樣）之後都會收到戰報
       const fight = {
-        f, at, win, lost: killed, total: foes.length, atk: attackers.length, atkDown: (r.team || []).filter((u) => u.down).length,
+        f, at, win, lost: killed, total: foes.length, atk: attackers0.length, ...(as.df.wall || as.df.dps ? { wall: { sec: as.sec, killed: attackers0.length - (as.breached ? as.alive.length : 0), breached: !!as.breached } } : {}), atkDown: (r.team || []).filter((u) => u.down).length,
         owners: (data.owners || []).map((o) => o.p), guards: [...new Set((data.guards || []).filter((h) => !(h.arr > at)).map((h) => h.p))],
         down: [...downIds],
         // v15.7：倒下的駐防隊員（駐防隊 id:第幾位），沒倒下的人防守成功時拿經驗
@@ -976,11 +1178,13 @@ export class ControlPointSystem {
       };
       if (win) {
         // 打下後留守：守軍約為進攻部隊的一半（之後每小時補回）
-        return { data: { owners: [], guards: [], faction: f, lost: Math.ceil(cp.garrison.count / 2), lostAt: at, takenAt: at, by: f, fight } };
+        // v17：打下後留守 70 萬起（滿編 90 萬，每 10 分鐘補 1 人）
+        const full = CP_GARRISON.npc;
+        return { data: { owners: [], guards: [], bld: {}, faction: f, lost: full - Math.round((CP_POWER.npc.start / CP_POWER.npc.full) * full), lostAt: at, takenAt: at, by: f, fight } };
       }
       data.fight = fight;
       if (data.owners?.length && !data.faction) data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
-      else { data.lost = Math.min(cp.garrison.count, (cp.garrison.count - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
+      else { const full = this.garrisonFull(id); data.lost = Math.min(full, (full - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
       return { data };
     }, { lat: cp.lat, lon: cp.lon });
     if (res.ok && win) {
@@ -1112,7 +1316,7 @@ export class ControlPointSystem {
     const own = this.owners(id);
     const guards = this.guardsAt(id, now);
     const fac = this.factionOf(id);
-    const label = { mine: '你與好友可探索', hostile: '敵對玩家佔領・不可探索', other: '其他玩家佔領・不可探索', faction: `${FACTIONS[fac]?.name || ''}勢力佔領・不可探索`, neutral: '中立（感染者佔據）・不可探索' }[s];
+    const label = { mine: '你與好友佔領・可探索', hostile: '敵對玩家佔領・不可探索', other: '其他玩家佔領・可探索', faction: `${FACTIONS[fac]?.name || ''}勢力佔領・不可探索`, neutral: '中立（感染者佔據）・可探索' }[s];
     return {
       cp, status: s, label, owners: own, guards, garrison: s === 'neutral' || s === 'faction' ? this.garrisonCount(id, now) : guards.reduce((a, h) => a + (h.units || []).length, 0),
       nextIncome: formatDuration(Math.max(0, this.incomeTime(now) + (now >= this.incomeTime(now) ? TimeSystem.dayMs(now) : 0) - now)),

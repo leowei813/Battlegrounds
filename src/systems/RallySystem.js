@@ -5,7 +5,7 @@ import { haversine, formatDuration } from '../utils/math.js';
 import { NPC_REWARD_MUL, RALLY_SHARE_FLOOR, RALLY_XP } from '../config/npcs.js';
 import { xpToNext } from '../config/survivors.js';
 import { AUTO_HOME_LABEL } from './AutoHomeSystem.js';
-import { cpById, CP_KIND } from '../config/controlPoints.js';
+import { cpById, CP_KIND, CP_GARRISON } from '../config/controlPoints.js';
 
 /** 集結：出發倒數可選的分鐘數 */
 export const RALLY_DELAYS = [5, 10, 15, 20];
@@ -749,23 +749,31 @@ export class RallySystem {
       }
       const foes = g.cp.defenders(cp.id, now);
       const before = foes.length;
-      result = g.combat.simulate([], foes, { allies: units, record: false, capture: RALLY_LOG, title: `🚩 集結攻打控制點 #${cp.no}` });
+      // v17：先攻打玩家的路障（防禦建築射擊），打破後才和駐防隊交戰
+      const attackers = units.map((u) => ({ u, maxHp: u.maxHp, atk: u.atk }));
+      const as = g.cp.assault(cp.id, attackers, now);
+      const fallen = new Set(attackers.filter((a) => !as.alive.includes(a)).map((a) => a.u.id));
+      const fighters = as.breached ? units.filter((u) => !fallen.has(u.id)).map((u) => ({ ...u, hp: Math.min(u.hp, attackers.find((a) => a.u === u)?.hp ?? u.hp) })) : [];
+      result = fighters.length ? g.combat.simulate([], foes, { allies: fighters, record: false, capture: RALLY_LOG, title: `🚩 集結攻打控制點 #${cp.no}` })
+        : { victory: false, team: [], foes: foes.map((f) => ({ id: f.id, down: false })), xp: 0 };
       if (result.entry) res.battle = result.entry;
       units.forEach((u) => {
         const r = result.team.find((x) => x.id === u.id);
-        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: Math.round(r?.hp ?? 0), down: !!r?.down, dealt: Math.round(r?.dealt || 0), kills: r?.kills || 0, maxHp: u.maxHp, meds: r?.medsUsed || 0 });
+        res.teams[u.ally.player].units.push({ i: u.ally.i, hp: fallen.has(u.id) ? 0 : Math.round(r?.hp ?? u.hp), down: fallen.has(u.id) || !!r?.down, dealt: Math.round(r?.dealt || 0), kills: r?.kills || 0, maxHp: u.maxHp, meds: r?.medsUsed || 0, ...(fallen.has(u.id) ? { wall: true } : {}) });
       });
       const killed = result.foes.filter((f) => f.down).length;
-      res.detail = [`⚔️ 控制點 #${cp.no}：守軍 ${before} 人，擊倒 ${killed} 人，我方 ${units.length} 人中倒下 ${result.team.filter((x) => x.down).length} 人`, ...teamLines(teams, res)];
+      res.detail = [
+        ...(as.df.wall || as.df.dps ? [`🧱 攻打路障 ${as.sec} 秒（耐久 ${as.df.wall.toLocaleString()}、防禦火力每秒 ${as.df.dps.toLocaleString()}）${fallen.size ? `，${fallen.size} 名隊員被擊倒` : ''}${as.breached ? '・路障被打破' : '・沒能打破路障'}`] : []),
+        `⚔️ 控制點 #${cp.no}：守軍 ${before} 人，擊倒 ${killed} 人，我方 ${units.length} 人中倒下 ${fallen.size + result.team.filter((x) => x.down).length} 人`, ...teamLines(teams, res)];
       res.victory = !!result.victory;
       if (res.victory) {
         const owners = teams.map((t) => ({ p: t.player, n: t.name }));
-        await g.shared.update(CP_KIND, cp.id, (x) => ({ data: { ...(x || {}), owners, faction: null, guards: [], lost: cp.garrison.count, lostAt: now, takenAt: now } }), { lat: cp.lat, lon: cp.lon });
+        await g.shared.update(CP_KIND, cp.id, (x) => ({ data: { ...(x || {}), owners, faction: null, guards: [], bld: {}, lost: CP_GARRISON.neutral[cp.side], lostAt: now, takenAt: now } }), { lat: cp.lat, lon: cp.lon });
         res.summary = `🏆 集結佔領控制點 #${cp.no}（${teams.length} 位玩家共同擁有）`;
       } else {
         await g.shared.update(CP_KIND, cp.id, (x) => {
           const data = x || { owners: [], guards: [] };
-          if (!data.owners?.length || data.faction) { data.lost = Math.min(cp.garrison.count, (cp.garrison.count - g.cp.garrisonCount(cp.id, now)) + killed); data.lostAt = now; }
+          if (!data.owners?.length || data.faction) { const full = g.cp.garrisonFull(cp.id); data.lost = Math.min(full, (full - g.cp.garrisonCount(cp.id, now)) + killed); data.lostAt = now; }
           return { data };
         }, { lat: cp.lat, lon: cp.lon });
         res.summary = `💀 集結攻打控制點 #${cp.no} 失敗`;

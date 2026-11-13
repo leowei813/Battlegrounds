@@ -6322,7 +6322,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(r.ok && Z.inPlayerSafe(nb.lat, nb.lon) && nb.size === 'huge' && nb.facilities.farm.level === 14 && gf.state.resources.food === 777, '免費重選：整座搬到安全區，規模、設施、資源全部保留');
   assert(!gf.state.freeRelocate && !gf.shelter.canFreeMove(safe[2]).ok, '免費重選只能用一次');
   const { GUIDE_VERSION } = await import('../src/ui/GuideDialog.js');
-  assert(GUIDE_VERSION === 15, '遊戲說明版本 15');
+  assert(GUIDE_VERSION === 17, 'v17：遊戲說明版本 17（改版後重新顯示）');
   // v15：地圖重劃後再給一次免費重選（沒用掉的不重複增加）；不在安全區的避難所自動搬進安全區
   const used = SaveManager.migrate({ ...JSON.parse(JSON.stringify(gf.state)), version: 34 });
   assert(!used.freeRelocate && used.guideSeen === 0, 'v15.10.1：免費重選已全部取消');
@@ -6341,9 +6341,20 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
   const CPC = await import('../src/config/controlPoints.js');
   const Z = await import('../src/config/zones.js');
-  assert(CPC.CONTROL_POINTS.length === 21, '控制點共 21 個');
-  assert(CPC.CONTROL_POINTS.every((c) => c.zone >= 2), '控制點只在警戒區～深淵區');
-  assert(CPC.cpNeighbors('cp1').length > 0 && CPC.cpNeighbors('cp13').length >= 3, '控制點有相鄰關係');
+  assert(CPC.CONTROL_POINTS.length === 4, 'v17：控制點共 4 個（左上、左下、右上、右下）');
+  assert(CPC.CP_START.join() === 'cp1,cp2' && CPC.CONTROL_POINTS.every((c) => c.name), '左側兩個是起始可攻打的控制點');
+  assert(CPC.cpNeighbors('cp1').length >= 2 && CPC.cpNeighbors('cp3').includes('cp1'), '控制點有相鄰關係');
+  {
+    // v17：除了安全區與勢力領地，其他地方（含一般區）都屬於某個控制點
+    let outside = 0; let n = 0;
+    const W = (await import('../src/config/world.js')).WORLD_BOUNDS;
+    for (let i = 1; i < 40; i += 1) for (let j = 1; j < 40; j += 1) {
+      const lat = W.s + ((W.n - W.s) * i) / 40; const lon = W.w + ((W.e - W.w) * j) / 40;
+      if (Z.inNpcHome(lat, lon) || Z.zoneIndexAt(lat, lon) === 0) continue;
+      n += 1; if (!CPC.cpAt(lat, lon)) outside += 1;
+    }
+    assert(n > 0 && outside === 0, 'v17：一般區以東（勢力領地以西）都屬於控制點');
+  }
   const store = new MemoryObjects();
   const mk = (name) => {
     const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.03, lon: 121.56 });
@@ -6361,11 +6372,16 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   B.state.relations.players = { A: { status: 'friend' } };
   const cp = CPC.CONTROL_POINTS[0];
   const inCp = A.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === cp.id);
-  const free = A.state.map.pois.find((p) => !CPC.cpAt(p.lat, p.lon) && Z.zoneSide(p.lat, p.lon) === 'player' && Z.zoneIndexAt(p.lat, p.lon) === 1);
+  const free = A.state.map.pois.find((p) => !CPC.cpAt(p.lat, p.lon) && Z.inPlayerSafe(p.lat, p.lon));
   const npcHome = { lat: CPC.factionHq('black').lat, lon: CPC.factionHq('black').lon };
-  assert(!A.cp.canExplore(inCp).ok && A.cp.canExplore(free).ok && !A.cp.canExplore(npcHome).ok, '中立控制點區域、勢力領地不能探索；左側一般區可以');
+  assert(A.cp.canExplore(inCp).ok && A.cp.canExplore(free).ok && !A.cp.canExplore(npcHome).ok, 'v17：中立控制點區域與安全區可以探索；勢力領地不能');
   const lead = A.survivors.leader();
-  assert(!A.exploration.start(inCp.id, [lead.id], 5).ok, '派遣探索未佔領的控制點區域會被擋下');
+  {
+    const ex0 = A.exploration.start(inCp.id, [lead.id], 5);
+    assert(ex0.ok, `v17：可以派遣探索中立控制點區域（${ex0.reason || ''}）`);
+    A.state.expeditions = A.state.expeditions.filter((e) => e !== ex0.exp);
+    lead.status = 'idle';
+  }
   assert(A.cp.garrisonCount(cp.id) === cp.garrison.count && A.cp.npcGarrison(cp.id).length === cp.garrison.count, `中立控制點有感染者守軍（${cp.garrison.count} 人）`);
   // 攻打（測試用：必勝）
   const sim = A.combat.simulate.bind(A.combat);
@@ -6378,8 +6394,10 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   await A.cp.resolveAttacks(at.exp.startAt + at.exp.travelMs + at.exp.searchMs + 1);
   A.combat.simulate = sim;
   await B.shared.poll(); await C.shared.poll();
-  assert(A.cp.statusOf(cp.id) === 'mine' && B.cp.statusOf(cp.id) === 'mine' && C.cp.statusOf(cp.id) === 'other', '打下後：自己與好友是可探索，其他玩家不行');
-  assert(A.cp.canExplore(inCp).ok && B.cp.canExplore(inCp).ok && !C.cp.canExplore(inCp).ok, '佔領後該區域：佔領者與好友可以探索，其他玩家不行');
+  assert(A.cp.statusOf(cp.id) === 'mine' && B.cp.statusOf(cp.id) === 'mine' && C.cp.statusOf(cp.id) === 'other', '打下後：自己與好友是「我方」，其他玩家是「其他」');
+  assert(A.cp.canExplore(inCp).ok && B.cp.canExplore(inCp).ok && C.cp.canExplore(inCp).ok, 'v17：佔領後該區域：佔領者、好友與非敵對的玩家都可以探索');
+  C.state.relations.players = { A: { status: 'hostile' } };
+  assert(!C.cp.canExplore(inCp).ok && !C.cp.canEnter(cp.id), 'v17：和佔領者敵對的玩家不能探索、也不能穿越');
   {
     // 自動探索佇列（快速佇列／加入佇列）不會選到不能探索的控制點區域
     const ZN = await import('../src/config/zones.js');
@@ -6395,20 +6413,21 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     C.exploration.recall(st0.exp.id);
     C.state.expeditions = [];
   }
+  C.state.relations.players = { A: { status: 'neutral' } };
   assert(!C.cp.canAttack(cp.id).ok, '非敵對的其他玩家不能攻打');
   C.state.relations.players = { A: { status: 'hostile' } };
   assert(C.cp.canAttack(cp.id).ok, '敵對玩家可以攻打');
-  assert(CPC.CP_START.includes('cp2') && A.cp.canAttack('cp2').ok, '最西側一排的控制點隨時可以進攻');
-  assert(A.cp.canAttack('cp5').ok && B.cp.canAttack('cp5').ok, '和自己或好友佔領的控制點相鄰才能進攻（好友的也算）');
-  const far = A.cp.canAttack('cp9');
-  assert(!far.ok && far.locked && /#5/.test(far.reason), '不相鄰的控制點不能進攻，並列出相鄰的控制點');
-  assert(!C.cp.canAttack('cp5').ok && !A.rally.canStart({ kind: 'cp', id: 'cp9' }).ok, '只有敵對玩家相鄰時不能進攻；不相鄰也不能發起集結');
+  assert(CPC.CP_START.includes('cp2') && A.cp.canAttack('cp2').ok, '左側兩個控制點隨時可以進攻');
+  assert(A.cp.canAttack('cp3').ok && B.cp.canAttack('cp3').ok, '和自己或好友佔領的控制點相鄰才能進攻（好友的也算）');
+  const far = A.cp.canAttack('cp4');
+  assert(!far.ok && far.locked && /#2/.test(far.reason), '不相鄰的控制點不能進攻，並列出相鄰的控制點');
+  assert(!C.cp.canAttack('cp3').ok && !A.rally.canStart({ kind: 'cp', id: 'cp4' }).ok, '只有敵對玩家相鄰時不能進攻；不相鄰也不能發起集結');
   // 好友駐防（每人最多 2 人）
   A.exploration.update(at.exp.endAt + 1, { silent: true });
   const bl = B.survivors.leader();
   const gd = B.cp.guard(cp.id, [bl.id]);
   assert(gd.ok, `佔領者的好友可以駐防（${gd.reason || ''}）`);
-  assert(!B.cp.canGuard(cp.id, 2).ok, '每名玩家每個控制點最多駐防 2 人');
+  assert(B.cp.canGuard(cp.id, 2).ok && !B.cp.canGuard(cp.id, 3).ok, 'v17：每名玩家每個控制點最多駐防 3 人');
   {
     // v15.7：出發時就寫進共用資料（含抵達時間）：抵達時玩家離線（沒有執行 syncGuards），交戰時也算得到
     await new Promise((r) => setTimeout(r, 50));
@@ -6427,7 +6446,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     B.state.research.levels.d_cpguard = 4;
     B.research.invalidate();
     const base0 = B.rally.units([bl.id])[0];
-    const gx = { id: 'gx2', kind: 'cpGuard', cpId: cp.id, poiId: `cpguard:${cp.id}`, memberIds: [bl.id], startAt: Date.now() - 100000, travelMs: 1000, searchMs: 3600000, endAt: Date.now() + 3600000, from: { lat: 25, lon: 121 } };
+    const gx = { id: 'gx2', kind: 'cpGuard', cpKind: CPC.CP_KIND, cpId: cp.id, poiId: `cpguard:${cp.id}`, memberIds: [bl.id], startAt: Date.now() - 100000, travelMs: 1000, searchMs: 3600000, endAt: Date.now() + 3600000, from: { lat: 25, lon: 121 } };
     B.state.expeditions.push(gx);
     await B.cp.syncGuards(Date.now());
     const u = (B.cp.data(cp.id)?.guards || []).find((h) => h.e === 'gx2')?.units?.[0];
@@ -6487,7 +6506,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     A.combat.simulate = sim0;
     assert(A.cp.factionOf(tgt2.id) === 'red' && B.cp.factionOf(tgt2.id) === 'red' && !A.cp.data(tgt2.id)?.march, '部隊抵達後交戰：打贏由勢力佔領控制點、行軍資料清除');
     assert(A.state.log.filter((l) => l.msg.includes(`佔領了控制點 #${tgt2.no}`)).length - logs0 === 1 && !B.state.log.some((l) => l.msg.includes(`佔領了控制點 #${tgt2.no}`)), '多位玩家同時在線：只結算一次');
-    assert(A.cp.garrisonCount(tgt2.id) < tgt2.garrison.count, '勢力打下後留守部分守軍（之後逐漸補回）');
+    assert(A.cp.garrisonCount(tgt2.id) === CPC.CP_GARRISON.npc - 4 && Math.abs(A.cp.defensePower(tgt2.id) - CPC.CP_POWER.npc.start) < CPC.CP_POWER.npc.start * 0.03, `v17：勢力打下後留守 70 萬（${A.cp.garrisonCount(tgt2.id)}/${CPC.CP_GARRISON.npc} 人・${Math.round(A.cp.defensePower(tgt2.id)).toLocaleString()}），之後補到 90 萬`);
     // 打輸：玩家的控制點維持原狀
     const snap = JSON.parse(JSON.stringify(A.cp.data(cp.id)));
     // 測試用：部隊很久以前出發，駐防隊也設成更早就抵達
@@ -6523,7 +6542,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   await B.shared.poll();
   assert(A.cp.incomeSources().length === 1 && B.cp.incomeSources().length === 1, '佔領者與駐守者都有收益');
   const inc = A.cp.rollIncome(cp);
-  assert(inc.food === CPC.CP_INCOME[cp.zone].food && Object.keys(inc).length > 3, `收益：少量資源＋隨機零件（${JSON.stringify(inc)}）`);
+  assert(inc.food === CPC.CP_INCOME[cp.zone].food * CPC.CP_INCOME_MUL && Object.keys(inc).some((k) => SUPPLIES_ALL[k]?.cat === 'fabric') && Object.keys(inc).length > 3, `收益：少量資源＋隨機零件（${JSON.stringify(inc)}）`);
   const t6 = A.cp.incomeTime(Date.now());
   // v15.7：06:00 收益直接入庫，並發出視窗用的事件（合計＋各控制點）
   const f0 = A.state.resources.food;
@@ -6581,7 +6600,10 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     B.shared.cache = cache0; B.shared.backend = be0; B.world.provider = pv0; B.shared.listedAt = la0;
     B.state.relations.players.A = { status: 'neutral' };
     B.cp.extendGuards(Date.now());
-    assert(ge.recalled && B.state.log.some((l) => /駐防隊撤回/.test(l.msg)), '和佔領者解除好友關係：駐防隊撤回');
+    assert(!ge.recalled, 'v17：和佔領者解除好友（變成中立）：仍然可以駐防');
+    B.state.relations.players.A = { status: 'hostile' };
+    B.cp.extendGuards(Date.now());
+    assert(ge.recalled && B.state.log.some((l) => /駐防隊撤回/.test(l.msg)), 'v17：和佔領者變成敵對：駐防隊撤回');
     assert(!(ge.travelEvents || []).some((t) => /收到召回命令/.test(t)) && ge.travelEvents.some((t) => /駐防隊撤回/.test(t)), '強制撤回的報告寫原因，不會寫「收到召回命令」');
     B.state.relations.players.A = rel0;
   }
@@ -6604,11 +6626,13 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   gr.shared.backend = new MemoryObjects();
   gr.world = { others: [], myId: 'R', identity: () => ({ id: 'R', token: 't' }) };
   setHour(gr, 10);
-  // 第二排的控制點 X：只佔領 X（和起始排不相通）→ 沒有路；再佔領相鄰的起始排控制點 Y → 繞路經過 Y
-  const X = CPC.CONTROL_POINTS.find((c) => !CPC.CP_START.includes(c.id) && CPC.cpNeighbors(c.id).some((n) => CPC.CP_START.includes(n)));
-  const Y = CPC.cpNeighbors(X.id).find((n) => CPC.CP_START.includes(n));
+  // v17：右側控制點 X 是自己的、左側兩個都被勢力佔領 → 沒有路；左側其中一個 Y 改為自己的 → 繞路經過 Y
+  const X = CPC.cpById('cp3');
+  const Y = 'cp1';
   const own = (id) => gr.shared.update(CPC.CP_KIND, id, () => ({ data: { owners: [{ p: 'R', n: 'R' }], guards: [], faction: null } }));
+  const block = (id) => gr.shared.update(CPC.CP_KIND, id, () => ({ data: { owners: [], guards: [], faction: 'red' } }));
   await own(X.id);
+  await block('cp1'); await block('cp2');
   const target = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === X.id && !gr.npcs.list.some((n) => haversine(n.lat, n.lon, p.lat, p.lon) < 200));
   const lead = gr.survivors.leader();
   const r1 = gr.exploration.start(target.id, [lead.id], 5);
@@ -6628,7 +6652,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
       const lat = path[i - 1].lat + ((path[i].lat - path[i - 1].lat) * k) / 20;
       const lon = path[i - 1].lon + ((path[i].lon - path[i - 1].lon) * k) / 20;
       const c = CPC.cpAt(lat, lon);
-      if (Z.inNpcHome(lat, lon) || (c && gr.cp.statusOf(c.id) !== 'mine')) bad.push(c?.id || 'home');
+      if (Z.inNpcHome(lat, lon) || (c && !gr.cp.canEnter(c.id))) bad.push(c?.id || 'home');
     }
   }
   assert(path.length >= 2 && bad.length <= 1, `探索路線只走可探索的區域（穿過未佔領：${bad.length} 點）`);
@@ -6672,7 +6696,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   {
     const EX = await import('../src/systems/ExplorationSystem.js');
     const eastCp = CPC.CONTROL_POINTS.find((c) => CPC.FACTION_KEYS.some((f) => CPC.hqNeighbors(f).includes(c.id)));
-    const ep = gr.state.map.pois.find((p) => CPC.cpAt(p.lat, p.lon)?.id === eastCp.id);
+    const ep = gr.state.map.pois.filter((p) => CPC.cpAt(p.lat, p.lon)?.id === eastCp.id && POI_TYPES[p.type] && !gr.state.expeditions.some((e) => e.poiId === p.id || (e.queue || []).includes(p.id))).pop();
     const westP = gr.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon));
     assert(EX.hqFactionOf(ep) && !EX.hqFactionOf(westP), '找到鄰接大本營的控制點');
     // v15.8.1：移除大本營伏擊探索隊：不再派出部隊；舊版本已派出、還沒抵達的部隊取消
@@ -6758,9 +6782,16 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   gq.shelter.establish(gq.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gq.shelter.canEstablish(p).ok));
   gq.shared.backend = new MemoryObjects();
   gq.world = { others: [], myId: 'Q3', identity: () => ({ id: 'Q3', token: 't' }) };
-  const own = Object.fromEntries(CPC.FACTION_KEYS.map((f) => [f, gq.cp.factionCps(f)]));
-  assert(CPC.FACTION_KEYS.every((f) => own[f].length >= 1) && own.red.every((id) => CPC.cpById(id).side === 'npc'), `三大勢力一開始各自擁有東側的控制點（${JSON.stringify(own)}）`);
+  assert(CPC.FACTION_KEYS.every((f) => !gq.cp.factionCps(f).length), 'v17：一開始 4 個控制點都是中立（勢力沒有控制點）');
   CPC.FACTION_KEYS.forEach((f) => {
+    const t = gq.cp.pickTarget(f);
+    assert(t && CPC.hqNeighbors(f).includes(t) && CPC.cpById(t).side === 'right', `勢力「${CPC.FACTIONS[f].name}」沒有控制點時從大本營旁的右側控制點開始（${t}）`);
+  });
+  // 測試用：赤月佔右上、冥府佔右下
+  await gq.shared.update(CPC.CP_KIND, 'cp3', () => ({ data: { owners: [], guards: [], faction: 'red' } }));
+  await gq.shared.update(CPC.CP_KIND, 'cp4', () => ({ data: { owners: [], guards: [], faction: 'blue' } }));
+  const own = Object.fromEntries(CPC.FACTION_KEYS.map((f) => [f, gq.cp.factionCps(f)]));
+  ['red', 'blue'].forEach((f) => {
     const t = gq.cp.pickTarget(f);
     assert(t && own[f].some((id) => CPC.cpNeighbors(id).includes(t)) && !own[f].includes(t), `勢力「${CPC.FACTIONS[f].name}」只攻打相鄰的控制點（${t}）`);
   });
@@ -6778,10 +6809,10 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const ra = await gq.cp.npcAttack('blue', tgt);
   gq.combat.simulate = sim;
   assert(ra.win && gq.cp.factionOf(tgt) === 'blue' && gq.cp.factionCps('blue').length === before + 1, '勢力打下控制點後佔領');
-  assert(gq.cp.garrisonCount(tgt) < CPC.cpById(tgt).garrison.count && gq.cp.garrisonCount(tgt) > 0, '打下後留下一半守軍');
+  assert(gq.cp.garrisonCount(tgt) === CPC.CP_GARRISON.npc - 4, 'v17：打下後留守 70 萬（14/18 人）');
   gq.npcs.fillCells(Date.now(), { silent: true });
   const bases = gq.npcs.list.filter((n) => n.faction && !n.hq);
-  const expect = CPC.FACTION_KEYS.reduce((a, f) => a + Math.min(4, Math.floor(gq.cp.factionCps(f).length / 3)), 0);
+  const expect = CPC.FACTION_KEYS.reduce((a, f) => a + Math.min(CPC.FACTION_BASE.max, Math.floor(gq.cp.factionCps(f).length / CPC.FACTION_BASE.perCps)), 0);
   assert(bases.length === expect && bases.every((n) => n.level >= 35 && n.name.includes('・')), `NPC 據點依勢力的控制點數建立、Lv35 起（${bases.length}/${expect} 座：${bases.map((n) => n.name).join('、')}）`);
   assert(!gq.npcs.list.some((n) => n.sid && !n.faction), '新地圖不再有散布式的舊 NPC 據點');
   {
@@ -6829,32 +6860,33 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
       const setCp = (id, f) => gq.shared.cache.set(`${CPC.CP_KIND}:${id}`, { kind: CPC.CP_KIND, id, ver: 1, data: { owners: [], guards: [], faction: f } });
       const east = [...CPC.CONTROL_POINTS].sort((a, b) => b.lon - a.lon);
       CPC.CONTROL_POINTS.forEach((c) => setCp(c.id, null));
-      east.slice(0, 6).forEach((c) => setCp(c.id, 'black'));
+      east.slice(0, 2).forEach((c) => setCp(c.id, 'black'));
       const s0 = gq.npcs.factionSlot('black', 0);
       const s1 = gq.npcs.factionSlot('black', 1);
-      assert(s0 && s1 && s0.cp !== s1.cp, '6 個控制點的勢力有 2 座據點');
+      assert(s0 && s1 && s0.cp !== s1.cp, 'v17：2 個控制點的勢力有 2 座據點（每個控制點 1 座）');
       // 打下第 2 座（s1）
       gq.shared.cache.set(`npc:${s1.sid}`, { kind: 'npc', id: s1.sid, ver: 5, data: { gen: s1.gen, ident: s1.ident, dc: s1.dc + 1, destroyed: { at: Date.now(), respawnAt: Date.now() + 36 * 3600000 } } });
       assert(!gq.npcs.factionSlot('black', 1) && gq.npcs.factionSlot('black', 0)?.cp === s0.cp, '被打下的據點消失，另一座還在');
       // 勢力多拿下一個更西邊的控制點：排序改變
-      setCp(east[6].id, 'black');
+      setCp(east[2].id, 'black');
       const t0 = gq.npcs.factionSlot('black', 0);
       const t1 = gq.npcs.factionSlot('black', 1);
       const shown = [t0, t1].filter(Boolean).map((n) => n.cp);
       assert(shown.includes(s0.cp) && !shown.includes(s1.cp), `排序改變後：原本那座還在、被打下的那座不會出現（${shown.join('、')}）`);
       gq.shared.cache = saveCache;
     }
-    // v15.4：深淵區控制點守軍約與 Lv35 勢力 NPC 據點同強度
-    if (bases[0]) {
-      const lv0 = bases[0].level;
-      bases[0].level = 35;
-      // 實際強度比較沿用舊版戰力公式（v15.13 顯示戰力改為 √(輸出×耐打)，守軍強度不變）
-      const { unitPowerV1: upV1 } = await import('../src/utils/math.js');
-      const ref = gq.npcs.garrison(bases[0], { assault: true }).reduce((t, e) => t + upV1(e), 0);
-      bases[0].level = lv0;
-      const abyss = CPC.CONTROL_POINTS.find((c) => c.zone === 5);
-      const pw = gq.cp.defenders(abyss.id).reduce((t, u) => t + upV1(u), 0);
-      assert(Math.abs(pw / ref - 0.5) < 0.05, `v15.10：深淵區控制點守軍戰力約為 Lv35 NPC 據點的一半（${Math.round(pw)} / ${Math.round(ref)}）`);
+    // v17：守軍戰力：中立左 15 萬、右 40 萬；勢力滿編 90 萬
+    {
+      const { unitPower: uP } = await import('../src/utils/math.js');
+      const pw = (id) => gq.cp.npcGarrison(id).reduce((t, u) => t + uP(u), 0);
+      const sc = new Map(gq.shared.cache);
+      CPC.CONTROL_POINTS.forEach((c) => gq.shared.cache.delete(`${CPC.CP_KIND}:${c.id}`));
+      const L = pw('cp1'); const R = pw('cp3');
+      gq.shared.cache.set(`${CPC.CP_KIND}:cp3`, { kind: CPC.CP_KIND, id: 'cp3', ver: 1, data: { owners: [], guards: [], faction: 'red' } });
+      const F = pw('cp3');
+      gq.shared.cache = sc;
+      const near = (v, t) => Math.abs(v - t) < t * 0.03;
+      assert(near(L, 150000) && near(R, 400000) && near(F, 900000), `v17：守軍戰力 中立左 ${Math.round(L).toLocaleString()}・右 ${Math.round(R).toLocaleString()}・勢力滿編 ${Math.round(F).toLocaleString()}`);
     }
     // v15.3：勢力控制點內有 NPC 據點時要先打掉據點
     if (bases[0]) {
@@ -6890,7 +6922,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     }
   }
   // 沒有 NPC 據點的勢力由大本營出兵（Lv40 起、不能攻打、不探索）
-  const noBase = CPC.FACTION_KEYS.filter((f) => Math.floor(gq.cp.factionCps(f).length / 3) === 0);
+  const noBase = CPC.FACTION_KEYS.filter((f) => Math.floor(gq.cp.factionCps(f).length / CPC.FACTION_BASE.perCps) === 0);
   const hqs = gq.npcs.list.filter((n) => n.hq);
   const hqOk = CPC.FACTION_KEYS.every((f) => noBase.includes(f) === hqs.some((n) => n.faction === f));
   assert(hqOk && hqs.every((n) => n.level >= 40 && n.name.endsWith('大本營')), `沒有 NPC 據點的勢力才由大本營出兵、Lv40 起（${hqs.map((n) => `${n.name} Lv${n.level}`).join('、') || '無'}）`);
@@ -6968,7 +7000,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   gk.state.expeditions.push(other); gk.cp.st.fightSeen = {}; gk.cp.reportFights();
   assert(fought.travelEvents.length === 1 && other.travelEvents.length === 1 && late.travelEvents.length === 1, `撤回與交戰經過不重複（${fought.travelEvents.join(' / ')}｜${other.travelEvents.join(' / ')}）`);
   gk.cp.data = () => ({ owners: [], guards: [] });
-  assert(/已不是你或好友的控制點/.test(gk.cp.lostReason({ ...fought })), '沒有交戰（佔領者放棄、解除好友）時維持原本說明');
+  assert(/易主|改版/.test(gk.cp.lostReason({ ...fought })), '沒有交戰（佔領者易主、變成敵對）時說明原因');
 }
 
 // ---- v15.8：駐防與攻擊的完整情境（雙方都照遊戲每 2 秒的更新流程跑） ----
@@ -7164,9 +7196,9 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   await reset();
   {
     const e = await guard(true);
-    B.state.relations.players.A = { status: 'neutral' };
+    B.state.relations.players.A = { status: 'hostile' };
     await tick(B, Date.now());
-    assert(e.recalled && logs(B, /已不是你或好友的控制點/).length === 1, '情境8：解除好友：駐防隊撤回，說明控制點已不是你或好友的');
+    assert(e.recalled && logs(B, /佔領者已經是你的敵對玩家/).length === 1, `v17 情境8：和佔領者變成敵對：駐防隊撤回並說明原因（${logs(B, /駐防隊撤回/)[0]?.msg || ''}）`);
     const r = home(B, e);
     assert(r && /駐防控制點/.test(r.poiName) && r.events.some((x) => /撤回避難所/.test(x)), `情境8：回家報告（${r?.events.join(' / ')}）`);
     B.state.relations.players.A = { status: 'friend' };
@@ -7348,11 +7380,12 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(na.shielded && !na.win, '保護期內勢力部隊抵達也撲空，不會交戰');
   gx.shelter.hasShelter = hs0;
   CPSH.ms = 0;
-  // 勢力部隊強度：以 4 個控制點為準，每個 ±5%，範圍 ×0.8～×1.4
+  // v17 勢力部隊強度：每擁有 1 個控制點 +10%，最多 ×1.4（4 個）
   const scaleAt = (n) => { gx.cp.factionCps = () => Array.from({ length: n }, (_, i) => `x${i}`); return gx.cp.forceScale('red'); };
-  assert(Math.abs(scaleAt(4) - 1) < 1e-9 && Math.abs(scaleAt(8) - 1.2) < 1e-9 && Math.abs(scaleAt(0) - 0.8) < 1e-9 && Math.abs(scaleAt(20) - 1.4) < 1e-9, '勢力進攻部隊強度跟著控制點數（×0.8～×1.4）');
-  const hp = (n) => { scaleAt(n); return gx.cp.attackForce('red', 'cp1')[1].maxHp; };
-  assert(Math.abs(hp(8) / hp(4) - 1.2) < 0.01, '控制點多的勢力，進攻部隊生命攻擊較高');
+  assert(Math.abs(scaleAt(0) - 1) < 1e-9 && Math.abs(scaleAt(2) - 1.2) < 1e-9 && Math.abs(scaleAt(4) - 1.4) < 1e-9 && Math.abs(scaleAt(9) - 1.4) < 1e-9, 'v17：勢力進攻部隊強度跟著控制點數（×1～×1.4）');
+  const { unitPower: uP2 } = await import('../src/utils/math.js');
+  const pw = (n, id) => { scaleAt(n); return gx.cp.attackForce('red', id).reduce((t, u) => t + uP2(u), 0); };
+  assert(Math.abs(pw(0, 'cp1') - 300000) < 9000 && Math.abs(pw(0, 'cp3') - 600000) < 18000 && Math.abs(pw(4, 'cp3') / pw(0, 'cp3') - 1.4) < 0.02, `v17：進攻部隊 左側 30 萬、右側 60 萬（${Math.round(pw(0, 'cp1')).toLocaleString()}／${Math.round(pw(0, 'cp3')).toLocaleString()}），控制點多時較強`);
   // 不在線超過 30 分鐘被掠奪：資源與圍牆損失減半
   const run = (offline) => {
     const g = Game.newGame({ playerName: 'O4', classId: 'warrior', lat: 25, lon: 121 });
@@ -7612,12 +7645,13 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   gb.shared.backend = new MemoryObjects();
   gb.world = { others: [], myId: 'FB', identity: () => ({ id: 'FB', token: 't' }) };
   gb.npcs.createdAt = 0; // 不等第一次共用 NPC 資料（測試直接重建清單）
-  await gb.npcs.syncFactionRecs(Date.now());
-  const f = CPC.FACTION_KEYS.find((k) => gb.cp.factionCps(k).length >= 3);
-  const rec = gb.npcs.factionRec(f);
-  assert(rec && rec.list.length === Math.min(4, Math.floor(gb.cp.factionCps(f).length / 3)), `勢力據點清單第一次建立時保留現有據點（${rec?.list.length} 座）`);
-  const baseCp = gb.npcs.factionAlive(f)[0].cp;
   const setOwner = (id, fac) => gb.shared.update(CPC.CP_KIND, id, (x) => ({ data: { ...(x || {}), faction: fac, owners: fac ? [] : [{ p: 'X', n: 'X' }], guards: [] } }));
+  const f = 'black';
+  await setOwner('cp3', f); await setOwner('cp4', f);
+  await gb.npcs.syncFactionRecs(Date.now());
+  const rec = gb.npcs.factionRec(f);
+  assert(rec && rec.list.length === Math.min(4, Math.floor(gb.cp.factionCps(f).length / CPC.FACTION_BASE.perCps)), `勢力據點清單第一次建立時保留現有據點（${rec?.list.length} 座）`);
+  const baseCp = gb.npcs.factionAlive(f)[0].cp;
   // 玩家打下勢力其他的控制點，讓勢力少於 3 個：據點仍在
   for (const id of gb.cp.factionCps(f).filter((x) => x !== baseCp)) await setOwner(id, null);
   gb.npcs.fillCells(Date.now(), { silent: true });
@@ -7629,12 +7663,12 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   gb.npcs.fillCells(Date.now() + 40 * 3600000, { silent: true });
   assert(!gb.npcs.factionAlive(f).length && !gb.npcs.list.some((n) => n.faction === f && !n.hq) && gb.npcs.list.some((n) => n.faction === f && n.hq), '據點被打掉後不再計時重生，改由大本營出兵');
   // 勢力再打下控制點湊滿 3 個：蓋新的據點
-  const others = CPC.CONTROL_POINTS.filter((c) => c.id !== baseCp && !gb.cp.factionCps(f).includes(c.id) && c.side === 'npc').slice(0, 3);
+  const others = CPC.CONTROL_POINTS.filter((c) => c.id !== baseCp && !gb.cp.factionCps(f).includes(c.id) && c.side === 'right').slice(0, 3);
   for (const c of others) await setOwner(c.id, f);
   const built = await gb.npcs.factionBuild(f, Date.now());
   gb.npcs.fillCells(Date.now(), { silent: true });
   const nn = gb.npcs.list.find((n) => n.faction === f && !n.hq);
-  assert(built && nn && nn.cp === built && nn.level >= 35, `勢力打下控制點、數量達到門檻時蓋新的據點（#${CPC.cpById(built)?.no}、Lv${nn?.level}）`);
+  assert(built && nn && gb.cp.factionCps(f).includes(nn.cp) && nn.level >= 35, `勢力打下控制點、數量達到門檻時蓋新的據點（#${CPC.cpById(nn?.cp)?.no}、Lv${nn?.level}）`);
   const again = await gb.npcs.factionBuild(f, Date.now());
   assert(!again, '數量沒有增加時不會再蓋');
   // 等級上限依區域
@@ -7926,6 +7960,74 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   // 降落後才抵達的隊伍不列入降落結算
   res = ad.landingFight(d3, { w: [W('A', 'pa', [], d3.landAt - 300, 900, 9000), W('L', 'pl', [], d3.landAt + 60000, 900, 9000)] });
   assert(res.out.A.win && !res.out.L, '降落後才抵達的隊伍不列入降落結算（先到先得）');
+}
+
+// ---- v17：控制點防禦建築（半價、3 倍效果、每位玩家各 1 座、最多 8 位玩家、敵對拆除）與攻防 ----
+{
+  const { MemoryObjects } = await import('../src/multiplayer/SharedWorld.js');
+  const CPC = await import('../src/config/controlPoints.js');
+  const Z = await import('../src/config/zones.js');
+  const { DEFENSES: DF } = await import('../src/config/defenses.js');
+  const store = new MemoryObjects();
+  const mk = (name) => {
+    const gx = Game.newGame({ playerName: name, classId: 'warrior', lat: 25.03, lon: 121.56 });
+    gx.genMap();
+    gx.shelter.establish(gx.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gx.shelter.canEstablish(p).ok));
+    gx.shared.backend = store;
+    gx.world = { others: [], myId: name, identity: () => ({ id: name, token: 't' }) };
+    return gx;
+  };
+  const A = mk('BA'); const B = mk('BB'); const H = mk('BH');
+  const id = 'cp1';
+  await A.shared.update(CPC.CP_KIND, id, () => ({ data: { owners: [{ p: 'BA', n: 'BA' }], guards: [], faction: null } }));
+  await B.shared.poll(); await H.shared.poll();
+  // 費用：避難所的一半
+  const full = DF.barricade.cost(1);
+  const half = A.cp.bldCost('barricade', 1);
+  assert(Object.keys(full).every((k) => half[k] === Math.max(1, Math.round(full[k] * 0.5))), '控制點防禦建築費用為避難所同等級的一半');
+  // 資源足夠時建造（測試用：給滿資源）
+  const fill = (g, cost) => Object.entries(cost).forEach(([k, v]) => { g.grant({ [k]: v * 3 }); });
+  fill(A, half);
+  const r1 = await A.cp.build(id, 'barricade');
+  assert(r1.ok && A.cp.bldOf(id).barricade === 1, `佔領者可以蓋路障（${r1.reason || ''}）`);
+  const e1 = CPC.CP_BUILD.effectMul;
+  assert(A.cp.defenseOf(id).wall === DF.barricade.stats(1).wallBonus * e1, `路障效果為避難所的 3 倍（${A.cp.defenseOf(id).wall}）`);
+  // 非敵對的其他玩家也可以蓋
+  await B.shared.poll();
+  fill(B, B.cp.bldCost('barricade', 1));
+  const r2 = await B.cp.build(id, 'barricade');
+  assert(r2.ok && B.cp.members(id).length === 2, `非敵對的玩家也可以蓋防禦建築（${r2.reason || ''}）`);
+  // 資源不足：不能蓋、不扣資源
+  const H0 = JSON.stringify(H.state.resources);
+  H.state.relations.players = { BA: { status: 'hostile' } };
+  await H.shared.poll();
+  const rh = H.cp.canBuild(id, 'barricade');
+  assert(!rh.ok && /敵對/.test(rh.reason) && !H.cp.canGuard(id, 1).ok, `和佔領者敵對：不能蓋建築也不能駐防（${rh.reason}）`);
+  assert(JSON.stringify(H.state.resources) === H0, '不能蓋時不扣資源');
+  // 研究未完成的建築不能蓋（機槍塔需要研究）
+  const mg = A.cp.canBuild(id, 'machineGun');
+  assert(!mg.ok && /研究/.test(mg.reason || ''), `機槍塔需要先研究（${mg.reason}）`);
+  // 最多 8 位玩家
+  await A.shared.update(CPC.CP_KIND, id, (x) => ({ data: { ...x, bld: { ...(x.bld || {}), ...Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`P${i}`, { n: `P${i}`, b: { barricade: 1 } }])) } } }));
+  const C = mk('BC'); await C.shared.poll();
+  fill(C, C.cp.bldCost('barricade', 1));
+  const rc = C.cp.canBuild(id, 'barricade');
+  assert(A.cp.members(id).length === 8 && !rc.ok && /8 位/.test(rc.reason) && !C.cp.canGuard(id, 1).ok, `每個控制點最多 8 位玩家駐防或蓋建築（${rc.reason}）`);
+  // 佔領者和某位建造者變成敵對：拆除他的建築
+  A.state.relations.players = { BB: { status: 'hostile' } };
+  await A.cp.checkHostileOwners(Date.now());
+  assert(!A.cp.data(id).bld.BB && A.cp.data(id).bld.BA, '和佔領者變成敵對：該玩家的建築被拆除');
+  // 勢力進攻：先攻打路障（路障夠厚、火力夠強時打不破就撤退）
+  await A.shared.update(CPC.CP_KIND, id, (x) => ({ data: { ...x, bld: { BA: { n: 'BA', b: { barricade: 99, machineGun: 0 } } }, guards: [] } }));
+  const strong = A.cp.defenseOf(id);
+  const big = { wall: 5e7, dps: 0 };
+  A.cp.defenseOf = () => ({ ...big, dps: 5e6 });
+  const na = await A.cp.npcAttack('red', id, Date.now());
+  delete A.cp.defenseOf;
+  assert(!na.win && A.cp.owners(id).some((o) => o.p === 'BA'), `勢力部隊打不破路障：控制點維持原佔領者（耐久 ${strong.wall}）`);
+  // 收益：每位駐防者各得完整一份（×6、含布料）
+  const inc = A.cp.rollIncome(CPC.cpById('cp3'));
+  assert(inc.food === CPC.CP_INCOME[5].food * 6 && inc.wood === CPC.CP_INCOME[5].wood * 6, `右側收益為深淵區基準 ×6（食物 ${inc.food}）`);
 }
 
 // ---- v16：倖存者特質、個人任務與轉職 ----

@@ -20,7 +20,11 @@ import {
 } from '../components.js';
 import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { INFECTED } from '../../systems/InfectedSystem.js';
-import { cpById, cpAt, CP_INCOME, FACTIONS, FACTION_SLOW_AT, FACTION_BASE } from '../../config/controlPoints.js';
+import {
+  cpById, cpAt, CP_INCOME, CP_INCOME_MUL, CP_GUARD_MAX, CP_MAX_PLAYERS, CP_BUILDINGS, FACTIONS, FACTION_SLOW_AT, FACTION_BASE,
+} from '../../config/controlPoints.js';
+import { DEFENSES, DEFENSE_MAX_LEVEL } from '../../config/defenses.js';
+import { ControlPointSystem } from '../../systems/ControlPointSystem.js';
 import { RALLY_DELAYS, RallySystem } from '../../systems/RallySystem.js';
 import { AUTO_HOME_LABEL } from '../../systems/AutoHomeSystem.js';
 import { PLASTIC_SPOTS } from '../../systems/LootStock.js';
@@ -252,20 +256,22 @@ export class MapPanel {
     const g = this.game;
     const sm = g.cp.summary(id);
     const { cp } = sm;
-    const zone = ZONES[cp.zone];
     const fac = g.cp.factionOf(id);
+    const me = g.cp.myId();
+    const friends = new Set(Object.entries(g.territory?.rel?.players || {}).filter(([, p]) => p?.status === 'friend').map(([pid]) => pid));
     const ownTxt = fac ? `🏴 ${FACTIONS[fac].name}勢力` : sm.owners.length ? sm.owners.map((o) => escapeHtml(o.n)).join('、') : '—';
     // 同一位玩家分多次派出的駐防隊合計顯示
     const byPlayer = new Map();
     sm.guards.forEach((h) => { const cur = byPlayer.get(h.p) || { n: h.n, c: 0 }; cur.c += (h.units || []).length; byPlayer.set(h.p, cur); });
-    const guardTxt = byPlayer.size ? [...byPlayer.values()].map((x) => `${escapeHtml(x.n)} ${x.c} 人`).join('・') : '沒有駐防';
+    const who = (pid, n) => (pid === me ? escapeHtml(n || '你') : `${friends.has(pid) ? '🤝 ' : ''}${escapeHtml(n || '玩家')}`);
+    const guardTxt = byPlayer.size ? [...byPlayer.entries()].map(([pid, x]) => `${who(pid, x.n)} ${x.c} 人`).join('・') : '沒有駐防';
     const npc = sm.status === 'neutral' || sm.status === 'faction';
     const atk = g.cp.canAttack(id);
     const rally = g.rally.canStart({ kind: 'cp', id });
     const gd = g.cp.canGuard(id, 1);
     const mine = g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === id && !e.recalled && !e.defeated);
-    const inc = CP_INCOME[cp.zone];
-    const tagCol = sm.status === 'mine' ? '#4fc3f7' : sm.status === 'faction' ? '#ef5350' : '#9e9e9e';
+    const left = Math.max(0, CP_GUARD_MAX - g.cp.myGuards(id));
+    const tagCol = sm.status === 'mine' ? '#4fc3f7' : sm.status === 'faction' ? '#ef5350' : sm.status === 'hostile' ? '#ef9a9a' : '#9e9e9e';
     const btns = [];
     // v16.1：剛被打下的保護期
     const sl = g.cp.shieldLeft(id);
@@ -273,17 +279,46 @@ export class MapPanel {
       btns.push(btn('⚔️ 派隊攻打', 'cpAttack', {}, { cls: 'btn-danger', disabled: !atk.ok, title: atk.reason || '' }));
       btns.push(btn(`${rallyFlag(16)} 發起集結`, 'cpRally', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' }));
     }
-    if (sm.status === 'mine') btns.push(btn('🛡️ 派人駐防', 'cpGuard', {}, { cls: 'btn-primary', disabled: !gd.ok, title: gd.reason || '' }));
+    const join = g.cp.canJoin(id);
+    if (join) btns.push(btn(`🛡️ 派人駐防（剩 ${left} 人）`, 'cpGuard', {}, { cls: 'btn-primary', disabled: !gd.ok, title: gd.reason || '' }));
     if (mine.length) btns.push(btn('↩️ 撤回駐防', 'cpRecall', {}, { cls: 'btn-ghost' }));
-    return `<p><span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span> <span class="tag" style="color:${tagCol};border:1px solid ${tagCol}">${sm.label}</span></p>
+    const inc = CP_INCOME[cp.zone];
+    // v17：防禦建築（玩家佔領時）
+    let bldHtml = '';
+    if (join || (sm.owners.length && !fac)) {
+      const d = g.cp.data(id) || {};
+      const bld = d.bld || {};
+      const df = g.cp.defenseOf(id);
+      const ICON = { barricade: '🧱', machineGun: '🔫', watchPost: '🔭' };
+      const NAME = { barricade: '路障', machineGun: '機槍塔', watchPost: '瞭望台' };
+      const effText = (k, lv) => {
+        if (!lv) return '尚未建造';
+        const e = ControlPointSystem.bldEffect(k, lv, 1);
+        return k === 'barricade' ? `耐久 ${Math.round(e.wall).toLocaleString()}` : k === 'machineGun' ? `每秒 ${Math.round(e.dps).toLocaleString()} 傷害` : `駐防隊員攻擊 ×${(DEFENSES.watchPost.stats(lv).garrisonMul * 3).toFixed(1)} 射擊`;
+      };
+      const myB = g.cp.bldOf(id);
+      const myRow = join ? `<div class="cpd-row me"><div class="who">🟢 <b>你的建築</b></div><div class="cpd-items">${CP_BUILDINGS.map((k) => {
+        const lv = myB[k] || 0;
+        const c = g.cp.canBuild(id, k);
+        const cost = lv < DEFENSE_MAX_LEVEL ? g.cp.bldCost(k, lv + 1) : null;
+        const label = lv >= DEFENSE_MAX_LEVEL ? '已滿級' : lv ? `升級 Lv${lv + 1}` : '建造';
+        return `<div class="cpd-it"><span>${ICON[k]} ${NAME[k]}${lv ? ` <b>Lv${lv}</b>` : ''}</span><small>${effText(k, lv)}</small>${cost ? `<div class="cpd-cost">${costHtml(g.state, cost)}</div>` : ''}${btn(label, 'cpBuild', { k }, { cls: `btn-xs ${lv ? 'btn-primary' : ''}`, disabled: !c.ok, title: c.reason || '' })}</div>`;
+      }).join('')}</div></div>` : '';
+      const others = Object.entries(bld).filter(([pid]) => pid !== me).map(([pid, x]) => `<div class="cpd-row ${friends.has(pid) ? 'ally' : ''}"><div class="who">${friends.has(pid) ? '🤝 好友' : ''}「${escapeHtml(x?.n || '玩家')}」</div><div class="cpd-sum">${CP_BUILDINGS.map((k) => `${ICON[k]} ${x?.b?.[k] ? `Lv${x.b[k]}` : '—'}`).join('・')}</div></div>`).join('');
+      bldHtml = `<div class="label">防禦建築（每位玩家各 1 座・效果為避難所的 3 倍・費用為一半）</div>
+        <div class="cpd-list">${myRow}${others}</div>
+        <p class="muted">總防禦：路障耐久 ${df.wall.toLocaleString()}・防禦火力每秒 ${df.dps.toLocaleString()}。敵人要先打破路障才能和駐防隊交戰；和佔領者變成敵對時，該玩家的建築會被拆除、駐防隊遣返。駐防與建築最多 ${CP_MAX_PLAYERS} 位玩家（目前 ${g.cp.members(id).length} 位）。</p>`;
+    }
+    return `<p><span class="zone-tag" style="--zc:${cp.side === 'left' ? '#fdd835' : '#8e24aa'}">${cp.name}（${cp.side === 'left' ? '一般～危險' : '危險～深淵'}）</span> <span class="tag" style="color:${tagCol};border:1px solid ${tagCol}">${sm.label}</span></p>
       ${sl > 0 ? `<div class="cp-shield-row">🛡️ <b>保護中</b>・剩 <b>${formatDuration(sl)}</b>：剛被「${fac ? `${escapeHtml(FACTIONS[fac].name)}勢力` : sm.owners.map((o) => escapeHtml(o.n)).join('、') || '—'}」打下，1 小時內任何人都不能攻打</div>` : ''}
       <div class="kv-list">
         <div><b>佔領者</b> ${ownTxt}</div>
-        ${npc ? `<div><b>守軍</b> ${sm.status === 'faction' ? 'NPC' : '感染者'} ${sm.garrison}/${cp.garrison.count} 人（Lv${cp.garrison.level}）・戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}</div>` : `<div><b>駐防</b> ${guardTxt}</div>`}
-        <div><b>每日收益</b> 06:00 運輸隊送回：食物 ${inc.food}、木材 ${inc.wood}、燃料 ${inc.fuel}＋隨機零件 ${inc.parts[0]}～${inc.parts[1]} 種</div>
-        ${sm.status === 'mine' ? `<div class="muted">下一次收益約 ${sm.nextIncome} 後出發・每名玩家最多駐防 2 人</div>` : ''}
-        ${!atk.ok && !atk.locked && !atk.shield && sm.status !== 'mine' ? `<div class="muted">${escapeHtml(atk.reason)}</div>` : ''}
+        ${npc ? `<div><b>守軍</b> ${sm.status === 'faction' ? 'NPC' : '感染者'} ${sm.garrison}/${g.cp.garrisonFull(id)} 人・戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}</div>` : `<div><b>駐防</b> ${guardTxt}<small class="muted">（每位玩家最多 ${CP_GUARD_MAX} 人）</small></div>`}
+        <div><b>每日收益</b> 遊戲時間 06:00 發放，佔領者與每位駐防玩家各得完整一份：食物 ${inc.food * CP_INCOME_MUL}、木材 ${inc.wood * CP_INCOME_MUL}、燃料 ${inc.fuel * CP_INCOME_MUL}＋隨機零件 ${inc.parts[0]}～${inc.parts[1]} 種與布料</div>
+        ${join ? `<div class="muted">下一次收益約 ${sm.nextIncome} 後</div>` : ''}
+        ${!atk.ok && !atk.locked && !atk.shield && !join && sm.status !== 'mine' ? `<div class="muted">${escapeHtml(atk.reason)}</div>` : ''}
       </div>
+      ${bldHtml}
       ${atk.locked ? `<div class="cp-lock">🔒 ${escapeHtml(atk.reason)}</div>` : ''}
       <div class="btn-row">${btns.join('')}</div>`;
   }
@@ -309,6 +344,10 @@ export class MapPanel {
       body: this.cpBody(id),
       live: () => this.cpBody(id),
       onAction: (action, _d, m) => {
+        if (action === 'cpBuild') {
+          g.cp.build(id, _d.k).then((r) => { this.ui.result(r); m.update?.(this.cpBody(id)); });
+          return;
+        }
         if (action === 'cpRally') {
           this.openRallySetup({ kind: 'cp', id, name: `控制點 #${cp.no}`, lat: at.lat, lon: at.lon });
           return;
@@ -323,10 +362,10 @@ export class MapPanel {
         if (!guard && action !== 'cpAttack') return;
         openTeamPicker(this.ui, {
           title: guard ? `🛡️ 駐防：控制點 #${cp.no}` : `⚔️ 攻打：控制點 #${cp.no}`,
-          intro: guard ? `<p class="muted">駐防隊會留守到你撤回為止，抵擋 NPC 與敵對玩家的進攻；每名玩家最多 2 人。</p>`
+          intro: guard ? `<p class="muted">駐防隊會留守到你撤回為止，抵擋 NPC 與敵對玩家的進攻；每名玩家最多 ${CP_GUARD_MAX} 人，駐防期間每天 06:00 也能拿到控制點收益。</p>`
             : `<p class="muted">守軍戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}。打下後這個區域的建築就能探索。</p>`,
           vehicles: true,
-          maxPick: guard ? Math.max(1, 2 - g.cp.myGuards(id)) : undefined,
+          maxPick: guard ? Math.max(1, CP_GUARD_MAX - g.cp.myGuards(id)) : undefined,
           distanceM: sh ? haversine(sh.lat, sh.lon, at.lat, at.lon) : 0,
           trip: { poi: g.cp.asPoi(`cp:${id}`), searchMin: guard ? 0 : 2, searchLabel: guard ? '駐防' : '攻打' },
           confirmLabel: guard ? '出發駐防' : '進攻！',
