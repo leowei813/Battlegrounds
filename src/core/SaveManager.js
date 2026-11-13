@@ -584,7 +584,7 @@ export class SaveManager {
       const top = data.bpAutoSell.map((r) => order.indexOf(r)).filter((i) => i >= 0).sort((a, b) => b - a)[0];
       data.bpAutoSell = { r: top === undefined ? null : order[top], s: 0 };
     }
-    // v15.17：星級預設「不設定」（以前的「全部星級」也改成不設定，自動出售要重新選星級）；現有設計圖不會被自動出售
+    // v16：星級預設「不設定」（以前的「全部星級」改成不設定＝只看品級，效果不變）；現有設計圖不會被自動出售
     if (v < 39) {
       if (data.bpAutoSell && typeof data.bpAutoSell === 'object' && !(Number(data.bpAutoSell.s) >= 1)) data.bpAutoSell.s = null;
       (data.inventory?.blueprints || []).forEach((b) => { b.held = true; });

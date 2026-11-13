@@ -298,7 +298,8 @@ export class BlackMarketSystem {
   }
 
   /**
-   * 設計圖自動出售設定：保底品級「r 以下」且星級「s 以下」（v15.17：兩個都設定才啟用，null＝不設定）
+   * 設計圖自動出售設定：保底品級「r 以下」、星級「s 以下」（null＝不設定）。
+   * 設定任一項就啟用；兩項都設定時要同時符合
    * @returns {{r:string|null, s:number|null}}
    */
   bpAutoSell() {
@@ -319,10 +320,10 @@ export class BlackMarketSystem {
    * @param {boolean} [onlyNew] 只算設定之後新拿到的（自動出售用；一鍵出售包含現有的）
    */
   bpAutoTargets(cfg = this.bpAutoSell(), onlyNew = false) {
-    if (!cfg.r || !cfg.s) return [];
-    const max = RARITY_ORDER.indexOf(cfg.r);
+    if (!cfg.r && !cfg.s) return [];
+    const max = cfg.r ? RARITY_ORDER.indexOf(cfg.r) : RARITY_ORDER.length - 1;
     return this.game.state.inventory.blueprints.filter((b) => !b.dg && !b.keep && !(onlyNew && b.held) && RARITY_ORDER.includes(b.rarity)
-      && RARITY_ORDER.indexOf(b.rarity) <= max && BlackMarketSystem.bpStars(b) <= cfg.s && this.blueprintBuyback(b) > 0);
+      && RARITY_ORDER.indexOf(b.rarity) <= max && (!cfg.s || BlackMarketSystem.bpStars(b) <= cfg.s) && this.blueprintBuyback(b) > 0);
   }
 
   /** 變更自動出售設定：不賣任何東西；現有的設計圖標記為「設定前就有」，之後只自動出售新拿到的 */

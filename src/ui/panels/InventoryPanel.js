@@ -104,7 +104,7 @@ export class InventoryPanel {
         const groups = [];
         bps.forEach((bp) => { const hit = groups.find((x) => x.bp.model === bp.model && x.bp.rarity === bp.rarity); if (hit) hit.n += 1; else groups.push({ bp, n: 1 }); });
         const auto = g.blackMarket.bpAutoSell();
-        return `${auto.r && auto.s ? `<small class="muted block bp-auto-sum">🔁 自動出售：<span style="color:${RARITIES[auto.r].color}">${RARITIES[auto.r].name}${auto.r === 'poor' ? '' : '以下'}</span>・${'★'.repeat(auto.s)}${auto.s > 1 ? ' 以下' : ''}</small>` : ''}${groups.slice(0, 6).map(({ bp, n }) => {
+        return `${auto.r || auto.s ? `<small class="muted block bp-auto-sum">🔁 自動出售：${[auto.r ? `<span style="color:${RARITIES[auto.r].color}">${RARITIES[auto.r].name}${auto.r === 'poor' ? '' : '以下'}</span>` : '', auto.s ? `${'★'.repeat(auto.s)}${auto.s > 1 ? ' 以下' : ''}` : ''].filter(Boolean).join('・')}</small>` : ''}${groups.slice(0, 6).map(({ bp, n }) => {
           const md = ITEM_MODELS[bp.model];
           const st = this.craftState(eq.canCraftModel(bp.model, true), eq.craftCost(bp.model, true));
           return `<div class="row-between bp-row"><span><b>${md.name}</b>${n > 1 ? ` <span class="bp-count">×${n}</span>` : ''}<small class="block" style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</small></span>${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, eq.canCraftModel(bp.model, true).reason)}</div>`;
@@ -324,12 +324,12 @@ export class InventoryPanel {
     const rl = (r, i) => (i === 0 ? RARITIES[r].name : `${RARITIES[r].name}以下`);
     const ropts = `<option value="" ${!cfg.r ? 'selected' : ''}>不設定</option>${RARITY_ORDER.map((r, i) => `<option value="${r}" ${cfg.r === r ? 'selected' : ''}>${rl(r, i)}</option>`).join('')}`;
     const sopts = `<option value="" ${!cfg.s ? 'selected' : ''}>不設定</option>${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${cfg.s === n ? 'selected' : ''}>${'★'.repeat(n)}${n > 1 ? ' 以下' : ''}</option>`).join('')}`;
-    const on = !!(cfg.r && cfg.s);
+    const on = !!(cfg.r || cfg.s);
     return `<div class="bp-auto"><b>🔁 自動出售</b>
       <label class="bp-dd">保底品級 <select class="keep-min bp-auto-sel" data-k="r" aria-label="自動出售的保底品級">${ropts}</select></label>
       <label class="bp-dd">星級 <select class="keep-min bp-auto-sel" data-k="s" aria-label="自動出售的星級">${sopts}</select></label>
-      ${btn('一鍵出售', 'bpSellRule', {}, { cls: 'btn-sm btn-primary', disabled: !on, title: on ? '把現有符合兩個條件的設計圖一起賣掉' : '品級和星級都設定後才能使用' })}
-      <small class="muted">品級和星級都設定後才會啟用：之後拿到的設計圖符合兩個條件就自動賣；按「一鍵出售」才會賣掉現有符合的設計圖（副本圖紙、交易所買來或撤回的不會賣）。</small></div>`;
+      ${btn('一鍵出售', 'bpSellRule', {}, { cls: 'btn-sm btn-primary', disabled: !on, title: on ? '把現有符合條件的設計圖一起賣掉' : '設定品級或星級後才能使用' })}
+      <small class="muted">設定品級或星級任一項就啟用（兩項都設定時要同時符合）：之後拿到符合的設計圖會自動賣；按「一鍵出售」才會賣掉現有符合的設計圖（副本圖紙、交易所買來或撤回的不會賣）。</small></div>`;
   }
 
   /** 下拉選單變更：只記住設定（之後新拿到的設計圖適用），不賣任何東西 */
@@ -342,7 +342,7 @@ export class InventoryPanel {
       const k = e.target.dataset.k;
       g.blackMarket.setBpAutoSell({ [k]: e.target.value ? (k === 's' ? Number(e.target.value) : e.target.value) : null });
       const cfg = g.blackMarket.bpAutoSell();
-      this.ui.toastEl.show(cfg.r && cfg.s ? '🔁 已更新：之後拿到符合條件的設計圖會自動出售' : '品級和星級都設定後才會自動出售', 'info');
+      this.ui.toastEl.show(cfg.r || cfg.s ? '🔁 已更新：之後拿到符合條件的設計圖會自動出售' : '已關閉設計圖自動出售', 'info');
       g.changed?.();
       g.requestSave?.();
       this.ui.refresh(true);
