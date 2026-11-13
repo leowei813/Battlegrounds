@@ -520,6 +520,7 @@ export class RallySystem {
           x.fightAt = sc.fightAt;
           return { data: x };
         });
+        await this.adWait(exp.rallyId);
       } else if (d.status === 'gathering' && !d.home && (now >= d.departAt || d.teams.length >= d.maxTeams)) {
         await g.shared.update('rally', exp.rallyId, (x) => {
           if (!x || x.status !== 'gathering') return { fail: 'done' };
@@ -529,7 +530,8 @@ export class RallySystem {
           x.fightAt = x.departedAt + Math.max(x.travelMs || 0, ...(x.teams || []).map((t) => t.travelMs || 0));
           return { data: x };
         });
-      } else if ((d.status === 'departed' && now >= d.fightAt) || (d.status === 'resolving' && now - (d.lockAt || 0) > LOCK_MS)) {
+        await this.adWait(exp.rallyId);
+      } else if ((d.status === 'departed' && now >= this.fightTime(d)) || (d.status === 'resolving' && now - (d.lockAt || 0) > LOCK_MS)) {
         await this.resolve(exp.rallyId, now);
       } else if (d.status === 'done' && !exp.rallyResult && !exp.recalled) {
         exp.rallyResult = d.result?.teams?.[this.myId()] || { units: [], coins: 0, items: [], mats: {} };
@@ -550,6 +552,28 @@ export class RallySystem {
   }
 
   /** 結算（任何一位參加者都可以）：先鎖定，計算戰鬥並改變目標，再寫入結果 */
+  /** v16.1：搶空投的集結在降落前抵達：等到降落才結算 */
+  fightTime(d) {
+    if (d?.target?.kind !== 'ad') return d?.fightAt || 0;
+    const drop = this.game.airdrop?.get(d.target.id);
+    return Math.max(d.fightAt || 0, drop?.landAt || 0);
+  }
+
+  /** v16.1：集結隊降落前抵達空投：整個集結當作一個陣營登記等待（隊員編號＝隊伍序號×10＋隊員序號） */
+  async adWait(rallyId) {
+    const g = this.game;
+    const d = this.get(rallyId);
+    if (d?.target?.kind !== 'ad' || !d.fightAt) return;
+    const drop = g.airdrop?.get(d.target.id);
+    if (!drop || d.fightAt >= drop.landAt) return;
+    const teams = d.teams || [];
+    await g.airdrop.addWaiter(drop, {
+      k: `r:${rallyId}`, p: d.owner, n: `${String(d.ownerName || '').slice(0, 12)}的集結`, at: d.fightAt, f: g.airdrop.friendIds(),
+      ps: teams.map((t) => t.player).slice(0, 12),
+      u: teams.flatMap((t, ti) => (t.units || []).slice(0, 6).map((u) => ({ ...u, i: ti * 10 + (u.i || 0) }))).slice(0, 36),
+    });
+  }
+
   async resolve(rallyId, now = Date.now()) {
     const g = this.game;
     const me = this.myId();
@@ -665,6 +689,29 @@ export class RallySystem {
     } else if (d.target.kind === 'ad') {
       // v15.19：集結搶空投：打贏守衛後寫入共用資料（先到先得），戰利品平分
       const drop = tg;
+      // v16.1：降落前抵達、登記等待：使用降落時的共同結算
+      let rec = g.airdrop.record(drop);
+      if (rec?.w?.length && !rec.res && now >= drop.landAt) {
+        await g.airdrop.resolveLanding(drop, now);
+        rec = g.airdrop.record(drop);
+      }
+      const o = rec?.res?.out?.[`r:${d.id}`];
+      if (o) {
+        (o.units || []).forEach((u) => {
+          const t = teams[Math.floor(u.i / 10)];
+          if (t && res.teams[t.player]) res.teams[t.player].units.push({ ...u, i: u.i % 10 });
+        });
+        teams.forEach((t) => { (t.units || []).forEach((u) => { if (!res.teams[t.player].units.some((x) => x.i === u.i)) res.teams[t.player].units.push({ i: u.i, hp: u.hp, down: false }); }); });
+        res.detail = [...(rec.res.lines || []), ...teamLines(teams, res)];
+        res.victory = !!o.win;
+        if (o.win) {
+          share(o.coins || 0, [], o.mats || {});
+          if (o.bps?.length && res.teams[d.owner]) res.teams[d.owner].blueprints = o.bps;
+          res.summary = `🏆 集結搶到空投（${people} 人參戰）`;
+        } else res.summary = '💀 集結沒能搶到空投';
+        Object.values(res.teams).forEach((t) => { t.xpEach = o.xpEach || 0; });
+        return res;
+      }
       const st = g.airdrop.status(drop, now);
       if (st.state !== 'landed') {
         res.summary = st.state === 'taken' ? `抵達時空投已經被「${st.by}」搶走` : st.state === 'npc' ? '抵達時空投已經被 NPC 勢力拿走' : '抵達時空投不在了';

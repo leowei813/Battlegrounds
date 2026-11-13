@@ -7872,6 +7872,62 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(!weak.victory, '致死區空投守衛很強，新手隊伍打不贏');
 }
 
+// ---- v16.1：空投降落前抵達原地等待，降落時一起結算 ----
+{
+  const { AirdropSystem: ADS } = await import('../src/systems/AirdropSystem.js');
+  const gw = Game.newGame({ playerName: 'WA', classId: 'warrior', lat: 25, lon: 121 });
+  gw.state.map.pois = fillPois([], 25, 121);
+  gw.shelter.establish(gw.state.map.pois.find((p) => gw.shelter.canEstablish(p).ok));
+  const ad = gw.airdrop;
+  ad.guards = () => [];
+  const s0 = ADS.slotOf(Date.now());
+  const drops = [];
+  for (let k = 0; drops.length < 2 && k < 60; k += 1) drops.push(...ad.slotDrops(s0 + k));
+  // 讓空投在 2 小時後降落（一定比隊伍先到）
+  const shift = (d, landAt) => { const dt = landAt - d.landAt; ['announceAt', 'landAt', 'expireAt', 'npcAt'].forEach((k) => { d[k] += dt; }); };
+  const d = drops[0];
+  shift(d, Date.now() + 2 * 3600e3);
+  const ld = gw.survivors.leader();
+  const r = gw.exploration.startDrop(d.id, [ld.id]);
+  await new Promise((res) => setTimeout(res, 20));
+  const ex = r.exp;
+  assert(r.ok && ex.dropWait && ex.searchMs > 0 && ex.startAt + ex.travelMs + ex.searchMs === d.landAt && ex.endAt === d.landAt + ex.travelMs, `降落前抵達：在落點等待到降落，回程順延（${r.reason || ''}）`);
+  assert(ad.waiters(d).some((w) => w.k === ex.id && w.u?.length === 1), '等待的隊伍登記到共用資料');
+  assert(gw.exploration.holdDrop(ex, d.landAt + 1000), '降落結算前隊伍不會先回報');
+  gw.exploration.checkDrops(d.landAt + 1000);
+  await new Promise((res) => setTimeout(res, 30));
+  gw.exploration.checkDrops(d.landAt + 2000);
+  assert(ex.dropDone && ex.dropResult?.win && ex.carried && ad.status(d, d.landAt + 5000).state === 'taken', '降落時結算：只有自己等待，打贏守衛搶到空投');
+  // 召回：取消等待
+  const d2 = drops[1];
+  shift(d2, Date.now() + 2 * 3600e3);
+  const sv2 = gw.state.survivors.find((x) => x.id !== ld.id) || null;
+  if (sv2) {
+    sv2.status = 'idle';
+    const r2 = gw.exploration.startDrop(d2.id, [sv2.id]);
+    await new Promise((res) => setTimeout(res, 20));
+    gw.exploration.recall(r2.exp.id);
+    await new Promise((res) => setTimeout(res, 20));
+    assert(r2.ok && !ad.waiters(d2).length && r2.exp.dropDone, '召回等待中的隊伍：取消等待登記');
+  }
+  // 陣營與交戰：好友同陣營、不同陣營依抵達順序交戰、戰利品依人數平分、設計圖給最先抵達的玩家
+  const { AssistSystem: AS } = await import('../src/systems/AssistSystem.js');
+  const unit = (i, atk, hp) => ({ ...AS.unitData(gw, ld, i), atk, hp, maxHp: hp, def: 0, dodge: 0 });
+  const d3 = { ...d, id: 'ad_test_3', bp: true };
+  const W = (k, p, f, at, atk, hp) => ({ k, p, n: k, at, f, u: [unit(0, atk, hp)] });
+  // A、B 互為好友且強，C 弱：A、B 勝出並平分
+  let res = ad.landingFight(d3, { w: [W('A', 'pa', ['pb'], d3.landAt - 300, 900, 9000), W('C', 'pc', [], d3.landAt - 200, 5, 50), W('B', 'pb', ['pa'], d3.landAt - 100, 900, 9000)] });
+  const oa = res.out.A; const ob = res.out.B; const oc = res.out.C;
+  assert(res.win && oa.win && ob.win && !oc.win && oa.camp === ob.camp && oa.camp !== oc.camp, '互為好友的玩家同一陣營，打贏非好友陣營後搶到空投');
+  assert(Math.abs(oa.coins - ob.coins) <= 1 && oa.bps.length === (d3.bp ? 1 : 0) && !ob.bps.length && oc.units[0].down, '戰利品依人數平分，設計圖給最先抵達的玩家，落敗方倒下');
+  // C 很強：C 依抵達順序和 A、B 陣營交戰並勝出，拿走全部
+  res = ad.landingFight(d3, { w: [W('A', 'pa', ['pb'], d3.landAt - 300, 5, 50), W('C', 'pc', [], d3.landAt - 200, 2000, 50000), W('B', 'pb', ['pa'], d3.landAt - 100, 5, 50)] });
+  assert(res.win && res.out.C.win && !res.out.A.win && res.out.C.coins > 0 && res.byName === 'C', '非好友陣營較強時打贏後拿走全部');
+  // 降落後才抵達的隊伍不列入降落結算
+  res = ad.landingFight(d3, { w: [W('A', 'pa', [], d3.landAt - 300, 900, 9000), W('L', 'pl', [], d3.landAt + 60000, 900, 9000)] });
+  assert(res.out.A.win && !res.out.L, '降落後才抵達的隊伍不列入降落結算（先到先得）');
+}
+
 // ---- v16：倖存者特質、個人任務與轉職 ----
 {
   SVS.disableTraits = false;

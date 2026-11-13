@@ -731,7 +731,8 @@ export class MapPanel {
       // v15.10：返程中（背包滿了先回家）也顯示佇列數；召回或撤退的隊伍回家後不再前往佇列，不顯示
       const queued = ex.kind === 'explore' && (it.phase !== 'returning' || it.queueOnHold) ? `・佇列 ${(ex.queue || []).length}` : '';
       // 左側圖示：快速定位隊伍；文字：打開隊伍詳細
-      rows.push(`<div class="feed-chip team split"><button class="feed-loc" data-action="feedLocate" data-id="${ex.id}" title="地圖移到隊伍位置">${icon}</button><button class="feed-txt" data-action="feedTeam" data-id="${ex.id}">${escapeHtml(who || '隊伍')}・${time}${queued}</button></div>`);
+      const adWait = ex.kind === 'drop' && ex.dropWait && !ex.dropDone && it.phase !== 'returning' && !ex.recalled;
+      rows.push(`<div class="feed-chip team split"><button class="feed-loc" data-action="feedLocate" data-id="${ex.id}" title="地圖移到隊伍位置">${adWait ? '⏳' : icon}</button><button class="feed-txt" data-action="feedTeam" data-id="${ex.id}">${escapeHtml(who || '隊伍')}・${adWait ? '⏳ 等待空投降落・' : ''}${time}${queued}</button></div>`);
     });
     return rows.length ? `<div class="map-feed">${rows.join('')}</div>` : '';
   }
@@ -855,7 +856,14 @@ export class MapPanel {
       const end = new Date(it.endAt);
       const hm = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
       const qn = (ex.queue || []).length;
-      const ph = it.phase === 'returning' ? '🏃 返程中' : it.phase === 'outbound' ? '🚶 前往中' : '🔍 搜索中';
+      let ph = it.phase === 'returning' ? '🏃 返程中' : it.phase === 'outbound' ? '🚶 前往中' : '🔍 搜索中';
+      // v16.1：空投降落前抵達：在落點等待
+      if (ex.kind === 'drop' && ex.dropWait && !ex.dropDone && it.phase !== 'returning') {
+        const arrive = ex.startAt + (ex.travelMs || 0);
+        const land = arrive + (ex.searchMs || 0);
+        const m = (ms) => Math.max(1, Math.ceil(ms / 60000));
+        ph = `⏳ 等待空投降落（${arrive > now ? `${m(arrive - now)} 分後抵達，再等 ${m(land - arrive)} 分降落` : `${m(land - now)} 分後降落`}）`;
+      }
       const cpDone = ex.cp ? `（檢核點 ${Math.min(ex.cp.total || 1, (ex.cp.done || 0) + (it.phase === 'searching' ? 1 : 0))}/${ex.cp.total || 1}）` : '';
       // 駐防中：沒有期限（直到撤回或被打下）
       const guarding = ex.kind === 'cpGuard' && it.phase === 'searching' && !ex.recalled && !ex.defeated;
@@ -1114,7 +1122,8 @@ export class MapPanel {
     const min = (ms) => `${Math.max(0, Math.ceil(ms / 60000))} 分`;
     const list = ad.list(now).map((d) => {
       const st = ad.status(d, now);
-      const label = st.state === 'falling' ? `空投 ${min(d.landAt - now)}後降落`
+      const nw = st.state === 'falling' ? ad.waiters(d).length : 0;
+      const label = st.state === 'falling' ? `空投 ${min(d.landAt - now)}後降落${nw ? `・⏳ ${nw} 隊等待` : ''}`
         : st.state === 'landed' ? `空投・剩 ${min(Math.min(d.expireAt, d.npcAt) - now)}・🧟×${ad.zoneOf(d).guard.n}`
           : st.state === 'taken' ? `${st.by} 已搶走` : 'NPC 勢力已拿走';
       return { id: d.id, lat: d.lat, lon: d.lon, state: st.state, label };
@@ -1145,8 +1154,34 @@ export class MapPanel {
       <p>${what}${Z.bp ? `<br><small class="muted">${Math.round(Z.bp * 100)}% 機率有設計圖${Z.bpMin ? '（保底精良以上）' : ''}</small>` : ''}</p>
       <div class="label">守衛殭屍</div>
       <p>🧟 ${Z.guard.n} 隻（Lv${Z.guard.lv}）・<b>建議隊伍總戰力 ${fmt(Z.power)} 以上</b><br><small class="muted">打贏才能拿走空投</small></p>
-      <p class="muted">第一支抵達並打贏守衛的隊伍拿走全部；之後抵達的隊伍直接返回。帶著空投回程的隊伍可能被其他玩家攔截。</p>
+      ${this.dropWaitersHtml(d, now)}
+      <p class="muted">空投降落前抵達的隊伍會<b>原地等待</b>；降落時互為好友的玩家同一陣營，不同陣營依抵達順序先交戰，勝方再打守衛，材料與金錢依人數平分（設計圖給最先抵達的玩家）。降落後才抵達的隊伍先到先得。帶著空投回程的隊伍可能被其他玩家攔截。</p>
       ${ok ? `<div class="btn-row">${btn('🚀 派隊搶奪', 'dropGo', { id: d.id }, { cls: 'btn-primary', disabled: !g.shelter.hasShelter() })}${btn('🚩 發起集結', 'dropRally', { id: d.id })}</div>` : ''}`;
+  }
+
+  /** v16.1：等待降落的隊伍（自己、好友同陣營、其他玩家降落時交戰） */
+  dropWaitersHtml(d, now = Date.now()) {
+    const g = this.game;
+    const ad = g.airdrop;
+    if (ad.status(d, now).state !== 'falling') return '';
+    const me = g.shared?.store().me;
+    const mine = new Set(g.state.expeditions.map((e) => e.id));
+    const friends = new Set(ad.friendIds());
+    const ws = ad.waiters(d);
+    if (!ws.length) return '';
+    const left = (ms) => `${Math.max(1, Math.ceil(ms / 60000))} 分`;
+    const rows = ws.map((w) => {
+      const own = mine.has(w.k) || (w.p === me && !w.ps);
+      const ps = Array.isArray(w.ps) && w.ps.length ? w.ps : [w.p];
+      const ally = !own && (ps.includes(me) || ps.some((p) => friends.has(p)) || (w.f || []).includes(me));
+      const cls = own ? 'me' : ally ? 'ally' : 'foe';
+      const who = own ? '<b>你的隊伍</b>' : ally ? `🤝 好友「${escapeHtml(w.n)}」` : `⚔️ 「${escapeHtml(w.n)}」`;
+      const n = (w.u || []).length;
+      const when = w.at > now ? `${left(w.at - now)}後抵達` : '已在等待';
+      const tail = own ? when : `${when}・${ally ? '同陣營' : '降落時交戰'}`;
+      return `<div class="adw-row ${cls}"><span>${own ? '🟢 ' : ''}${who}${n ? `・${n} 人` : ''}</span><small>${tail}</small></div>`;
+    }).join('');
+    return `<div class="label">等待降落的隊伍（${ws.length} 隊）</div><div class="adw-list">${rows}</div>`;
   }
 
   openDrop(id) {
@@ -1171,7 +1206,7 @@ export class MapPanel {
     const sh = g.shelter.primary();
     openTeamPicker(this.ui, {
       title: '📦 搶奪空投',
-      intro: `<p class="muted">隊伍會先移動到空投落點，抵達時和守衛殭屍交戰（建議隊伍總戰力 ${g.airdrop.zoneOf(d).power.toLocaleString()} 以上），打贏就背著空投返回避難所。晚到或空投已被拿走時直接返回。</p>`,
+      intro: `<p class="muted">隊伍會先移動到空投落點，抵達時和守衛殭屍交戰（建議隊伍總戰力 ${g.airdrop.zoneOf(d).power.toLocaleString()} 以上），打贏就背著空投返回避難所。降落前抵達會原地等待降落，和其他等待的隊伍一起結算（好友同陣營）；空投已被拿走時直接返回。</p>`,
       vehicles: true,
       distanceM: sh ? haversine(sh.lat, sh.lon, d.lat, d.lon) : 0,
       trip: { poi: { id: `drop:${d.id}`, lat: d.lat, lon: d.lon, type: 'military', drop: true }, searchMin: 0 },

@@ -1833,3 +1833,11 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 /* v16.1：控制點被打下後的保護期 */
 .cp-dot .cp-shield { position: absolute; top: -10px; right: -12px; font-size: 12px; font-style: normal; background: #000c; border: 1px solid #81d4fa; border-radius: 8px; padding: 0 3px; line-height: 16px; filter: drop-shadow(0 0 3px #4fc3f7); }
 .cp-shield-row { margin: 6px 0; padding: 6px 10px; border-radius: 8px; border: 1px solid #4fc3f7; background: #4fc3f71a; color: #b3e5fc; }
+
+/* v16.1：空投等待降落的隊伍 */
+.adw-list { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 10px; }
+.adw-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 6px 10px; border-radius: 8px; background: rgba(255,255,255,.05); border-left: 3px solid #90a4ae; }
+.adw-row.me { border-color: #66bb6a; }
+.adw-row.ally { border-color: #4fc3f7; }
+.adw-row.foe { border-color: #ef5350; }
+.adw-row small { color: #b0bec5; white-space: nowrap; }
