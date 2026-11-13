@@ -30,9 +30,9 @@ export const WORLD_EVENTS = {
       nightCount: 1.3, nightLevel: 3, killReward: 1.5, variant: 2,
     },
   },
-  // 第二階段（全服空投）上線後才會出現
+  // v15.19：全服空投上線後開放
   supply: {
-    name: '補給日', icon: '📦', weight: 0, lines: ['全服空投次數加倍'], short: '空投次數加倍', fx: { drop: 2 },
+    name: '補給日', icon: '📦', weight: 10, lines: ['全服空投機率加倍'], short: '空投機率加倍', fx: { drop: 2 },
   },
   blackSale: {
     name: '黑市大促', icon: '🕶️', weight: 9, lines: ['黑市售價 −20%', '黑市收購價 +20%'], short: '黑市售價 −20%・收購 +20%', fx: { bmSell: 0.8, bmBuy: 1.2 },

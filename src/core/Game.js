@@ -25,6 +25,7 @@ import { WORLD_CENTER } from '../config/world.js';
 import { PoiShareSystem } from '../systems/PoiShareSystem.js';
 import { DungeonSystem } from '../systems/DungeonSystem.js';
 import { WorldEventSystem } from '../systems/WorldEventSystem.js';
+import { AirdropSystem } from '../systems/AirdropSystem.js';
 import { AutoHomeSystem } from '../systems/AutoHomeSystem.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import { haversine } from '../utils/math.js';
@@ -84,6 +85,7 @@ export class Game {
     this.infected = new InfectedSystem(this);
     this.rally = new RallySystem(this);
     this.cp = new ControlPointSystem(this);
+    this.airdrop = new AirdropSystem(this);
     this.assist = new AssistSystem(this);
     this.rebirth = new RebirthSystem(this);
 

@@ -92,6 +92,7 @@ export class MapService {
     this.layers.infected = L.layerGroup().addTo(this.map);
     this.layers.cps = L.layerGroup().addTo(this.map);
     this.layers.convoys = L.layerGroup().addTo(this.map);
+    this.layers.drops = L.layerGroup().addTo(this.map);
     this.cpConfig = CP_CONFIG;
     this.layers.dungeons = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
@@ -288,6 +289,25 @@ export class MapService {
       mk.setLatLng([c.lat, c.lon]);
       const el = mk.getElement()?.querySelector('.convoy-pin i');
       if (el) el.textContent = formatDuration(c.left);
+    });
+  }
+
+  /**
+   * v15.19：全服空投。list：[{ id, lat, lon, state, label }]；state：falling、landed、taken、npc
+   */
+  renderDrops(list = []) {
+    if (!this.map || !this.layers.drops) return;
+    const sig = list.map((d) => `${d.id}:${d.state}:${d.label}`).join('|');
+    if (sig === this.dropSig) return;
+    this.dropSig = sig;
+    this.layers.drops.clearLayers();
+    list.forEach((d) => {
+      const cls = d.state === 'falling' ? 'fall' : d.state === 'landed' ? '' : 'gone';
+      const ic = d.state === 'falling' ? '🪂' : '📦';
+      L.marker([d.lat, d.lon], {
+        icon: L.divIcon({ className: '', iconSize: [120, 64], iconAnchor: [60, 20], html: `<div class="drop-pin ${cls}"><span class="ic">${ic}</span><i>${escapeHtml(d.label)}</i></div>` }),
+        zIndexOffset: 880,
+      }).on('click', () => bus.emit('ui:openDrop', { id: d.id })).addTo(this.layers.drops);
     });
   }
 

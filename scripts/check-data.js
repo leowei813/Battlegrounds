@@ -7663,7 +7663,8 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const t0 = Date.UTC(2026, 0, 1, 4);
   const seen = {};
   for (let d = 0; d < 730; d += 1) { const id = WXS.at(t0 + d * 864e5).id; seen[id] = (seen[id] || 0) + 1; }
-  assert(Object.keys(WE).filter((k) => WE[k].weight > 0).every((k) => seen[k] > 0) && !seen.supply, `每天抽一種天候，全部都會出現、補給日（空投）還沒上線前不會出現（${JSON.stringify(seen)}）`);
+  const totalW = Object.values(WE).reduce((s0, e) => s0 + e.weight, 0);
+  assert(Object.keys(WE).every((k) => Math.abs(seen[k] / 730 - WE[k].weight / totalW) < 0.05), `每天抽一種天候，出現比例接近權重（${JSON.stringify(seen)}）`);
   assert(WXS.at(t0 + 3600e3).id === WXS.at(t0 + 10 * 3600e3).id, '同一天（台灣時間）天候相同，所有玩家算出一樣的結果');
   const gw = Game.newGame({ playerName: 'WX', classId: 'farmer', lat: 25, lon: 121 });
   gw.state.map.pois = fillPois([], 25, 121);
@@ -7777,6 +7778,66 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   s.zombies[0].hp = 0;
   s.collectDead();
   assert(s.nightVariants?.armored >= 1 && base.nightStats?.variants?.armored >= 1, '變種擊殺數記在據點的今晚統計（重新整理不會遺失）');
+}
+
+// ---- v15.19：全服空投 ----
+{
+  const { AIRDROP: AD, AIRDROP_ZONE: ADZ } = await import('../src/config/airdrops.js');
+  const { AirdropSystem: ADS } = await import('../src/systems/AirdropSystem.js');
+  const ga = Game.newGame({ playerName: 'AD', classId: 'warrior', lat: 25, lon: 121 });
+  ga.state.map.pois = fillPois([], 25, 121);
+  ga.shelter.establish(ga.state.map.pois.find((p) => ga.shelter.canEstablish(p).ok));
+  const ad = ga.airdrop;
+  const s0 = ADS.slotOf(Date.now());
+  const cells = ad.cells().length;
+  let n = 0;
+  for (let k = 0; k < 80; k += 1) n += ad.slotDrops(s0 + k).length;
+  const expect = cells * AD.chance * 80;
+  assert(Math.abs(n - expect) < expect * 0.35, `每格每輪 ${AD.chance * 100}% 機率掉空投（80 輪 ${n} 箱，預期約 ${Math.round(expect)}）`);
+  const ga2 = Game.newGame({ playerName: 'AD2', classId: 'warrior', lat: 25, lon: 121 });
+  ga2.state.map.pois = ga.state.map.pois;
+  assert(JSON.stringify(ga2.airdrop.slotDrops(s0 + 3)) === JSON.stringify(ad.slotDrops(s0 + 3)), '所有玩家算出的空投位置、時間、內容完全相同');
+  WXS.force = 'supply';
+  ad.slotCache.clear();
+  let n2 = 0;
+  for (let k = 0; k < 80; k += 1) n2 += ad.slotDrops(s0 + k).length;
+  WXS.force = 'calm';
+  ad.slotCache.clear();
+  assert(n2 > n * 1.6, `補給日空投機率加倍（${n} → ${n2}）`);
+  // 找一箱空投
+  let d = null;
+  for (let k = 0; !d && k < 50; k += 1) d = ad.slotDrops(s0 + k)[0];
+  assert(d && d.announceAt < d.landAt && d.landAt < d.npcAt && d.npcAt < d.expireAt && Object.keys(d.mats).length > 0, '空投有預告、降落、NPC 拿走、消失的時間與內容');
+  const Z = ADZ[d.zone];
+  assert(ad.status(d, d.announceAt + 1).state === 'falling' && ad.status(d, d.landAt + 1).state === 'landed' && ad.status(d, d.npcAt + 1).state === 'npc' && ad.status(d, d.expireAt + 1).state === 'gone', '狀態：降落中 → 可搶 → 被 NPC 拿走 → 消失');
+  assert(ad.guards(d).length === Z.guard.n, `守衛殭屍數量依區域（${d.zone} ${Z.guard.n} 隻）`);
+  // 派隊搶奪：守衛換成空的（必勝），抵達後寫入共用資料、背著回家
+  const realGuards = ad.guards.bind(ad);
+  ad.guards = () => [];
+  const sv = ga.survivors.leader();
+  const t0 = d.landAt + 1000;
+  const r0 = ga.exploration.start(`drop:${d.id}`, [sv.id], 0, false, t0, { kind: 'drop' });
+  assert(r0.ok && r0.exp.kind === 'drop' && r0.exp.dropTarget?.id === d.id, `可以派隊搶空投（${r0.reason || ''}）`);
+  const arrive = r0.exp.startAt + r0.exp.travelMs;
+  const coins0 = ga.state.player.coins;
+  ga.exploration.dropArrive(r0.exp, arrive);
+  await new Promise((r) => setTimeout(r, 20));
+  assert(r0.exp.dropResult?.win && !r0.exp.dropResult.pending && r0.exp.carried && ad.status(d, arrive).state === 'taken', '打贏守衛後搶下空投，戰利品背在身上');
+  const rep = ga.exploration.dropReport(r0.exp);
+  assert(rep.success && ga.state.player.coins > coins0 && Object.keys(rep.resources).some((k) => d.mats[k]), `回到避難所後空投物資入庫（金錢 +${ga.state.player.coins - coins0}）`);
+  // 已被搶走：後到的隊伍撲空
+  const r1 = ga2.exploration.start(`drop:${d.id}`, [ga2.survivors.leader().id], 0, false, t0, { kind: 'drop' });
+  ga2.shared.cache = ga.shared.cache; // 共用同一份資料（測試用）
+  if (r1.ok) {
+    ga2.airdrop.guards = () => [];
+    ga2.exploration.dropArrive(r1.exp, r1.exp.startAt + r1.exp.travelMs);
+    assert(r1.exp.dropResult?.missed && !r1.exp.carried, '空投已被搶走：後到的隊伍撲空，不用交戰');
+  }
+  // 守衛強度：致死區守衛打得贏一般隊伍嗎（弱隊必輸）
+  ad.guards = realGuards;
+  const lethal = { ...d, zone: 'lethal' };
+  const weak = ga.combat.simulate([sv], ad.guards(lethal), { record: false });
+  assert(!weak.victory, '致死區空投守衛很強，新手隊伍打不贏');
 }
 
 if (failures) {

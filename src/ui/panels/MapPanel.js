@@ -465,6 +465,7 @@ export class MapPanel {
     if (Date.now() - this.lastRender > 5000) this.renderMap(true);
     this.service.renderCps(this.game);
     this.service.renderConvoys(this.game.cp.convoyView());
+    this.renderDrops();
     this.ui.mapRoot.dataset.phase = this.game.time.phaseId(); // 地圖依日夜變暗
     const st = this.game.state;
     const has = this.game.shelter.hasShelter();
@@ -1101,6 +1102,84 @@ export class MapPanel {
         </div>
       </div>
       <div class="btn-row">${btn('⚔️ 派隊攻擊', 'attack', { id: gr.id }, { cls: 'btn-danger', disabled: !this.game.shelter.hasShelter() })}</div>`;
+  }
+
+  /** v15.19：全服空投的地圖圖示（預告倒數、剩餘時間、守衛數；被搶走的顯示誰拿走） */
+  renderDrops(now = Date.now()) {
+    const ad = this.game.airdrop;
+    if (!ad) return;
+    const min = (ms) => `${Math.max(0, Math.ceil(ms / 60000))} 分`;
+    const list = ad.list(now).map((d) => {
+      const st = ad.status(d, now);
+      const label = st.state === 'falling' ? `空投 ${min(d.landAt - now)}後降落`
+        : st.state === 'landed' ? `空投・剩 ${min(Math.min(d.expireAt, d.npcAt) - now)}・🧟×${ad.zoneOf(d).guard.n}`
+          : st.state === 'taken' ? `${st.by} 已搶走` : 'NPC 勢力已拿走';
+      return { id: d.id, lat: d.lat, lon: d.lon, state: st.state, label };
+    }).filter((x) => x.state !== 'gone');
+    this.service.renderDrops(list);
+  }
+
+  /** 空投資訊：狀態、可能內容、守衛、派隊搶奪或發起集結 */
+  dropBody(d) {
+    const g = this.game;
+    const ad = g.airdrop;
+    const now = Date.now();
+    const st = ad.status(d, now);
+    const Z = ad.zoneOf(d);
+    const zone = zoneAt(d.lat, d.lon);
+    const dist = ad.distanceTo(d);
+    const left = (ms) => formatDuration(Math.max(0, ms));
+    const tag = st.state === 'falling' ? `<span class="tag tag-blue">🪂 降落中</span> ${left(d.landAt - now)}後降落`
+      : st.state === 'landed' ? `<span class="tag tag-amber">已降落</span> 剩 <b>${left(Math.min(d.expireAt, d.npcAt) - now)}</b>（之後會被 NPC 勢力拿走）`
+        : st.state === 'taken' ? `<span class="tag">已被「${escapeHtml(st.by)}」搶走</span>` : '<span class="tag">已被 NPC 勢力拿走</span>';
+    const cats = [...new Set(Object.keys(d.mats).map((k) => SUPPLIES[k]?.cat))];
+    const tiers = `${Z.tiers[0]}～${Z.tiers[1]} 階`;
+    const what = [cats.includes('part') ? `🔩 ${tiers}零件` : '', cats.includes('fabric') ? `🧵 ${tiers}布料` : '', '⚙️ 稀有材料', '💰 金錢'].filter(Boolean).join('、');
+    const ok = st.state === 'landed' || st.state === 'falling';
+    const fmt = (n) => (n >= 10000 ? `${(n / 10000).toFixed(n % 10000 ? 1 : 0)} 萬` : n.toLocaleString());
+    return `<p>${tag}・<span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span>・距避難所 ${dist.toLocaleString()} 公尺</p>
+      <div class="label">可能內容</div>
+      <p>${what}${Z.bp ? `<br><small class="muted">${Math.round(Z.bp * 100)}% 機率有設計圖${Z.bpMin ? '（保底精良以上）' : ''}</small>` : ''}</p>
+      <div class="label">守衛殭屍</div>
+      <p>🧟 ${Z.guard.n} 隻（Lv${Z.guard.lv}）・<b>建議隊伍總戰力 ${fmt(Z.power)} 以上</b><br><small class="muted">打贏才能拿走空投</small></p>
+      <p class="muted">第一支抵達並打贏守衛的隊伍拿走全部；之後抵達的隊伍直接返回。帶著空投回程的隊伍可能被其他玩家攔截。</p>
+      ${ok ? `<div class="btn-row">${btn('🚀 派隊搶奪', 'dropGo', { id: d.id }, { cls: 'btn-primary', disabled: !g.shelter.hasShelter() })}${btn('🚩 發起集結', 'dropRally', { id: d.id })}</div>` : ''}`;
+  }
+
+  openDrop(id) {
+    const g = this.game;
+    const d = g.airdrop?.get(id);
+    if (!d) return;
+    this.ui.modal.open({
+      title: `📦 空投補給・${zoneAt(d.lat, d.lon).name}`,
+      body: this.dropBody(d),
+      live: () => this.dropBody(d),
+      onAction: (action, data, m) => {
+        if (action === 'dropGo') this.attackDrop(data.id);
+        if (action === 'dropRally') { m.close(); this.openRallySetup(g.airdrop.asTarget(d)); }
+      },
+    });
+  }
+
+  attackDrop(id) {
+    const g = this.game;
+    const d = g.airdrop?.get(id);
+    if (!d) return;
+    const sh = g.shelter.primary();
+    openTeamPicker(this.ui, {
+      title: '📦 搶奪空投',
+      intro: `<p class="muted">隊伍會先移動到空投落點，抵達時和守衛殭屍交戰（建議隊伍總戰力 ${g.airdrop.zoneOf(d).power.toLocaleString()} 以上），打贏就背著空投返回避難所。晚到或空投已被拿走時直接返回。</p>`,
+      vehicles: true,
+      distanceM: sh ? haversine(sh.lat, sh.lon, d.lat, d.lon) : 0,
+      trip: { poi: { id: `drop:${d.id}`, lat: d.lat, lon: d.lon, type: 'military', drop: true }, searchMin: 0 },
+      routeOption: true,
+      confirmLabel: '出發搶奪！',
+      onConfirm: (ids, _dur, _auto, vids, opts) => {
+        const r = this.ui.result(g.exploration.startDrop(id, ids, { vehicleIds: vids, ...opts }));
+        if (r.ok) this.renderMap(true);
+        return r;
+      },
+    });
   }
 
   openZombie(groupId) {
