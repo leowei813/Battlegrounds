@@ -41,6 +41,9 @@ export const QUEST_LEVEL = { high: 30, low: 40 };
  * 步驟 key：wins 打贏的戰鬥、cleanWins 打贏且自己沒倒下、kills 擊殺、explores 完成探索、
  *   guardNights 擔任守衛撐過的屍潮夜晚、farmMin 耕作分鐘（現實時間）、hunts 獵殺殭屍群或搶到空投、dungeons 完成地下城
  */
+/** v16.1：指揮官不能進地下城：個人任務的「完成一次地下城」換成這一步 */
+export const LEADER_DG_STEP = { key: 'nightBoss', need: 1, name: '獵殺首領', desc: '打贏一次夜間 Boss 殭屍群' };
+
 export const CLASS_QUESTS = {
   warrior: {
     name: '戰士之路',

@@ -8146,6 +8146,13 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   // 舊存檔遷移：補上特質（依編號固定）
   const mg = SaveManager.migrate({ version: 39, survivors: [{ id: 'sv_x', rarity: 'epic', classId: 'scout' }, { id: 'leader', isLeader: true, name: '老大', classId: 'warrior' }] });
   assert(mg.survivors[0].traits.length === 2 && mg.survivors[1].traits[0] === 'leader' && mg.survivors[0].pq && mg.survivors[0].adv === null, '舊存檔遷移：補上特質、任務進度與轉職欄位');
+  // v16.1：指揮官不能進地下城：第三步換成「打贏一次夜間 Boss 殭屍群」
+  {
+    const ldr = gt.survivors.leader();
+    const keys = gt.survivors.questSteps(ldr).map((st) => st.key);
+    const other = gt.state.survivors.find((x) => !x.isLeader && CQ[x.classId]);
+    assert(keys.includes('nightBoss') && !keys.includes('dungeons') && (!other || gt.survivors.questSteps(other).some((st) => st.key === 'dungeons')), `指揮官的第三步是打贏夜間 Boss，其他倖存者仍是完成地下城（${keys.join('、')}）`);
+  }
   SVS.disableTraits = true;
 }
 

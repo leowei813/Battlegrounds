@@ -349,6 +349,8 @@ export class ZombieSpawnSystem {
     const loot = { items: [] };
     if (result.victory) {
       this.game.state.stats.battlesWon += 1;
+      // v16.1：指揮官個人任務「打贏一次夜間 Boss 殭屍群」
+      if (g.boss) members.forEach((m) => this.game.survivors.pqAdd(m, 'nightBoss'));
       this.killGroup(g, this.game.state.player.name);
       const poi = this.game.state.map.pois.find((p) => p.id === g.poiId);
       const dropChance = (g.boss ? 1 : 0.12 * g.count) * (g.elite ? 2 : 1) * NIGHT_GROUP_DROP.chanceMul;

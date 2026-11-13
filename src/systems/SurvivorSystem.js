@@ -17,7 +17,7 @@ export const LOADOUT_MAX = { ammo: 300, med: 10 };
 export const AMMO_CAP_OPTIONS = [100, 150, 200, 250, 300];
 import { createSurvivor } from '../core/GameState.js';
 import {
-  TRAITS, CLASS_QUESTS, ADVANCED, QUEST_LEVEL, rollTraits, traitRandom,
+  TRAITS, CLASS_QUESTS, LEADER_DG_STEP, ADVANCED, QUEST_LEVEL, rollTraits, traitRandom,
 } from '../config/traits.js';
 import {
   withSeed,
@@ -174,11 +174,18 @@ export class SurvivorSystem {
   }
 
   /** 任務步驟與進度 */
+  /** 這位倖存者的任務步驟（v16.1：指揮官不能進地下城，「完成一次地下城」換成「打贏一次夜間 Boss 殭屍群」） */
+  stepsOf(sv) {
+    const q = CLASS_QUESTS[sv?.classId];
+    if (!q) return [];
+    return sv.isLeader ? q.steps.map((st) => (st.key === 'dungeons' ? LEADER_DG_STEP : st)) : q.steps;
+  }
+
   questSteps(sv) {
     const q = CLASS_QUESTS[sv.classId];
     if (!q) return [];
     const pq = sv.pq || {};
-    return q.steps.map((st) => {
+    return this.stepsOf(sv).map((st) => {
       const have = Math.min(st.need, Math.floor(pq[st.key] || 0));
       return { ...st, have, done: have >= st.need };
     });
@@ -192,7 +199,7 @@ export class SurvivorSystem {
   /** 任務計數（解鎖後、轉職前才算）；三個步驟同時計算 */
   pqAdd(sv, key, n = 1) {
     if (!sv || !(n > 0) || sv.adv || !this.questUnlocked(sv)) return;
-    if (!CLASS_QUESTS[sv.classId]?.steps.some((st) => st.key === key)) return;
+    if (!this.stepsOf(sv).some((st) => st.key === key)) return;
     sv.pq = sv.pq || {};
     sv.pq[key] = (sv.pq[key] || 0) + n;
     if (!sv.pqDone && this.questDone(sv)) {
