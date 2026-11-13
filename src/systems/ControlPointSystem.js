@@ -223,17 +223,55 @@ export class ControlPointSystem {
 
   /** 建造或升級到 lv 的費用：避難所同等級的一半 */
   bldCost(key, lv) {
-    return scaleCost(DEFENSES[key].cost(lv), CP_BUILD.costMul);
+    // v17：費用為避難所的一半，再套用自己的「降低建造費用」科技（與工程師折扣，同避難所）
+    const half = scaleCost(DEFENSES[key].cost(lv), CP_BUILD.costMul);
+    return this.game.shelter?.discounted ? this.game.shelter.discounted(half) : half;
+  }
+
+  /**
+   * v17：自己的科技對控制點防禦建築的加成（建造或升級時寫進共用資料，研究升級後自動更新）：
+   * w 路障耐久（圍牆耐久科技）、g 機槍塔傷害（防禦塔傷害、機槍塔、精準射擊科技）、v 瞭望台射擊（駐守射擊科技）
+   */
+  techMul() {
+    const r = this.game.research;
+    const b = (k) => Number(r?.bonus?.(k)) || 0;
+    const round = (x) => Math.round(x * 1000) / 1000;
+    return { w: round(1 + b('wallHpPct')), g: round(1 + b('towerDmgPct') + b('defDmg_machineGun') + b('towerRangePct')), v: round(1 + b('guardDmgPct')) };
+  }
+
+  /** v17：研究升級後，把自己在各控制點的建築加成更新到共用資料 */
+  async syncBldTech() {
+    const g = this.game;
+    if (!g.shared || this.busy.has('tech')) return;
+    const me = this.myId();
+    const m = this.techMul();
+    const key = JSON.stringify(m);
+    const stale = CONTROL_POINTS.filter((c) => { const x = this.data(c.id)?.bld?.[me]; return x && JSON.stringify(x.m || {}) !== key; });
+    if (!stale.length) return;
+    this.busy.add('tech');
+    try {
+      for (const c of stale) {
+        // eslint-disable-next-line no-await-in-loop
+        await g.shared.update(CP_KIND, c.id, (x) => {
+          if (!x?.bld?.[me]) return { fail: 'none' };
+          x.bld[me] = { ...x.bld[me], m };
+          return { data: x };
+        }, { lat: c.lat, lon: c.lon });
+      }
+    } finally {
+      this.busy.delete('tech');
+    }
   }
 
   /** 單座建築的效果（避難所的 3 倍）：wall 路障耐久、dps 機槍每秒傷害、mul 瞭望台射擊倍率 */
-  static bldEffect(key, lv, guardAtk = 0) {
+  static bldEffect(key, lv, guardAtk = 0, tech = null) {
     if (!lv) return { wall: 0, dps: 0 };
     const st = DEFENSES[key].stats(lv);
     const m = CP_BUILD.effectMul;
-    if (key === 'barricade') return { wall: st.wallBonus * m, dps: 0 };
-    if (key === 'machineGun') return { wall: 0, dps: st.damage * st.fireRate * m };
-    if (key === 'watchPost') return { wall: 0, dps: guardAtk * st.garrisonMul * st.fireRate * m };
+    const t = (k) => Math.min(5, Math.max(1, Number(tech?.[k]) || 1));
+    if (key === 'barricade') return { wall: st.wallBonus * m * t('w'), dps: 0 };
+    if (key === 'machineGun') return { wall: 0, dps: st.damage * st.fireRate * m * t('g') };
+    if (key === 'watchPost') return { wall: 0, dps: guardAtk * st.garrisonMul * st.fireRate * m * t('v') };
     return { wall: 0, dps: 0 };
   }
 
@@ -246,7 +284,7 @@ export class ControlPointSystem {
     Object.entries(d.bld || {}).forEach(([pid, x]) => {
       const atk = Math.max(0, ...guards.filter((h) => h.p === pid).flatMap((h) => h.units || []).map((u) => Number(u.atk) || 0));
       CP_BUILDINGS.forEach((k) => {
-        const e = ControlPointSystem.bldEffect(k, Math.min(DEFENSE_MAX_LEVEL, Number(x?.b?.[k]) || 0), atk);
+        const e = ControlPointSystem.bldEffect(k, Math.min(DEFENSE_MAX_LEVEL, Number(x?.b?.[k]) || 0), atk, x?.m);
         out.wall += e.wall;
         out.dps += e.dps;
       });
@@ -299,7 +337,7 @@ export class ControlPointSystem {
         data.bld = data.bld || {};
         const cur = data.bld[me]?.b || {};
         if ((cur[key] || 0) + 1 !== c.lv) return { fail: '等級已經改變，請再試一次' };
-        data.bld[me] = { n: name, b: { ...cur, [key]: c.lv } };
+        data.bld[me] = { n: name, b: { ...cur, [key]: c.lv }, m: this.techMul() };
         return { data };
       }, { lat: cp.lat, lon: cp.lon });
       if (!r.ok) {
@@ -1266,6 +1304,7 @@ export class ControlPointSystem {
     this.touchOwned(now).catch(() => {});
     this.syncGuards(now).catch(() => {});
     this.checkHostileOwners(now).catch(() => {});
+    this.syncBldTech().catch(() => {});
     this.npcTurns(now).catch(() => {});
     this.resolveMarches(now).catch(() => {});
     this.warnMarches(now);

@@ -8004,6 +8004,23 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const rh = H.cp.canBuild(id, 'barricade');
   assert(!rh.ok && /敵對/.test(rh.reason) && !H.cp.canGuard(id, 1).ok, `和佔領者敵對：不能蓋建築也不能駐防（${rh.reason}）`);
   assert(JSON.stringify(H.state.resources) === H0, '不能蓋時不扣資源');
+  // 科技：套用建造者自己的科技（圍牆耐久），研究升級後自動更新
+  {
+    await A.shared.poll();
+    const w0 = A.cp.defenseOf(id).wall;
+    const rb = A.research.bonus.bind(A.research);
+    A.research.bonus = (k) => (k === 'wallHpPct' ? 0.5 : rb(k));
+    await A.cp.syncBldTech();
+    const w1 = A.cp.defenseOf(id).wall;
+    A.research.bonus = rb;
+    await A.cp.syncBldTech();
+    assert(Math.abs(w1 - (w0 + DF.barricade.stats(1).wallBonus * e1 * 0.5)) <= 1, `控制點建築套用建造者自己的科技（圍牆耐久 +50%：${w0} → ${w1}）`);
+    const cr = A.research.bonus.bind(A.research);
+    A.research.bonus = (k) => (k === 'buildCostReduce' ? 0.2 : cr(k));
+    const c2 = A.cp.bldCost('barricade', 1);
+    A.research.bonus = cr;
+    assert(Object.keys(half).every((k) => c2[k] <= half[k]) && Object.keys(half).some((k) => c2[k] < half[k]), '降低建造費用的科技也套用在控制點建築');
+  }
   // 研究未完成的建築不能蓋（機槍塔需要研究）
   const mg = A.cp.canBuild(id, 'machineGun');
   assert(!mg.ok && /研究/.test(mg.reason || ''), `機槍塔需要先研究（${mg.reason}）`);

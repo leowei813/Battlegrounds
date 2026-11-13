@@ -291,10 +291,11 @@ export class MapPanel {
       const df = g.cp.defenseOf(id);
       const ICON = { barricade: '🧱', machineGun: '🔫', watchPost: '🔭' };
       const NAME = { barricade: '路障', machineGun: '機槍塔', watchPost: '瞭望台' };
+      const tech = g.cp.techMul();
       const effText = (k, lv) => {
         if (!lv) return '尚未建造';
-        const e = ControlPointSystem.bldEffect(k, lv, 1);
-        return k === 'barricade' ? `耐久 ${Math.round(e.wall).toLocaleString()}` : k === 'machineGun' ? `每秒 ${Math.round(e.dps).toLocaleString()} 傷害` : `駐防隊員攻擊 ×${(DEFENSES.watchPost.stats(lv).garrisonMul * 3).toFixed(1)} 射擊`;
+        const e = ControlPointSystem.bldEffect(k, lv, 1, tech);
+        return k === 'barricade' ? `耐久 ${Math.round(e.wall).toLocaleString()}` : k === 'machineGun' ? `每秒 ${Math.round(e.dps).toLocaleString()} 傷害` : `駐防隊員攻擊 ×${(DEFENSES.watchPost.stats(lv).garrisonMul * 3 * tech.v).toFixed(1)} 射擊`;
       };
       const myB = g.cp.bldOf(id);
       const myRow = join ? `<div class="cpd-row me"><div class="who">🟢 <b>你的建築</b></div><div class="cpd-items">${CP_BUILDINGS.map((k) => {
@@ -305,7 +306,7 @@ export class MapPanel {
         return `<div class="cpd-it"><span>${ICON[k]} ${NAME[k]}${lv ? ` <b>Lv${lv}</b>` : ''}</span><small>${effText(k, lv)}</small>${cost ? `<div class="cpd-cost">${costHtml(g.state, cost)}</div>` : ''}${btn(label, 'cpBuild', { k }, { cls: `btn-xs ${lv ? 'btn-primary' : ''}`, disabled: !c.ok, title: c.reason || '' })}</div>`;
       }).join('')}</div></div>` : '';
       const others = Object.entries(bld).filter(([pid]) => pid !== me).map(([pid, x]) => `<div class="cpd-row ${friends.has(pid) ? 'ally' : ''}"><div class="who">${friends.has(pid) ? '🤝 好友' : ''}「${escapeHtml(x?.n || '玩家')}」</div><div class="cpd-sum">${CP_BUILDINGS.map((k) => `${ICON[k]} ${x?.b?.[k] ? `Lv${x.b[k]}` : '—'}`).join('・')}</div></div>`).join('');
-      bldHtml = `<div class="label">防禦建築（每位玩家各 1 座・效果為避難所的 3 倍・費用為一半）</div>
+      bldHtml = `<div class="label">防禦建築（每位玩家各 1 座・效果為避難所的 3 倍並套用各自的科技・費用為一半・立即完成）</div>
         <div class="cpd-list">${myRow}${others}</div>
         <p class="muted">總防禦：路障耐久 ${df.wall.toLocaleString()}・防禦火力每秒 ${df.dps.toLocaleString()}。敵人要先打破路障才能和駐防隊交戰；和佔領者變成敵對時，該玩家的建築會被拆除、駐防隊遣返。駐防與建築最多 ${CP_MAX_PLAYERS} 位玩家（目前 ${g.cp.members(id).length} 位）。</p>`;
     }
