@@ -2,7 +2,7 @@
 
 export const GAME_TITLE = '絕地求生';
 export const SAVE_KEY = 'jdqs_save_v1';
-export const SAVE_VERSION = 40;
+export const SAVE_VERSION = 41;
 
 export const TICK_MS = 1000;
 /** v15.7 省電：沒有屍潮時地圖圖層每秒畫 10 次（有屍潮時逐幀） */

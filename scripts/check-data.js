@@ -7942,6 +7942,10 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   // 舊存檔遷移：補上特質（依編號固定）
   const mg = SaveManager.migrate({ version: 39, survivors: [{ id: 'sv_x', rarity: 'epic', classId: 'scout' }, { id: 'leader', isLeader: true, name: '老大', classId: 'warrior' }] });
   assert(mg.survivors[0].traits.length === 2 && mg.survivors[1].traits[0] === 'leader' && mg.survivors[0].pq && mg.survivors[0].adv === null, '舊存檔遷移：補上特質、任務進度與轉職欄位');
+  // v16.1：「完成一次地下城」改為「打贏一次地下城 Boss」：已完成的進度保留
+  assert(Object.values(CQ).every((q) => q.steps.some((st) => st.key === 'dgBoss') && !q.steps.some((st) => st.key === 'dungeons')), '各職業個人任務第三步改為打贏地下城 Boss');
+  const mg2 = SaveManager.migrate({ version: 40, survivors: [{ id: 'a', traits: [], pq: { dungeons: 1, wins: 3 } }, { id: 'b', traits: [], pq: {} }] });
+  assert(mg2.survivors[0].pq.dgBoss === 1 && !('dungeons' in mg2.survivors[0].pq) && mg2.survivors[0].pq.wins === 3 && !mg2.survivors[1].pq.dgBoss, '舊存檔遷移：已完成地下城的進度改記為打贏 Boss');
   SVS.disableTraits = true;
 }
 
