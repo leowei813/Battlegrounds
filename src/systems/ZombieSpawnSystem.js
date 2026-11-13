@@ -1,7 +1,7 @@
 import { SUPPLIES, SUPPLY_KEYS } from '../config/supplies.js';
 import { ZOMBIE_REFRESH_MS, ZOMBIE_MAX_GROUPS, MAX_TEAM_SIZE } from '../config/constants.js';
 import { POI_TYPES } from '../config/poiTypes.js';
-import { zoneAt, ZONES } from '../config/zones.js';
+import { zoneAt, ZONES, inNpcHome } from '../config/zones.js';
 import { pickSupply } from './LootStock.js';
 import {
   ALL_ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR, NIGHT_MUL, MAP_GROUP_MUL, BUILDING_ZONE, DAY_ZONE, mulOf,
@@ -140,7 +140,8 @@ export class ZombieSpawnSystem {
           if (chance(stalker)) enemyId = 'nightStalker';
           const boss = zone.danger >= 1 && chance(0.03 + d * 0.01);
           if (boss) enemyId = pick(Object.keys(BOSSES).sort());
-          if (!inWorld(lat, lon)) continue;
+          // v16.1：三大勢力大本營領地不能進入，殭屍群不出現在那裡（否則攻打路線會繞進領地）
+          if (!inWorld(lat, lon) || inNpcHome(lat, lon)) continue;
           const count0 = boss ? 1 : Math.min(NIGHT_GROUP_MAX, Math.max(1, Math.round(randInt(1, 2 + d + 1) * this.encounterMul(lat, lon) * NIGHT_GROUP_COUNT_MUL)));
           const count = boss ? 1 : Math.min(NIGHT_GROUP_MAX, Math.max(1, Math.round(count0 * wxCount)));
           // v15.11：等級依區域（對齊控制點守軍）

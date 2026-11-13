@@ -7406,6 +7406,12 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   let groups = [];
   for (let n = 1; n < 40 && !groups.some((x) => x.boss); n += 1) groups = groups.concat(gz.zombies.sharedGroups(n));
   const normal = groups.filter((x) => !x.boss);
+  {
+    const { inNpcHome: inH } = await import('../src/config/zones.js');
+    let gs = [];
+    for (let n = 1; n < 30; n += 1) gs = gs.concat(gz.zombies.sharedGroups(n));
+    assert(gs.length > 0 && gs.every((x) => !inH(x.lat, x.lon)), '夜間殭屍群不出現在三大勢力領地內');
+  }
   const okLv = normal.every((x) => { const [lo, hi] = ZS.NIGHT_GROUP_LEVEL[x.zone]; return x.level >= lo && x.level <= hi; });
   assert(groups.every((x) => x.count <= ZS.NIGHT_GROUP_MAX), `夜間殭屍群每群最多 ${ZS.NIGHT_GROUP_MAX} 隻`);
   assert(normal.length > 3 && okLv, `夜間殭屍群等級依區域（${normal.length} 群）`);
