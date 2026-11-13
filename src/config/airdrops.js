@@ -31,21 +31,21 @@ export const AIRDROP_GUARD_MIX = ['infected', 'berserker', 'mutant', 'infected']
  */
 export const AIRDROP_ZONE = {
   safe: {
-    tiers: [1, 2], kinds: 3, mul: 1, coins: [40, 80], parts: [1, 2], bp: 0, power: 20000, guard: { lv: 12, n: 5, mul: 14.8 },
+    tiers: [1, 2], kinds: 3, mul: 1, coins: [40, 80], parts: [1, 2], bp: 0, power: 15000, guard: { lv: 12, n: 5, mul: 11.17 },
   },
   normal: {
-    tiers: [1, 2], kinds: 3, mul: 1.2, coins: [60, 120], parts: [1, 3], bp: 0, power: 50000, guard: { lv: 20, n: 6, mul: 21.2 },
+    tiers: [1, 2], kinds: 3, mul: 1.2, coins: [60, 120], parts: [1, 3], bp: 0, power: 35000, guard: { lv: 20, n: 6, mul: 14.22 },
   },
   alert: {
-    tiers: [2, 3], kinds: 3, mul: 1.4, coins: [100, 180], parts: [2, 4], bp: 0.1, power: 90000, guard: { lv: 27, n: 6, mul: 33.3 },
+    tiers: [2, 3], kinds: 3, mul: 1.4, coins: [100, 180], parts: [2, 4], bp: 0.1, power: 65000, guard: { lv: 27, n: 6, mul: 22.82 },
   },
   danger: {
-    tiers: [3, 4], kinds: 4, mul: 1.6, coins: [150, 260], parts: [3, 6], bp: 0.2, power: 160000, guard: { lv: 35, n: 7, mul: 41.8 },
+    tiers: [3, 4], kinds: 4, mul: 1.6, coins: [150, 260], parts: [3, 6], bp: 0.2, power: 120000, guard: { lv: 35, n: 7, mul: 30.04 },
   },
   lethal: {
-    tiers: [3, 5], kinds: 4, mul: 1.8, coins: [220, 380], parts: [4, 8], bp: 0.2, bpMin: 'rare', power: 250000, guard: { lv: 43, n: 8, mul: 56.5 },
+    tiers: [3, 5], kinds: 4, mul: 1.8, coins: [220, 380], parts: [4, 8], bp: 0.2, bpMin: 'rare', power: 200000, guard: { lv: 43, n: 8, mul: 45.4 },
   },
   abyss: {
-    tiers: [4, 5], kinds: 4, mul: 2, coins: [300, 500], parts: [6, 10], bp: 0.2, bpMin: 'rare', power: 400000, guard: { lv: 50, n: 8, mul: 78.8 },
+    tiers: [4, 5], kinds: 4, mul: 2, coins: [300, 500], parts: [6, 10], bp: 0.2, bpMin: 'rare', power: 300000, guard: { lv: 50, n: 8, mul: 59.2 },
   },
 };
