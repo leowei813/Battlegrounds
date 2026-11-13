@@ -577,6 +577,12 @@ export class SaveManager {
     }
     // v15.10.1（存檔 37）：地圖重劃已過一段時間，取消所有玩家的免費重新選擇避難所
     if (v < 37) delete data.freeRelocate;
+    // v15.16：設計圖自動出售從「勾選品級」改成「品級 X 以下＋星級」：取勾選的最高品級，星級預設全部
+    if (v < 38 && Array.isArray(data.bpAutoSell)) {
+      const order = ['poor', 'common', 'uncommon', 'rare', 'epic', 'legendary'];
+      const top = data.bpAutoSell.map((r) => order.indexOf(r)).filter((i) => i >= 0).sort((a, b) => b - a)[0];
+      data.bpAutoSell = { r: top === undefined ? null : order[top], s: 0 };
+    }
     data.version = SAVE_VERSION;
     return data;
   }

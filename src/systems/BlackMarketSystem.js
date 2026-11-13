@@ -292,20 +292,36 @@ export class BlackMarketSystem {
     return { ok: true, n: list.length, coins, msg: `賣出 ${list.length} 張設計圖「${name}」，得到 💰${coins.toLocaleString()}` };
   }
 
-  /** v15.15：自動出售設計圖的保底品級（空陣列＝不自動出售） */
+  /**
+   * v15.16：設計圖自動出售設定：保底品級「r 以下」且星級「s 以下」（r＝null 不自動出售；s＝0 全部星級）
+   * @returns {{r:string|null, s:number}}
+   */
   bpAutoSell() {
-    return Array.isArray(this.game.state.bpAutoSell) ? this.game.state.bpAutoSell : [];
+    const a = this.game.state.bpAutoSell;
+    const r = a && RARITY_ORDER.includes(a.r) ? a.r : null;
+    const s = Math.max(0, Math.min(4, Math.floor(Number(a?.s) || 0)));
+    return { r, s };
   }
 
-  /** 會被自動出售的設計圖：保底品級在設定裡、不是副本圖紙、不是從交易所買來或撤回的 */
-  bpAutoTargets(rarities = this.bpAutoSell()) {
-    return this.game.state.inventory.blueprints.filter((b) => !b.dg && !b.keep && rarities.includes(b.rarity) && this.blueprintBuyback(b) > 0);
+  /** 設計圖的星級（與卡片上的 ★ 相同：強度每 2 階一顆星） */
+  static bpStars(bp) {
+    return Math.ceil((ITEM_MODELS[bp.model]?.tier || 1) / 2);
   }
 
-  /** 切換某個品級的自動出售；開啟時現有的同品級設計圖也一起賣掉 */
-  toggleBpAutoSell(rarity) {
+  /** 會被自動出售的設計圖：符合品級與星級、不是副本圖紙、不是從交易所買來或撤回的 */
+  bpAutoTargets(cfg = this.bpAutoSell()) {
+    if (!cfg.r) return [];
+    const max = RARITY_ORDER.indexOf(cfg.r);
+    return this.game.state.inventory.blueprints.filter((b) => !b.dg && !b.keep && RARITY_ORDER.includes(b.rarity) && RARITY_ORDER.indexOf(b.rarity) <= max
+      && (!cfg.s || BlackMarketSystem.bpStars(b) <= cfg.s) && this.blueprintBuyback(b) > 0);
+  }
+
+  /** 變更自動出售設定；現有符合條件的設計圖也一起賣掉 */
+  setBpAutoSell(cfg) {
     const cur = this.bpAutoSell();
-    this.game.state.bpAutoSell = cur.includes(rarity) ? cur.filter((r) => r !== rarity) : [...cur, rarity];
+    const r = cfg.r === undefined ? cur.r : (RARITY_ORDER.includes(cfg.r) ? cfg.r : null);
+    const s = cfg.s === undefined ? cur.s : Math.max(0, Math.min(4, Math.floor(Number(cfg.s) || 0)));
+    this.game.state.bpAutoSell = { r, s };
     return this.autoSellBlueprints();
   }
 

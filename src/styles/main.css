@@ -1772,11 +1772,9 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 
 /* v15.15：設計圖自動出售 */
 .bp-auto { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 2px 0 10px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 10px; }
-.bp-auto .chips { margin: 0; }
-.bp-auto .bp-auto-chip { color: var(--rc); border-color: color-mix(in srgb, var(--rc) 45%, transparent); }
-.bp-auto .bp-auto-chip.active { background: color-mix(in srgb, var(--rc) 22%, transparent); border-color: var(--rc); color: var(--rc); }
 .bp-auto small { flex-basis: 100%; }
 .bp-auto-sum { margin-bottom: 4px; }
+.bp-dd { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
 
 /* v15.15：副本視窗切換箭頭（地下感染區那一行兩端） */
 .dg-head .grow { flex: 1; }
