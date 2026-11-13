@@ -249,6 +249,7 @@ async function boot() {
   } else {
     whatsNew();
   }
+  ui.notify.ready = true; // 登入流程的視窗都開好了，之後才檢查地下城報名提醒（v15.15.1）
   ui.toastEl.show(`☁️ 已登入 ${cloud.username}${cloudMeta?.deviceName ? `・進度來自 ${cloudMeta.deviceName}` : ''}`, 'success', 4000);
 
   if (import.meta.env.DEV) {
