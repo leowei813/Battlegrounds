@@ -77,7 +77,7 @@ export const CLASS_QUESTS = {
       { key: 'dungeons', need: 1, name: '深入地底', desc: '完成一次地下城' },
     ],
     adv: [
-      { id: 'demolition', name: '爆破專家', icon: '💣', desc: '防禦塔傷害 +20%', fx: { towerDmg: 0.2 } },
+      { id: 'demolition', name: '爆破專家', icon: '💣', desc: '防禦塔傷害 +20%（唯一效果）', fx: { towerDmg: 0.2 } },
       { id: 'architect', name: '建築師', icon: '🏗️', desc: '建造費用 −10%、修牆速度 +50%', fx: { buildDiscount: 0.1, repairBonus: 0.5 } },
     ],
   },
