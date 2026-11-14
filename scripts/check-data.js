@@ -8166,6 +8166,15 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const other = gt.state.survivors.find((x) => !x.isLeader && CQ[x.classId]);
     assert(keys.includes('nightBoss') && !keys.includes('dungeons') && (!other || gt.survivors.questSteps(other).some((st) => st.key === 'dungeons')), `指揮官的第三步是打贏夜間 Boss，其他倖存者仍是完成地下城（${keys.join('、')}）`);
   }
+  // v16.1：轉職後地下城仍以原本的職業計算（隊伍職業加成、套裝、全職業齊全）
+  {
+    const med = mkSv('外科', 'medic', 35, 'rare');
+    gt.state.survivors.push(med);
+    med.adv = 'surgeon';
+    const snap = gt.dungeon.snapshot(med);
+    const U = gt.dungeon.constructor.unitOf(snap, 0);
+    assert(snap.c === 'medic' && U.cls === 'medic' && gt.survivors.className(med) === '外科醫生', `轉職後地下城仍算原本職業（${gt.survivors.className(med)} → ${U.cls}）`);
+  }
   SVS.disableTraits = true;
 }
 
