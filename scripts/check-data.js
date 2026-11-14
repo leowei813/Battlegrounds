@@ -8020,6 +8020,12 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     A.research.bonus = rb;
     await A.cp.syncBldTech();
     assert(Math.abs(w1 - (w0 + DF.barricade.stats(1).wallBonus * e1 * 0.5)) <= 1, `控制點建築套用建造者自己的科技（圍牆耐久 +50%：${w0} → ${w1}）`);
+    // 工程師（含轉職爆破專家）的防禦塔加成也套用到機槍塔、瞭望台
+    const ee = A.shelter.engineerEffect.bind(A.shelter);
+    A.shelter.engineerEffect = (k) => (k === 'towerDmg' ? 0.45 : ee(k));
+    const tm = A.cp.techMul();
+    A.shelter.engineerEffect = ee;
+    assert(Math.abs(tm.g - A.cp.techMul().g - 0.45) < 1e-6 && Math.abs(tm.v - A.cp.techMul().v - 0.45) < 1e-6, `工程師的防禦塔加成（爆破專家等）套用到控制點機槍塔與瞭望台（${JSON.stringify(tm)}）`);
     const cr = A.research.bonus.bind(A.research);
     A.research.bonus = (k) => (k === 'buildCostReduce' ? 0.2 : cr(k));
     const c2 = A.cp.bldCost('barricade', 1);

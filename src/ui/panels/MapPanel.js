@@ -307,7 +307,7 @@ export class MapPanel {
         return `<div class="cpd-it"><span>${ICON[k]} ${NAME[k]}${lv ? ` <b>Lv${lv}</b>` : ''}</span><small>${effText(k, lv)}</small>${cost ? `<div class="cpd-cost">${costHtml(g.state, cost)}</div>` : ''}${btn(label, 'cpBuild', { k }, { cls: `btn-xs ${lv ? 'btn-primary' : ''}`, disabled: !c.ok, title: c.reason || '' })}</div>`;
       }).join('')}</div></div>` : '';
       const others = Object.entries(bld).filter(([pid]) => pid !== me).map(([pid, x]) => `<div class="cpd-row ${friends.has(pid) ? 'ally' : ''}"><div class="who">${friends.has(pid) ? '🤝 好友' : ''}「${escapeHtml(x?.n || '玩家')}」</div><div class="cpd-sum">${['barricade', 'machineGun'].map((k) => `${ICON[k]} ${x?.b?.[k] ? `Lv${x.b[k]}` : '—'}`).join('・')}・🔭 ${['watchPost', 'watchPost2'].map((k) => (x?.b?.[k] ? `Lv${x.b[k]}` : '—')).join('／')}</div></div>`).join('');
-      bldHtml = `<div class="label">防禦建築（每位玩家路障、機槍塔各 1 座、瞭望台 2 座・效果為避難所的 3 倍並套用各自的科技・費用為一半・立即完成）</div>
+      bldHtml = `<div class="label">防禦建築（每位玩家路障、機槍塔各 1 座、瞭望台 2 座・效果為避難所的 3 倍並套用各自的科技與工程師加成・費用為一半・立即完成）</div>
         <div class="cpd-list">${myRow}${others}</div>
         <p class="muted">總防禦：路障耐久 ${(() => { const wl = g.cp.wallLeft(id, Date.now(), df.wall); return wl < df.wall ? `${wl.toLocaleString()}/${df.wall.toLocaleString()}（修復中）` : df.wall.toLocaleString(); })()}・防禦火力每秒 ${df.dps.toLocaleString()}。交戰後路障與駐防隊員的戰損會保留，約 2 小時回滿；勢力被擊退後約 30 分鐘會追加一波。敵人要先打破路障才能和駐防隊交戰；和佔領者變成敵對時，該玩家的建築會被拆除、駐防隊遣返。駐防與建築最多 ${CP_MAX_PLAYERS} 位玩家（目前 ${g.cp.members(id).length} 位）。</p>`;
     }

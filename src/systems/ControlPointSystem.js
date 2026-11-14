@@ -231,13 +231,15 @@ export class ControlPointSystem {
 
   /**
    * v17：自己的科技對控制點防禦建築的加成（建造或升級時寫進共用資料，研究升級後自動更新）：
-   * w 路障耐久（圍牆耐久科技）、g 機槍塔傷害（防禦塔傷害、機槍塔、精準射擊科技）、v 瞭望台射擊（駐守射擊科技）
+   * w 路障耐久（圍牆耐久科技）、g 機槍塔傷害（防禦塔傷害、機槍塔、精準射擊科技＋工程師加成）、v 瞭望台射擊（駐守射擊科技＋工程師加成）
    */
   techMul() {
     const r = this.game.research;
     const b = (k) => Number(r?.bonus?.(k)) || 0;
     const round = (x) => Math.round(x * 1000) / 1000;
-    return { w: round(1 + b('wallHpPct')), g: round(1 + b('towerDmgPct') + b('defDmg_machineGun') + b('towerRangePct')), v: round(1 + b('guardDmgPct')) };
+    // v17：工程師的防禦塔加成（超頻、精密改裝、轉職爆破專家；取最高的一位，同避難所）也套用到機槍塔與瞭望台
+    const eng = Number(this.game.shelter?.engineerEffect?.('towerDmg')) || 0;
+    return { w: round(1 + b('wallHpPct')), g: round(1 + b('towerDmgPct') + b('defDmg_machineGun') + b('towerRangePct') + eng), v: round(1 + b('guardDmgPct') + eng) };
   }
 
   /** v17：研究升級後，把自己在各控制點的建築加成更新到共用資料 */
