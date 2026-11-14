@@ -1310,7 +1310,10 @@ export class ControlPointSystem {
       const msg = ft.win
         ? `🏴 ${who}（${ft.atk} 人）攻下了${role}控制點 #${cp.no}${ft.total ? `：守軍 ${ft.total} 人全數被擊倒` : '（沒有駐防）'}`
         : `🛡️ ${role}控制點 #${cp.no} 擊退了${who}（${ft.atk} 人）：擊倒 ${ft.atkDown || 0} 人，守軍倒下 ${ft.lost || 0} 人${(ft.down || []).includes(me) ? '（你的駐防隊有人倒下，撤回避難所）' : ''}`;
-      const text = !owner && !guard ? this.lostReason(mine.find((e) => !this.guardFought(e, ft))) : msg;
+      // v17：防守成功經驗先算好，寫進戰報與駐防隊的報告（以前只記在事件紀錄，戰報看不到）
+      const xpGot = !ft.win && guard && ft.f ? this.guardXp(cp, ft) : [];
+      const xpLine = xpGot.length ? `⭐ 防守成功經驗：${xpGot.map((x) => `${x.name} +${x.amt.toLocaleString()}`).join('、')}` : '';
+      const text = (!owner && !guard ? this.lostReason(mine.find((e) => !this.guardFought(e, ft))) : msg) + (xpLine ? `\n${xpLine}` : '');
       g.log(text, ft.win ? 'danger' : 'success');
       g.toast?.(text, ft.win ? 'danger' : 'success');
       // v15.9：控制點交戰戰報另外記在「消息 → 🚩 控制點」
@@ -1325,9 +1328,13 @@ export class ControlPointSystem {
         const line = ft.win ? this.lostReason(e) : this.guardFought(e, ft) ? msg : null;
         if (!line) return;
         if (!(e.travelEvents || []).includes(line)) e.travelEvents = [...(e.travelEvents || []), line];
+        const mx = xpGot.filter((x) => x.e === e.id);
+        if (mx.length) {
+          e.travelEvents.push(`⭐ 防守成功經驗：${mx.map((x) => `${x.name} +${x.amt.toLocaleString()}`).join('、')}`);
+          e.travelXp = (e.travelXp || 0) + mx.reduce((t, x) => t + x.amt, 0);
+        }
         if (ft.battle && this.guardFought(e, ft)) g.combat.adopt?.(ft.battle, e);
       });
-      if (!ft.win && guard && ft.f) this.guardXp(cp, ft); // 防守經驗只限擊退勢力部隊（v15.7 規則）
     });
   }
 
@@ -1344,11 +1351,11 @@ export class ControlPointSystem {
         const amt = Math.round(xpToNext(sv.level) * CP_GUARD_XP_PCT);
         if (amt <= 0) return;
         g.survivors.gainXp(sv, amt);
-        got.push(`${sv.name} +${amt.toLocaleString()}`);
+        got.push({ e: e.id, name: sv.name, amt });
       });
     });
-    if (got.length) g.log(`⭐ 控制點 #${cp.no} 防守成功經驗：${got.join('、')}`, 'success');
-    return got.length;
+    if (got.length) g.log(`⭐ 控制點 #${cp.no} 防守成功經驗：${got.map((x) => `${x.name} +${x.amt.toLocaleString()}`).join('、')}`, 'success');
+    return got;
   }
 
   /** 每 2 秒 */

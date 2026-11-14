@@ -6529,11 +6529,12 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     // v15.7：防守成功：沒倒下的駐防隊員獲得升級所需經驗的 3%（佔領者沒駐防不拿）
     assert((gsv.level > glv0 || gsv.xp > gxp0) && B.state.log.some((l) => /防守成功經驗/.test(l.msg)), `駐防隊防守成功：沒倒下的隊員獲得經驗（${B.state.log.find((l) => /防守成功經驗/.test(l.msg))?.msg || ''}）`);
     assert(!A.state.log.some((l) => /防守成功經驗/.test(l.msg)), '只佔領、沒有駐防的人不拿防守經驗');
+    assert((B.state.cpLog || []).some((x) => /防守成功經驗/.test(x.text)), 'v17：防守成功經驗顯示在控制點交戰戰報裡');
     const nb = B.state.log.filter((l) => /防守成功經驗/.test(l.msg)).length;
     B.cp.reportFights();
     assert(B.state.log.filter((l) => /防守成功經驗/.test(l.msg)).length === nb, '同一場防守經驗只拿一次');
     const gx1 = gsv.xp;
-    assert(B.cp.guardXp(cp, { at: Date.now(), ge: [gd.exp.id], downU: [`${gd.exp.id}:0`] }) === 0 && gsv.xp === gx1, '倒下的駐防隊員沒有防守經驗、也不扣經驗');
+    assert(B.cp.guardXp(cp, { at: Date.now(), ge: [gd.exp.id], downU: [`${gd.exp.id}:0`] }).length === 0 && gsv.xp === gx1, '倒下的駐防隊員沒有防守經驗、也不扣經驗');
     await A.shared.update(CPC.CP_KIND, cp.id, () => ({ data: { ...snap, march: null } }));
     await A.shared.update(CPC.CP_KIND, tgt2.id, () => ({ data: { owners: [], guards: [], faction: null } }));
     await B.shared.poll();
