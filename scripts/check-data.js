@@ -8025,6 +8025,19 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     A.research.bonus = cr;
     assert(Object.keys(half).every((k) => c2[k] <= half[k]) && Object.keys(half).some((k) => c2[k] < half[k]), '降低建造費用的科技也套用在控制點建築');
   }
+  // 瞭望台 2 座：A 由最強、B 由第二強的駐防隊員射擊
+  {
+    const sc = new Map(A.shared.cache);
+    const key = `${CPC.CP_KIND}:${id}`;
+    const cur = A.shared.cache.get(key);
+    const mkData = (b) => ({ ...cur, data: { ...cur.data, bld: { BA: { n: 'BA', b } }, guards: [{ p: 'BA', n: 'BA', e: 'eW', units: [{ i: 0, hp: 100, maxHp: 100, atk: 300 }, { i: 1, hp: 100, maxHp: 100, atk: 100 }] }] } });
+    A.shared.cache.set(key, mkData({ watchPost: 1 }));
+    const one = A.cp.defenseOf(id).dps;
+    A.shared.cache.set(key, mkData({ watchPost: 1, watchPost2: 1 }));
+    const two = A.cp.defenseOf(id).dps;
+    A.shared.cache = sc;
+    assert(CPC.CP_BUILDINGS.filter((k) => CPC.cpDefKey(k) === 'watchPost').length === 2 && Math.abs(two / one - 4 / 3) < 0.01, `每位玩家可以蓋 2 座瞭望台，B 由第二強的駐防隊員射擊（${one} → ${two}）`);
+  }
   // 研究未完成的建築不能蓋（機槍塔需要研究）
   const mg = A.cp.canBuild(id, 'machineGun');
   assert(!mg.ok && /研究/.test(mg.reason || ''), `機槍塔需要先研究（${mg.reason}）`);

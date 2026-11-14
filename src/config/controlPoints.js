@@ -61,7 +61,9 @@ export const CP_GUARD_MAX = 3;
 /** v17：每個控制點最多幾位玩家駐防或蓋防禦建築 */
 export const CP_MAX_PLAYERS = 8;
 /** v17：控制點防禦建築（每位玩家各 1 座）：效果為避難所同等級的 3 倍，費用為一半 */
-export const CP_BUILDINGS = ['barricade', 'machineGun', 'watchPost'];
+export const CP_BUILDINGS = ['barricade', 'machineGun', 'watchPost', 'watchPost2'];
+/** v17：控制點建築對應的避難所防禦建築（瞭望台 2 座都是瞭望台：A 由最強、B 由第二強的駐防隊員射擊） */
+export const cpDefKey = (k) => (k === 'watchPost2' ? 'watchPost' : k);
 export const CP_BUILD = { effectMul: 3, costMul: 0.5 };
 
 /**

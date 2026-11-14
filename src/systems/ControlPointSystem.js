@@ -1,6 +1,6 @@
 import { TimeSystem } from './TimeSystem.js';
 import {
-  CONTROL_POINTS, cpById, cpAt, CP_POWER, CP_GARRISON, CP_LEVEL, CP_MAX_PLAYERS, CP_BUILDINGS, CP_BUILD, CP_INCOME_MUL, CP_RECOVER_MS, CP_FOLLOW_MS, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT, CP_SHIELD, FACTION_FORCE_SCALE,
+  CONTROL_POINTS, cpById, cpAt, CP_POWER, CP_GARRISON, CP_LEVEL, CP_MAX_PLAYERS, CP_BUILDINGS, cpDefKey, CP_BUILD, CP_INCOME_MUL, CP_RECOVER_MS, CP_FOLLOW_MS, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT, CP_SHIELD, FACTION_FORCE_SCALE,
 } from '../config/controlPoints.js';
 import { inNpcHome, ZONES } from '../config/zones.js';
 import { xpToNext } from '../config/survivors.js';
@@ -225,7 +225,7 @@ export class ControlPointSystem {
   /** 建造或升級到 lv 的費用：避難所同等級的一半 */
   bldCost(key, lv) {
     // v17：費用為避難所的一半，再套用自己的「降低建造費用」科技（與工程師折扣，同避難所）
-    const half = scaleCost(DEFENSES[key].cost(lv), CP_BUILD.costMul);
+    const half = scaleCost(DEFENSES[cpDefKey(key)].cost(lv), CP_BUILD.costMul);
     return this.game.shelter?.discounted ? this.game.shelter.discounted(half) : half;
   }
 
@@ -267,12 +267,12 @@ export class ControlPointSystem {
   /** 單座建築的效果（避難所的 3 倍）：wall 路障耐久、dps 機槍每秒傷害、mul 瞭望台射擊倍率 */
   static bldEffect(key, lv, guardAtk = 0, tech = null) {
     if (!lv) return { wall: 0, dps: 0 };
-    const st = DEFENSES[key].stats(lv);
+    const st = DEFENSES[cpDefKey(key)].stats(lv);
     const m = CP_BUILD.effectMul;
     const t = (k) => Math.min(5, Math.max(1, Number(tech?.[k]) || 1));
     if (key === 'barricade') return { wall: st.wallBonus * m * t('w'), dps: 0 };
     if (key === 'machineGun') return { wall: 0, dps: st.damage * st.fireRate * m * t('g') };
-    if (key === 'watchPost') return { wall: 0, dps: guardAtk * st.garrisonMul * st.fireRate * m * t('v') };
+    if (key === 'watchPost' || key === 'watchPost2') return { wall: 0, dps: guardAtk * st.garrisonMul * st.fireRate * m * t('v') };
     return { wall: 0, dps: 0 };
   }
 
@@ -283,8 +283,10 @@ export class ControlPointSystem {
     if (!d || d.faction || !(d.owners || []).length) return out;
     const guards = this.guardsAt(id, at);
     Object.entries(d.bld || {}).forEach(([pid, x]) => {
-      const atk = Math.max(0, ...guards.filter((h) => h.p === pid).flatMap((h) => h.units || []).map((u) => Number(u.atk) || 0));
+      // 瞭望台 A 由這位玩家最強的駐防隊員射擊、瞭望台 B 由第二強的射擊
+      const atks = guards.filter((h) => h.p === pid).flatMap((h) => h.units || []).map((u) => Number(u.atk) || 0).sort((a, b) => b - a);
       CP_BUILDINGS.forEach((k) => {
+        const atk = k === 'watchPost2' ? (atks[1] || 0) : (atks[0] || 0);
         const e = ControlPointSystem.bldEffect(k, Math.min(DEFENSE_MAX_LEVEL, Number(x?.b?.[k]) || 0), atk, x?.m);
         out.wall += e.wall;
         out.dps += e.dps;
@@ -310,7 +312,7 @@ export class ControlPointSystem {
     if (!CP_BUILDINGS.includes(key)) return { ok: false, reason: '不能蓋這種建築' };
     const j = this.joinCheck(id);
     if (!j.ok) return j;
-    if (!g.shelter.isDefenseUnlocked(key)) return { ok: false, reason: g.shelter.defenseLockReason(key) };
+    if (!g.shelter.isDefenseUnlocked(cpDefKey(key))) return { ok: false, reason: g.shelter.defenseLockReason(cpDefKey(key)) };
     const lv = (this.bldOf(id)[key] || 0) + 1;
     if (lv > DEFENSE_MAX_LEVEL) return { ok: false, reason: '已經是最高等級' };
     const cost = this.bldCost(key, lv);
@@ -345,9 +347,10 @@ export class ControlPointSystem {
         grantCost(g.state, c.cost);
         return r;
       }
-      g.log(`🏗️ 在控制點 #${cp.no} ${c.lv === 1 ? '建造' : '升級'}${DEFENSES[key].name}（Lv${c.lv}）`, 'success');
+      const bn = key === 'watchPost2' ? '瞭望台 B' : key === 'watchPost' ? '瞭望台 A' : DEFENSES[key].name;
+      g.log(`🏗️ 在控制點 #${cp.no} ${c.lv === 1 ? '建造' : '升級'}${bn}（Lv${c.lv}）`, 'success');
       g.changed?.();
-      return { ok: true, msg: `${DEFENSES[key].name}${c.lv === 1 ? '建造完成' : `升級到 Lv${c.lv}`}` };
+      return { ok: true, msg: `${bn}${c.lv === 1 ? '建造完成' : `升級到 Lv${c.lv}`}` };
     } finally {
       this.busy.delete(`b:${id}`);
     }
