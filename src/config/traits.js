@@ -66,7 +66,7 @@ export const CLASS_QUESTS = {
     ],
     adv: [
       { id: 'surgeon', name: '外科醫生', icon: '🩺', desc: '急救治療量 +10%', fx: { healPct: 0.1 } },
-      { id: 'herbalist', name: '老中醫', icon: '🌿', desc: '隊伍生命 +8%（戰鬥時，同隊全員）', fx: { teamHp: 0.08 } },
+      { id: 'herbalist', name: '老中醫', icon: '🌿', desc: '隊伍生命 +8%（戰鬥時，同隊全員・唯一效果）', fx: { teamHp: 0.08 } },
     ],
   },
   engineer: {
@@ -78,7 +78,7 @@ export const CLASS_QUESTS = {
     ],
     adv: [
       { id: 'demolition', name: '爆破專家', icon: '💣', desc: '防禦塔傷害 +20%（唯一效果）', fx: { towerDmg: 0.2 } },
-      { id: 'architect', name: '建築師', icon: '🏗️', desc: '建造費用 −10%、修牆速度 +50%', fx: { buildDiscount: 0.1, repairBonus: 0.5 } },
+      { id: 'architect', name: '建築師', icon: '🏗️', desc: '建造費用 −10%（唯一效果）、修牆速度 +50%', fx: { buildDiscount: 0.1, repairBonus: 0.5 } },
     ],
   },
   farmer: {
@@ -89,8 +89,8 @@ export const CLASS_QUESTS = {
       { key: 'dungeons', need: 1, name: '深入地底', desc: '完成一次地下城' },
     ],
     adv: [
-      { id: 'producer', name: '生產家', icon: '🏭', desc: '在家時避難所所有產量 +20%（多位不疊加）', fx: { prodAll: 0.2 } },
-      { id: 'scavenger', name: '拾荒者', icon: '🎒', desc: '探索物資 +15%、野外覓食 +20%', fx: { lootPct: 0.15, forage: 0.2 } },
+      { id: 'producer', name: '生產家', icon: '🏭', desc: '在家時避難所所有產量 +20%（唯一效果）', fx: { prodAll: 0.2 } },
+      { id: 'scavenger', name: '拾荒者', icon: '🎒', desc: '探索物資 +15%、野外覓食 +20%（唯一效果）', fx: { lootPct: 0.15, forage: 0.2 } },
     ],
   },
   scout: {
@@ -102,7 +102,7 @@ export const CLASS_QUESTS = {
     ],
     adv: [
       { id: 'sniper', name: '狙擊手', icon: '🎯', desc: '攻擊 +12%、暴擊率 +3%', fx: { atkPct: 0.12, critAdd: 0.03 } },
-      { id: 'pathfinder', name: '斥候', icon: '🦅', desc: '探索速度 +15%、閃避 +4%', fx: { exploreSpeed: 0.15, dodgeAdd: 0.04 } },
+      { id: 'pathfinder', name: '斥候', icon: '🦅', desc: '探索速度 +15%（唯一效果）、閃避 +4%', fx: { exploreSpeed: 0.15, dodgeAdd: 0.04 } },
     ],
   },
 };

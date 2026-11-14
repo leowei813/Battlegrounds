@@ -37,9 +37,9 @@ export const CLASSES = {
     growth: { hp: 17, atk: 1.8, def: 1.0 },
     skills: [
       { id: 'repair', name: '維修', unlock: 1, desc: '修繕圍牆的速度 +50%', effect: { repairBonus: 0.5 } },
-      { id: 'efficient', name: '高效施工', unlock: 4, desc: '建造費用 -10%', effect: { buildDiscount: 0.1 } },
-      { id: 'overclock', name: '超頻', unlock: 8, desc: '防禦塔傷害 +15%', effect: { towerDmg: 0.15 } },
-      { id: 'tinker', name: '精密改裝', unlock: 12, desc: '防禦塔傷害再 +10%', effect: { towerDmg: 0.1 } },
+      { id: 'efficient', name: '高效施工', unlock: 4, desc: '建造費用 -10%（唯一效果）', effect: { buildDiscount: 0.1 } },
+      { id: 'overclock', name: '超頻', unlock: 8, desc: '防禦塔傷害 +15%（唯一效果）', effect: { towerDmg: 0.15 } },
+      { id: 'tinker', name: '精密改裝', unlock: 12, desc: '防禦塔傷害再 +10%（唯一效果）', effect: { towerDmg: 0.1 } },
       { id: 'fortify', name: '加固專家', unlock: 16, desc: '修繕圍牆的速度再 +50%', effect: { repairBonus: 0.5 } },
       { id: 'mechAim', name: '機械瞄準', unlock: 22, desc: '攻擊 +15%、暴擊率 +5%', effect: { atkPct: 0.15, critAdd: 0.05 } },
     ],
@@ -50,11 +50,11 @@ export const CLASSES = {
     growth: { hp: 19, atk: 1.5, def: 1.0 },
     skills: [
       { id: 'harvest', name: '豐收', unlock: 1, desc: '駐守時食物產量 +20%', effect: { foodPct: 0.2 } },
-      { id: 'forage', name: '野外覓食', unlock: 4, desc: '探索時食物收穫 +30%', effect: { forage: 0.3 } },
+      { id: 'forage', name: '野外覓食', unlock: 4, desc: '探索時食物收穫 +30%（唯一效果）', effect: { forage: 0.3 } },
       { id: 'herbal', name: '草藥種植', unlock: 8, desc: '駐守時紗布 +1/時', effect: { medicinePerHour: 1 } },
       { id: 'stamina', name: '吃苦耐勞', unlock: 12, desc: '生命 +15%', effect: { hpPct: 0.15 } },
       { id: 'bountiful', name: '大豐收', unlock: 16, desc: '駐守時食物產量再 +20%', effect: { foodPct: 0.2 } },
-      { id: 'scavenger', name: '拾荒專家', unlock: 22, desc: '探索物資 +15%', effect: { lootPct: 0.15 } },
+      { id: 'scavenger', name: '拾荒專家', unlock: 22, desc: '探索物資 +15%（唯一效果）', effect: { lootPct: 0.15 } },
     ],
   },
   scout: {
@@ -62,12 +62,12 @@ export const CLASSES = {
     base: { hp: 105, atk: 13, def: 4, crit: 0.12, critDmg: 1.7, dodge: 0.14, atkSpeed: 1.15 },
     growth: { hp: 14, atk: 2.1, def: 0.7 },
     skills: [
-      { id: 'pathfinder', name: '尋路', unlock: 1, desc: '隊伍探索時間 -15%', effect: { exploreSpeed: 0.15 } },
-      { id: 'keenEye', name: '銳眼', unlock: 4, desc: '探索物資 +20%，裝備掉落率 +25%', effect: { lootPct: 0.2, itemPct: 0.25 } },
+      { id: 'pathfinder', name: '尋路', unlock: 1, desc: '隊伍探索時間 -15%（唯一效果）', effect: { exploreSpeed: 0.15 } },
+      { id: 'keenEye', name: '銳眼', unlock: 4, desc: '探索物資 +20%，裝備掉落率 +25%（唯一效果）', effect: { lootPct: 0.2, itemPct: 0.25 } },
       { id: 'ambush', name: '伏擊', unlock: 8, desc: '戰鬥首擊必定暴擊', effect: { firstStrikeCrit: true } },
       { id: 'evasion', name: '閃避大師', unlock: 12, desc: '閃避 +5%', effect: { dodgeAdd: 0.05 } },
       { id: 'sniper', name: '狙擊', unlock: 16, desc: '暴擊率 +8%、攻擊 +10%', effect: { critAdd: 0.08, atkPct: 0.1 } },
-      { id: 'treasure', name: '尋寶專家', unlock: 22, desc: '裝備掉落率 +25%、探索物資 +10%', effect: { itemPct: 0.25, lootPct: 0.1 } },
+      { id: 'treasure', name: '尋寶專家', unlock: 22, desc: '裝備掉落率 +25%、探索物資 +10%（唯一效果）', effect: { itemPct: 0.25, lootPct: 0.1 } },
     ],
   },
 };
