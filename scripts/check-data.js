@@ -7390,7 +7390,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(Math.abs(scaleAt(0) - 1) < 1e-9 && Math.abs(scaleAt(2) - 1.2) < 1e-9 && Math.abs(scaleAt(4) - 1.4) < 1e-9 && Math.abs(scaleAt(9) - 1.4) < 1e-9, 'v17：勢力進攻部隊強度跟著控制點數（×1～×1.4）');
   const { unitPower: uP2 } = await import('../src/utils/math.js');
   const pw = (n, id) => { scaleAt(n); return gx.cp.attackForce('red', id).reduce((t, u) => t + uP2(u), 0); };
-  assert(Math.abs(pw(0, 'cp1') - 300000) < 9000 && Math.abs(pw(0, 'cp3') - 500000) < 15000 && Math.abs(pw(4, 'cp3') / pw(0, 'cp3') - 1.4) < 0.02, `v17：進攻部隊 左側 30 萬、右側 50 萬（${Math.round(pw(0, 'cp1')).toLocaleString()}／${Math.round(pw(0, 'cp3')).toLocaleString()}），控制點多時較強`);
+  assert(Math.abs(pw(0, 'cp1') - 300000) < 9000 && Math.abs(pw(0, 'cp3') - 600000) < 18000 && Math.abs(pw(4, 'cp3') / pw(0, 'cp3') - 1.4) < 0.02, `v17：進攻部隊 左側 30 萬、右側 60 萬（${Math.round(pw(0, 'cp1')).toLocaleString()}／${Math.round(pw(0, 'cp3')).toLocaleString()}），控制點多時較強`);
   // 不在線超過 30 分鐘被掠奪：資源與圍牆損失減半
   const run = (offline) => {
     const g = Game.newGame({ playerName: 'O4', classId: 'warrior', lat: 25, lon: 121 });

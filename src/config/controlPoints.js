@@ -40,7 +40,7 @@ export function cpIndexAt(lat, lon) {
 export const CP_POWER = {
   neutral: { left: 150000, right: 400000 },
   npc: { start: 700000, full: 900000 },
-  attack: { left: 300000, right: 500000 },
+  attack: { left: 300000, right: 600000 },
 };
 /** 守軍人數：中立左側 10、右側 12；勢力留守滿編 18（打下時 14 人＝70 萬） */
 export const CP_GARRISON = { neutral: { left: 10, right: 12 }, npc: 18, attackN: 12 };
