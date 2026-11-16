@@ -294,12 +294,18 @@ export class ExplorationSystem {
     return tripProgress({ ...exp, to: { lat: poi.lat, lon: poi.lon } }, at);
   }
 
+  /** 同時在外的隊伍數（v17.1：駐防控制點的隊伍不計） */
+  teamCount() {
+    return this.list.filter((e) => e.kind !== 'cpGuard').length;
+  }
+
   validate(poiId, memberIds) {
     const poi = this.poi(poiId);
     if (!poi) return { ok: false, reason: '找不到地點' };
     if (!this.game.shelter.hasShelter()) return { ok: false, reason: '請先建立避難所' };
     if (!memberIds.length) return { ok: false, reason: '請至少選擇一名隊員' };
-    if (this.list.length >= MAX_EXPEDITIONS) return { ok: false, reason: `同時最多派出 ${MAX_EXPEDITIONS} 支隊伍` };
+    // v17.1：駐防控制點的隊伍不算在同時在外的隊伍數裡，派駐防也不受這個上限限制
+    if (!String(poiId).startsWith('cpguard:') && this.teamCount() >= MAX_EXPEDITIONS) return { ok: false, reason: `同時最多派出 ${MAX_EXPEDITIONS} 支隊伍（駐防不計）` };
     if (memberIds.length > MAX_TEAM_SIZE) return { ok: false, reason: `隊伍最多 ${MAX_TEAM_SIZE} 人` };
     const members = memberIds.map((id) => this.game.survivors.get(id));
     if (members.some((m) => !m || !this.game.survivors.isAvailable(m))) return { ok: false, reason: '有隊員無法出發' };

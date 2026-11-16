@@ -8167,6 +8167,14 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(r.ok && e.to && pr && pr.phase === 'returning' && Number.isFinite(pr.pos.lat), '目的地消失後，隊伍的位置與回家路線照常計算');
 }
 
+// ---- v17.1：駐防控制點的隊伍不算在同時在外的隊伍數 ----
+{
+  const gm = Game.newGame({ playerName: 'MX', classId: 'warrior', lat: 25, lon: 121 });
+  const fake = (kind, i) => ({ id: `f${kind}${i}`, kind, memberIds: [], poiId: 'x', startAt: Date.now(), endAt: Date.now() + 3600000, travelMs: 1000, searchMs: 1000 });
+  gm.state.expeditions.push(fake('cpGuard', 0), fake('cpGuard', 1), fake('explore', 0));
+  assert(gm.exploration.teamCount() === 1, `駐防隊伍不計入同時在外的隊伍數（${gm.exploration.teamCount()}）`);
+}
+
 // ---- v16：倖存者特質、個人任務與轉職 ----
 {
   SVS.disableTraits = false;
