@@ -774,7 +774,11 @@ export class RallySystem {
         await g.shared.update(CP_KIND, cp.id, (x) => {
           const data = x || { owners: [], guards: [] };
           if (!data.owners?.length || data.faction) { const full = g.cp.garrisonFull(cp.id); data.lost = Math.min(full, (full - g.cp.garrisonCount(cp.id, now)) + killed); data.lostAt = now; }
-          else g.cp.constructor.keepDamage(data, as, result.foes, now); // v17：戰損保留
+          else {
+            // v17.2：只有整隊倒下的駐防隊才撤回；v17：戰損保留
+            data.guards = g.cp.constructor.survivingGuards(data.guards, result.foes, now).guards;
+            g.cp.constructor.keepDamage(data, as, result.foes, now);
+          }
           return { data };
         }, { lat: cp.lat, lon: cp.lon });
         res.summary = `💀 集結攻打控制點 #${cp.no} 失敗`;
