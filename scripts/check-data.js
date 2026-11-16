@@ -8166,7 +8166,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(inc.food === CPC.CP_INCOME[5].food * 6 && inc.wood === CPC.CP_INCOME[5].wood * 6, `右側收益為深淵區基準 ×6（食物 ${inc.food}）`);
 }
 
-// ---- v17：深淵區探索點的殭屍更強（生命、攻擊 ×10） ----
+// ---- v17：深淵區探索點的殭屍更強（v17.2 調整為生命、攻擊 ×5） ----
 {
   const { ZONES: ZS } = await import('../src/config/zones.js');
   const { BUILDING_ZONE: BZ } = await import('../src/config/enemies.js');
@@ -8176,7 +8176,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const le = ZS.find((z) => z.id === 'lethal');
   const ma = ge.exploration.encounterMul({ phase: ph, zone: ab });
   const ml = ge.exploration.encounterMul({ phase: ph, zone: le });
-  assert(BZ.abyssMul === 10 && ma.hp / ml.hp > 9 && ma.atk / ml.atk > 9, `深淵區建築內殭屍生命、攻擊 ×10（深淵 ${ma.hp.toFixed(1)}／致死 ${ml.hp.toFixed(1)}）`);
+  assert(BZ.abyssMul === 5 && ma.hp / ml.hp > 4.5 && ma.atk / ml.atk > 4.5, `深淵區建築內殭屍生命、攻擊 ×5（深淵 ${ma.hp.toFixed(1)}／致死 ${ml.hp.toFixed(1)}）`);
 }
 
 // ---- v17.0.1：共用資料種類名稱必須符合伺服器規則（2～12 個英文小寫字母），否則伺服器拒絕寫入 ----
