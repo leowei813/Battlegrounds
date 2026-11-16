@@ -6108,6 +6108,19 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     ammoKeys.forEach((k) => { const got = (gq.state.supplies?.[k] || 0) - (before[k] || 0); if (got > 0) { seen += 1; if (got < QS.ammoFloor(k)) bad += 1; } });
   }
   assert(bad === 0, `每日物資箱開出的彈藥都夠打兩場（開出 ${seen} 次，不足 ${bad} 次）`);
+  // v17.0.2：物資箱加強：金錢＝指揮官等級 × 50、Lv30 以上裝備至少優良
+  {
+    const { RARITY_ORDER: RO } = await import('../src/config/equipment.js');
+    const gq = Game.newGame({ playerName: 'QC', classId: 'warrior', lat: 25, lon: 121 });
+    gq.survivors.leader().level = 35;
+    const c0 = gq.state.player.coins;
+    const rar = [];
+    gq.equipment.addItem = (it) => { rar.push(it.rarity); return true; };
+    gq.quests.openChestNow();
+    const coinsGot = gq.state.player.coins - c0;
+    for (let i = 0; i < 30; i += 1) gq.quests.openChestNow();
+    assert(coinsGot === 35 * 50 && rar.length > 0 && rar.every((r) => RO.indexOf(r) >= RO.indexOf('uncommon')), `每日物資箱：金錢 ${coinsGot}、Lv30 以上裝備至少優良（${[...new Set(rar)].join('、')}）`);
+  }
 }
 
 // ---- 149. v12.2.1 分頁從背景回來：先結算隊伍返程（含 19:30 自動回家），再補算屍潮 ----
