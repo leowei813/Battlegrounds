@@ -8109,6 +8109,19 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(BZ.abyssMul === 10 && ma.hp / ml.hp > 9 && ma.atk / ml.atk > 9, `深淵區建築內殭屍生命、攻擊 ×10（深淵 ${ma.hp.toFixed(1)}／致死 ${ml.hp.toFixed(1)}）`);
 }
 
+// ---- v17.0.1：共用資料種類名稱必須符合伺服器規則（2～12 個英文小寫字母），否則伺服器拒絕寫入 ----
+{
+  const CPC = await import('../src/config/controlPoints.js');
+  const { AIRDROP: ADK } = await import('../src/config/airdrops.js');
+  const { MemoryObjects: MO } = await import('../src/multiplayer/SharedWorld.js');
+  const kinds = [CPC.CP_KIND, CPC.CP_TURN_KIND, ADK.kind, 'rally', 'dg', 'npc'];
+  assert(kinds.every((k) => /^[a-z]{2,12}$/.test(k)), `共用資料種類名稱都符合伺服器規則（${kinds.join('、')}）`);
+  const mo = new MO();
+  const bad = await mo.objPut('a', 't', 'cp4', 'x', { data: {} });
+  const ok = await mo.objPut('a', 't', CPC.CP_KIND, 'x', { data: {} });
+  assert(bad.status === 'invalid' && ok.status === 'ok', '測試用的共用資料和伺服器一樣拒絕不合規的種類名稱');
+}
+
 // ---- v16：倖存者特質、個人任務與轉職 ----
 {
   SVS.disableTraits = false;
