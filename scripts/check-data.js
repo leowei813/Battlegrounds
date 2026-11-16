@@ -3465,6 +3465,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const simV = gv2.combat.simulate.bind(gv2.combat);
   gv2.combat.simulate = (sv, _en, o) => simV(sv, [], o);
   gv2.state.resources.fuel = 9999;
+  // 背包裝滿時隊伍會隨機提早回家、提早去下一站（下一站可能在檢查前就跑完而偶爾失敗）：測試用把運載量調大
+  gv2.vehicles.personCarry = () => 99999;
   const types = Object.keys(VEHICLES_CFG);
   const car1 = vs.create(types[0]); vs.add(car1);
   const car2 = vs.create(types[1]); vs.add(car2);
