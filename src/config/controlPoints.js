@@ -7,10 +7,10 @@ import { zoneIndexAt, zoneSide, inNpcHome } from './zones.js';
  */
 
 /** 共用資料的種類（v17 控制點改成 4 個，換新的種類讓所有控制點重新開始） */
-export const CP_KIND = 'cp4';
+export const CP_KIND = 'cpq'; // 種類名稱只能是英文小寫字母（伺服器規則）
 /** v15.7：駐防隊擋下勢力部隊：沒倒下的隊員獲得自己升級所需經驗的比例（倒下不扣） */
 export const CP_GUARD_XP_PCT = 0.03;
-export const CP_TURN_KIND = 'cp4turn';
+export const CP_TURN_KIND = 'cpqturn';
 
 /** 控制點中心（地圖上的相對位置：x 0＝最西、1＝最東；y 0＝最北、1＝最南） */
 const SEEDS = [[0.31, 0.27], [0.31, 0.73], [0.7, 0.27], [0.7, 0.73]];

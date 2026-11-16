@@ -47,6 +47,9 @@ export class MemoryObjects {
   }
 
   async objPut(_from, _token, kind, id, { lat = null, lon = null, data, ver = 0 }) {
+    // 與伺服器相同的檢查（種類只能 2～12 個英文小寫字母、資料 16000 位元組以內），測試時才抓得到
+    if (!/^[a-z]{2,12}$/.test(kind) || !id || String(id).length > 80) return { status: 'invalid' };
+    if (new TextEncoder().encode(JSON.stringify(data ?? null)).length > 16000) return { status: 'invalid' };
     const key = `${kind}:${id}`;
     const cur = this.map.get(key);
     if ((cur?.ver || 0) !== (ver || 0)) return { status: 'conflict', obj: clone(cur) || null };
