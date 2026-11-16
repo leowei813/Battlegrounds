@@ -8173,6 +8173,22 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const e1 = kept.guards.find((h) => h.e === 'e1');
     assert(sg.guards.length === 1 && e1 && sg.wiped.join() === 'P2' && e1.units[0].hp === 1 && e1.units[1].hp === 50, '駐防隊還有人站著就整隊留下（倒下的生命剩 1），整隊倒下才撤回');
   }
+  // v17.2.2：控制點交戰：防守方保留技能、藥品與目前生命（戰損），雙方同時開始出手；戰報寫出防禦建築的戰果
+  {
+    const cb = A.combat;
+    const foe = { ...cb.createEnemy('raider', 30), id: 'gf', hp: 30, skills: { healEvery: 5, healPct: 0.1 }, meds: { key: 'bandage', qty: 2, heal: 10 } };
+    const att = cb.createEnemy('raider', 30);
+    let starts = 0;
+    for (let i = 0; i < 20; i += 1) {
+      const r = cb.simulate([], [{ ...foe }], { foeSkills: true, keepFoeHp: true, evenStart: true, allies: [{ ...att, id: 'a1', hp: 1e9, maxHp: 1e9, atk: 1 }], record: false, maxTime: 1, capture: 30 });
+      const e = r.entry;
+      const first = (e?.log || []).find((l) => /攻擊|暴擊/.test(l.msg));
+      if (first && first.msg.startsWith(foe.name)) starts += 1;
+      if (i === 0) assert(e.foes[0].hpStart === 30, `防守方用目前生命應戰（戰前 ${e.foes[0].hpStart}）`);
+    }
+    assert(starts > 0, `雙方同時開始出手：防守方有機會先出手（20 場中 ${starts} 場）`);
+    assert(/路障擋住 12 秒、擊倒進攻方 3 人，路障被打破/.test(A.cp.constructor.wallLine({ sec: 12, killed: 3, breached: true })), '戰報寫出防禦建築的戰果');
+  }
   // 收益：每位駐防者各得完整一份（×6、含布料）
   const inc = A.cp.rollIncome(CPC.cpById('cp3'));
   assert(inc.food === CPC.CP_INCOME[5].food * 6 && inc.wood === CPC.CP_INCOME[5].wood * 6, `右側收益為深淵區基準 ×6（食物 ${inc.food}）`);

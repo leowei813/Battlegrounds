@@ -754,7 +754,9 @@ export class RallySystem {
       const as = g.cp.assault(cp.id, attackers, now);
       const fallen = new Set(attackers.filter((a) => !as.alive.includes(a)).map((a) => a.u.id));
       const fighters = as.breached ? units.filter((u) => !fallen.has(u.id)).map((u) => ({ ...u, hp: Math.min(u.hp, attackers.find((a) => a.u === u)?.hp ?? u.hp) })) : [];
-      result = fighters.length ? g.combat.simulate([], foes, { allies: fighters, record: false, capture: RALLY_LOG, title: `🚩 集結攻打控制點 #${cp.no}` })
+      result = fighters.length ? g.combat.simulate([], foes, {
+        ...(g.cp.owners(cp.id).length && !g.cp.factionOf(cp.id) ? { foeSkills: true, keepFoeHp: true } : {}), evenStart: true, allies: fighters, record: false, capture: RALLY_LOG, title: `🚩 集結攻打控制點 #${cp.no}`,
+      })
         : { victory: false, team: [], foes: foes.map((f) => ({ id: f.id, down: false })), xp: 0 };
       if (result.entry) res.battle = result.entry;
       units.forEach((u) => {
