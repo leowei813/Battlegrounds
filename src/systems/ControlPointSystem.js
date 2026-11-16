@@ -659,6 +659,40 @@ export class ControlPointSystem {
     });
   }
 
+  /**
+   * v17.1：同一個控制點分批派出的駐防隊：後到的那批抵達時併入先到的那筆
+   * （隊員、載具、報告合併；撤防時一起回家）。合併後重新登記到共用資料。
+   */
+  mergeGuards(now = Date.now()) {
+    const g = this.game;
+    const live = g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId && e.cpKind === CP_KIND && !e.recalled && !e.defeated
+      && now >= e.startAt + (e.travelMs || 0));
+    const byCp = new Map();
+    live.forEach((e) => { if (!byCp.has(e.cpId)) byCp.set(e.cpId, []); byCp.get(e.cpId).push(e); });
+    let merged = 0;
+    byCp.forEach((list) => {
+      if (list.length < 2) return;
+      list.sort((a, b) => (a.startAt + (a.travelMs || 0)) - (b.startAt + (b.travelMs || 0)));
+      const [main, ...rest] = list;
+      rest.forEach((e) => {
+        main.memberIds = [...new Set([...main.memberIds, ...e.memberIds])];
+        main.vehicleIds = [...new Set([...(main.vehicleIds || []), ...(e.vehicleIds || [])])];
+        main.xp0 = { ...(e.xp0 || {}), ...(main.xp0 || {}) };
+        main.travelEvents = [...(main.travelEvents || []), ...(e.travelEvents || [])];
+        main.travelKills = (main.travelKills || 0) + (e.travelKills || 0);
+        main.travelXp = (main.travelXp || 0) + (e.travelXp || 0);
+        main.cargo = (main.cargo || 0) + (e.cargo || 0);
+        g.state.expeditions = g.state.expeditions.filter((x) => x !== e);
+        if (g.shared) this.removeGuard(e.cpId, e.id).catch(() => {});
+        merged += 1;
+      });
+      // 合併後的隊伍重新登記（含全部隊員）
+      main.cpListed = false;
+    });
+    if (merged) g.changed?.();
+    return merged;
+  }
+
   /** 已抵達的駐防隊（寫入共用資料，讓攻打方能讀到守軍） */
   async syncGuards(now = Date.now()) {
     const g = this.game;
@@ -1371,6 +1405,7 @@ export class ControlPointSystem {
     this.lastAt = now;
     this.resolveAttacks(now).catch(() => {});
     this.extendGuards(now);
+    this.mergeGuards(now);
     this.touchOwned(now).catch(() => {});
     this.syncGuards(now).catch(() => {});
     this.checkHostileOwners(now).catch(() => {});

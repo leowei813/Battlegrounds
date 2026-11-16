@@ -8121,6 +8121,22 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const m = A.cp.data('cp2')?.march;
     assert(m && m.at >= now && m.arriveAt - now >= 5 * 60000 && A.cp.marchView(now + 1000).some((x) => x.id === 'mc:cp2'), `補發的勢力進攻從現在出發，地圖上看得到行軍（約 ${m ? Math.round((m.arriveAt - now) / 60000) : '?'} 分鐘後抵達）`);
   }
+  // v17.1：同一個控制點分批派出的駐防隊，後到的抵達時併成一筆；撤防時一起回家（連同載具）
+  {
+    const { createSurvivor: mkS2 } = await import('../src/core/GameState.js');
+    const s1 = mkS2('批一', 'warrior', 20, 'common'); const s2 = mkS2('批二', 'warrior', 20, 'common');
+    A.state.survivors.push(s1, s2);
+    const now = Date.now();
+    const mk = (eid, sid, arrive, veh) => ({ id: eid, kind: 'cpGuard', cpId: 'cp2', cpKind: CPC.CP_KIND, poiId: 'cpguard:cp2', memberIds: [sid], vehicleIds: veh, startAt: arrive - 60000, travelMs: 60000, searchMs: 7 * 86400000, endAt: arrive + 7 * 86400000, from: { lat: 25.03, lon: 121.5 }, travelEvents: [`出發 ${eid}`], cpListed: true });
+    A.state.expeditions.push(mk('gm1', s1.id, now - 5000, ['v1']), mk('gm2', s2.id, now - 1000, ['v2']));
+    const n = A.cp.mergeGuards(now);
+    const left = A.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === 'cp2');
+    assert(n === 1 && left.length === 1 && left[0].id === 'gm1' && left[0].memberIds.length === 2 && left[0].vehicleIds.join() === 'v1,v2' && !left[0].cpListed, `同一個控制點的駐防隊抵達後合併為一筆（隊員 ${left[0]?.memberIds.length}、載具 ${left[0]?.vehicleIds}）`);
+    // 還在路上的不合併
+    A.state.expeditions.push(mk('gm3', s2.id, now + 600000, []));
+    assert(A.cp.mergeGuards(now) === 0, '還在路上的駐防隊先不合併');
+    A.state.expeditions = A.state.expeditions.filter((e) => !['gm1', 'gm3'].includes(e.id));
+  }
   // 收益：每位駐防者各得完整一份（×6、含布料）
   const inc = A.cp.rollIncome(CPC.cpById('cp3'));
   assert(inc.food === CPC.CP_INCOME[5].food * 6 && inc.wood === CPC.CP_INCOME[5].wood * 6, `右側收益為深淵區基準 ×6（食物 ${inc.food}）`);
