@@ -201,7 +201,7 @@ function signupTab(g, dg, now) {
     } else if (other) right = `<span class="muted">已報名「${escapeHtml(DUNGEONS[other].name)}」</span>`;
     else if (rec && !rec.cancelled) right = '<span class="muted">今天已派其他倖存者</span>';
     else if (ph !== 'signup') right = '<span class="muted">不在報名時間</span>';
-    else right = `${sv.severe ? '<small class="neg">🩸 重傷：17:50 會自動用藥治療</small>' : ''}${btn('報名', 'dgSign', { dg, sv: sv.id }, { cls: 'btn-xs btn-primary' })}`;
+    else right = `${g.state.expeditions.some((e) => e.kind === 'cpGuard' && (e.memberIds || []).includes(sv.id)) ? '<small class="muted">🛡️ 駐防中：不用撤回也能參加</small>' : ''}${sv.severe ? '<small class="neg">🩸 重傷：17:50 會自動用藥治療</small>' : ''}${btn('報名', 'dgSign', { dg, sv: sv.id }, { cls: 'btn-xs btn-primary' })}`;
     const pw = g.survivors.stats(sv).power;
     return `<div class="dg-sv ${cls}">${clsIcon(sv.classId)} <b>${escapeHtml(sv.name)}</b> <small class="muted">Lv${sv.level}・戰力 ${fmt(pw)}</small><span class="push">${right}</span></div>`;
   }).join('');

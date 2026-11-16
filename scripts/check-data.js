@@ -5554,7 +5554,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(trip.exp.recalled, '17:50 鎖定時外出中的小隊自動召回');
   assert(b.g.dungeon.isLocked(b.sv, T.lock + 2000) && b.g.survivors.isAvailable(b.sv) === false, '鎖定後倖存者不能外出');
   {
-    // v15.5.1：控制點駐防中的倖存者：17:50 鎖定時不叫回（這次副本不能參加）
+    // v17.3.1：控制點駐防中的倖存者也能參加副本：17:50 鎖定時不叫回、也不排除
     const gd2 = Game.newGame({ playerName: 'DG2', classId: 'warrior', lat: 25.03, lon: 121.56 });
     const sv2 = gd2.survivors.leader();
     const gexp = { id: 'gx', kind: 'cpGuard', cpId: 'cp1', memberIds: [sv2.id], startAt: T.lock - 600000, travelMs: 60000, searchMs: 3600000, endAt: T.lock + 7200000, from: { lat: 25.03, lon: 121.56 } };
@@ -5562,12 +5562,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     const rec2 = { svId: sv2.id, dg: 'lab', day: DungeonSystem.dayKey(T.start) };
     gd2.dungeon.pushEntry = () => {};
     gd2.dungeon.lock(rec2, T.lock);
-    assert(!gexp.recalled && gd2.state.expeditions.includes(gexp) && rec2.excluded === 'guard', '副本鎖定時不叫回駐防中的倖存者（這次副本不能參加）');
+    assert(!gexp.recalled && gd2.state.expeditions.includes(gexp) && !rec2.excluded && rec2.locked, `副本鎖定時不叫回駐防中的倖存者，照常參加副本（${rec2.excluded || ''}）`);
+    gd2.dungeon.depart(rec2);
+    assert(sv2.dungeon && sv2.status === 'exploring' && !gexp.recalled, '17:55 出發副本時駐防隊照常駐守');
     const sv3 = gd2.state.survivors.find((x) => !x.isLeader) || (() => { const x = { ...sv2, id: 'svx', isLeader: false }; gd2.state.survivors.push(x); return x; })();
     gexp.memberIds = [sv3.id];
     gd2.shelter.establish(gd2.state.map.pois.find((p) => gd2.shelter.canEstablish(p).ok) || { id: 'p', lat: 25.03, lon: 121.56, type: 'residential', name: 'x' });
     const cs = gd2.dungeon.canSignup('lab', sv3.id, T.lock - 3600000);
-    assert(!cs.ok && /駐防/.test(cs.reason || ''), `駐防中的倖存者報名副本時就擋下（${cs.reason || ''}）`);
+    assert(cs.ok, `駐防中的倖存者可以報名副本（${cs.reason || ''}）`);
   }
   // 集結、開打、結算
   for (const t of [T.depart + 1000, T.start + 1000, T.start + 60 * 60e3]) {
@@ -8490,6 +8492,24 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   gz.exploration.update(zLast.close + 1, { silent: true });
   assert(r5.exp.bz.done && r5.exp.bz.result === 'ok' && r5.exp.bz.log.some((l) => l.includes('即將關閉')), '封鎖區關閉前自動撤離，不會被關在裡面');
   bz.threatGain = realGain;
+}
+
+// ---- v17.3.1：駐防控制點中的倖存者（例如從副本重傷）照控制點的速度回復 ----
+{
+  const gr = Game.newGame({ playerName: 'GR', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  const c = gr.survivors.makeCandidate(30);
+  gr.survivors.addSurvivor(c);
+  c.status = 'exploring';
+  c.severe = true;
+  gr.survivors.setHp(c, 0);
+  const now = Date.now();
+  gr.state.expeditions.push({ id: 'gr1', kind: 'cpGuard', cpId: 'cp1', memberIds: [c.id], startAt: now - 3600000, travelMs: 60000, searchMs: 9e9, endAt: now + 9e9, from: { lat: 25.03, lon: 121.56 } });
+  c.dungeon = { dg: 'lab', day: 'x' };
+  gr.survivors.updateVitals(now, 40 * 60000, 0);
+  assert(c.severe && gr.survivors.hpOf(c) === 0, '還在副本裡時不套用駐防回復');
+  delete c.dungeon;
+  gr.survivors.updateVitals(now, 40 * 60000, 0);
+  assert(!c.severe && gr.survivors.hpOf(c) >= gr.survivors.maxHp(c) * 0.3, `駐防中的重傷隊員會回復並脫離重傷（${Math.round(gr.survivors.hpOf(c))}/${gr.survivors.maxHp(c)}）`);
 }
 
 if (failures) {

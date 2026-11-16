@@ -16,6 +16,7 @@ export const LOADOUT_MAX = { ammo: 300, med: 10 };
 /** 彈藥欄可自選的攜帶數量（每位倖存者各自設定，預設最高） */
 export const AMMO_CAP_OPTIONS = [100, 150, 200, 250, 300];
 import { createSurvivor } from '../core/GameState.js';
+import { CP_RECOVER_MS } from '../config/controlPoints.js';
 import {
   TRAITS, CLASS_QUESTS, LEADER_DG_STEP, ADVANCED, QUEST_LEVEL, rollTraits, traitRandom,
 } from '../config/traits.js';
@@ -430,6 +431,16 @@ export class SurvivorSystem {
     return this.clinicRate() + medic;
   }
 
+  /** v17.3.1：駐防控制點中的回復速度（每分鐘最大生命比例；不在駐防或在副本裡時為 0） */
+  guardRate(sv, now = Date.now()) {
+    if (sv.dungeon) return 0;
+    const on = this.game.state.expeditions.some((e) => e.kind === 'cpGuard' && !e.recalled && !e.defeated
+      && (e.memberIds || []).includes(sv.id) && now >= e.startAt + (e.travelMs || 0));
+    if (!on) return 0;
+    const rg = Math.min(5, Math.max(1, Number(this.game.cp?.guardRegenMul?.()) || 1));
+    return (rg * 60000) / CP_RECOVER_MS;
+  }
+
   /** 醫療站的休息回復速度（每分鐘最大生命比例） */
   clinicRate() {
     return clinicRegen(this.game.shelter.maxLevel('clinic'));
@@ -459,7 +470,9 @@ export class SurvivorSystem {
       if (fedMin > 0) {
         const base = this.healRate(sv);
         const rate = sv.severe ? base * VITALS.severeClinicMul * (1 + this.game.research.bonus('severeRegenPct')) : base;
-        hp = Math.min(max, hp + max * rate * regenMul * fedMin);
+        // v17.3.1：駐防控制點中（不在副本裡）：照控制點的回復速度（約 2 小時回滿、套用休養科技），重傷也會回復
+        const guard = this.guardRate(sv, now);
+        hp = Math.min(max, hp + max * Math.max(rate * regenMul, guard) * fedMin);
         sv.zeroSince = 0;
         if (sv.severe && hp >= max * VITALS.severeRecoverRatio) {
           sv.severe = false;
