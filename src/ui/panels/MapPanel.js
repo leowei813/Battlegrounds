@@ -28,6 +28,9 @@ import { ControlPointSystem } from '../../systems/ControlPointSystem.js';
 import { RALLY_DELAYS, RallySystem } from '../../systems/RallySystem.js';
 import { AUTO_HOME_LABEL } from '../../systems/AutoHomeSystem.js';
 import { PLASTIC_SPOTS } from '../../systems/LootStock.js';
+import {
+  eventPins, openBoss, openBz,
+} from '../EventModeView.js';
 import { openTeamPicker } from '../TeamPicker.js';
 import { openMessages, unreadCount } from '../MessageDialog.js';
 import { openAbandonDialog } from '../AbandonDialog.js';
@@ -510,6 +513,7 @@ export class MapPanel {
     this.service.renderCps(this.game);
     this.service.renderConvoys(this.game.cp.convoyView());
     this.renderDrops();
+    this.service.renderEvents(eventPins(this.game));
     this.ui.mapRoot.dataset.phase = this.game.time.phaseId(); // 地圖依日夜變暗
     const st = this.game.state;
     const has = this.game.shelter.hasShelter();
@@ -884,6 +888,12 @@ export class MapPanel {
       this.ui.toastEl.show('這支隊伍已經回到避難所了', 'info');
       return;
     }
+    // v17.3：封鎖區的隊伍：開封鎖區畫面（威脅值、撤離）
+    const bzExp = g.state.expeditions.find((e) => e.id === expId && e.kind === 'bz' && e.bz);
+    if (bzExp) {
+      openBz(this, bzExp.bz.id);
+      return;
+    }
     const body = () => {
       const ex = g.state.expeditions.find((e) => e.id === expId);
       if (!ex) return '<p class="muted">這支隊伍已經回到避難所了，請到「📜 戰報」查看探索報告。</p>';
@@ -1223,6 +1233,14 @@ export class MapPanel {
       return `<div class="adw-row ${cls}"><span>${own ? '🟢 ' : ''}${who}${n ? `・${n} 人` : ''}</span><small>${tail}</small></div>`;
     }).join('');
     return `<div class="label">等待降落的隊伍（${ws.length} 隊）</div><div class="adw-list">${rows}</div>`;
+  }
+
+  openBoss(id) {
+    openBoss(this, id);
+  }
+
+  openBz(id) {
+    openBz(this, id);
   }
 
   openDrop(id) {

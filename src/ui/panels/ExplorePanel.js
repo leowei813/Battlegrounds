@@ -26,13 +26,13 @@ export class ExplorePanel {
       const poi = g.exploration.poi(ex.poiId);
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
       return `<div class="card">
-        <div class="row-between"><b>${poi ? poi.icon || POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.kind === 'raid' ? '<span class="tag tag-red">⚔️ 攻打</span>' : ex.kind === 'intercept' ? '<span class="tag tag-red">⚔️ 攔截</span>' : ex.kind === 'hunt' ? '<span class="tag tag-red">🧟 獵殺</span>' : ex.kind === 'infect' ? '<span class="tag tag-red">☣️ 淨化</span>' : ex.kind === 'rally' ? '<span class="tag tag-blue">📡 集結</span>' : ''}${ex.defeated ? '<span class="tag tag-red">🏳️ 撤回中</span>' : ex.recalled ? '<span class="tag">↩️ 召回中</span>' : ''}${(ex.vehicleIds || []).length ? `<span class="tag">${ex.vehicleIds.map((id) => { const v = g.vehicles.get(id); return v ? VEHICLES[v.type].icon : ''; }).join('')}</span>` : ''}${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
+        <div class="row-between"><b>${poi ? poi.icon || POI_TYPES[poi.type].icon : '❔'} ${escapeHtml(poi?.name || '未知')}</b>${ex.kind === 'raid' ? '<span class="tag tag-red">⚔️ 攻打</span>' : ex.kind === 'intercept' ? '<span class="tag tag-red">⚔️ 攔截</span>' : ex.kind === 'hunt' ? '<span class="tag tag-red">🧟 獵殺</span>' : ex.kind === 'infect' ? '<span class="tag tag-red">☣️ 淨化</span>' : ex.kind === 'rally' ? '<span class="tag tag-blue">📡 集結</span>' : ex.kind === 'boss' ? '<span class="tag tag-red">⚔️ 屍王</span>' : ex.kind === 'bz' ? '<span class="tag tag-amber">🚧 封鎖區</span>' : ''}${ex.defeated ? '<span class="tag tag-red">🏳️ 撤回中</span>' : ex.recalled ? '<span class="tag">↩️ 召回中</span>' : ''}${(ex.vehicleIds || []).length ? `<span class="tag">${ex.vehicleIds.map((id) => { const v = g.vehicles.get(id); return v ? VEHICLES[v.type].icon : ''; }).join('')}</span>` : ''}${ex.auto ? '<span class="tag tag-blue">🔁 自動</span>' : ''}</div>
         <div class="muted">隊員：${names}・搜索 ${ex.durationMin} 分鐘</div>
         ${this.progressHtml(ex, now)}
         ${ex.kind === 'rally' && !ex.rallyResult ? '' : timerBar(ex.startAt, ex.endAt, now)}
         ${this.checkpointHtml(ex)}
         ${(ex.travelEvents || []).length ? `<ul class="event-list">${ex.travelEvents.slice(-3).map((e) => `<li>${flagText(escapeHtml(e))}</li>`).join('')}</ul>` : ''}
-        <div class="btn-row">${btn('🗺️ 在地圖上追蹤', 'track', { id: ex.id }, { cls: 'btn-sm btn-primary' })}${g.exploration.canRecall(ex, now) ? btn('召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' }) : ''}</div>
+        <div class="btn-row">${btn('🗺️ 在地圖上追蹤', 'track', { id: ex.id }, { cls: 'btn-sm btn-primary' })}${g.exploration.canRecall(ex, now) ? btn(ex.kind === 'bz' && now >= ex.startAt + (ex.travelMs || 0) ? '🚁 撤離' : '召回', 'recall', { id: ex.id }, { cls: 'btn-sm btn-ghost' }) : ''}</div>
       </div>`;
     }).join('');
 
@@ -66,6 +66,7 @@ export class ExplorePanel {
   onAction(action, data) {
     const g = this.game;
     if (action === 'auto') this.ui.result(g.exploration.toggleAuto(data.id));
+    if (action === 'recall' && g.state.expeditions.find((e) => e.id === data.id)?.kind === 'bz') { this.ui.result(g.exploration.recall(data.id)); return; }
     if (action === 'recall' && confirm('召回後隊伍會從目前位置走回避難所（需要移動時間），只會帶回已經到過的檢核點找到的物資，確定？')) this.ui.result(g.exploration.recall(data.id));
     if (action === 'track') {
       const ex = g.state.expeditions.find((e) => e.id === data.id);

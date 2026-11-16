@@ -26,6 +26,8 @@ import { PoiShareSystem } from '../systems/PoiShareSystem.js';
 import { DungeonSystem } from '../systems/DungeonSystem.js';
 import { WorldEventSystem } from '../systems/WorldEventSystem.js';
 import { AirdropSystem } from '../systems/AirdropSystem.js';
+import { WorldBossSystem } from '../systems/WorldBossSystem.js';
+import { BlockadeSystem } from '../systems/BlockadeSystem.js';
 import { AutoHomeSystem } from '../systems/AutoHomeSystem.js';
 import { POI_TYPES } from '../config/poiTypes.js';
 import { haversine } from '../utils/math.js';
@@ -86,6 +88,8 @@ export class Game {
     this.rally = new RallySystem(this);
     this.cp = new ControlPointSystem(this);
     this.airdrop = new AirdropSystem(this);
+    this.worldBoss = new WorldBossSystem(this);
+    this.blockade = new BlockadeSystem(this);
     this.assist = new AssistSystem(this);
     this.rebirth = new RebirthSystem(this);
 
@@ -287,6 +291,7 @@ export class Game {
     if (!silent) this.chat.tick(now);
     this.rally.update(now);
     this.cp.update(now);
+    this.worldBoss.update(now);
     this.zombies.update(now);
     if (!silent) this.exploration.checkAmbush(now);
     this.quests.update();
@@ -314,6 +319,7 @@ export class Game {
     this.autoHome.check(now, { silent: true });
     this.dungeon.update(now);
     const reports = this.exploration.update(now, { silent: true });
+    this.worldBoss.update(now);
     this.npcs.update(now);
     const defense = this.siege.simulateOffline(elapsed);
     this.state.map.lastZombieRefresh = 0;

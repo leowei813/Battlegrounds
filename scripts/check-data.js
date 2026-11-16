@@ -5554,7 +5554,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(trip.exp.recalled, '17:50 鎖定時外出中的小隊自動召回');
   assert(b.g.dungeon.isLocked(b.sv, T.lock + 2000) && b.g.survivors.isAvailable(b.sv) === false, '鎖定後倖存者不能外出');
   {
-    // v15.5.1：控制點駐防中的倖存者：17:50 鎖定時不叫回（這次副本不能參加）
+    // v17.3.1：控制點駐防中的倖存者也能參加副本：17:50 鎖定時不叫回、也不排除
     const gd2 = Game.newGame({ playerName: 'DG2', classId: 'warrior', lat: 25.03, lon: 121.56 });
     const sv2 = gd2.survivors.leader();
     const gexp = { id: 'gx', kind: 'cpGuard', cpId: 'cp1', memberIds: [sv2.id], startAt: T.lock - 600000, travelMs: 60000, searchMs: 3600000, endAt: T.lock + 7200000, from: { lat: 25.03, lon: 121.56 } };
@@ -5562,12 +5562,14 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     const rec2 = { svId: sv2.id, dg: 'lab', day: DungeonSystem.dayKey(T.start) };
     gd2.dungeon.pushEntry = () => {};
     gd2.dungeon.lock(rec2, T.lock);
-    assert(!gexp.recalled && gd2.state.expeditions.includes(gexp) && rec2.excluded === 'guard', '副本鎖定時不叫回駐防中的倖存者（這次副本不能參加）');
+    assert(!gexp.recalled && gd2.state.expeditions.includes(gexp) && !rec2.excluded && rec2.locked, `副本鎖定時不叫回駐防中的倖存者，照常參加副本（${rec2.excluded || ''}）`);
+    gd2.dungeon.depart(rec2);
+    assert(sv2.dungeon && sv2.status === 'exploring' && !gexp.recalled, '17:55 出發副本時駐防隊照常駐守');
     const sv3 = gd2.state.survivors.find((x) => !x.isLeader) || (() => { const x = { ...sv2, id: 'svx', isLeader: false }; gd2.state.survivors.push(x); return x; })();
     gexp.memberIds = [sv3.id];
     gd2.shelter.establish(gd2.state.map.pois.find((p) => gd2.shelter.canEstablish(p).ok) || { id: 'p', lat: 25.03, lon: 121.56, type: 'residential', name: 'x' });
     const cs = gd2.dungeon.canSignup('lab', sv3.id, T.lock - 3600000);
-    assert(!cs.ok && /駐防/.test(cs.reason || ''), `駐防中的倖存者報名副本時就擋下（${cs.reason || ''}）`);
+    assert(cs.ok, `駐防中的倖存者可以報名副本（${cs.reason || ''}）`);
   }
   // 集結、開打、結算
   for (const t of [T.depart + 1000, T.start + 1000, T.start + 60 * 60e3]) {
@@ -8347,6 +8349,167 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(out.filter((r) => !r.cp && r.kind !== 'dungeon').length === RK && out.find((r) => !r.cp && r.kind !== 'dungeon').id === 'e0', '探索報告保留最新 20 筆');
   const many = tr(Array.from({ length: 30 }, (_, i) => ({ id: `d${i}`, kind: 'dungeon' })));
   assert(many.length === RK && many[0].id === 'd0', '地下城報告也最多保留最新 20 筆');
+}
+
+// ---- v17.3：屍王降臨（全服共鬥世界王） ----
+{
+  const { WORLD_BOSS: WB, WORLD_BOSS_ROSTER: WBR } = await import('../src/config/eventModes.js');
+  const { WorldBossSystem: WBS } = await import('../src/systems/WorldBossSystem.js');
+  const gw = Game.newGame({ playerName: 'WB', classId: 'warrior', lat: 25, lon: 121 });
+  gw.state.map.pois = fillPois([], 25, 121);
+  gw.shelter.establish(gw.state.map.pois.find((p) => gw.shelter.canEstablish(p).ok));
+  for (let i = 0; i < 3; i += 1) { const c = gw.survivors.makeCandidate(30); gw.survivors.addSurvivor(c); c.status = 'idle'; }
+  const ids = gw.state.survivors.slice(0, 4).map((s) => s.id);
+  const wb = gw.worldBoss;
+  const t0 = Date.UTC(2026, 10, 18, 12, 30); // 台灣 2026/11/18（三）20:30
+  const b = wb.active(t0);
+  assert(b && b.id === 'wb20261118' && b.name === '骷髏王' && b.icon === '💀' && b.start === Date.UTC(2026, 10, 18, 12, 0) && b.end - b.start === WB.stayMs, `第一隻屍王：週三 20:00 降臨的骷髏王，停留 24 小時（${b?.id} ${b?.name}）`);
+  const b2 = wb.next(t0);
+  const b3 = wb.next(b2.start + 1);
+  assert(b2.id === 'wb20261121' && b2.name === WBR[1].name && b3.id === 'wb20261125' && b3.name === WBR[2].name, `每週三、六輪流出現不同屍王（${b2.name}、${b3.name}）`);
+  assert(['alert', 'danger'].includes(b.zone) && JSON.stringify(Game.newGame({ playerName: 'X', classId: 'scout', lat: 25, lon: 121 }).worldBoss.get(b.id)) === JSON.stringify(b), '屍王地點在警戒區或危險區，所有玩家相同');
+  assert(wb.maxHp(b) === WB.hp0 && wb.status(b, t0).state === 'active' && !wb.active(b.end + 1), '第一隻血量 1,500 萬；24 小時後離開地圖');
+  assert(wb.phaseOf(0.9).id === 'smash' && wb.phaseOf(0.5).id === 'summon' && wb.phaseOf(0.1).id === 'rage' && wb.enemies(b, 1000, 0.5).list.length === 5, '三個階段依剩餘血量：重擊、召喚（多 4 隻屍群）、狂暴');
+  // 出擊：用掉次數、同時只能一隊、召回退回次數
+  const r1 = wb.start(ids.slice(0, 2), {}, t0);
+  assert(r1.ok && r1.exp.kind === 'boss' && wb.triesLeft(b) === WB.tries - 1 && r1.exp.searchMs === WB.fightSec * 1000, `派隊挑戰：用掉 1 次出擊、戰鬥 ${WB.fightSec} 秒（${r1.reason || ''}）`);
+  assert(!wb.start(ids.slice(2), {}, t0).ok, '已經有隊伍前往時不能再派第二隊');
+  gw.exploration.recall(r1.exp.id, t0 + 1000);
+  assert(wb.triesLeft(b) === WB.tries, '還沒交戰就召回：退回出擊次數');
+  gw.exploration.update(r1.exp.endAt + 1, { silent: true });
+  // 交戰：屍王改成很弱（必中傷害），傷害寫入共用血量
+  gw.state.survivors.forEach((s) => { s.status = 'idle'; s.severe = 0; s.hp = gw.survivors.maxHp(s); });
+  const realEn = wb.enemies.bind(wb);
+  wb.enemies = (bb, left, pct) => { const e = realEn(bb, left, pct); e.boss.atk = 1; e.boss.def = 0; e.list = [e.boss]; return e; };
+  const r2 = wb.start(ids, {}, t0);
+  gw.exploration.update(r2.exp.startAt + r2.exp.travelMs + 1, { silent: true });
+  await new Promise((r) => setTimeout(r, 20));
+  const rec = wb.record(b);
+  const dmg = r2.exp.bossResult?.dmg || 0;
+  assert(dmg > 0 && rec?.hp === WB.hp0 && rec.h?.local?.[1] === dmg && wb.status(b, t0).dealt === dmg, `造成的傷害寫入全服共用血量（${dmg}）`);
+  const coins0 = gw.state.player.coins;
+  gw.exploration.update(r2.exp.endAt + 1, { silent: true });
+  const rep = gw.state.reports.find((x) => x.poiName.includes('骷髏王'));
+  assert(rep && rep.success && rep.events.some((e) => e.includes('造成')), '回到避難所有屍王戰報');
+  void coins0;
+  // 擊倒：把血量改成只剩一點點
+  await gw.shared.update(WB.kind, b.id, (cur) => ({ data: { ...cur, hp: dmg + 50 } }), { lat: null, lon: null });
+  gw.state.survivors.forEach((s) => { s.status = 'idle'; s.severe = 0; s.hp = gw.survivors.maxHp(s); });
+  const r3 = wb.start(ids, {}, t0 + 3600e3);
+  gw.exploration.update(r3.exp.startAt + r3.exp.travelMs + 1, { silent: true });
+  await new Promise((r) => setTimeout(r, 20));
+  const st = wb.status(b, t0 + 7200e3);
+  assert(st.state === 'killed' && wb.record(b).k && !wb.active(t0 + 7200e3), '血量打光：屍王被擊倒，從地圖消失');
+  gw.exploration.update(r3.exp.endAt + 1, { silent: true });
+  // 結算：第 1 名金箱，只領一次
+  const bp0 = gw.state.inventory.blueprints.length;
+  const out = wb.settle(st.at + WB.settleMs + 1);
+  assert(out.length === 1 && out[0].events.some((e) => e.includes('金箱')) && gw.state.inventory.blueprints.length === bp0 + 1, '結算：第 1 名獲得金箱（必定有設計圖）');
+  assert(wb.settle(st.at + WB.settleMs + 2).length === 0, '每隻屍王的結算只領一次');
+  // 下一隻血量依上一隻擊倒速度調整
+  const hp2 = wb.maxHp(b2);
+  assert(hp2 === Math.max(WB.hpMin, Math.round((dmg + 50) * WB.adjust.fast / 10000) * 10000), `12 小時內擊倒：下一隻血量 ×${WB.adjust.fast}（${hp2}）`);
+  // 21:30 自動回家不叫回屍王與封鎖區的隊伍
+  gw.state.survivors.forEach((s) => { s.status = 'idle'; s.severe = 0; s.hp = gw.survivors.maxHp(s); });
+  const tb = wb.next(b.end).start + 60000;
+  const r4 = wb.start(ids, {}, tb);
+  gw.autoHome.run(r4.exp.startAt + 1000, { silent: true });
+  assert(r4.ok && !r4.exp.recalled, '21:30 自動回家不會叫回挑戰屍王的隊伍');
+  wb.enemies = realEn;
+  void WBS;
+}
+
+// ---- v17.3：封鎖區撤離 ----
+{
+  const { BLOCKADE: BZ, BLOCKADE_ZONE: BZZ } = await import('../src/config/eventModes.js');
+  const { SUPPLIES: SUP } = await import('../src/config/supplies.js');
+  const gz = Game.newGame({ playerName: 'BZ', classId: 'warrior', lat: 25, lon: 121 });
+  gz.state.map.pois = fillPois([], 25, 121);
+  gz.shelter.establish(gz.state.map.pois.find((p) => gz.shelter.canEstablish(p).ok));
+  for (let i = 0; i < 3; i += 1) { const c = gz.survivors.makeCandidate(30); gz.survivors.addSurvivor(c); c.status = 'idle'; }
+  const ids = gz.state.survivors.slice(0, 4).map((s) => s.id);
+  const heal = () => gz.state.survivors.forEach((s) => { s.status = 'idle'; s.severe = 0; s.hp = gz.survivors.maxHp(s); });
+  const bz = gz.blockade;
+  gz.vehicles.personCarry = () => 99999;
+  const t12 = Date.UTC(2026, 10, 18, 4, 5); // 台灣 12:05
+  const z = bz.current(t12);
+  const z21 = bz.next(t12);
+  assert(z && z.id === 'bz2026111812' && z.close - z.start === BZ.openMs && z21.id === 'bz2026111821' && !bz.current(z.close + 1), '封鎖區每天 12:00、21:00 開放 3 小時');
+  assert(Object.keys(BZ.zones).includes(z.zone) && JSON.stringify(Game.newGame({ playerName: 'Y', classId: 'scout', lat: 25, lon: 121 }).blockade.get(z.id)) === JSON.stringify(z), '封鎖區在危險區以上，所有玩家看到的位置相同');
+  // 必勝：每輪搜刮、威脅上升、達到自動撤離值就撤離並全部帶回
+  bz.horde = () => [];
+  const r = bz.start(ids, {}, t12);
+  assert(r.ok && r.exp.kind === 'bz' && !bz.start(ids, {}, t12).ok, `派隊進入封鎖區；每次開放只能派 1 隊（${r.reason || ''}）`);
+  const e = r.exp;
+  const arrive = e.startAt + e.travelMs;
+  gz.exploration.update(arrive + BZ.roundMs * 3 + 1, { silent: true });
+  assert(e.bz.round === 3 && e.bz.threat >= 30 && Object.keys(e.bz.gained).length > 0, `每 10 分鐘搜刮一輪，威脅值上升（3 輪、威脅 ${e.bz.threat}%）`);
+  gz.exploration.update(arrive + BZ.roundMs * 12, { silent: true });
+  assert(e.bz.done && e.bz.result === 'ok' && e.bz.log.some((l) => l.includes('威脅值達 70%')), `威脅值達到自動撤離設定就撤離，打贏追擊戰（${e.bz.round} 輪）`);
+  gz.exploration.update(e.endAt + 1, { silent: true });
+  const rep = gz.state.reports[0];
+  assert(rep.success && rep.poiName.includes('封鎖區') && Object.keys(rep.resources).length > 3 && rep.events.some((x) => x.includes('物資帶回避難所')), '回到避難所：封鎖區的物資入庫');
+  // 21:00 的封鎖區：手動撤離、追擊戰失敗丟一半
+  heal();
+  const r2 = bz.start(ids, {}, z21.start + 60000);
+  const e2 = r2.exp;
+  const a2 = e2.startAt + e2.travelMs;
+  gz.autoHome.run(a2 + 1000, { silent: true });
+  assert(!e2.recalled && !e2.bz.done, '21:30 自動回家不會叫回封鎖區的隊伍');
+  gz.exploration.update(a2 + BZ.roundMs * 2 + 1, { silent: true });
+  const half = Object.fromEntries(Object.entries(e2.bz.gained).map(([k, v]) => [k, Math.floor(v * BZ.chaseKeep)]));
+  const rx = gz.exploration.recall(e2.id, a2 + BZ.roundMs * 2 + 2000);
+  assert(rx.ok && e2.bz.exitAt != null && !e2.recalled, '召回＝撤離：要先打追擊戰');
+  bz.horde = () => Array.from({ length: 6 }, () => gz.combat.createEnemy('mutant', 60, false, { hp: 500, atk: 500 }));
+  gz.exploration.update(e2.bz.exitAt + BZ.exitMs + 1, { silent: true });
+  assert(e2.bz.done && e2.bz.result === 'half' && JSON.stringify(e2.carried?.gained || {}) === JSON.stringify(Object.fromEntries(Object.entries(half).filter(([, v]) => v > 0))), '追擊戰失敗：丟失一半物資');
+  gz.exploration.update(e2.endAt + 1, { silent: true });
+  // 遭遇戰全滅：物資全部丟失
+  heal();
+  const zNext = bz.of(z.id === 'bz2026111812' ? Math.floor(Date.UTC(2026, 10, 19) / 86400000) : 0, 12);
+  const r3 = bz.start(ids, {}, zNext.start + 60000);
+  const e3 = r3.exp;
+  e3.bz.threat = 100;
+  gz.exploration.update(e3.startAt + e3.travelMs + BZ.roundMs + 1, { silent: true });
+  assert(e3.bz.done && e3.bz.result === 'wiped' && !e3.carried, '遭遇屍群全隊被擊潰：這趟物資全部丟失');
+  gz.exploration.update(e3.endAt + 1, { silent: true });
+  // 每輪收穫：致死區平均約為設定量（每多一輪 +10%）
+  const one = { bz: { zone: 'lethal', gained: {} }, memberIds: ids };
+  let t4 = 0;
+  for (let i = 0; i < 400; i += 1) {
+    const { out } = bz.roundLoot(one, 1);
+    Object.entries(out).forEach(([k, v]) => { if (SUP[k]?.cat === 'part' && SUP[k].tier === 4) t4 += v; });
+  }
+  assert(Math.abs(t4 / 400 - BZZ.lethal.part[4]) < BZZ.lethal.part[4] * 0.25, `致死區每輪 4 階零件平均約 ${BZZ.lethal.part[4]} 個（實測 ${(t4 / 400).toFixed(2)}）`);
+  // 關閉前一定撤離
+  heal();
+  bz.horde = () => [];
+  const zLast = bz.of(Math.floor(Date.UTC(2026, 10, 20) / 86400000), 12);
+  const r5 = bz.start(ids, {}, zLast.start + 60000);
+  r5.exp.bz.auto = { threat: 999, down: false, full: false };
+  const realGain = bz.threatGain.bind(bz);
+  bz.threatGain = () => 0;
+  gz.exploration.update(zLast.close + 1, { silent: true });
+  assert(r5.exp.bz.done && r5.exp.bz.result === 'ok' && r5.exp.bz.log.some((l) => l.includes('即將關閉')), '封鎖區關閉前自動撤離，不會被關在裡面');
+  bz.threatGain = realGain;
+}
+
+// ---- v17.3.1：駐防控制點中的倖存者（例如從副本重傷）照控制點的速度回復 ----
+{
+  const gr = Game.newGame({ playerName: 'GR', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  const c = gr.survivors.makeCandidate(30);
+  gr.survivors.addSurvivor(c);
+  c.status = 'exploring';
+  c.severe = true;
+  gr.survivors.setHp(c, 0);
+  const now = Date.now();
+  gr.state.expeditions.push({ id: 'gr1', kind: 'cpGuard', cpId: 'cp1', memberIds: [c.id], startAt: now - 3600000, travelMs: 60000, searchMs: 9e9, endAt: now + 9e9, from: { lat: 25.03, lon: 121.56 } });
+  c.dungeon = { dg: 'lab', day: 'x' };
+  gr.survivors.updateVitals(now, 40 * 60000, 0);
+  assert(c.severe && gr.survivors.hpOf(c) === 0, '還在副本裡時不套用駐防回復');
+  delete c.dungeon;
+  gr.survivors.updateVitals(now, 40 * 60000, 0);
+  assert(!c.severe && gr.survivors.hpOf(c) >= gr.survivors.maxHp(c) * 0.3, `駐防中的重傷隊員會回復並脫離重傷（${Math.round(gr.survivors.hpOf(c))}/${gr.survivors.maxHp(c)}）`);
 }
 
 if (failures) {

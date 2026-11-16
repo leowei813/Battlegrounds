@@ -73,7 +73,8 @@ export class AutoHomeSystem {
         return;
       }
       // 控制點駐防隊：駐防到撤回或被打下為止，21:30 不叫回
-      if (exp.kind === 'cpGuard') return;
+      // v17.3：屍王與封鎖區的隊伍也不叫回（封鎖區 21:00 開放）
+      if (exp.kind === 'cpGuard' || exp.kind === 'boss' || exp.kind === 'bz') return;
       if (!ex.canRecall(exp, at) || exp.startAt > at) return;
       const r = ex.recall(exp.id, at);
       if (!r.ok) return;

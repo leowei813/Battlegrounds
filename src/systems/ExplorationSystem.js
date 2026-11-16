@@ -13,7 +13,7 @@ import {
 
 /** 探索帶回的物資（基本資源與材料物品，受運載量限制） */
 const isLootKey = (k) => !!RESOURCES[k] || !!SUPPLIES[k];
-const lootLabel = (k) => { const m = RESOURCES[k] || SUPPLIES[k]; return m ? `${m.icon}${m.name}` : k; };
+const lootLabel = (k) => { const m = RESOURCES[k] || SUPPLIES[k]; return m ? `${m.icon}${m.name}` : k === 'coins' ? '💰金錢' : k === 'parts' ? '⚙️稀有材料' : k; };
 /** 連續探索時背著的物資重量 */
 const carriedWeight = (c) => Object.entries(c?.gained || {}).filter(([k]) => isLootKey(k)).reduce((s, [k, v]) => s + v * unitWeight(k), 0);
 /** 連續探索：負重達到運載量的此比例就回家 */
@@ -123,11 +123,12 @@ export const EXP_PHASES = {
 };
 
 /** 抵達後是交戰的行動（攻打控制點、NPC 據點、玩家、感染據點、攔截、獵殺） */
-const FIGHT_KINDS = ['cp', 'raid', 'pvp', 'infect', 'intercept', 'hunt', 'drop'];
+const FIGHT_KINDS = ['cp', 'raid', 'pvp', 'infect', 'intercept', 'hunt', 'drop', 'boss'];
 
 /** 隊伍狀態圖示：交戰中改為兩把交叉劍 */
 export function phaseIcon(exp, phase) {
   if (phase === 'searching' && exp?.kind === 'drop' && exp.dropWait && !exp.dropDone) return '⏳';
+  if (phase === 'searching' && exp?.kind === 'bz') return exp.bz?.exitAt != null ? '🚁' : '🚧';
   if (phase === 'searching' && FIGHT_KINDS.includes(exp?.kind)) return '⚔️';
   if (phase === 'searching' && (exp?.kind === 'cpGuard' || exp?.kind === 'assist')) return '🛡️';
   return EXP_PHASES[phase]?.icon || '🚶';
@@ -136,6 +137,7 @@ export function phaseIcon(exp, phase) {
 /** 隊伍狀態名稱：交戰中 */
 export function phaseName(exp, phase) {
   if (phase === 'searching' && exp?.kind === 'drop' && exp.dropWait && !exp.dropDone) return '等待空投降落';
+  if (phase === 'searching' && exp?.kind === 'bz') return exp.bz?.exitAt != null ? '撤離中' : `封鎖區搜刮・第 ${exp.bz?.round || 0} 輪`;
   if (phase === 'searching' && FIGHT_KINDS.includes(exp?.kind)) return '戰鬥中';
   if (phase === 'searching' && exp?.kind === 'cpGuard') return '駐防中';
   return EXP_PHASES[phase]?.name || '';
@@ -196,7 +198,8 @@ export class ExplorationSystem {
 
   poi(id) {
     return this.game.state.map.pois.find((p) => p.id === id) || this.game.npcs?.asPoi(id) || this.game.territory?.asPoi(id)
-      || this.game.intercept?.asPoi(id) || this.game.assist?.asPoi(id) || this.game.infected?.asPoi(id) || this.game.rally?.asPoi(id) || this.game.cp?.asPoi(id) || this.huntPoi(id) || this.dropPoi(id) || null;
+      || this.game.intercept?.asPoi(id) || this.game.assist?.asPoi(id) || this.game.infected?.asPoi(id) || this.game.rally?.asPoi(id) || this.game.cp?.asPoi(id) || this.huntPoi(id) || this.dropPoi(id)
+      || this.game.worldBoss?.asPoi(id) || this.game.blockade?.asPoi(id) || null;
   }
 
   /**
@@ -526,7 +529,7 @@ export class ExplorationSystem {
     if (!v.ok) return v;
     if (kind === 'raid' && this.game.npcs.get?.(poiId)?.hq) return { ok: false, reason: '大本營不能攻打' };
     // 搜索時間由地點決定（攻打 NPC 為固定 5 分鐘）
-    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'drop' || kind === 'assist' || kind === 'rally' || kind === 'cpGuard' ? 0 : kind === 'pvp' || kind === 'infect' ? 2 : kind === 'raid' || kind === 'cp' ? 0 : this.searchMinutes(v.poi); // v15.9.2：攻打 NPC 據點、控制點抵達就交戰（同集結）
+    durationMin = kind === 'intercept' || kind === 'hunt' || kind === 'drop' || kind === 'boss' || kind === 'bz' || kind === 'assist' || kind === 'rally' || kind === 'cpGuard' ? 0 : kind === 'pvp' || kind === 'infect' ? 2 : kind === 'raid' || kind === 'cp' ? 0 : this.searchMinutes(v.poi); // v15.9.2：攻打 NPC 據點、控制點抵達就交戰（同集結）
     const draft = this.plan(v.poi, v.members, durationMin, startAt, [], { avoidHostile, from });
     const car = this.game.vehicles.validate(vehicleIds, v.members, draft.distanceM);
     if (!car.ok) return car;
@@ -614,6 +617,8 @@ export class ExplorationSystem {
     this.game.intercept?.checkArrivals(now);
     this.checkHunts(now);
     this.checkDrops(now);
+    this.game.worldBoss?.check(now);
+    this.game.blockade?.check(now);
     this.list.forEach((exp) => this.runCheckpoints(exp, now));
     const out = [];
     const groups = this.game.state.map.zombieGroups;
@@ -809,6 +814,9 @@ export class ExplorationSystem {
     const exp = this.list.find((e) => e.id === expId);
     if (!exp) return { ok: false, reason: '找不到隊伍' };
     if (!this.canRecall(exp, now)) return { ok: false, reason: '隊伍已經在返程中' };
+    // v17.3：封鎖區內的隊伍：召回＝撤離（要打追擊戰）；屍王還沒交戰就召回：退回出擊次數
+    if (exp.kind === 'bz' && exp.bz && now >= exp.startAt + (exp.travelMs || 0)) return this.game.blockade.extract(exp, now);
+    if (exp.kind === 'boss') this.game.worldBoss?.refund(exp);
     // 已經到達的檢核點先結算，撤回時帶回已取得的物資
     this.runCheckpoints(exp, now);
     if (!this.turnBack(exp, now)) return { ok: false, reason: '找不到隊伍的位置' };
@@ -1072,6 +1080,9 @@ export class ExplorationSystem {
     const reports = [];
     // v15.5：結算前先檢查探索中的控制點是否已被佔領（離線回來時也一樣），被佔領的隊伍從那一刻起撤回
     this.game.cp?.recallLostExplores?.(now);
+    // v17.3：屍王交戰、封鎖區輪次（離線回來時依序補算）
+    this.game.worldBoss?.check(now);
+    this.game.blockade?.check(now);
     // v15.9.1：改道前往佇列下一站的隊伍，這一站的報告
     if (this.pendingReports?.length) reports.push(...this.pendingReports.splice(0));
     let guard = 0;
@@ -1100,6 +1111,8 @@ export class ExplorationSystem {
         }
         this.game.state.expeditions = this.list.filter((e) => e.id !== exp.id);
         const report = this.game.combat.within(exp, () => (exp.kind === 'rally' ? this.game.rally.report(exp)
+          : exp.kind === 'bz' && !exp.defeated ? this.game.blockade.report(exp)
+          : exp.kind === 'boss' && !exp.defeated && !(exp.recalled && !exp.bossResult?.dmg) ? this.game.worldBoss.report(exp)
           : exp.kind === 'assist' && !exp.defeated ? this.game.assist.report(exp)
           : exp.kind === 'cpGuard' ? this.game.cp.guardReport(exp)
           : exp.recalled ? (exp.kind === 'explore' ? this.finishExplore(exp, { recalled: true }) : this.recalledReport(exp))
