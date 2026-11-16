@@ -3068,6 +3068,9 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   lead.level = 40;
   const simA = ga.combat.simulate.bind(ga.combat);
   ga.combat.simulate = (sv, _en, o) => simA(sv, [], o);
+  // 背包裝滿時隊伍會隨機提早回家、提早去下一站（下一站可能在檢查前就跑完而偶爾失敗）：運載量調大
+  const pc0 = ga.vehicles.personCarry.bind(ga.vehicles);
+  ga.vehicles.personCarry = () => 99999;
   const pois = ga.state.map.pois.filter((p) => !ga.shelter.baseAtPoi(p.id) && ex.hasStock(p)).slice(0, 3);
   const st = ex.start(pois[0].id, [lead.id], 5, true);
   assert(st.ok && ex.enqueue(st.exp.id, pois[1].id).ok, '自動探索並加入佇列');
@@ -3091,6 +3094,7 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   assert(!ga.state.expeditions.length && reps[0].events.some((e) => e.includes('自動探索結束')), '佇列也沒有地點時自動探索結束，不會換到附近其他地點');
   ex.hasStock = orig;
   ex.leftAfterSearch = origLeft;
+  ga.vehicles.personCarry = pc0;
   // 背包都滿、倉庫也滿：停止所有佇列並說明原因
   const st2 = ex.start(pois[2].id, [lead.id], 5, true);
   ex.enqueue(st2.exp.id, pois[0].id);
