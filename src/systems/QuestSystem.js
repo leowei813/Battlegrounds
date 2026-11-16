@@ -1,7 +1,7 @@
 import {
   MAIN_QUESTS, DAILY_POOL, DAILY_COUNT, ACHIEVEMENTS, DAILY_CHEST,
 } from '../config/quests.js';
-import { RARITIES, ITEM_TYPES } from '../config/equipment.js';
+import { RARITIES, RARITY_ORDER, ITEM_TYPES } from '../config/equipment.js';
 import { SUPPLIES, SUPPLY_KEYS, medWeight, AMMO_FOR } from '../config/supplies.js';
 import {
   withSeed, weightedPick, randInt, pick, randFloat,
@@ -133,7 +133,7 @@ export class QuestSystem {
   static supplyWeights() {
     return Object.fromEntries(SUPPLY_KEYS.map((k) => {
       const sp = SUPPLIES[k];
-      const w = sp.cat === 'med' ? medWeight(k) / 2 : 6 * 0.45 ** (sp.tier - 1);
+      const w = sp.cat === 'med' ? medWeight(k) / 2 : 6 * (DAILY_CHEST.tierDecay ?? 0.45) ** (sp.tier - 1);
       return [k, w];
     }));
   }
@@ -169,17 +169,24 @@ export class QuestSystem {
         if (sp.cat === 'ammo') amount = Math.max(amount, QuestSystem.ammoFloor(k));
         supplies[k] = (supplies[k] || 0) + amount;
       } else if (kind === 'gear') {
-        items.push(g.equipment.generate({ level, type: pick(Object.keys(ITEM_TYPES)), rarity: weightedPick(DAILY_CHEST.gearRarity) }));
+        // v17.0.2：依指揮官等級保底品級
+        let rarity = weightedPick(DAILY_CHEST.gearRarity);
+        const floor = (DAILY_CHEST.gearFloor || []).find(([lv]) => level - 2 >= lv)?.[1];
+        if (floor && RARITY_ORDER.indexOf(rarity) < RARITY_ORDER.indexOf(floor)) rarity = floor;
+        items.push(g.equipment.generate({ level, type: pick(Object.keys(ITEM_TYPES)), rarity }));
       } else {
         blueprints.push(g.equipment.makeBlueprint(level));
       }
     }
-    const got = g.grant(supplies);
+    // v17.0.2：金錢（指揮官等級 × coinsPerLevel）
+    const coins = Math.max(0, Math.round((level - 2) * (DAILY_CHEST.coinsPerLevel || 0)));
+    const got = g.grant({ ...supplies, ...(coins ? { coins } : {}) });
     const kept = items.filter((it) => g.equipment.addItem(it, '每日物資箱'));
     g.state.inventory.blueprints.push(...blueprints);
     g.state.stats.chestsOpened = (g.state.stats.chestsOpened || 0) + 1;
     const lines = [
-      ...Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k].icon} ${SUPPLIES[k].name} ×${v}`),
+      ...(got.coins > 0 ? [`💰 金錢 ×${got.coins.toLocaleString()}`] : []),
+      ...Object.entries(got).filter(([k, v]) => v > 0 && SUPPLIES[k]).map(([k, v]) => `${SUPPLIES[k].icon} ${SUPPLIES[k].name} ×${v}`),
       ...kept.map((it) => `🎁 ${RARITIES[it.rarity].name}「${it.name}」`),
       ...blueprints.map(() => '📜 設計圖'),
     ];

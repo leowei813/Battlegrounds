@@ -66,14 +66,20 @@ export const DAILY_COUNT = 4;
  * 開出 4～6 項隨機物品；材料越高階、裝備品級越高，出現機率越低。
  */
 export const DAILY_CHEST = {
-  rolls: [4, 6],
-  /** 材料數量倍率（v12.2） */
-  supplyMul: 1.2,
+  rolls: [6, 8],
+  /** 材料數量倍率（v12.2；v17.0.2 提高） */
+  supplyMul: 3,
+  /** 材料階級的權重衰減（每高一階 ×此值；越大中高階越多） */
+  tierDecay: 0.65,
   kinds: { supply: 70, gear: 24, blueprint: 6 },
   /** 裝備品級權重（越高越稀有） */
   gearRarity: {
-    poor: 30, common: 34, uncommon: 22, rare: 10, epic: 2, legendary: 0.2,
+    poor: 30, common: 34, uncommon: 22, rare: 16, epic: 5, legendary: 0.8,
   },
+  /** 依指揮官等級保底的裝備品級（等級達到時，低於此品級的改為此品級） */
+  gearFloor: [[30, 'uncommon'], [15, 'common']],
+  /** 金錢：指揮官等級 × 此值 */
+  coinsPerLevel: 50,
 };
 
 export const ACHIEVEMENTS = [

@@ -3465,6 +3465,8 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
   const simV = gv2.combat.simulate.bind(gv2.combat);
   gv2.combat.simulate = (sv, _en, o) => simV(sv, [], o);
   gv2.state.resources.fuel = 9999;
+  // 背包裝滿時隊伍會隨機提早回家、提早去下一站（下一站可能在檢查前就跑完而偶爾失敗）：測試用把運載量調大
+  gv2.vehicles.personCarry = () => 99999;
   const types = Object.keys(VEHICLES_CFG);
   const car1 = vs.create(types[0]); vs.add(car1);
   const car2 = vs.create(types[1]); vs.add(car2);
@@ -6106,6 +6108,19 @@ assert(migrated.version === SAVE_VERSION_NOW && migrated.bases.length === 1 && m
     ammoKeys.forEach((k) => { const got = (gq.state.supplies?.[k] || 0) - (before[k] || 0); if (got > 0) { seen += 1; if (got < QS.ammoFloor(k)) bad += 1; } });
   }
   assert(bad === 0, `每日物資箱開出的彈藥都夠打兩場（開出 ${seen} 次，不足 ${bad} 次）`);
+  // v17.0.2：物資箱加強：金錢＝指揮官等級 × 50、Lv30 以上裝備至少優良
+  {
+    const { RARITY_ORDER: RO } = await import('../src/config/equipment.js');
+    const gq = Game.newGame({ playerName: 'QC', classId: 'warrior', lat: 25, lon: 121 });
+    gq.survivors.leader().level = 35;
+    const c0 = gq.state.player.coins;
+    const rar = [];
+    gq.equipment.addItem = (it) => { rar.push(it.rarity); return true; };
+    gq.quests.openChestNow();
+    const coinsGot = gq.state.player.coins - c0;
+    for (let i = 0; i < 30; i += 1) gq.quests.openChestNow();
+    assert(coinsGot === 35 * 50 && rar.length > 0 && rar.every((r) => RO.indexOf(r) >= RO.indexOf('uncommon')), `每日物資箱：金錢 ${coinsGot}、Lv30 以上裝備至少優良（${[...new Set(rar)].join('、')}）`);
+  }
 }
 
 // ---- 149. v12.2.1 分頁從背景回來：先結算隊伍返程（含 19:30 自動回家），再補算屍潮 ----
@@ -6752,7 +6767,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const before = { ...base, kind: 'explore', startAt: tk - 60000, endAt: tk + 3600000 };
     assert(gr.cp.hideOtherTrip(before, tk + 1000), '出發後目標控制點被佔領的探索隊：不顯示');
     assert(!gr.cp.hideOtherTrip(before, tk - 1000), '控制點被佔領之前：照常顯示');
-    assert(!gr.cp.hideOtherTrip({ ...before, startAt: tk + 1000 }, tk + 2000), '控制點被佔領之後才出發的隊伍不受影響');
+    assert(gr.cp.hideOtherTrip({ ...before, startAt: tk + 1000 }, tk + 2000) === !!dY.faction, 'v17.0.2：勢力佔領後才出發的隊伍（對方用舊版）也不顯示；玩家佔領的不受影響');
     assert(gr.cp.hideOtherTrip({ ...before, kind: undefined }, tk + 1000), '舊版本（沒有標示種類）前往建築的隊伍也視為探索、不顯示');
     assert(!gr.cp.hideOtherTrip({ ...before, kind: 'assist' }, tk + 1000) && !gr.cp.hideOtherTrip({ ...before, rally: 'r1' }, tk + 1000), '協防、集結隊伍不受影響');
     const freeP = gr.state.map.pois.find((p) => !CPC.cpAt(p.lat, p.lon));
@@ -8075,7 +8090,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     A.cp.defenseOf = (i, at) => ({ ...dfo(i, at), wall: 5e6, dps: 5e6 });
     const r1 = await A.cp.npcAttack('red', id, t0);
     const d1 = A.cp.data(id);
-    assert(!r1.win && d1.wd > 0 && d1.march?.fu && d1.march.arriveAt === t0 + CPC.CP_FOLLOW_MS, `被擊退：路障保留戰損、30 分鐘後追加一波（戰損 ${d1.wd}）`);
+    assert(!r1.win && d1.wd > 0 && d1.march?.fu && d1.march.arriveAt >= t0 + CPC.CP_FOLLOW_MS && d1.march.arriveAt - Date.now() <= CPC.CP_FOLLOW_MS, `被擊退：路障保留戰損、30 分鐘後追加一波（戰損 ${d1.wd}）`);
     const F = d1.wd;
     const left0 = A.cp.wallLeft(id, t0, F);
     const left1 = A.cp.wallLeft(id, t0 + CPC.CP_RECOVER_MS / 2, F);
@@ -8090,6 +8105,21 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const u = { i: 0, hp: 100, maxHp: 1000 };
     const R = A.cp.constructor.regenHp;
     assert(R(u, t0, t0) === 100 && R(u, t0, t0 + CPC.CP_RECOVER_MS / 2) === 600 && R(u, t0, t0 + CPC.CP_RECOVER_MS * 2) === 1000, '駐防隊員的戰損約 2 小時回滿');
+  }
+  // v17.0.2：進攻時刻已過才補發：從現在出發（看得到行軍），不會立刻抵達
+  {
+    await A.shared.update(CPC.CP_KIND, 'cp2', () => ({ data: { owners: [], guards: [], faction: null } }));
+    A.cp.pickTarget = () => 'cp2';
+    A.cp.lastTurn = {};
+    const tt = A.cp.turnTime.bind(A.cp);
+    A.cp.turnTime = (f, now) => now - 3600000; // 進攻時刻是 1 小時前
+    const td = A.cp.constructor.turnDay;
+    A.cp.constructor.turnDay = () => true;
+    const now = Date.now();
+    await A.cp.npcTurns(now);
+    A.cp.constructor.turnDay = td; A.cp.turnTime = tt; delete A.cp.pickTarget;
+    const m = A.cp.data('cp2')?.march;
+    assert(m && m.at >= now && m.arriveAt - now >= 5 * 60000 && A.cp.marchView(now + 1000).some((x) => x.id === 'mc:cp2'), `補發的勢力進攻從現在出發，地圖上看得到行軍（約 ${m ? Math.round((m.arriveAt - now) / 60000) : '?'} 分鐘後抵達）`);
   }
   // 收益：每位駐防者各得完整一份（×6、含布料）
   const inc = A.cp.rollIncome(CPC.cpById('cp3'));
@@ -8120,6 +8150,29 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const bad = await mo.objPut('a', 't', 'cp4', 'x', { data: {} });
   const ok = await mo.objPut('a', 't', CPC.CP_KIND, 'x', { data: {} });
   assert(bad.status === 'invalid' && ok.status === 'ok', '測試用的共用資料和伺服器一樣拒絕不合規的種類名稱');
+}
+
+// ---- v17.0.2：目的地消失（打掉的 NPC 據點）後，隊伍位置與回家路線照常 ----
+{
+  const Z = await import('../src/config/zones.js');
+  const gq = Game.newGame({ playerName: 'TG', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gq.genMap();
+  gq.shelter.establish(gq.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gq.shelter.canEstablish(p).ok));
+  const tgt = gq.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && !gq.shelter.baseAtPoi(p.id) && p.id !== gq.shelter.primary().poiId);
+  const r = gq.exploration.start(tgt.id, [gq.survivors.leader().id], 5);
+  const e = r.exp;
+  e.poiId = 'npc_gone_test'; // 目的地消失
+  const mid = e.startAt + e.travelMs + (e.searchMs || 0) + Math.round(e.travelMs / 2);
+  const pr = gq.exploration.progress(e, mid);
+  assert(r.ok && e.to && pr && pr.phase === 'returning' && Number.isFinite(pr.pos.lat), '目的地消失後，隊伍的位置與回家路線照常計算');
+}
+
+// ---- v17.1：駐防控制點的隊伍不算在同時在外的隊伍數 ----
+{
+  const gm = Game.newGame({ playerName: 'MX', classId: 'warrior', lat: 25, lon: 121 });
+  const fake = (kind, i) => ({ id: `f${kind}${i}`, kind, memberIds: [], poiId: 'x', startAt: Date.now(), endAt: Date.now() + 3600000, travelMs: 1000, searchMs: 1000 });
+  gm.state.expeditions.push(fake('cpGuard', 0), fake('cpGuard', 1), fake('explore', 0));
+  assert(gm.exploration.teamCount() === 1, `駐防隊伍不計入同時在外的隊伍數（${gm.exploration.teamCount()}）`);
 }
 
 // ---- v16：倖存者特質、個人任務與轉職 ----

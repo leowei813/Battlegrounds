@@ -39,7 +39,7 @@ export class ExplorePanel {
     return `<div class="panel-inner">
       <h2>🧭 探索</h2>
       <div class="phase-banner phase-${g.time.phaseId()}">${phase.icon} 目前時段：<b>${phase.name}</b>・${phase.desc}・探索速度 ×${g.time.exploreSpeedMul().toFixed(2)}・物資 ×${phase.lootMul}</div>
-      <h3>進行中（${st.expeditions.length}/${MAX_EXPEDITIONS}）</h3>
+      <h3>進行中（${this.game.exploration.teamCount()}/${MAX_EXPEDITIONS}${st.expeditions.some((e) => e.kind === 'cpGuard') ? `・駐防 ${st.expeditions.filter((e) => e.kind === 'cpGuard').length} 隊不計` : ''}）</h3>
       ${active || '<p class="muted">目前沒有隊伍在外。</p>'}
       <p class="muted">要派遣探索，請到「地圖」點選建築。</p>
       <p class="muted">📜 探索報告移到地圖右上方的「戰報」按鈕。</p>
