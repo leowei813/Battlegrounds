@@ -598,6 +598,11 @@ export class SaveManager {
         if (sv.adv === undefined) sv.adv = null;
       });
     }
+    // v17.3：屍王降臨（出擊次數、已領的結算）與封鎖區（已進入、自動撤離設定）
+    if (v < 41) {
+      if (!data.wb || typeof data.wb !== 'object') data.wb = { tries: {}, claimed: [], pending: [] };
+      if (!data.bz || typeof data.bz !== 'object') data.bz = { used: [], auto: { threat: 70, down: true, full: true } };
+    }
     data.version = SAVE_VERSION;
     return data;
   }

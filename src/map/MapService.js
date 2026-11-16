@@ -93,6 +93,7 @@ export class MapService {
     this.layers.cps = L.layerGroup().addTo(this.map);
     this.layers.convoys = L.layerGroup().addTo(this.map);
     this.layers.drops = L.layerGroup().addTo(this.map);
+    this.layers.events = L.layerGroup().addTo(this.map);
     this.cpConfig = CP_CONFIG;
     this.layers.dungeons = L.layerGroup().addTo(this.map);
     this.siegeLayer = new SiegeMapLayer(this.game).addTo(this.map);
@@ -308,6 +309,29 @@ export class MapService {
         icon: L.divIcon({ className: '', iconSize: [120, 64], iconAnchor: [60, 20], html: `<div class="drop-pin ${cls}"><span class="ic">${ic}</span><i>${escapeHtml(d.label)}</i></div>` }),
         zIndexOffset: 880,
       }).on('click', () => bus.emit('ui:openDrop', { id: d.id })).addTo(this.layers.drops);
+    });
+  }
+
+  /** v17.3：屍王與封鎖區 */
+  renderEvents(list = []) {
+    if (!this.map || !this.layers.events) return;
+    const sig = list.map((d) => `${d.kind}:${d.id}:${d.label}:${d.team || ''}`).join('|');
+    if (sig === this.eventSig) return;
+    this.eventSig = sig;
+    this.layers.events.clearLayers();
+    list.forEach((d) => {
+      if (d.kind === 'bz') {
+        L.circle([d.lat, d.lon], {
+          radius: d.r, color: '#ff9100', weight: 3, dashArray: '8 6', fillColor: '#ff9100', fillOpacity: 0.12, interactive: false,
+        }).addTo(this.layers.events);
+      }
+      const html = d.kind === 'boss'
+        ? `<div class="wb-pin"><span class="ic">${d.icon}</span><span class="hp"><b style="width:${Math.round(d.pct * 100)}%"></b></span><i>${escapeHtml(d.label)}</i></div>`
+        : `<div class="bz-pin"><span class="ic">🚧</span><i>${escapeHtml(d.label)}</i>${d.team ? `<em>${escapeHtml(d.team)}</em>` : ''}</div>`;
+      L.marker([d.lat, d.lon], {
+        icon: L.divIcon({ className: '', iconSize: [150, 90], iconAnchor: [75, d.kind === 'boss' ? 30 : 24], html }),
+        zIndexOffset: 890,
+      }).on('click', () => bus.emit(d.kind === 'boss' ? 'ui:openBoss' : 'ui:openBz', { id: d.id })).addTo(this.layers.events);
     });
   }
 

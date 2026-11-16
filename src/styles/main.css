@@ -1853,3 +1853,32 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 .cpd-it small, .cpd-sum { color: #b0bec5; }
 .cpd-it .btn { margin-top: 4px; align-self: flex-start; }
 .cpd-cost { font-size: 12px; }
+
+/* v17.3：屍王降臨、封鎖區撤離 */
+.wb-pin { display: flex; flex-direction: column; align-items: center; gap: 2px; filter: drop-shadow(0 2px 4px #000c); cursor: pointer; }
+.wb-pin .ic { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font-size: 30px; background: #3b0a0a; border: 3px solid #ff5252; box-shadow: 0 0 18px #ff1744cc; animation: wb-pulse 1.8s infinite; }
+.wb-pin .hp { width: 80px; height: 7px; border-radius: 4px; background: #000b; border: 1px solid #ff525288; overflow: hidden; }
+.wb-pin .hp b { display: block; height: 100%; background: linear-gradient(90deg, #b71c1c, #ff5252); }
+.wb-pin i, .bz-pin i { font-style: normal; font-size: 11px; font-weight: 700; color: #ffebee; background: #000c; border: 1px solid #ff525288; border-radius: 8px; padding: 1px 6px; white-space: nowrap; }
+@keyframes wb-pulse { 50% { box-shadow: 0 0 28px #ff1744; } }
+.bz-pin { display: flex; flex-direction: column; align-items: center; gap: 2px; filter: drop-shadow(0 2px 4px #000c); cursor: pointer; }
+.bz-pin .ic { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-size: 22px; background: #3e2100; border: 3px solid #ff9100; }
+.bz-pin i { color: #fff3e0; border-color: #ff910088; }
+.bz-pin em { font-style: normal; font-size: 11px; font-weight: 700; background: #1b5e20; color: #fff; border: 1px solid #a5d6a7; border-radius: 8px; padding: 1px 6px; white-space: nowrap; }
+.ev-sec { margin: 10px 0 4px; font-weight: 700; color: #ffcc80; }
+.ev-row { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px dashed #ffffff1a; font-size: 13px; }
+.ev-row.me { background: #66bb6a1f; border-radius: 6px; padding: 5px 6px; }
+.ev-ph { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.ev-ph span { flex: 1 1 30%; min-width: 96px; font-size: 12px; padding: 6px; border-radius: 8px; border: 1px solid #ffffff22; background: #ffffff0a; }
+.ev-ph span.on { border-color: #ff5252; background: #ff52521f; }
+.ev-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; }
+.ev-card { padding: 8px; border-radius: 8px; background: #ffffff0d; border: 1px solid #ffffff1f; font-size: 12.5px; }
+.ev-card > b { display: block; font-size: 13.5px; margin-bottom: 2px; }
+.ev-log { max-height: 160px; overflow: auto; font-size: 12.5px; background: #0004; border-radius: 8px; padding: 6px 8px; }
+.ev-log div { padding: 2px 0; }
+.ev-set { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 13px; margin: 4px 0; }
+.ev-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff9; }
+.bar.wb { height: 20px; }
+.bar.wb .bar-fill { background: linear-gradient(90deg, #b71c1c, #ff5252); }
+.bar.threat .bar-fill { background: linear-gradient(90deg, #fbc02d, #ff6d00, #d50000); }
+.bar.wb span, .bar.threat span { font-size: 11px; }
