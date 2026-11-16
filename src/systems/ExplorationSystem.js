@@ -272,8 +272,18 @@ export class ExplorationSystem {
    * 隊伍目前的行程狀態（地圖與探索頁即時顯示用）。
    * @returns {{phase:string, pos:{lat,lon}, movedM:number, totalM:number, remainingMs:number, phaseRemainingMs:number}|null}
    */
+  /** 隊伍的目的地：地點還在就用地點，消失了（例如被打掉的 NPC 據點）就用出發時記下的座標 */
+  targetOf(exp) {
+    const p = this.poi(exp?.poiId);
+    if (p) return p;
+    if (exp?.to && Number.isFinite(exp.to.lat)) return exp.to;
+    const last = Array.isArray(exp?.path) && exp.path.length ? exp.path[exp.path.length - 1] : null;
+    return last && Number.isFinite(last.lat) ? { id: exp.poiId, name: exp.toName || '目的地', lat: last.lat, lon: last.lon } : null;
+  }
+
   progress(exp, now = Date.now()) {
-    const poi = this.poi(exp.poiId);
+    // v17.0.2：目的地消失（例如打掉的 NPC 據點）後仍用出發時記下的座標，回家路線與隊伍位置照常顯示
+    const poi = this.targetOf(exp);
     if (!poi) return null;
     // 連續探索：搜完後要不要直接前往下一站，在下一次更新時才決定；決定前先停在建築裡，
     // 避免地圖上先往回家的方向走一小段、再跳回來前往下一站
@@ -553,6 +563,7 @@ export class ExplorationSystem {
       ...(v.poi.hunt ? { huntTarget: v.poi.target } : {}),
       ...(v.poi.drop ? { dropTarget: v.poi.target } : {}),
       ...(v.poi.trade ? { tradeTarget: v.poi.target } : {}),
+      to: { id: v.poi.id, name: v.poi.name, lat: v.poi.lat, lon: v.poi.lon },
       vehicleIds: [...vehicleIds], cargo: plan.trip.cargo, ambushes: 0,
       // 攻擊目標的殭屍群不算途中遭遇
       encountered: v.poi.hunt ? [v.poi.target.groupId] : [], travelEvents: [], travelKills: 0, travelXp: 0,

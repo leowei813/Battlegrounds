@@ -889,7 +889,7 @@ export class MapPanel {
       if (!ex) return '<p class="muted">這支隊伍已經回到避難所了，請到「📜 戰報」查看探索報告。</p>';
       const now = Date.now();
       const p = g.exploration.progress(ex, now);
-      const poi = g.exploration.poi(ex.poiId);
+      const poi = g.exploration.targetOf(ex);
       const names = ex.memberIds.map((id) => g.survivors.get(id)?.name).filter(Boolean).map(escapeHtml).join('、');
       const status = ex.defeated ? '🏳️ 撤回中' : ex.recalled ? '↩️ 召回中' : '';
       const canRecall = g.exploration.canRecall(ex, now);

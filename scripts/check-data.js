@@ -6752,7 +6752,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const before = { ...base, kind: 'explore', startAt: tk - 60000, endAt: tk + 3600000 };
     assert(gr.cp.hideOtherTrip(before, tk + 1000), '出發後目標控制點被佔領的探索隊：不顯示');
     assert(!gr.cp.hideOtherTrip(before, tk - 1000), '控制點被佔領之前：照常顯示');
-    assert(!gr.cp.hideOtherTrip({ ...before, startAt: tk + 1000 }, tk + 2000), '控制點被佔領之後才出發的隊伍不受影響');
+    assert(gr.cp.hideOtherTrip({ ...before, startAt: tk + 1000 }, tk + 2000) === !!dY.faction, 'v17.0.2：勢力佔領後才出發的隊伍（對方用舊版）也不顯示；玩家佔領的不受影響');
     assert(gr.cp.hideOtherTrip({ ...before, kind: undefined }, tk + 1000), '舊版本（沒有標示種類）前往建築的隊伍也視為探索、不顯示');
     assert(!gr.cp.hideOtherTrip({ ...before, kind: 'assist' }, tk + 1000) && !gr.cp.hideOtherTrip({ ...before, rally: 'r1' }, tk + 1000), '協防、集結隊伍不受影響');
     const freeP = gr.state.map.pois.find((p) => !CPC.cpAt(p.lat, p.lon));
@@ -8135,6 +8135,21 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const bad = await mo.objPut('a', 't', 'cp4', 'x', { data: {} });
   const ok = await mo.objPut('a', 't', CPC.CP_KIND, 'x', { data: {} });
   assert(bad.status === 'invalid' && ok.status === 'ok', '測試用的共用資料和伺服器一樣拒絕不合規的種類名稱');
+}
+
+// ---- v17.0.2：目的地消失（打掉的 NPC 據點）後，隊伍位置與回家路線照常 ----
+{
+  const Z = await import('../src/config/zones.js');
+  const gq = Game.newGame({ playerName: 'TG', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gq.genMap();
+  gq.shelter.establish(gq.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && gq.shelter.canEstablish(p).ok));
+  const tgt = gq.state.map.pois.find((p) => Z.inPlayerSafe(p.lat, p.lon) && !gq.shelter.baseAtPoi(p.id) && p.id !== gq.shelter.primary().poiId);
+  const r = gq.exploration.start(tgt.id, [gq.survivors.leader().id], 5);
+  const e = r.exp;
+  e.poiId = 'npc_gone_test'; // 目的地消失
+  const mid = e.startAt + e.travelMs + (e.searchMs || 0) + Math.round(e.travelMs / 2);
+  const pr = gq.exploration.progress(e, mid);
+  assert(r.ok && e.to && pr && pr.phase === 'returning' && Number.isFinite(pr.pos.lat), '目的地消失後，隊伍的位置與回家路線照常計算');
 }
 
 // ---- v16：倖存者特質、個人任務與轉職 ----

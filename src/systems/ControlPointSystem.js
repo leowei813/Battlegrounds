@@ -546,6 +546,8 @@ export class ControlPointSystem {
     if (!cp) return false;
     if (!trip.kind && !(this.game.state.map.pois || []).some((p) => Math.abs(p.lat - trip.to.lat) < 1e-5 && Math.abs(p.lon - trip.to.lon) < 1e-5)) return false;
     const d = this.data(cp.id);
+    // v17.0.2：勢力佔領的區域沒有人能探索（對方用的是舊版、還沒同步時也不顯示）
+    if (d?.faction && now >= (d.takenAt || 0)) return true;
     const changedAt = d?.takenAt || d?.lostAt;
     return !!changedAt && changedAt > trip.startAt && now >= changedAt;
   }

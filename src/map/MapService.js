@@ -431,7 +431,7 @@ export class MapService {
     if (sh) {
       const now = Date.now();
       state.expeditions.forEach((ex) => {
-        const p = this.game.exploration.poi(ex.poiId);
+        const p = this.game.exploration.targetOf(ex);
         if (!p) return;
         const from = ex.from || sh;
         const phase = this.game.exploration.progress(ex, now)?.phase;
