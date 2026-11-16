@@ -8105,6 +8105,12 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const u = { i: 0, hp: 100, maxHp: 1000 };
     const R = A.cp.constructor.regenHp;
     assert(R(u, t0, t0) === 100 && R(u, t0, t0 + CPC.CP_RECOVER_MS / 2) === 600 && R(u, t0, t0 + CPC.CP_RECOVER_MS * 2) === 1000, '駐防隊員的戰損約 2 小時回滿');
+    // v17.2：套用「休養」科技（回復 +80% → 約 67 分鐘回滿）
+    assert(R(u, t0, t0 + CPC.CP_RECOVER_MS / 4, 1.8) === 100 + Math.round(1000 * 1.8 / 4) && R(u, t0, t0 + CPC.CP_RECOVER_MS / 1.8, 1.8) === 1000, '駐防隊員的回復套用休養科技');
+    const rb = A.research.bonus.bind(A.research);
+    A.research.bonus = (k) => (k === 'regenPct' ? 0.8 : rb(k));
+    assert(A.cp.guardRegenMul() === 1.8, '駐防回復倍率只看休養科技');
+    A.research.bonus = rb;
   }
   // v17.0.2：進攻時刻已過才補發：從現在出發（看得到行軍），不會立刻抵達
   {
@@ -8121,12 +8127,46 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const m = A.cp.data('cp2')?.march;
     assert(m && m.at >= now && m.arriveAt - now >= 5 * 60000 && A.cp.marchView(now + 1000).some((x) => x.id === 'mc:cp2'), `補發的勢力進攻從現在出發，地圖上看得到行軍（約 ${m ? Math.round((m.arriveAt - now) / 60000) : '?'} 分鐘後抵達）`);
   }
+  // v17.1：同一個控制點分批派出的駐防隊，後到的抵達時併成一筆；撤防時一起回家（連同載具）
+  {
+    const { createSurvivor: mkS2 } = await import('../src/core/GameState.js');
+    const s1 = mkS2('批一', 'warrior', 20, 'common'); const s2 = mkS2('批二', 'warrior', 20, 'common');
+    A.state.survivors.push(s1, s2);
+    const now = Date.now();
+    const mk = (eid, sid, arrive, veh) => ({ id: eid, kind: 'cpGuard', cpId: 'cp2', cpKind: CPC.CP_KIND, poiId: 'cpguard:cp2', memberIds: [sid], vehicleIds: veh, startAt: arrive - 60000, travelMs: 60000, searchMs: 7 * 86400000, endAt: arrive + 7 * 86400000, from: { lat: 25.03, lon: 121.5 }, travelEvents: [`出發 ${eid}`], cpListed: true });
+    A.state.expeditions.push(mk('gm1', s1.id, now - 5000, ['v1']), mk('gm2', s2.id, now - 1000, ['v2']));
+    const n = A.cp.mergeGuards(now);
+    const left = A.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === 'cp2');
+    assert(n === 1 && left.length === 1 && left[0].id === 'gm1' && left[0].memberIds.length === 2 && left[0].vehicleIds.join() === 'v1,v2' && !left[0].cpListed, `同一個控制點的駐防隊抵達後合併為一筆（隊員 ${left[0]?.memberIds.length}、載具 ${left[0]?.vehicleIds}）`);
+    // v17.2：合併時保留戰損：合併前 gm2 的隊員只剩 10 生命，重新登記後仍是 10
+    {
+      const main = left[0];
+      const before = A.state.expeditions.filter((e) => e.id === 'gm1');
+      void before;
+      const h2 = { p: 'BA', n: 'BA', e: 'gm2', units: [{ i: 0, hp: 10, maxHp: 500, atk: 10 }], at: now, arr: now };
+      // 重新建立一次「合併前」的狀態：共用資料裡有兩筆，gm2 受傷
+      A.state.expeditions = A.state.expeditions.filter((e) => e !== main);
+      A.state.expeditions.push(mk('gm1', s1.id, now - 5000, ['v1']), mk('gm2', s2.id, now - 1000, ['v2']));
+      await A.shared.update(CPC.CP_KIND, 'cp2', (x) => ({ data: { ...x, owners: [{ p: 'BA', n: 'BA' }], faction: null, guards: [{ p: 'BA', n: 'BA', e: 'gm1', units: [{ i: 0, hp: 400, maxHp: 500, atk: 10 }], at: now, arr: now }, h2] } }));
+      A.cp.mergeGuards(now);
+      const m2 = A.state.expeditions.find((e) => e.id === 'gm1');
+      const kept = m2.keepHp?.[s2.id];
+      await A.cp.listGuard(m2, now);
+      const g1 = (A.cp.data('cp2')?.guards || []).find((h) => h.e === 'gm1');
+      const u2 = g1?.units?.find((x) => m2.memberIds[x.i] === s2.id);
+      assert(kept === 10 && u2 && u2.hp === 10 && !m2.keepHp && g1.rg >= 1, `合併後重新登記保留原本的戰損（${u2?.hp}）`);
+    }
+    // 還在路上的不合併
+    A.state.expeditions.push(mk('gm3', s2.id, now + 600000, []));
+    assert(A.cp.mergeGuards(now) === 0, '還在路上的駐防隊先不合併');
+    A.state.expeditions = A.state.expeditions.filter((e) => !['gm1', 'gm3'].includes(e.id));
+  }
   // 收益：每位駐防者各得完整一份（×6、含布料）
   const inc = A.cp.rollIncome(CPC.cpById('cp3'));
   assert(inc.food === CPC.CP_INCOME[5].food * 6 && inc.wood === CPC.CP_INCOME[5].wood * 6, `右側收益為深淵區基準 ×6（食物 ${inc.food}）`);
 }
 
-// ---- v17：深淵區探索點的殭屍更強（生命、攻擊 ×10） ----
+// ---- v17：深淵區探索點的殭屍更強（v17.2 調整為生命、攻擊 ×5） ----
 {
   const { ZONES: ZS } = await import('../src/config/zones.js');
   const { BUILDING_ZONE: BZ } = await import('../src/config/enemies.js');
@@ -8136,7 +8176,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   const le = ZS.find((z) => z.id === 'lethal');
   const ma = ge.exploration.encounterMul({ phase: ph, zone: ab });
   const ml = ge.exploration.encounterMul({ phase: ph, zone: le });
-  assert(BZ.abyssMul === 10 && ma.hp / ml.hp > 9 && ma.atk / ml.atk > 9, `深淵區建築內殭屍生命、攻擊 ×10（深淵 ${ma.hp.toFixed(1)}／致死 ${ml.hp.toFixed(1)}）`);
+  assert(BZ.abyssMul === 5 && ma.hp / ml.hp > 4.5 && ma.atk / ml.atk > 4.5, `深淵區建築內殭屍生命、攻擊 ×5（深淵 ${ma.hp.toFixed(1)}／致死 ${ml.hp.toFixed(1)}）`);
 }
 
 // ---- v17.0.1：共用資料種類名稱必須符合伺服器規則（2～12 個英文小寫字母），否則伺服器拒絕寫入 ----
