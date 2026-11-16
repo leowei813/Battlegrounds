@@ -408,6 +408,23 @@ export class ControlPointSystem {
   }
 
   /**
+   * v17.2：交戰後還留在控制點的駐防隊：只有整隊（同一支駐防隊）全部倒下才移除（撤回）；
+   * 還有人站著就整隊留下，倒下的人生命剩 1，之後一起回復。回傳 { guards, wiped（被移除的玩家） }。
+   */
+  static survivingGuards(guards, foes, at) {
+    const down = new Set((foes || []).filter((f) => f.down && f.ally?.e != null).map((f) => `${f.ally.e}:${f.ally.i}`));
+    const wiped = new Set();
+    const keep = (guards || []).filter((h) => {
+      if (h.arr > at) return true; // 還沒抵達、沒有參戰
+      const us = (h.units || []).slice(0, CP_GUARD_MAX);
+      const all = us.length > 0 && us.every((u) => down.has(`${h.e}:${u.i}`));
+      if (all) wiped.add(h.p);
+      return !all;
+    });
+    return { guards: keep, wiped: [...wiped] };
+  }
+
+  /**
    * v17：把交戰造成的戰損寫進共用資料（data 為要寫入的資料）：路障被打掉的耐久、駐防隊員剩餘的生命。
    * as：assault 的結果；foes：戰鬥結果中的防守方（id、hp、ally.e、ally.i）。
    */
@@ -854,12 +871,14 @@ export class ControlPointSystem {
       return { victory: r.ok, events };
     }
     // 沒打下：守軍損失保留（NPC 守軍每小時補回；駐防隊員倒下的從名單移除）
-    const downIds = new Set(result.foes.filter((f) => f.down).map((f) => f.ally?.player).filter(Boolean));
     await g.shared.update(CP_KIND, id, (x) => {
       const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
       if (data.owners?.length && !data.faction) data.fight = fightOf(data, false);
       if (data.owners?.length && !data.faction) {
-        data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
+        // v17.2：只有整隊倒下才撤回
+        const sg = ControlPointSystem.survivingGuards(data.guards, result.foes, at);
+        if (data.fight) data.fight.down = sg.wiped;
+        data.guards = sg.guards;
         ControlPointSystem.keepDamage(data, as, result.foes, at);
       }
       else { const full = this.garrisonFull(id); data.lost = Math.min(full, (full - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
@@ -1320,14 +1339,14 @@ export class ControlPointSystem {
       : { victory: false, foes: foes.map((x) => ({ id: x.id, ally: x.ally, down: false })), team: attackers0.map((u) => ({ id: u.id, down: true })) };
     const win = attackers.length > 0 && (!!r.victory || !foes.length);
     const killed = r.foes.filter((x) => x.down).length;
-    const downIds = new Set(r.foes.filter((x) => x.down).map((x) => x.ally?.player).filter(Boolean));
     const res = await g.shared.update(CP_KIND, id, (x) => {
       const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
+      const sg = ControlPointSystem.survivingGuards(data.guards, r.foes, at);
       // v15.6：交戰結果記在共用資料，佔領者與駐防者（不在線也一樣）之後都會收到戰報
       const fight = {
         f, at, win, lost: killed, total: foes.length, atk: attackers0.length, ...(as.df.wall || as.df.dps ? { wall: { sec: as.sec, killed: attackers0.length - (as.breached ? as.alive.length : 0), breached: !!as.breached } } : {}), atkDown: (r.team || []).filter((u) => u.down).length,
         owners: (data.owners || []).map((o) => o.p), guards: [...new Set((data.guards || []).filter((h) => !(h.arr > at)).map((h) => h.p))],
-        down: [...downIds],
+        down: win ? [] : sg.wiped, // v17.2：整隊倒下（被送回）的玩家
         // v15.7：倒下的駐防隊員（駐防隊 id:第幾位），沒倒下的人防守成功時拿經驗
         downU: r.foes.filter((x) => x.down && x.ally?.e).map((x) => `${x.ally.e}:${x.ally.i}`).slice(0, 60),
         ge: [...new Set((data.guards || []).filter((h) => !(h.arr > at)).map((h) => h.e).filter(Boolean))].slice(0, 30),
@@ -1342,7 +1361,7 @@ export class ControlPointSystem {
       }
       data.fight = fight;
       if (data.owners?.length && !data.faction) {
-        data.guards = (data.guards || []).filter((h) => !downIds.has(h.p));
+        data.guards = sg.guards;
         // v17：戰損保留（路障被打掉的耐久、駐防隊員剩餘生命）
         ControlPointSystem.keepDamage(data, as, r.foes, at);
       }
@@ -1384,7 +1403,7 @@ export class ControlPointSystem {
       const role = owner && guard ? '你佔領並駐防的' : owner ? '你佔領的' : '你駐防的';
       const msg = ft.win
         ? `🏴 ${who}（${ft.atk} 人）攻下了${role}控制點 #${cp.no}${ft.total ? `：守軍 ${ft.total} 人全數被擊倒` : '（沒有駐防）'}`
-        : `🛡️ ${role}控制點 #${cp.no} 擊退了${who}（${ft.atk} 人）：擊倒 ${ft.atkDown || 0} 人，守軍倒下 ${ft.lost || 0} 人${(ft.down || []).includes(me) ? '（你的駐防隊有人倒下，撤回避難所）' : ''}`;
+        : `🛡️ ${role}控制點 #${cp.no} 擊退了${who}（${ft.atk} 人）：擊倒 ${ft.atkDown || 0} 人，守軍倒下 ${ft.lost || 0} 人${(ft.down || []).includes(me) ? '（你的駐防隊全部倒下，撤回避難所）' : (ft.downU || []).length && guard ? '（倒下的隊員留在控制點慢慢回復）' : ''}`;
       // v17：防守成功經驗先算好，寫進戰報與駐防隊的報告（以前只記在事件紀錄，戰報看不到）
       const xpGot = !ft.win && guard && ft.f ? this.guardXp(cp, ft) : [];
       const xpLine = xpGot.length ? `⭐ 防守成功經驗：${xpGot.map((x) => `${x.name} +${x.amt.toLocaleString()}`).join('、')}` : '';

@@ -7136,7 +7136,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const e = await guard(true);
     await march(A, false, true);
     await tick(B, Date.now());
-    assert(e.defeated && logs(B, /有人倒下/).length === 1, `情境2：駐防隊員倒下：被擊退撤回（${logs(B, /擊退/).map((l) => l.msg).join(' / ')}）`);
+    assert(e.defeated && logs(B, /全部倒下/).length === 1, `情境2：駐防隊員全部倒下：被擊退撤回（${logs(B, /擊退/).map((l) => l.msg).join(' / ')}）`);
     const r = home(B, e);
     assert(r && /駐防控制點/.test(r.poiName) && r.events.some((x) => /擊退了「/.test(x)) && r.events.filter((x) => /駐防隊被擊退/.test(x)).length === 1 && !r.events.some((x) => /收到召回命令/.test(x)), `情境2：回家報告寫出交戰經過（${r?.events.join(' / ')}）`);
   }
@@ -8160,6 +8160,18 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     A.state.expeditions.push(mk('gm3', s2.id, now + 600000, []));
     assert(A.cp.mergeGuards(now) === 0, '還在路上的駐防隊先不合併');
     A.state.expeditions = A.state.expeditions.filter((e) => !['gm1', 'gm3'].includes(e.id));
+  }
+  // v17.2：駐防隊只要還有人站著就整隊留下（倒下的人生命剩 1，之後回復）；整隊倒下才撤回
+  {
+    const gs = [
+      { p: 'P1', e: 'e1', units: [{ i: 0, hp: 100, maxHp: 100 }, { i: 1, hp: 100, maxHp: 100 }], arr: 0 },
+      { p: 'P2', e: 'e2', units: [{ i: 0, hp: 100, maxHp: 100 }], arr: 0 },
+    ];
+    const foes = [{ down: true, hp: 0, ally: { e: 'e1', i: 0 } }, { down: false, hp: 50, ally: { e: 'e1', i: 1 } }, { down: true, hp: 0, ally: { e: 'e2', i: 0 } }];
+    const sg = A.cp.constructor.survivingGuards(gs, foes, Date.now());
+    const kept = A.cp.constructor.keepDamage({ guards: sg.guards }, null, foes, Date.now());
+    const e1 = kept.guards.find((h) => h.e === 'e1');
+    assert(sg.guards.length === 1 && e1 && sg.wiped.join() === 'P2' && e1.units[0].hp === 1 && e1.units[1].hp === 50, '駐防隊還有人站著就整隊留下（倒下的生命剩 1），整隊倒下才撤回');
   }
   // 收益：每位駐防者各得完整一份（×6、含布料）
   const inc = A.cp.rollIncome(CPC.cpById('cp3'));
