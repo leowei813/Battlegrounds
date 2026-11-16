@@ -8075,7 +8075,7 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     A.cp.defenseOf = (i, at) => ({ ...dfo(i, at), wall: 5e6, dps: 5e6 });
     const r1 = await A.cp.npcAttack('red', id, t0);
     const d1 = A.cp.data(id);
-    assert(!r1.win && d1.wd > 0 && d1.march?.fu && d1.march.arriveAt === t0 + CPC.CP_FOLLOW_MS, `被擊退：路障保留戰損、30 分鐘後追加一波（戰損 ${d1.wd}）`);
+    assert(!r1.win && d1.wd > 0 && d1.march?.fu && d1.march.arriveAt >= t0 + CPC.CP_FOLLOW_MS && d1.march.arriveAt - Date.now() <= CPC.CP_FOLLOW_MS, `被擊退：路障保留戰損、30 分鐘後追加一波（戰損 ${d1.wd}）`);
     const F = d1.wd;
     const left0 = A.cp.wallLeft(id, t0, F);
     const left1 = A.cp.wallLeft(id, t0 + CPC.CP_RECOVER_MS / 2, F);
@@ -8090,6 +8090,21 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const u = { i: 0, hp: 100, maxHp: 1000 };
     const R = A.cp.constructor.regenHp;
     assert(R(u, t0, t0) === 100 && R(u, t0, t0 + CPC.CP_RECOVER_MS / 2) === 600 && R(u, t0, t0 + CPC.CP_RECOVER_MS * 2) === 1000, '駐防隊員的戰損約 2 小時回滿');
+  }
+  // v17.0.2：進攻時刻已過才補發：從現在出發（看得到行軍），不會立刻抵達
+  {
+    await A.shared.update(CPC.CP_KIND, 'cp2', () => ({ data: { owners: [], guards: [], faction: null } }));
+    A.cp.pickTarget = () => 'cp2';
+    A.cp.lastTurn = {};
+    const tt = A.cp.turnTime.bind(A.cp);
+    A.cp.turnTime = (f, now) => now - 3600000; // 進攻時刻是 1 小時前
+    const td = A.cp.constructor.turnDay;
+    A.cp.constructor.turnDay = () => true;
+    const now = Date.now();
+    await A.cp.npcTurns(now);
+    A.cp.constructor.turnDay = td; A.cp.turnTime = tt; delete A.cp.pickTarget;
+    const m = A.cp.data('cp2')?.march;
+    assert(m && m.at >= now && m.arriveAt - now >= 5 * 60000 && A.cp.marchView(now + 1000).some((x) => x.id === 'mc:cp2'), `補發的勢力進攻從現在出發，地圖上看得到行軍（約 ${m ? Math.round((m.arriveAt - now) / 60000) : '?'} 分鐘後抵達）`);
   }
   // 收益：每位駐防者各得完整一份（×6、含布料）
   const inc = A.cp.rollIncome(CPC.cpById('cp3'));

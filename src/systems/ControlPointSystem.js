@@ -1084,7 +1084,8 @@ export class ControlPointSystem {
         }
         // v15.4：部隊從勢力據點（沒有時從大本營）出發，移動時間比照攻打玩家避難所，讓玩家有時間反應
         // eslint-disable-next-line no-await-in-loop
-        await this.launchMarch(f, target, at);
+        // v17.0.2：進攻時刻已經過了才補發（那時沒有人在線上）：從現在才出發，讓玩家看得到行軍、有時間反應
+        await this.launchMarch(f, target, Math.max(at, now));
       } finally {
         this.busy.delete(`turn:${f}`);
       }
@@ -1278,7 +1279,9 @@ export class ControlPointSystem {
       // v17：被擊退後約 30 分鐘追加一波（每次最多 1 波）
       if (!follow && !data.march) {
         const to = this.markerSpot(id);
-        data.march = { f, from: this.marchFrom(f, to), at, arriveAt: at + CP_FOLLOW_MS, fu: 1 };
+        // v17.0.2：結算得晚（沒有人在線上）時，從現在起算 30 分鐘，避免追加的那一波立刻抵達
+        const t0 = Math.max(at, Date.now());
+        data.march = { f, from: this.marchFrom(f, to), at: t0, arriveAt: t0 + CP_FOLLOW_MS, fu: 1 };
       }
       else { const full = this.garrisonFull(id); data.lost = Math.min(full, (full - this.garrisonCount(id, at)) + killed); data.lostAt = at; }
       return { data };
