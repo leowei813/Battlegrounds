@@ -20,6 +20,8 @@ import { baseSupplyWeight } from './LootStock.js';
 /** 離線期間的每日收益最多補發幾次（遊戲一天＝現實 90 分鐘，24 次約現實 1.5 天） */
 export const CP_OFFLINE_INCOME_MAX = 24;
 const GUARD_STAY_MS = 7 * 24 * 3600000;
+/** v17.2.2：控制點交戰：防守方（駐防隊）保留技能、藥品與目前生命，雙方同時開始出手 */
+const CP_FIGHT_OPTS = { foeSkills: true, keepFoeHp: true, evenStart: true };
 /** 中立控制點的感染者守軍種類 */
 const NEUTRAL_TYPES = ['walker', 'infected', 'berserker', 'mutant'];
 
@@ -654,6 +656,18 @@ export class ControlPointSystem {
     return `🛡️ 控制點 #${no}的佔領者已經是你的敵對玩家或已易主，駐防隊撤回`;
   }
 
+  /** v17.2.2：戰鬥紀錄最前面加上攻牆階段 */
+  static withWall(entry, w) {
+    if (!entry || !w) return entry;
+    return { ...entry, log: [{ t: 0, msg: ControlPointSystem.wallLine(w), type: 'info' }, ...(entry.log || [])] };
+  }
+
+  /** v17.2.2：攻牆階段的說明（戰報、戰鬥紀錄用） */
+  static wallLine(w) {
+    if (!w) return '';
+    return `🧱 防禦建築：路障擋住 ${w.sec} 秒、擊倒進攻方 ${w.killed} 人${w.breached ? '，路障被打破' : '，路障沒被打破、進攻方撤退'}`;
+  }
+
   /** v15.10：戰鬥明細寫進共用資料前縮小（逐筆紀錄過多時保留頭尾） */
   static fitBattle(b, max = 9000) {
     // 戰報給佔領者與駐防者（防守方）看：我方＝守軍、敵方＝進攻方，勝負也換成守軍的角度
@@ -841,11 +855,12 @@ export class ControlPointSystem {
       else if (as.df.wall || as.df.dps) g.survivors.setHp(a.sv, a.hp);
     });
     const fighters = as.breached ? as.alive.map((a) => a.sv) : [];
-    const result = fighters.length ? g.combat.simulate(fighters, foes, { title: `🚩 攻打控制點 #${cp.no}`, capture: 60 })
+    const result = fighters.length ? g.combat.simulate(fighters, foes, { ...(this.owners(id).length && !this.factionOf(id) ? CP_FIGHT_OPTS : { evenStart: true }), title: `🚩 攻打控制點 #${cp.no}`, capture: 60 })
       : { victory: false, foes: foes.map((f) => ({ id: f.id, ally: f.ally, down: false, hp: f.hp })), team: [], kills: [], xp: 0 };
     if (fighters.length) g.combat.applyOutcome(fighters, result, at, { attackXp: RALLY_XP });
     const me = this.myId();
     const name = g.state.player.name || '倖存者';
+    const pWall = as.df.wall || as.df.dps ? { sec: as.sec, killed: att.length - as.alive.length, breached: !!as.breached } : null;
     const killed = result.foes.filter((f) => f.down).length;
     const events = [...wallEvents, ...(fighters.length ? [`⚔️ 控制點 #${cp.no}：守軍 ${before} 人，擊倒 ${killed} 人`] : [])];
     if (result.winBonus?.length) events.push(`🏆 勝利經驗：${result.winBonus.join('、')}`);
@@ -859,7 +874,8 @@ export class ControlPointSystem {
         down: [...new Set(result.foes.filter((f) => f.down).map((f) => f.ally?.player).filter(Boolean))],
         downU: result.foes.filter((f) => f.down && f.ally?.e).map((f) => `${f.ally.e}:${f.ally.i}`).slice(0, 60),
         ge: [...new Set(arrived.map((h) => h.e).filter(Boolean))].slice(0, 30),
-        ...(result.entry ? { battle: ControlPointSystem.fitBattle({ ...result.entry, title: `🚩 玩家「${name}」攻打控制點 #${cp.no}` }) } : {}),
+        ...(pWall ? { wall: pWall } : {}),
+        ...(result.entry ? { battle: ControlPointSystem.fitBattle(ControlPointSystem.withWall({ ...result.entry, title: `🚩 玩家「${name}」攻打控制點 #${cp.no}` }, pWall)) } : {}),
       };
     };
     if (result.victory) {
@@ -1335,23 +1351,24 @@ export class ControlPointSystem {
     // v17：先攻打玩家的路障（防禦建築射擊），打破後才和駐防隊交戰
     const as = this.assault(id, attackers0, at);
     const attackers = as.breached ? as.alive : [];
-    const r = attackers.length ? g.combat.simulate([], foes, { allies: attackers, record: false, capture: 60, title: `🏴 「${FACTIONS[f].name}」進攻控制點 #${cp.no}` })
+    const r = attackers.length ? g.combat.simulate([], foes, { ...CP_FIGHT_OPTS, allies: attackers, record: false, capture: 60, title: `🏴 「${FACTIONS[f].name}」進攻控制點 #${cp.no}` })
       : { victory: false, foes: foes.map((x) => ({ id: x.id, ally: x.ally, down: false })), team: attackers0.map((u) => ({ id: u.id, down: true })) };
     const win = attackers.length > 0 && (!!r.victory || !foes.length);
+    const wallInfo = as.df.wall || as.df.dps ? { sec: as.sec, killed: attackers0.length - (as.breached ? as.alive.length : 0), breached: !!as.breached } : null;
     const killed = r.foes.filter((x) => x.down).length;
     const res = await g.shared.update(CP_KIND, id, (x) => {
       const data = x || { owners: [], guards: [], faction: defaultFaction(cp) };
       const sg = ControlPointSystem.survivingGuards(data.guards, r.foes, at);
       // v15.6：交戰結果記在共用資料，佔領者與駐防者（不在線也一樣）之後都會收到戰報
       const fight = {
-        f, at, win, lost: killed, total: foes.length, atk: attackers0.length, ...(as.df.wall || as.df.dps ? { wall: { sec: as.sec, killed: attackers0.length - (as.breached ? as.alive.length : 0), breached: !!as.breached } } : {}), atkDown: (r.team || []).filter((u) => u.down).length,
+        f, at, win, lost: killed, total: foes.length, atk: attackers0.length, ...(wallInfo ? { wall: wallInfo } : {}), atkDown: (r.team || []).filter((u) => u.down).length,
         owners: (data.owners || []).map((o) => o.p), guards: [...new Set((data.guards || []).filter((h) => !(h.arr > at)).map((h) => h.p))],
         down: win ? [] : sg.wiped, // v17.2：整隊倒下（被送回）的玩家
         // v15.7：倒下的駐防隊員（駐防隊 id:第幾位），沒倒下的人防守成功時拿經驗
         downU: r.foes.filter((x) => x.down && x.ally?.e).map((x) => `${x.ally.e}:${x.ally.i}`).slice(0, 60),
         ge: [...new Set((data.guards || []).filter((h) => !(h.arr > at)).map((h) => h.e).filter(Boolean))].slice(0, 30),
         // v15.10：戰鬥明細（佔領者與駐防者都看得到）
-        ...(r.entry ? { battle: ControlPointSystem.fitBattle(r.entry) } : {}),
+        ...(r.entry ? { battle: ControlPointSystem.fitBattle(ControlPointSystem.withWall(r.entry, wallInfo)) } : {}),
       };
       if (win) {
         // 打下後留守：守軍約為進攻部隊的一半（之後每小時補回）
@@ -1401,9 +1418,11 @@ export class ControlPointSystem {
       if (!owner && !guard && !enRoute) return;
       const who = ControlPointSystem.fightWho(ft);
       const role = owner && guard ? '你佔領並駐防的' : owner ? '你佔領的' : '你駐防的';
-      const msg = ft.win
+      const wl = ft.wall ? `\n${ControlPointSystem.wallLine(ft.wall)}` : '';
+      const msg0 = ft.win
         ? `🏴 ${who}（${ft.atk} 人）攻下了${role}控制點 #${cp.no}${ft.total ? `：守軍 ${ft.total} 人全數被擊倒` : '（沒有駐防）'}`
         : `🛡️ ${role}控制點 #${cp.no} 擊退了${who}（${ft.atk} 人）：擊倒 ${ft.atkDown || 0} 人，守軍倒下 ${ft.lost || 0} 人${(ft.down || []).includes(me) ? '（你的駐防隊全部倒下，撤回避難所）' : (ft.downU || []).length && guard ? '（倒下的隊員留在控制點慢慢回復）' : ''}`;
+      const msg = msg0 + wl;
       // v17：防守成功經驗先算好，寫進戰報與駐防隊的報告（以前只記在事件紀錄，戰報看不到）
       const xpGot = !ft.win && guard && ft.f ? this.guardXp(cp, ft) : [];
       const xpLine = xpGot.length ? `⭐ 防守成功經驗：${xpGot.map((x) => `${x.name} +${x.amt.toLocaleString()}`).join('、')}` : '';

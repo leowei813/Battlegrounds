@@ -184,7 +184,17 @@ export class CombatSystem {
     const team = [...survivors.map((sv) => this.unitFromSurvivor(sv)), ...(opts.allies || []).map((a) => ({
       ...a, side: 'team', skills: a.skills || {}, cd: randFloat(0, 0.3), healCd: a.skills?.healEvery || 0, firstHit: true, lifeSteal: a.lifeSteal || 0, medsUsed: 0,
     }))];
-    const foes = enemies.map((e) => ({ ...e, side: 'enemy', hp: e.maxHp, cd: randFloat(0.3, 1), skills: {} }));
+    // v17.2.2：控制點防守（敵方是玩家的駐防隊）：foeSkills 保留技能與藥品、keepFoeHp 用目前生命（戰損）、evenStart 雙方同時開始出手
+    const foes = enemies.map((e) => ({
+      ...e,
+      side: 'enemy',
+      hp: opts.keepFoeHp ? Math.max(1, Math.min(e.maxHp, e.hp ?? e.maxHp)) : e.maxHp,
+      cd: opts.evenStart ? randFloat(0, 0.3) : randFloat(0.3, 1),
+      skills: opts.foeSkills ? (e.skills || {}) : {},
+      ...(opts.foeSkills ? {
+        healCd: e.skills?.healEvery || 0, firstHit: true, lifeSteal: e.lifeSteal || 0, medsUsed: 0, meds: e.meds ? { ...e.meds } : null,
+      } : {}),
+    }));
     this.applyTeamTraits(team);
     // 戰前生命（戰鬥紀錄顯示戰前→戰後）
     [...team, ...foes].forEach((u) => { u.hpStart = u.hp; });
