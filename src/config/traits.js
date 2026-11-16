@@ -16,11 +16,11 @@ export const TRAITS = {
   ironwall: { name: '鐵壁', icon: '🛡️', type: 'pos', desc: '防禦 +8%', fx: { defPct: 0.08 } },
   sturdy: { name: '壯碩', icon: '💪', type: 'pos', desc: '生命 +8%', fx: { hpPct: 0.08 } },
   nimble: { name: '敏捷', icon: '🤸', type: 'pos', desc: '閃避 +3%', fx: { dodgeAdd: 0.03 } },
-  lucky: { name: '幸運兒', icon: '🍀', type: 'pos', desc: '探索物資 +8%', fx: { lootPct: 0.08 } },
-  craftsman: { name: '工匠', icon: '🔧', type: 'pos', desc: '修牆速度 +20%、建造費用 −3%', fx: { repairBonus: 0.2, buildDiscount: 0.03 } },
+  lucky: { name: '幸運兒', icon: '🍀', type: 'pos', desc: '探索物資 +8%（唯一效果）', fx: { lootPct: 0.08 } },
+  craftsman: { name: '工匠', icon: '🔧', type: 'pos', desc: '修牆速度 +20%、建造費用 −3%（唯一效果）', fx: { repairBonus: 0.2, buildDiscount: 0.03 } },
   ironGut: { name: '鐵胃', icon: '🍖', type: 'pos', desc: '自己的食物消耗 −20%', fx: { foodUse: -0.2 } },
-  swift: { name: '飛毛腿', icon: '👟', type: 'pos', desc: '探索速度 +8%', fx: { exploreSpeed: 0.08 } },
-  leader: { name: '領袖氣質', icon: '👑', type: 'pos', desc: '同隊全員攻擊、防禦 +3%（戰鬥時）', fx: { teamAtk: 0.03, teamDef: 0.03 } },
+  swift: { name: '飛毛腿', icon: '👟', type: 'pos', desc: '探索速度 +8%（唯一效果）', fx: { exploreSpeed: 0.08 } },
+  leader: { name: '領袖氣質', icon: '👑', type: 'pos', desc: '同隊全員攻擊、防禦 +3%（戰鬥時・唯一效果）', fx: { teamAtk: 0.03, teamDef: 0.03 } },
   homebody: { name: '戀家', icon: '🏠', type: 'pos', desc: '擔任守衛時屍潮傷害 +12%', fx: { guardPct: 0.12 } },
   nightOwl: { name: '夜貓子', icon: '🦉', type: 'mix', desc: '夜間戰鬥攻擊 +10%、白天 −5%', fx: { nightAtk: 0.1, dayAtk: -0.05 } },
   reckless: { name: '莽撞', icon: '😤', type: 'mix', desc: '攻擊 +8%、防禦 −8%', fx: { atkPct: 0.08, defPct: -0.08 } },
@@ -41,6 +41,9 @@ export const QUEST_LEVEL = { high: 30, low: 40 };
  * 步驟 key：wins 打贏的戰鬥、cleanWins 打贏且自己沒倒下、kills 擊殺、explores 完成探索、
  *   guardNights 擔任守衛撐過的屍潮夜晚、farmMin 耕作分鐘（現實時間）、hunts 獵殺殭屍群或搶到空投、dungeons 完成地下城
  */
+/** v16.1：指揮官不能進地下城：個人任務的「完成一次地下城」換成這一步 */
+export const LEADER_DG_STEP = { key: 'nightBoss', need: 1, name: '獵殺首領', desc: '打贏一次夜間 Boss 殭屍群' };
+
 export const CLASS_QUESTS = {
   warrior: {
     name: '戰士之路',
@@ -63,7 +66,7 @@ export const CLASS_QUESTS = {
     ],
     adv: [
       { id: 'surgeon', name: '外科醫生', icon: '🩺', desc: '急救治療量 +10%', fx: { healPct: 0.1 } },
-      { id: 'herbalist', name: '老中醫', icon: '🌿', desc: '隊伍生命 +8%（戰鬥時，同隊全員）', fx: { teamHp: 0.08 } },
+      { id: 'herbalist', name: '老中醫', icon: '🌿', desc: '隊伍生命 +8%（戰鬥時，同隊全員・唯一效果）', fx: { teamHp: 0.08 } },
     ],
   },
   engineer: {
@@ -74,8 +77,8 @@ export const CLASS_QUESTS = {
       { key: 'dungeons', need: 1, name: '深入地底', desc: '完成一次地下城' },
     ],
     adv: [
-      { id: 'demolition', name: '爆破專家', icon: '💣', desc: '防禦塔傷害 +20%', fx: { towerDmg: 0.2 } },
-      { id: 'architect', name: '建築師', icon: '🏗️', desc: '建造費用 −10%、修牆速度 +50%', fx: { buildDiscount: 0.1, repairBonus: 0.5 } },
+      { id: 'demolition', name: '爆破專家', icon: '💣', desc: '防禦塔傷害 +20%（唯一效果）', fx: { towerDmg: 0.2 } },
+      { id: 'architect', name: '建築師', icon: '🏗️', desc: '建造費用 −10%（唯一效果）、修牆速度 +50%', fx: { buildDiscount: 0.1, repairBonus: 0.5 } },
     ],
   },
   farmer: {
@@ -86,8 +89,8 @@ export const CLASS_QUESTS = {
       { key: 'dungeons', need: 1, name: '深入地底', desc: '完成一次地下城' },
     ],
     adv: [
-      { id: 'producer', name: '生產家', icon: '🏭', desc: '在家時避難所所有產量 +20%（多位不疊加）', fx: { prodAll: 0.2 } },
-      { id: 'scavenger', name: '拾荒者', icon: '🎒', desc: '探索物資 +15%、野外覓食 +20%', fx: { lootPct: 0.15, forage: 0.2 } },
+      { id: 'producer', name: '生產家', icon: '🏭', desc: '在家時避難所所有產量 +20%（唯一效果）', fx: { prodAll: 0.2 } },
+      { id: 'scavenger', name: '拾荒者', icon: '🎒', desc: '探索物資 +15%、野外覓食 +20%（唯一效果）', fx: { lootPct: 0.15, forage: 0.2 } },
     ],
   },
   scout: {
@@ -99,7 +102,7 @@ export const CLASS_QUESTS = {
     ],
     adv: [
       { id: 'sniper', name: '狙擊手', icon: '🎯', desc: '攻擊 +12%、暴擊率 +3%', fx: { atkPct: 0.12, critAdd: 0.03 } },
-      { id: 'pathfinder', name: '斥候', icon: '🦅', desc: '探索速度 +15%、閃避 +4%', fx: { exploreSpeed: 0.15, dodgeAdd: 0.04 } },
+      { id: 'pathfinder', name: '斥候', icon: '🦅', desc: '探索速度 +15%（唯一效果）、閃避 +4%', fx: { exploreSpeed: 0.15, dodgeAdd: 0.04 } },
     ],
   },
 };

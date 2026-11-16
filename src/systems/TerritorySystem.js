@@ -153,7 +153,7 @@ export class TerritorySystem {
       if (inNpcHome(lat, lon)) return homeOk;
       const c = cpAt(lat, lon);
       if (!c || own.has(c.id)) return true;
-      if (!status.has(c.id)) status.set(c.id, g.cp.statusOf(c.id) === 'mine');
+      if (!status.has(c.id)) status.set(c.id, g.cp.canEnter(c.id)); // v17：中立與非敵對佔領的控制點可以穿越
       return status.get(c.id);
     };
     // 原本的路線沒有穿過不可探索的區域：照舊
@@ -167,7 +167,7 @@ export class TerritorySystem {
       return true;
     };
     if (clear(path)) return path;
-    const key = `${from.lat.toFixed(5)},${from.lon.toFixed(5)}>${to.lat.toFixed(5)},${to.lon.toFixed(5)}|${CONTROL_POINTS.map((c) => (status.has(c.id) ? +status.get(c.id) : (g.cp.statusOf(c.id) === 'mine' ? 1 : 0))).join('')}|${avoid.map((z) => `${z.id}:${Math.round(z.r)}`).join(',')}`;
+    const key = `${from.lat.toFixed(5)},${from.lon.toFixed(5)}>${to.lat.toFixed(5)},${to.lon.toFixed(5)}|${CONTROL_POINTS.map((c) => (status.has(c.id) ? +status.get(c.id) : (g.cp.canEnter(c.id) ? 1 : 0))).join('')}|${avoid.map((z) => `${z.id}:${Math.round(z.r)}`).join(',')}`;
     this.detourCache = this.detourCache || new Map();
     if (this.detourCache.has(key)) return this.detourCache.get(key);
     const circles = avoid.filter((z) => haversine(z.lat, z.lon, from.lat, from.lon) > z.r && haversine(z.lat, z.lon, to.lat, to.lon) > z.r);

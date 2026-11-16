@@ -104,7 +104,7 @@ export class InventoryPanel {
         const groups = [];
         bps.forEach((bp) => { const hit = groups.find((x) => x.bp.model === bp.model && x.bp.rarity === bp.rarity); if (hit) hit.n += 1; else groups.push({ bp, n: 1 }); });
         const auto = g.blackMarket.bpAutoSell();
-        return `${auto.r || auto.s ? `<small class="muted block bp-auto-sum">🔁 自動出售：${[auto.r ? `<span style="color:${RARITIES[auto.r].color}">${RARITIES[auto.r].name}${auto.r === 'poor' ? '' : '以下'}</span>` : '', auto.s ? `${'★'.repeat(auto.s)}${auto.s > 1 ? ' 以下' : ''}` : ''].filter(Boolean).join('・')}</small>` : ''}${groups.slice(0, 6).map(({ bp, n }) => {
+        return `${auto.r || auto.s ? `<small class="muted block bp-auto-sum">🔁 自動出售：${[auto.r ? `<span style="color:${RARITIES[auto.r].color}">${RARITIES[auto.r].name}${auto.r === 'poor' ? '' : '以下'}</span>` : '', auto.s ? `${'★'.repeat(auto.s)}${auto.s > 1 ? ' 以下' : ''}` : ''].filter(Boolean).join(' 或 ')}</small>` : ''}${groups.slice(0, 6).map(({ bp, n }) => {
           const md = ITEM_MODELS[bp.model];
           const st = this.craftState(eq.canCraftModel(bp.model, true), eq.craftCost(bp.model, true));
           return `<div class="row-between bp-row"><span><b>${md.name}</b>${n > 1 ? ` <span class="bp-count">×${n}</span>` : ''}<small class="block" style="color:${RARITIES[bp.rarity].color}">保底${RARITIES[bp.rarity].name}</small></span>${this.craftBtn(st, '製作', 'craftBp', { id: bp.id, type: bp.model }, eq.canCraftModel(bp.model, true).reason)}</div>`;
@@ -327,9 +327,10 @@ export class InventoryPanel {
     const on = !!(cfg.r || cfg.s);
     return `<div class="bp-auto"><b>🔁 自動出售</b>
       <label class="bp-dd">保底品級 <select class="keep-min bp-auto-sel" data-k="r" aria-label="自動出售的保底品級">${ropts}</select></label>
+      <span class="bp-or">或</span>
       <label class="bp-dd">星級 <select class="keep-min bp-auto-sel" data-k="s" aria-label="自動出售的星級">${sopts}</select></label>
       ${btn('一鍵出售', 'bpSellRule', {}, { cls: 'btn-sm btn-primary', disabled: !on, title: on ? '把現有符合條件的設計圖一起賣掉' : '設定品級或星級後才能使用' })}
-      <small class="muted">設定品級或星級任一項就啟用（兩項都設定時要同時符合）：之後拿到符合的設計圖會自動賣；按「一鍵出售」才會賣掉現有符合的設計圖（副本圖紙、交易所買來或撤回的不會賣）。</small></div>`;
+      <small class="muted">設定品級或星級任一項就啟用（兩項都設定時，符合其中一項就賣）：之後拿到符合的設計圖會自動賣；按「一鍵出售」才會賣掉現有符合的設計圖（副本圖紙、交易所買來或撤回的不會賣）。</small></div>`;
   }
 
   /** 下拉選單變更：只記住設定（之後新拿到的設計圖適用），不賣任何東西 */

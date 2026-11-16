@@ -36,6 +36,7 @@ import {
 import { zoneAt } from '../config/zones.js';
 import { BASE_SIZES, baseSizeOf } from '../config/civilization.js';
 import { pathLength, pointAlong } from '../map/routing.js';
+import { trimReports } from './reportList.js';
 import {
   SUPPLIES, AMMO_FOR, AMMO_PACK_FIGHTS, unitWeight,
 } from '../config/supplies.js';
@@ -126,6 +127,7 @@ const FIGHT_KINDS = ['cp', 'raid', 'pvp', 'infect', 'intercept', 'hunt', 'drop']
 
 /** 隊伍狀態圖示：交戰中改為兩把交叉劍 */
 export function phaseIcon(exp, phase) {
+  if (phase === 'searching' && exp?.kind === 'drop' && exp.dropWait && !exp.dropDone) return '⏳';
   if (phase === 'searching' && FIGHT_KINDS.includes(exp?.kind)) return '⚔️';
   if (phase === 'searching' && (exp?.kind === 'cpGuard' || exp?.kind === 'assist')) return '🛡️';
   return EXP_PHASES[phase]?.icon || '🚶';
@@ -133,6 +135,7 @@ export function phaseIcon(exp, phase) {
 
 /** 隊伍狀態名稱：交戰中 */
 export function phaseName(exp, phase) {
+  if (phase === 'searching' && exp?.kind === 'drop' && exp.dropWait && !exp.dropDone) return '等待空投降落';
   if (phase === 'searching' && FIGHT_KINDS.includes(exp?.kind)) return '戰鬥中';
   if (phase === 'searching' && exp?.kind === 'cpGuard') return '駐防中';
   return EXP_PHASES[phase]?.name || '';
@@ -679,7 +682,7 @@ export class ExplorationSystem {
     report.retreated = true;
     this.tagZone(report, exp);
     this.attachXp(report, exp);
-    this.game.state.reports = [report, ...(this.game.state.reports || [])].slice(0, 20);
+    this.game.state.reports = trimReports([report, ...(this.game.state.reports || [])]);
     this.game.bus.emit('expedition:done', [report]);
     return report;
   }
@@ -691,7 +694,7 @@ export class ExplorationSystem {
       atk: NIGHT_MUL.atk + NIGHT_MUL.perDanger * Math.max(0, ctx.zone.danger || 0),
     } : null;
     // 高危險區的建築內殭屍更強（不分日夜）
-    const zm = BUILDING_ZONE.statMul[Math.min(3, ctx.zone?.danger || 0)] || 1;
+    const zm = (BUILDING_ZONE.statMul[Math.min(3, ctx.zone?.danger || 0)] || 1) * (ctx.zone?.id === 'abyss' ? BUILDING_ZONE.abyssMul || 1 : 1);
     // 白天：高危區的殭屍生命、攻擊加成
     const dm = !ctx.phase?.zombies ? DAY_ZONE.stat[ctx.zone?.id] || 1 : 1;
     return mulOf(ZOMBIE_VS_SURVIVOR, night, { hp: zm * dm, atk: zm * dm });
@@ -734,7 +737,7 @@ export class ExplorationSystem {
     };
     this.tagZone(report, exp);
     this.attachXp(report, exp);
-    this.game.state.reports = [report, ...(this.game.state.reports || [])].slice(0, 20);
+    this.game.state.reports = trimReports([report, ...(this.game.state.reports || [])]);
     this.game.bus.emit('expedition:done', [report]);
     return { exp, group: g, result, aborted: true };
   }
@@ -796,6 +799,12 @@ export class ExplorationSystem {
     // 還沒抵達的攔截、獵殺不再交戰
     exp.icptDone = true;
     exp.huntDone = true;
+    // v16.1：等待空投的隊伍召回：取消等待登記
+    if (exp.kind === 'drop' && !exp.dropDone) {
+      exp.dropDone = true;
+      exp.dropResult = { win: false, events: [] };
+      if (exp.dropWait) this.game.airdrop?.removeWaiter(this.game.airdrop.get(exp.dropTarget?.id), exp.id);
+    }
     exp.travelEvents = [...(exp.travelEvents || []), '↩️ 收到召回命令，隊伍折返避難所'];
     const keep = exp.kind === 'explore' && exp.cp?.done > 0;
     return { ok: true, msg: `隊伍折返中，約 ${Math.max(1, Math.round(exp.travelMs / 60000))} 分鐘後回到避難所${keep ? '（帶回已找到的物資）' : '（無收穫）'}` };
@@ -1061,7 +1070,7 @@ export class ExplorationSystem {
       e.raidReport = this.game.combat.within(e, () => this.game.npcs.resolveRaid(e, at));
       if (!silent) this.game.toast(`${e.raidReport.success ? '✅' : '⚠️'} ${e.raidReport.poiName}：${e.raidReport.success ? '攻打成功' : '攻打失敗'}，隊伍返回避難所`, e.raidReport.success ? 'success' : 'danger');
     });
-    let due = this.list.filter((e) => e.endAt <= now);
+    let due = this.list.filter((e) => e.endAt <= now && !this.holdDrop(e, now));
     while (due.length && guard < 400) {
       guard += 1;
       due.forEach((exp) => {
@@ -1137,12 +1146,12 @@ export class ExplorationSystem {
         }
         if (autoOn) report.events.push(`⏹️ 自動探索結束：「${poiNow?.name || '這裡'}」的物資已經拿光，佇列中也沒有下一個地點`);
       });
-      due = this.list.filter((e) => e.endAt <= now);
+      due = this.list.filter((e) => e.endAt <= now && !this.holdDrop(e, now));
     }
     if (reports.length) {
       const st = this.game.state;
       // 撤退的報告已經記錄過，不重複加入
-      st.reports = [...reports.filter((r) => !r.retreated).reverse(), ...(st.reports || [])].slice(0, 20);
+      st.reports = trimReports([...reports.filter((r) => !r.retreated).reverse(), ...(st.reports || [])]);
       if (!silent) {
         reports.forEach((r) => this.game.toast(r.success ? `✅ ${r.poiName} 探索完成` : r.recalled ? `🏠 ${r.poiName} 隊伍已召回` : `⚠️ ${r.poiName} 探索受挫`, r.success ? 'success' : r.recalled ? 'info' : 'danger'));
       }
@@ -1232,16 +1241,99 @@ export class ExplorationSystem {
     if (st.state === 'npc') return { ok: false, reason: '已經被 NPC 勢力拿走了' };
     const id = `drop:${dropId}`;
     if (this.list.some((e) => e.poiId === id)) return { ok: false, reason: '已經有隊伍前往這個空投' };
-    return this.start(id, memberIds, 0, false, Date.now(), { ...opts, kind: 'drop' });
+    const r = this.start(id, memberIds, 0, false, Date.now(), { ...opts, kind: 'drop' });
+    if (!r.ok) return r;
+    // v16.1：降落前抵達：在落點等待到降落（回程順延），並登記到共用資料，降落時和其他等待的隊伍一起結算
+    const exp = r.exp;
+    const arrive = exp.startAt + (exp.travelMs || 0);
+    if (arrive < d.landAt) {
+      const wait = d.landAt - arrive;
+      exp.searchMs = wait;
+      exp.endAt += wait;
+      exp.dropWait = true;
+      const g = this.game;
+      ad.addWaiter(d, {
+        k: exp.id, p: g.shared.store().me, n: String(g.state.player.name || '倖存者').slice(0, 16), at: arrive, f: ad.friendIds(), u: g.rally.units(memberIds),
+      }).then((res) => {
+        if (res?.ok) return;
+        // 登記失敗（離線或等待的隊伍太多）：降落時自己和守衛交戰
+        exp.dropSolo = true;
+        g.toast?.(`📦 無法登記等待（${res?.reason || '連線失敗'}），降落時隊伍會自行搶奪`, 'info');
+      });
+      r.msg = `${r.msg}（約 ${Math.ceil(wait / 60000)} 分鐘後空投降落，隊伍會在落點等待）`;
+    }
+    return r;
   }
 
   /** 搶空投的隊伍抵達：先看是否已被搶走，再和守衛交戰；打贏後寫入共用資料（先到先得） */
   checkDrops(now = Date.now()) {
+    const ad = this.game.airdrop;
     this.list.forEach((exp) => {
-      if (exp.kind !== 'drop' || exp.dropDone) return;
-      const at = exp.startAt + (exp.travelMs || 0);
-      if (now >= at) this.dropArrive(exp, at);
+      if (exp.kind !== 'drop' || exp.dropDone || exp.recalled || exp.defeated) return;
+      const d = ad?.get(exp.dropTarget?.id);
+      // v16.1：降落前抵達的隊伍：等降落後的共同結算
+      const at = exp.startAt + (exp.travelMs || 0) + (exp.dropWait ? exp.searchMs || 0 : 0);
+      if (now < at) return;
+      const rec = d ? ad.record(d) : null;
+      if (d && exp.dropWait && !exp.dropSolo) {
+        if (rec?.res) { this.dropLand(exp, d, rec); return; }
+        // 還沒有結算：由自己結算（連線不到或太久沒有結果時，改為自己和守衛交戰）
+        if (rec?.w?.some((w) => w.k === exp.id) && now - d.landAt < 10 * 60000) { ad.resolveLanding(d, now); return; }
+        exp.dropSolo = true;
+      }
+      // 降落後才抵達：落點還有等待中的隊伍尚未結算時，先結算
+      if (d && rec?.w?.length && !rec.res && at >= d.landAt && now - d.landAt < 10 * 60000) { ad.resolveLanding(d, now); return; }
+      this.dropArrive(exp, at);
     });
+  }
+
+  /** v16.1：等待空投的隊伍回到家前還沒拿到降落結算（剛上線、共用資料還沒同步）：先等一下再結算報告 */
+  holdDrop(e, now = Date.now()) {
+    if (e.kind !== 'drop' || !e.dropWait || e.dropDone || e.dropSolo || e.recalled || e.defeated) return false;
+    const d = this.game.airdrop?.get(e.dropTarget?.id);
+    if (!d || now - d.landAt >= 10 * 60000) return false;
+    const rec = this.game.airdrop.record(d);
+    return !rec?.res;
+  }
+
+  /** v16.1：套用降落結算的結果（自己的隊員生命、經驗、戰利品） */
+  dropLand(exp, d, rec) {
+    const g = this.game;
+    const o = rec.res.out?.[exp.id];
+    if (!o) { exp.dropSolo = true; this.dropArrive(exp, d.landAt); return; }
+    exp.dropDone = true;
+    const at = d.landAt;
+    const xpMul = 1 + g.research.bonus('xpPct');
+    let kills = 0;
+    (o.units || []).forEach((u) => {
+      const sv = g.survivors.get(exp.memberIds[u.i]);
+      if (!sv) return;
+      kills += u.kills || 0;
+      if (u.meds > 0) g.combat.consumeMeds(sv, { medsUsed: Math.floor(u.meds) });
+      if (u.down) g.survivors.battleDown(sv, '在空投爭奪戰中', at);
+      else {
+        g.survivors.setHp(sv, Math.max(1, u.hp));
+        if (o.xpEach > 0) g.survivors.gainXp(sv, o.xpEach);
+      }
+    });
+    exp.travelKills = (exp.travelKills || 0) + kills;
+    exp.travelXp = (exp.travelXp || 0) + Math.round((o.xpEach || 0) * xpMul * (o.units || []).filter((u) => !u.down).length);
+    const events = [...(rec.res.lines || [])];
+    (o.units || []).forEach((u) => {
+      const sv = g.survivors.get(exp.memberIds[u.i]);
+      if (sv) events.push(`　・${sv.name}：造成 ${u.dealt} 傷害、擊倒 ${u.kills || 0}・剩餘生命 ${Math.max(0, u.hp)}/${u.maxHp}${u.down ? '（倒下・重傷）' : ''}`);
+    });
+    if (o.win) {
+      exp.carried = { gained: { ...(o.mats || {}), coins: o.coins || 0 }, items: [], blueprints: (o.bps || []).map((b) => ({ ...b })) };
+      exp.memberIds.forEach((id) => g.survivors.pqAdd(g.survivors.get(id), 'hunts')); // v16：個人任務
+      events.push('📦 搶到空投！戰利品依人數平分，隊伍正背著物資返回避難所');
+      g.log('📦 搶到空投！隊伍正背著物資返回', 'success');
+      g.toast('📦 搶到空投！', 'success');
+    } else {
+      g.log('🏳️ 空投爭奪失敗，隊伍返回避難所', 'info');
+    }
+    exp.dropResult = { win: !!o.win, events };
+    g.bus.emit('map:changed');
   }
 
   dropArrive(exp, at) {
@@ -1289,7 +1381,12 @@ export class ExplorationSystem {
 
   /** 搶空投的隊伍返回時的報告 */
   dropReport(exp) {
-    if (!exp.dropDone) this.dropArrive(exp, exp.startAt + (exp.travelMs || 0));
+    if (!exp.dropDone && !exp.recalled) {
+      const d = this.game.airdrop?.get(exp.dropTarget?.id);
+      const rec = d ? this.game.airdrop.record(d) : null;
+      if (d && exp.dropWait && rec?.res) this.dropLand(exp, d, rec);
+      else this.dropArrive(exp, exp.startAt + (exp.travelMs || 0) + (exp.dropWait ? exp.searchMs || 0 : 0));
+    }
     const r = exp.dropResult || { win: false, events: [] };
     const members = exp.memberIds.map((id) => this.game.survivors.get(id)).filter(Boolean);
     const blueprints = [...(exp.carried?.blueprints || [])];

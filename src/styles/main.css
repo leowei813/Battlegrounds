@@ -1779,7 +1779,8 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 .fac-card2.bp-card { border-left: 4px solid var(--rc); }
 /* v15.17：名稱太長時，星級、數量、保底品級換到下一行，不會超出卡片 */
 .bp-card .fac2-head { flex-wrap: wrap; row-gap: 4px; }
-.bp-card .fac2-head b { min-width: 0; overflow-wrap: anywhere; }
+/* 名稱獨立在第一行（圖示＋名稱），星級、數量、保底品級排在第二行 */
+.bp-card .fac2-head b { flex: 1 1 calc(100% - 44px); min-width: 0; overflow-wrap: break-word; }
 .bp-card .fac2-head .tier { white-space: nowrap; }
 .bp-card .bp-rarity { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--rc); border: 1px solid var(--rc); border-radius: 10px; padding: 1px 8px; white-space: nowrap; background: color-mix(in srgb, var(--rc) 12%, transparent); }
 .bp-count { font-size: 12px; font-weight: 700; color: var(--accent); background: #ffb30022; border-radius: 8px; padding: 0 6px; }
@@ -1789,6 +1790,7 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 .bp-auto { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 2px 0 10px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 10px; }
 .bp-auto small { flex-basis: 100%; }
 .bp-auto-sum { margin-bottom: 4px; }
+.bp-or { font-weight: 700; color: #ffe082; }
 .bp-dd { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
 
 /* v15.15：副本視窗切換箭頭（地下感染區那一行兩端） */
@@ -1827,3 +1829,27 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 .spec .btn { margin-top: 6px; }
 .spec.pick { border-color: #ffb300; background: #ffb3001a; opacity: 1; }
 @media (max-width: 520px) { .spec-grid { grid-template-columns: 1fr; } }
+
+/* v16.1：控制點被打下後的保護期 */
+.cp-dot .cp-shield { position: absolute; top: -10px; right: -12px; font-size: 12px; font-style: normal; background: #000c; border: 1px solid #81d4fa; border-radius: 8px; padding: 0 3px; line-height: 16px; filter: drop-shadow(0 0 3px #4fc3f7); }
+.cp-shield-row { margin: 6px 0; padding: 6px 10px; border-radius: 8px; border: 1px solid #4fc3f7; background: #4fc3f71a; color: #b3e5fc; }
+
+/* v16.1：空投等待降落的隊伍 */
+.adw-list { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 10px; }
+.adw-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 6px 10px; border-radius: 8px; background: rgba(255,255,255,.05); border-left: 3px solid #90a4ae; }
+.adw-row.me { border-color: #66bb6a; }
+.adw-row.ally { border-color: #4fc3f7; }
+.adw-row.foe { border-color: #ef5350; }
+.adw-row small { color: #b0bec5; white-space: nowrap; }
+
+/* v17：控制點防禦建築 */
+.cpd-list { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
+.cpd-row { padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,.05); border-left: 3px solid #90a4ae; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; }
+.cpd-row.me { border-color: #66bb6a; flex-direction: column; align-items: stretch; }
+.cpd-row.ally { border-color: #4fc3f7; }
+.cpd-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; align-items: stretch; }
+@media (max-width: 520px) { .cpd-items { grid-template-columns: 1fr; } }
+.cpd-it { display: flex; flex-direction: column; gap: 3px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,.25); }
+.cpd-it small, .cpd-sum { color: #b0bec5; }
+.cpd-it .btn { margin-top: 4px; align-self: flex-start; }
+.cpd-cost { font-size: 12px; }

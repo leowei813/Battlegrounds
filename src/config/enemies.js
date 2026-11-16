@@ -110,6 +110,8 @@ export const NIGHT_MUL = { hp: 1.2, atk: 1.25, perDanger: 0.12 };
 export const BUILDING_ZONE = {
   extraLevel: { 1: 6, 2: 15, 3: 28 },
   statMul: { 1: 1.9, 2: 3.2, 3: 2.15 },
+  // v17：深淵區建築內的殭屍另外再乘這個倍率（生命、攻擊）
+  abyssMul: 10,
 };
 /**
  * 白天（沒有夜間加成時）建築內的區域加成（v10.13）：高危區白天也有風險。

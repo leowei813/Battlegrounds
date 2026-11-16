@@ -20,7 +20,11 @@ import {
 } from '../components.js';
 import { SUPPLIES, SUPPLY_CATS } from '../../config/supplies.js';
 import { INFECTED } from '../../systems/InfectedSystem.js';
-import { cpById, cpAt, CP_INCOME, FACTIONS, FACTION_SLOW_AT, FACTION_BASE } from '../../config/controlPoints.js';
+import {
+  cpById, cpAt, CP_INCOME, CP_INCOME_MUL, CP_GUARD_MAX, CP_MAX_PLAYERS, CP_BUILDINGS, FACTIONS, FACTION_SLOW_AT, FACTION_BASE,
+} from '../../config/controlPoints.js';
+import { DEFENSES, DEFENSE_MAX_LEVEL } from '../../config/defenses.js';
+import { ControlPointSystem } from '../../systems/ControlPointSystem.js';
 import { RALLY_DELAYS, RallySystem } from '../../systems/RallySystem.js';
 import { AUTO_HOME_LABEL } from '../../systems/AutoHomeSystem.js';
 import { PLASTIC_SPOTS } from '../../systems/LootStock.js';
@@ -252,35 +256,71 @@ export class MapPanel {
     const g = this.game;
     const sm = g.cp.summary(id);
     const { cp } = sm;
-    const zone = ZONES[cp.zone];
     const fac = g.cp.factionOf(id);
+    const me = g.cp.myId();
+    const friends = new Set(Object.entries(g.territory?.rel?.players || {}).filter(([, p]) => p?.status === 'friend').map(([pid]) => pid));
     const ownTxt = fac ? `🏴 ${FACTIONS[fac].name}勢力` : sm.owners.length ? sm.owners.map((o) => escapeHtml(o.n)).join('、') : '—';
     // 同一位玩家分多次派出的駐防隊合計顯示
     const byPlayer = new Map();
     sm.guards.forEach((h) => { const cur = byPlayer.get(h.p) || { n: h.n, c: 0 }; cur.c += (h.units || []).length; byPlayer.set(h.p, cur); });
-    const guardTxt = byPlayer.size ? [...byPlayer.values()].map((x) => `${escapeHtml(x.n)} ${x.c} 人`).join('・') : '沒有駐防';
+    const who = (pid, n) => (pid === me ? escapeHtml(n || '你') : `${friends.has(pid) ? '🤝 ' : ''}${escapeHtml(n || '玩家')}`);
+    const guardTxt = byPlayer.size ? [...byPlayer.entries()].map(([pid, x]) => `${who(pid, x.n)} ${x.c} 人`).join('・') : '沒有駐防';
     const npc = sm.status === 'neutral' || sm.status === 'faction';
     const atk = g.cp.canAttack(id);
     const rally = g.rally.canStart({ kind: 'cp', id });
     const gd = g.cp.canGuard(id, 1);
     const mine = g.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === id && !e.recalled && !e.defeated);
-    const inc = CP_INCOME[cp.zone];
-    const tagCol = sm.status === 'mine' ? '#4fc3f7' : sm.status === 'faction' ? '#ef5350' : '#9e9e9e';
+    const left = Math.max(0, CP_GUARD_MAX - g.cp.myGuards(id));
+    const tagCol = sm.status === 'mine' ? '#4fc3f7' : sm.status === 'faction' ? '#ef5350' : sm.status === 'hostile' ? '#ef9a9a' : '#9e9e9e';
     const btns = [];
-    if (atk.ok || atk.locked) {
+    // v16.1：剛被打下的保護期
+    const sl = g.cp.shieldLeft(id);
+    if (atk.ok || atk.locked || atk.shield) {
       btns.push(btn('⚔️ 派隊攻打', 'cpAttack', {}, { cls: 'btn-danger', disabled: !atk.ok, title: atk.reason || '' }));
       btns.push(btn(`${rallyFlag(16)} 發起集結`, 'cpRally', {}, { cls: 'btn-primary', disabled: !rally.ok, title: rally.reason || '' }));
     }
-    if (sm.status === 'mine') btns.push(btn('🛡️ 派人駐防', 'cpGuard', {}, { cls: 'btn-primary', disabled: !gd.ok, title: gd.reason || '' }));
+    const join = g.cp.canJoin(id);
+    if (join) btns.push(btn(`🛡️ 派人駐防（剩 ${left} 人）`, 'cpGuard', {}, { cls: 'btn-primary', disabled: !gd.ok, title: gd.reason || '' }));
     if (mine.length) btns.push(btn('↩️ 撤回駐防', 'cpRecall', {}, { cls: 'btn-ghost' }));
-    return `<p><span class="zone-tag" style="--zc:${zone.color}">${zone.name}</span> <span class="tag" style="color:${tagCol};border:1px solid ${tagCol}">${sm.label}</span></p>
+    const inc = CP_INCOME[cp.zone];
+    // v17：防禦建築（玩家佔領時）
+    let bldHtml = '';
+    if (join || (sm.owners.length && !fac)) {
+      const d = g.cp.data(id) || {};
+      const bld = d.bld || {};
+      const df = g.cp.defenseOf(id);
+      const ICON = { barricade: '🧱', machineGun: '🔫', watchPost: '🔭', watchPost2: '🔭' };
+      const NAME = { barricade: '路障', machineGun: '機槍塔', watchPost: '瞭望台 A', watchPost2: '瞭望台 B' };
+      const tech = g.cp.techMul();
+      const effText = (k, lv) => {
+        const who = k === 'watchPost2' ? '第二強' : '最強';
+        if (!lv) return k.startsWith('watchPost') ? `尚未建造・${who}的駐防隊員射擊` : '尚未建造';
+        const e = ControlPointSystem.bldEffect(k, lv, 1, tech);
+        return k === 'barricade' ? `耐久 ${Math.round(e.wall).toLocaleString()}` : k === 'machineGun' ? `每秒 ${Math.round(e.dps).toLocaleString()} 傷害` : `${who}的駐防隊員攻擊 ×${(DEFENSES.watchPost.stats(lv).garrisonMul * 3 * tech.v).toFixed(1)} 射擊`;
+      };
+      const myB = g.cp.bldOf(id);
+      const myRow = join ? `<div class="cpd-row me"><div class="who">🟢 <b>你的建築</b></div><div class="cpd-items">${CP_BUILDINGS.map((k) => {
+        const lv = myB[k] || 0;
+        const c = g.cp.canBuild(id, k);
+        const cost = lv < DEFENSE_MAX_LEVEL ? g.cp.bldCost(k, lv + 1) : null;
+        const label = lv >= DEFENSE_MAX_LEVEL ? '已滿級' : lv ? `升級 Lv${lv + 1}` : '建造';
+        return `<div class="cpd-it"><span>${ICON[k]} ${NAME[k]}${lv ? ` <b>Lv${lv}</b>` : ''}</span><small>${effText(k, lv)}</small>${cost ? `<div class="cpd-cost">${costHtml(g.state, cost)}</div>` : ''}${btn(label, 'cpBuild', { k }, { cls: `btn-xs ${lv ? 'btn-primary' : ''}`, disabled: !c.ok, title: c.reason || '' })}</div>`;
+      }).join('')}</div></div>` : '';
+      const others = Object.entries(bld).filter(([pid]) => pid !== me).map(([pid, x]) => `<div class="cpd-row ${friends.has(pid) ? 'ally' : ''}"><div class="who">${friends.has(pid) ? '🤝 好友' : ''}「${escapeHtml(x?.n || '玩家')}」</div><div class="cpd-sum">${['barricade', 'machineGun'].map((k) => `${ICON[k]} ${x?.b?.[k] ? `Lv${x.b[k]}` : '—'}`).join('・')}・🔭 ${['watchPost', 'watchPost2'].map((k) => (x?.b?.[k] ? `Lv${x.b[k]}` : '—')).join('／')}</div></div>`).join('');
+      bldHtml = `<div class="label">防禦建築（每位玩家路障、機槍塔各 1 座、瞭望台 2 座・效果為避難所的 3 倍並套用各自的科技與工程師加成・費用為一半・立即完成）</div>
+        <div class="cpd-list">${myRow}${others}</div>
+        <p class="muted">總防禦：路障耐久 ${(() => { const wl = g.cp.wallLeft(id, Date.now(), df.wall); return wl < df.wall ? `${wl.toLocaleString()}/${df.wall.toLocaleString()}（修復中）` : df.wall.toLocaleString(); })()}・防禦火力每秒 ${df.dps.toLocaleString()}。交戰後路障與駐防隊員的戰損會保留，約 2 小時回滿；勢力被擊退後約 30 分鐘會追加一波。敵人要先打破路障才能和駐防隊交戰；和佔領者變成敵對時，該玩家的建築會被拆除、駐防隊遣返。駐防與建築最多 ${CP_MAX_PLAYERS} 位玩家（目前 ${g.cp.members(id).length} 位）。</p>`;
+    }
+    return `<p><span class="zone-tag" style="--zc:${cp.side === 'left' ? '#fdd835' : '#8e24aa'}">${cp.name}（${cp.side === 'left' ? '一般～危險' : '危險～深淵'}）</span> <span class="tag" style="color:${tagCol};border:1px solid ${tagCol}">${sm.label}</span></p>
+      ${sl > 0 ? `<div class="cp-shield-row">🛡️ <b>保護中</b>・剩 <b>${formatDuration(sl)}</b>：剛被「${fac ? `${escapeHtml(FACTIONS[fac].name)}勢力` : sm.owners.map((o) => escapeHtml(o.n)).join('、') || '—'}」打下，1 小時內任何人都不能攻打</div>` : ''}
       <div class="kv-list">
         <div><b>佔領者</b> ${ownTxt}</div>
-        ${npc ? `<div><b>守軍</b> ${sm.status === 'faction' ? 'NPC' : '感染者'} ${sm.garrison}/${cp.garrison.count} 人（Lv${cp.garrison.level}）・戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}</div>` : `<div><b>駐防</b> ${guardTxt}</div>`}
-        <div><b>每日收益</b> 06:00 運輸隊送回：食物 ${inc.food}、木材 ${inc.wood}、燃料 ${inc.fuel}＋隨機零件 ${inc.parts[0]}～${inc.parts[1]} 種</div>
-        ${sm.status === 'mine' ? `<div class="muted">下一次收益約 ${sm.nextIncome} 後出發・每名玩家最多駐防 2 人</div>` : ''}
-        ${!atk.ok && !atk.locked && sm.status !== 'mine' ? `<div class="muted">${escapeHtml(atk.reason)}</div>` : ''}
+        ${npc ? `<div><b>守軍</b> ${sm.status === 'faction' ? 'NPC' : '感染者'} ${sm.garrison}/${g.cp.garrisonFull(id)} 人・戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}</div>` : `<div><b>駐防</b> ${guardTxt}<small class="muted">（每位玩家最多 ${CP_GUARD_MAX} 人）</small></div>`}
+        <div><b>每日收益</b> 遊戲時間 06:00 發放，佔領者與每位駐防玩家各得完整一份：食物 ${inc.food * CP_INCOME_MUL}、木材 ${inc.wood * CP_INCOME_MUL}、燃料 ${inc.fuel * CP_INCOME_MUL}＋隨機零件 ${inc.parts[0]}～${inc.parts[1]} 種與布料</div>
+        ${join ? `<div class="muted">下一次收益約 ${sm.nextIncome} 後</div>` : ''}
+        ${!atk.ok && !atk.locked && !atk.shield && !join && sm.status !== 'mine' ? `<div class="muted">${escapeHtml(atk.reason)}</div>` : ''}
       </div>
+      ${bldHtml}
       ${atk.locked ? `<div class="cp-lock">🔒 ${escapeHtml(atk.reason)}</div>` : ''}
       <div class="btn-row">${btns.join('')}</div>`;
   }
@@ -306,6 +346,10 @@ export class MapPanel {
       body: this.cpBody(id),
       live: () => this.cpBody(id),
       onAction: (action, _d, m) => {
+        if (action === 'cpBuild') {
+          g.cp.build(id, _d.k).then((r) => { this.ui.result(r); m.update?.(this.cpBody(id)); });
+          return;
+        }
         if (action === 'cpRally') {
           this.openRallySetup({ kind: 'cp', id, name: `控制點 #${cp.no}`, lat: at.lat, lon: at.lon });
           return;
@@ -320,10 +364,10 @@ export class MapPanel {
         if (!guard && action !== 'cpAttack') return;
         openTeamPicker(this.ui, {
           title: guard ? `🛡️ 駐防：控制點 #${cp.no}` : `⚔️ 攻打：控制點 #${cp.no}`,
-          intro: guard ? `<p class="muted">駐防隊會留守到你撤回為止，抵擋 NPC 與敵對玩家的進攻；每名玩家最多 2 人。</p>`
+          intro: guard ? `<p class="muted">駐防隊會留守到你撤回為止，抵擋 NPC 與敵對玩家的進攻；每名玩家最多 ${CP_GUARD_MAX} 人，駐防期間每天 06:00 也能拿到控制點收益。</p>`
             : `<p class="muted">守軍戰力約 ${Math.round(g.cp.defensePower(id)).toLocaleString()}。打下後這個區域的建築就能探索。</p>`,
           vehicles: true,
-          maxPick: guard ? Math.max(1, 2 - g.cp.myGuards(id)) : undefined,
+          maxPick: guard ? Math.max(1, CP_GUARD_MAX - g.cp.myGuards(id)) : undefined,
           distanceM: sh ? haversine(sh.lat, sh.lon, at.lat, at.lon) : 0,
           trip: { poi: g.cp.asPoi(`cp:${id}`), searchMin: guard ? 0 : 2, searchLabel: guard ? '駐防' : '攻打' },
           confirmLabel: guard ? '出發駐防' : '進攻！',
@@ -728,7 +772,8 @@ export class MapPanel {
       // v15.10：返程中（背包滿了先回家）也顯示佇列數；召回或撤退的隊伍回家後不再前往佇列，不顯示
       const queued = ex.kind === 'explore' && (it.phase !== 'returning' || it.queueOnHold) ? `・佇列 ${(ex.queue || []).length}` : '';
       // 左側圖示：快速定位隊伍；文字：打開隊伍詳細
-      rows.push(`<div class="feed-chip team split"><button class="feed-loc" data-action="feedLocate" data-id="${ex.id}" title="地圖移到隊伍位置">${icon}</button><button class="feed-txt" data-action="feedTeam" data-id="${ex.id}">${escapeHtml(who || '隊伍')}・${time}${queued}</button></div>`);
+      const adWait = ex.kind === 'drop' && ex.dropWait && !ex.dropDone && it.phase !== 'returning' && !ex.recalled;
+      rows.push(`<div class="feed-chip team split"><button class="feed-loc" data-action="feedLocate" data-id="${ex.id}" title="地圖移到隊伍位置">${adWait ? '⏳' : icon}</button><button class="feed-txt" data-action="feedTeam" data-id="${ex.id}">${escapeHtml(who || '隊伍')}・${adWait ? '⏳ 等待空投降落・' : ''}${time}${queued}</button></div>`);
     });
     return rows.length ? `<div class="map-feed">${rows.join('')}</div>` : '';
   }
@@ -852,7 +897,14 @@ export class MapPanel {
       const end = new Date(it.endAt);
       const hm = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
       const qn = (ex.queue || []).length;
-      const ph = it.phase === 'returning' ? '🏃 返程中' : it.phase === 'outbound' ? '🚶 前往中' : '🔍 搜索中';
+      let ph = it.phase === 'returning' ? '🏃 返程中' : it.phase === 'outbound' ? '🚶 前往中' : '🔍 搜索中';
+      // v16.1：空投降落前抵達：在落點等待
+      if (ex.kind === 'drop' && ex.dropWait && !ex.dropDone && it.phase !== 'returning') {
+        const arrive = ex.startAt + (ex.travelMs || 0);
+        const land = arrive + (ex.searchMs || 0);
+        const m = (ms) => Math.max(1, Math.ceil(ms / 60000));
+        ph = `⏳ 等待空投降落（${arrive > now ? `${m(arrive - now)} 分後抵達，再等 ${m(land - arrive)} 分降落` : `${m(land - now)} 分後降落`}）`;
+      }
       const cpDone = ex.cp ? `（檢核點 ${Math.min(ex.cp.total || 1, (ex.cp.done || 0) + (it.phase === 'searching' ? 1 : 0))}/${ex.cp.total || 1}）` : '';
       // 駐防中：沒有期限（直到撤回或被打下）
       const guarding = ex.kind === 'cpGuard' && it.phase === 'searching' && !ex.recalled && !ex.defeated;
@@ -1111,7 +1163,8 @@ export class MapPanel {
     const min = (ms) => `${Math.max(0, Math.ceil(ms / 60000))} 分`;
     const list = ad.list(now).map((d) => {
       const st = ad.status(d, now);
-      const label = st.state === 'falling' ? `空投 ${min(d.landAt - now)}後降落`
+      const nw = st.state === 'falling' ? ad.waiters(d).length : 0;
+      const label = st.state === 'falling' ? `空投 ${min(d.landAt - now)}後降落${nw ? `・⏳ ${nw} 隊等待` : ''}`
         : st.state === 'landed' ? `空投・剩 ${min(Math.min(d.expireAt, d.npcAt) - now)}・🧟×${ad.zoneOf(d).guard.n}`
           : st.state === 'taken' ? `${st.by} 已搶走` : 'NPC 勢力已拿走';
       return { id: d.id, lat: d.lat, lon: d.lon, state: st.state, label };
@@ -1142,8 +1195,34 @@ export class MapPanel {
       <p>${what}${Z.bp ? `<br><small class="muted">${Math.round(Z.bp * 100)}% 機率有設計圖${Z.bpMin ? '（保底精良以上）' : ''}</small>` : ''}</p>
       <div class="label">守衛殭屍</div>
       <p>🧟 ${Z.guard.n} 隻（Lv${Z.guard.lv}）・<b>建議隊伍總戰力 ${fmt(Z.power)} 以上</b><br><small class="muted">打贏才能拿走空投</small></p>
-      <p class="muted">第一支抵達並打贏守衛的隊伍拿走全部；之後抵達的隊伍直接返回。帶著空投回程的隊伍可能被其他玩家攔截。</p>
+      ${this.dropWaitersHtml(d, now)}
+      <p class="muted">空投降落前抵達的隊伍會<b>原地等待</b>；降落時互為好友的玩家同一陣營，不同陣營依抵達順序先交戰，勝方再打守衛，材料與金錢依人數平分（設計圖給最先抵達的玩家）。降落後才抵達的隊伍先到先得。帶著空投回程的隊伍可能被其他玩家攔截。</p>
       ${ok ? `<div class="btn-row">${btn('🚀 派隊搶奪', 'dropGo', { id: d.id }, { cls: 'btn-primary', disabled: !g.shelter.hasShelter() })}${btn('🚩 發起集結', 'dropRally', { id: d.id })}</div>` : ''}`;
+  }
+
+  /** v16.1：等待降落的隊伍（自己、好友同陣營、其他玩家降落時交戰） */
+  dropWaitersHtml(d, now = Date.now()) {
+    const g = this.game;
+    const ad = g.airdrop;
+    if (ad.status(d, now).state !== 'falling') return '';
+    const me = g.shared?.store().me;
+    const mine = new Set(g.state.expeditions.map((e) => e.id));
+    const friends = new Set(ad.friendIds());
+    const ws = ad.waiters(d);
+    if (!ws.length) return '';
+    const left = (ms) => `${Math.max(1, Math.ceil(ms / 60000))} 分`;
+    const rows = ws.map((w) => {
+      const own = mine.has(w.k) || (w.p === me && !w.ps);
+      const ps = Array.isArray(w.ps) && w.ps.length ? w.ps : [w.p];
+      const ally = !own && (ps.includes(me) || ps.some((p) => friends.has(p)) || (w.f || []).includes(me));
+      const cls = own ? 'me' : ally ? 'ally' : 'foe';
+      const who = own ? '<b>你的隊伍</b>' : ally ? `🤝 好友「${escapeHtml(w.n)}」` : `⚔️ 「${escapeHtml(w.n)}」`;
+      const n = (w.u || []).length;
+      const when = w.at > now ? `${left(w.at - now)}後抵達` : '已在等待';
+      const tail = own ? when : `${when}・${ally ? '同陣營' : '降落時交戰'}`;
+      return `<div class="adw-row ${cls}"><span>${own ? '🟢 ' : ''}${who}${n ? `・${n} 人` : ''}</span><small>${tail}</small></div>`;
+    }).join('');
+    return `<div class="label">等待降落的隊伍（${ws.length} 隊）</div><div class="adw-list">${rows}</div>`;
   }
 
   openDrop(id) {
@@ -1168,7 +1247,7 @@ export class MapPanel {
     const sh = g.shelter.primary();
     openTeamPicker(this.ui, {
       title: '📦 搶奪空投',
-      intro: `<p class="muted">隊伍會先移動到空投落點，抵達時和守衛殭屍交戰（建議隊伍總戰力 ${g.airdrop.zoneOf(d).power.toLocaleString()} 以上），打贏就背著空投返回避難所。晚到或空投已被拿走時直接返回。</p>`,
+      intro: `<p class="muted">隊伍會先移動到空投落點，抵達時和守衛殭屍交戰（建議隊伍總戰力 ${g.airdrop.zoneOf(d).power.toLocaleString()} 以上），打贏就背著空投返回避難所。降落前抵達會原地等待降落，和其他等待的隊伍一起結算（好友同陣營）；空投已被拿走時直接返回。</p>`,
       vehicles: true,
       distanceM: sh ? haversine(sh.lat, sh.lon, d.lat, d.lon) : 0,
       trip: { poi: { id: `drop:${d.id}`, lat: d.lat, lon: d.lon, type: 'military', drop: true }, searchMin: 0 },
