@@ -202,7 +202,7 @@ export class ControlPointSystem {
       // 記下是哪一支駐防隊（h.e）的第幾位，交戰後依此判斷誰倒下、誰拿防守經驗
       return this.guardsAt(id, now).flatMap((h) => (h.units || []).slice(0, CP_GUARD_MAX).map((u) => {
         // v17：戰損保留（交戰後剩餘的生命，約 2 小時回滿）
-        const x = AssistSystem.unitOf({ id: h.p, name: h.n }, { ...u, hp: ControlPointSystem.regenHp(u, h.hpAt, now) });
+        const x = AssistSystem.unitOf({ id: h.p, name: h.n }, { ...u, hp: ControlPointSystem.regenHp(u, h.hpAt, now, h.rg) });
         x.ally.e = h.e;
         return x;
       }));
@@ -249,6 +249,19 @@ export class ControlPointSystem {
     const me = this.myId();
     const m = this.techMul();
     const key = JSON.stringify(m);
+    const rg = this.guardRegenMul();
+    // v17.2：駐防回復倍率（休養科技）也一起更新
+    const rgStale = CONTROL_POINTS.filter((c) => (this.data(c.id)?.guards || []).some((h) => h.p === me && (h.rg || 1) !== rg));
+    for (const c of rgStale) {
+      // eslint-disable-next-line no-await-in-loop
+      await g.shared.update(CP_KIND, c.id, (x) => {
+        if (!x?.guards?.some((h) => h.p === me)) return { fail: 'none' };
+        // 先把到目前為止的回復結算進生命，再換成新的倍率
+        const at = Date.now();
+        x.guards = x.guards.map((h) => (h.p !== me ? h : { ...h, rg, hpAt: at, units: (h.units || []).map((u) => ({ ...u, hp: ControlPointSystem.regenHp(u, h.hpAt, at, h.rg) })) }));
+        return { data: x };
+      }, { lat: c.lat, lon: c.lon }).catch(() => {});
+    }
     const stale = CONTROL_POINTS.filter((c) => { const x = this.data(c.id)?.bld?.[me]; return x && JSON.stringify(x.m || {}) !== key; });
     if (!stale.length) return;
     this.busy.add('tech');
@@ -371,11 +384,18 @@ export class ControlPointSystem {
   }
 
   /** v17：戰損保留：駐防隊員目前的生命（交戰後的剩餘生命，約 2 小時回滿） */
-  static regenHp(u, hpAt, now = Date.now()) {
+  static regenHp(u, hpAt, now = Date.now(), rg = 1) {
     const max = Math.max(1, Number(u.maxHp) || 1);
     const hp = Math.min(max, Math.max(1, Number(u.hp) || max));
     if (!hpAt || hp >= max) return hp;
-    return Math.min(max, Math.round(hp + (max * Math.max(0, now - hpAt)) / CP_RECOVER_MS));
+    // v17.2：套用派出玩家的「休養」科技（rg＝1＋回復加成），回滿時間＝2 小時 ÷ rg
+    const mul = Math.min(5, Math.max(1, Number(rg) || 1));
+    return Math.min(max, Math.round(hp + (max * mul * Math.max(0, now - hpAt)) / CP_RECOVER_MS));
+  }
+
+  /** v17.2：自己的駐防回復倍率（只算「休養」科技；醫療站、宿舍是在避難所休息才有的加成） */
+  guardRegenMul() {
+    return Math.round((1 + (Number(this.game.research?.bonus?.('regenPct')) || 0)) * 1000) / 1000;
   }
 
   /** v17：路障目前的耐久（被打掉的部分約 2 小時修好） */
@@ -401,7 +421,7 @@ export class ControlPointSystem {
       ...h,
       hpAt: at,
       units: (h.units || []).map((u) => {
-        const now = ControlPointSystem.regenHp(u, h.hpAt, at);
+        const now = ControlPointSystem.regenHp(u, h.hpAt, at, h.rg);
         const k = `${h.e}:${u.i}`;
         return { ...u, hp: hit.has(k) ? Math.max(1, Math.round(hit.get(k))) : now };
       }),
@@ -674,6 +694,15 @@ export class ControlPointSystem {
       if (list.length < 2) return;
       list.sort((a, b) => (a.startAt + (a.travelMs || 0)) - (b.startAt + (b.travelMs || 0)));
       const [main, ...rest] = list;
+      // v17.2：合併前記下每位隊員目前（含回復）的生命，重新登記時保留戰損
+      const keep = { ...(main.keepHp || {}) };
+      const guards = this.data(main.cpId)?.guards || [];
+      [main, ...rest].forEach((x) => {
+        const h = guards.find((y) => y.e === x.id);
+        (h?.units || []).forEach((u) => { const sid = x.memberIds[u.i]; if (sid) keep[sid] = ControlPointSystem.regenHp(u, h.hpAt, now, h.rg); });
+      });
+      main.keepHp = keep;
+      main.keepAt = now;
       rest.forEach((e) => {
         main.memberIds = [...new Set([...main.memberIds, ...e.memberIds])];
         main.vehicleIds = [...new Set([...(main.vehicleIds || []), ...(e.vehicleIds || [])])];
@@ -737,10 +766,15 @@ export class ControlPointSystem {
         if (data.faction || !(data.owners || []).length || data.owners.some((o) => this.hostileTo(o.p))) return { fail: '控制點已經不能駐防' };
         const ms = new Set([...(data.guards || []).map((h) => h.p), ...Object.keys(data.bld || {})]);
         if (!ms.has(me) && ms.size >= CP_MAX_PLAYERS) return { fail: `這個控制點已經有 ${CP_MAX_PLAYERS} 位玩家` };
-        data.guards = [...(data.guards || []).filter((h) => h.e !== exp.id), { p: me, n: name, e: exp.id, units, at: now, arr }];
+        // v17.2：合併時保留原本的戰損（keepHp：倖存者 → 合併當下的生命）
+        const keep = exp.keepHp || null;
+        const us = keep ? units.map((u) => (keep[exp.memberIds[u.i]] != null ? { ...u, hp: Math.max(1, Math.min(u.maxHp, keep[exp.memberIds[u.i]])) } : u)) : units;
+        data.guards = [...(data.guards || []).filter((h) => h.e !== exp.id), {
+          p: me, n: name, e: exp.id, units: us, at: now, arr, rg: this.guardRegenMul(), ...(keep ? { hpAt: exp.keepAt || now } : {}),
+        }];
         return { data };
       }, { lat: cpById(exp.cpId).lat, lon: cpById(exp.cpId).lon });
-      if (r.ok) exp.cpListed = true;
+      if (r.ok) { exp.cpListed = true; delete exp.keepHp; delete exp.keepAt; }
       return r;
     } finally {
       this.busy.delete(exp.id);

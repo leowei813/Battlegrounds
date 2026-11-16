@@ -8105,6 +8105,12 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const u = { i: 0, hp: 100, maxHp: 1000 };
     const R = A.cp.constructor.regenHp;
     assert(R(u, t0, t0) === 100 && R(u, t0, t0 + CPC.CP_RECOVER_MS / 2) === 600 && R(u, t0, t0 + CPC.CP_RECOVER_MS * 2) === 1000, '駐防隊員的戰損約 2 小時回滿');
+    // v17.2：套用「休養」科技（回復 +80% → 約 67 分鐘回滿）
+    assert(R(u, t0, t0 + CPC.CP_RECOVER_MS / 4, 1.8) === 100 + Math.round(1000 * 1.8 / 4) && R(u, t0, t0 + CPC.CP_RECOVER_MS / 1.8, 1.8) === 1000, '駐防隊員的回復套用休養科技');
+    const rb = A.research.bonus.bind(A.research);
+    A.research.bonus = (k) => (k === 'regenPct' ? 0.8 : rb(k));
+    assert(A.cp.guardRegenMul() === 1.8, '駐防回復倍率只看休養科技');
+    A.research.bonus = rb;
   }
   // v17.0.2：進攻時刻已過才補發：從現在出發（看得到行軍），不會立刻抵達
   {
@@ -8132,6 +8138,24 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
     const n = A.cp.mergeGuards(now);
     const left = A.state.expeditions.filter((e) => e.kind === 'cpGuard' && e.cpId === 'cp2');
     assert(n === 1 && left.length === 1 && left[0].id === 'gm1' && left[0].memberIds.length === 2 && left[0].vehicleIds.join() === 'v1,v2' && !left[0].cpListed, `同一個控制點的駐防隊抵達後合併為一筆（隊員 ${left[0]?.memberIds.length}、載具 ${left[0]?.vehicleIds}）`);
+    // v17.2：合併時保留戰損：合併前 gm2 的隊員只剩 10 生命，重新登記後仍是 10
+    {
+      const main = left[0];
+      const before = A.state.expeditions.filter((e) => e.id === 'gm1');
+      void before;
+      const h2 = { p: 'BA', n: 'BA', e: 'gm2', units: [{ i: 0, hp: 10, maxHp: 500, atk: 10 }], at: now, arr: now };
+      // 重新建立一次「合併前」的狀態：共用資料裡有兩筆，gm2 受傷
+      A.state.expeditions = A.state.expeditions.filter((e) => e !== main);
+      A.state.expeditions.push(mk('gm1', s1.id, now - 5000, ['v1']), mk('gm2', s2.id, now - 1000, ['v2']));
+      await A.shared.update(CPC.CP_KIND, 'cp2', (x) => ({ data: { ...x, owners: [{ p: 'BA', n: 'BA' }], faction: null, guards: [{ p: 'BA', n: 'BA', e: 'gm1', units: [{ i: 0, hp: 400, maxHp: 500, atk: 10 }], at: now, arr: now }, h2] } }));
+      A.cp.mergeGuards(now);
+      const m2 = A.state.expeditions.find((e) => e.id === 'gm1');
+      const kept = m2.keepHp?.[s2.id];
+      await A.cp.listGuard(m2, now);
+      const g1 = (A.cp.data('cp2')?.guards || []).find((h) => h.e === 'gm1');
+      const u2 = g1?.units?.find((x) => m2.memberIds[x.i] === s2.id);
+      assert(kept === 10 && u2 && u2.hp === 10 && !m2.keepHp && g1.rg >= 1, `合併後重新登記保留原本的戰損（${u2?.hp}）`);
+    }
     // 還在路上的不合併
     A.state.expeditions.push(mk('gm3', s2.id, now + 600000, []));
     assert(A.cp.mergeGuards(now) === 0, '還在路上的駐防隊先不合併');
