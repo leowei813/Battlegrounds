@@ -694,7 +694,7 @@ export class ExplorationSystem {
       atk: NIGHT_MUL.atk + NIGHT_MUL.perDanger * Math.max(0, ctx.zone.danger || 0),
     } : null;
     // 高危險區的建築內殭屍更強（不分日夜）
-    const zm = BUILDING_ZONE.statMul[Math.min(3, ctx.zone?.danger || 0)] || 1;
+    const zm = (BUILDING_ZONE.statMul[Math.min(3, ctx.zone?.danger || 0)] || 1) * (ctx.zone?.id === 'abyss' ? BUILDING_ZONE.abyssMul || 1 : 1);
     // 白天：高危區的殭屍生命、攻擊加成
     const dm = !ctx.phase?.zombies ? DAY_ZONE.stat[ctx.zone?.id] || 1 : 1;
     return mulOf(ZOMBIE_VS_SURVIVOR, night, { hp: zm * dm, atk: zm * dm });

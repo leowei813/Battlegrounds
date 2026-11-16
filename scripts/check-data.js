@@ -8096,6 +8096,19 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(inc.food === CPC.CP_INCOME[5].food * 6 && inc.wood === CPC.CP_INCOME[5].wood * 6, `右側收益為深淵區基準 ×6（食物 ${inc.food}）`);
 }
 
+// ---- v17：深淵區探索點的殭屍更強（生命、攻擊 ×10） ----
+{
+  const { ZONES: ZS } = await import('../src/config/zones.js');
+  const { BUILDING_ZONE: BZ } = await import('../src/config/enemies.js');
+  const ge = Game.newGame({ playerName: 'AB', classId: 'warrior', lat: 25, lon: 121 });
+  const ph = { zombies: false };
+  const ab = ZS.find((z) => z.id === 'abyss');
+  const le = ZS.find((z) => z.id === 'lethal');
+  const ma = ge.exploration.encounterMul({ phase: ph, zone: ab });
+  const ml = ge.exploration.encounterMul({ phase: ph, zone: le });
+  assert(BZ.abyssMul === 10 && ma.hp / ml.hp > 9 && ma.atk / ml.atk > 9, `深淵區建築內殭屍生命、攻擊 ×10（深淵 ${ma.hp.toFixed(1)}／致死 ${ml.hp.toFixed(1)}）`);
+}
+
 // ---- v16：倖存者特質、個人任務與轉職 ----
 {
   SVS.disableTraits = false;
