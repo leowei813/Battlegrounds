@@ -89,7 +89,8 @@ export function grant(state, gains = {}, cap = Infinity) {
     const before = p[k] || 0;
     const limit = RESOURCE_KEYS.includes(k) ? Math.max(cap, before) : Infinity;
     p[k] = Math.min(limit, before + v);
-    actual[k] = p[k] - before;
+    // v17.3.2：沒有碰到上限時，實際獲得量就是 v（不要用「之後 − 之前」，倉庫資源帶小數時會有浮點誤差）
+    actual[k] = before + v <= limit ? v : Math.max(0, Math.floor(limit - before + 1e-6));
   });
   return actual;
 }

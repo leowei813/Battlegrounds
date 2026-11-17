@@ -1,3 +1,4 @@
+import { fmtQty } from '../utils/math.js';
 import { cpAt as hqCpAt, hqNeighbors, FACTIONS, FACTION_KEYS, FACTION_BASE, factionHq } from '../config/controlPoints.js';
 import { ASSIST_TRAVEL_MUL } from './AssistSystem.js';
 
@@ -1794,7 +1795,7 @@ export class ExplorationSystem {
       Object.entries(prev.gained || {}).forEach(([k, v]) => { gained[k] = (gained[k] || 0) + v; });
       cp.blueprints.unshift(...(prev.blueprints || []));
       cp.vehicles.unshift(...(prev.vehicles || []));
-      const list = Object.entries(prev.gained || {}).filter(([, v]) => v > 0).map(([k, v]) => `${lootLabel(k)}×${v}`).join('、');
+      const list = Object.entries(prev.gained || {}).filter(([, v]) => v > 0).map(([k, v]) => `${lootLabel(k)}×${fmtQty(v)}`).join('、');
       report.events.push(`🏠 回到避難所，前幾站背回的物資一起入庫：${list || '（沒有物資）'}`);
     }
     // 入帳：先放進倉庫，放不下的由隊員裝進自己的背包
@@ -1846,7 +1847,7 @@ export class ExplorationSystem {
     const itemNote = all.length ? `；裝備：${kept.map((it) => `「${it.name}」`).join('、') || '（沒有）'}${dropped.length ? `，遺失或放不下：${dropped.map((it) => `「${it.name}」`).join('、')}` : ''}` : '';
     (c.vehicles || []).forEach((v) => this.game.vehicles.add(v, '探索'));
     this.game.state.inventory.blueprints.push(...(c.blueprints || []));
-    const list = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${lootLabel(k)}×${v}`).join('、');
+    const list = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${lootLabel(k)}×${fmtQty(v)}`).join('、');
     return keep >= 1
       ? `🎒 先前地點取得的物資帶回避難所：${list || '（沒有物資）'}${itemNote}`
       : `🎒 被擊敗時掉了一部分背著的物資，帶回避難所：${list || '（沒有物資）'}${itemNote}`;

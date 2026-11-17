@@ -1,3 +1,4 @@
+import { fmtQty } from '../utils/math.js';
 import {
   BLOCKADE, BLOCKADE_ZONE, BLOCKADE_MIX, EV_TZ_MS,
 } from '../config/eventModes.js';
@@ -26,7 +27,7 @@ export function lootBrief(g) {
   return [sum.part[0] ? `🔩 零件 ×${sum.part[0]}（最高 ${sum.part[1]} 階）` : '', sum.fabric[0] ? `🧵 布料 ×${sum.fabric[0]}（最高 ${sum.fabric[1]} 階）` : '',
     g?.coins ? `💰 ${g.coins}` : '', g?.parts ? `⚙️ 稀有材料 ×${g.parts}` : ''].filter(Boolean).join('、');
 }
-export const lootText = (g) => Object.entries(g || {}).filter(([, v]) => v > 0).map(([k, v]) => (k === 'coins' ? `💰 ${v}` : `${label(k)} ×${v}`)).join('、');
+export const lootText = (g) => Object.entries(g || {}).filter(([, v]) => v > 0).map(([k, v]) => (k === 'coins' ? `💰 ${fmtQty(v)}` : `${label(k)} ×${fmtQty(v)}`)).join('、');
 
 /**
  * v17.3：封鎖區撤離。開放時間與地點由日期決定（所有玩家相同），每位玩家每次開放可派 1 支隊伍。

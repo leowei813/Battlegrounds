@@ -1,3 +1,4 @@
+import { fmtQty } from '../utils/math.js';
 import { maxLevelOf } from './EquipmentSystem.js';
 import { haversine, uid, chance, randInt } from '../utils/math.js';
 import { RESOURCE_KEYS } from '../config/constants.js';
@@ -342,7 +343,7 @@ export class InterceptSystem {
       return it;
     }).filter(Boolean);
     const text = [
-      ...Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || k}×${v}`),
+      ...Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || k}×${fmtQty(v)}`),
       ...items.map((i) => `「${i.name}」`),
     ];
     return text.join('、');

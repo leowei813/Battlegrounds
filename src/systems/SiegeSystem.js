@@ -1,3 +1,4 @@
+import { fmtQty } from '../utils/math.js';
 import { DEFENSES } from '../config/defenses.js';
 import {
   ENEMIES, BOSSES, ZOMBIE_VS_SURVIVOR, defReduce, SIEGE_VARIANTS, SIEGE_VARIANT_KEYS, ARMOR_PIERCE, VARIANT_WEIGHT,
@@ -253,7 +254,7 @@ export class BaseSiege {
       coins, items: gained, blueprints: blueprints.map((b) => ITEM_MODELS[b.model]?.name || '設計圖'), xp,
       boss: this.nightBoss,
     };
-    const list = [`💰${coins}`, ...Object.entries(gained).map(([k, v]) => `${SUPPLIES[k].icon}${SUPPLIES[k].name}×${v}`)];
+    const list = [`💰${fmtQty(coins)}`, ...Object.entries(gained).map(([k, v]) => `${SUPPLIES[k].icon}${SUPPLIES[k].name}×${fmtQty(v)}`)];
     if (out.blueprints.length) list.push(`📜${out.blueprints.join('、')}`);
     g.log(`🌅 「${base.name}」守住屍潮（評價 ${grade.name} ×${grade.mul}）：獲得 ${list.join('、')}${xp.length ? `；${xp.length} 名駐守人員獲得經驗` : ''}`, 'success');
     return out;
@@ -277,7 +278,7 @@ export class BaseSiege {
       loot.blueprint = ITEM_MODELS[bp.model]?.name || '設計圖';
     }
     this.nightBoss = loot;
-    const list = Object.entries(loot.items).map(([k, v]) => `${SUPPLIES[k].icon}${SUPPLIES[k].name}×${v}`);
+    const list = Object.entries(loot.items).map(([k, v]) => `${SUPPLIES[k].icon}${SUPPLIES[k].name}×${fmtQty(v)}`);
     if (loot.gear) list.push(`🎁${loot.gear.name}`);
     if (loot.blueprint) list.push(`📜${loot.blueprint}`);
     g.log(`👑 Boss「${loot.name}」的戰利品：${list.join('、')}`, 'loot');

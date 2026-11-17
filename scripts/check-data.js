@@ -74,6 +74,19 @@ const realBlocking = InfSys.prototype.blocking;
 // v14：重度感染據點已停用；測試仍檢查原本的機制
 { const { INFECTED: INF0 } = await import('../src/systems/InfectedSystem.js'); INF0.disabled = false; }
 InfSys.prototype.blocking = function blocking(...a) { return this.game.testInfBlock ? realBlocking.apply(this, a) : null; };
+// v17.3.2：浮點誤差數字防護：整套測試執行期間的事件紀錄、提示訊息、報告與控制點收益文字都收集起來，
+// 最後檢查不能出現 180.00000000000023 這種浮點誤差（小數 6 位以上），任何地方漏掉格式化就會失敗
+const FLOAT_NOISE = /\d\.\d{6,}/;
+const textSeen = [];
+{
+  const { bus: BUS, EVT: EV } = await import('../src/core/EventBus.js');
+  const seen = (src, t) => { if (typeof t === 'string' && FLOAT_NOISE.test(t)) textSeen.push(`${src}：${t.slice(0, 160)}`); };
+  const realLog = Game.prototype.log;
+  Game.prototype.log = function log(msg, ...a) { seen('事件紀錄', msg); return realLog.call(this, msg, ...a); };
+  BUS.on(EV.TOAST, (e) => seen('提示訊息', e?.msg));
+  BUS.on('expedition:done', (list) => (Array.isArray(list) ? list : [list]).forEach((r) => { seen('報告標題', r?.poiName); (r?.events || []).forEach((x) => seen('報告內容', x)); }));
+  BUS.on('cp:dailyIncome', (res) => { seen('控制點收益', res?.text); (res?.list || []).forEach((x) => seen('控制點收益', x.text)); });
+}
 let failures = 0;
 const assert = (cond, msg) => {
   if (!cond) {
@@ -8511,6 +8524,30 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   gr.survivors.updateVitals(now, 40 * 60000, 0);
   assert(!c.severe && gr.survivors.hpOf(c) >= gr.survivors.maxHp(c) * 0.3, `駐防中的重傷隊員會回復並脫離重傷（${Math.round(gr.survivors.hpOf(c))}/${gr.survivors.maxHp(c)}）`);
 }
+
+// ---- v17.3.2：數量一律以整數顯示（倉庫資源帶小數時，入庫與文字不會出現浮點誤差） ----
+{
+  const { fmtQty: FQ, formatNumber: FN } = await import('../src/utils/math.js');
+  const { grant: GR } = await import('../src/systems/costUtils.js');
+  assert(FQ(180.00000000000023) === '180' && FQ(41.99999999999999) === '42' && FQ(3.7) === '3' && FQ(0) === '0' && FQ(undefined) === '0' && FN(41.99999999999999) === '42', '數量顯示：修正浮點誤差後取整數');
+  const st0 = { resources: { fuel: 37.123456789, food: 10.3 }, player: { coins: 0, parts: 0 }, supplies: {} };
+  const got0 = GR(st0, { fuel: 42, food: 100 }, 100);
+  assert(got0.fuel === 42 && Number.isInteger(got0.food) && got0.food === 89, `入庫獲得量是整數（倉庫原本帶小數）：${JSON.stringify(got0)}`);
+  // 控制點每日收益：倉庫資源帶小數時，合計文字不出現小數
+  const gq = Game.newGame({ playerName: 'FQ', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gq.state.map.pois = fillPois([], 25.03, 121.56);
+  gq.shelter.establish(gq.state.map.pois.find((p) => gq.shelter.canEstablish(p).ok));
+  Object.keys(gq.state.resources).forEach((k) => { gq.state.resources[k] = 12.345678901 + Math.random(); });
+  const { CONTROL_POINTS: CPS } = await import('../src/config/controlPoints.js');
+  const me = gq.cp.myId();
+  CPS.forEach((cp) => gq.shared.cache.set(gq.shared.key(gq.cp.kind || 'cpq', cp.id), { kind: 'cpq', id: cp.id, ver: 1, updatedAt: Date.now(), data: { owners: [{ p: me, n: 'FQ' }], guards: [], faction: null, takenAt: Date.now() - 3600e3 } }));
+  gq.cp.incomeSources = () => CPS;
+  const res = gq.cp.startConvoys(gq.cp.incomeTime(Date.now() + 86400e3) + 1000);
+  assert(res && !FLOAT_NOISE.test(res.text) && Object.values(res.total).every((v) => Number.isInteger(v)), `控制點收益合計是整數（${res?.text?.slice(0, 80)}）`);
+}
+
+// ---- v17.3.2：整套測試的文字都沒有浮點誤差 ----
+assert(!textSeen.length, `所有事件紀錄、提示、報告、控制點收益都沒有浮點誤差數字（${textSeen.length} 筆：${textSeen.slice(0, 3).join(' ／ ')}）`);
 
 if (failures) {
   console.error(`\n${failures} 項檢查失敗`);

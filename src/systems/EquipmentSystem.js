@@ -1,3 +1,4 @@
+import { fmtQty } from '../utils/math.js';
 import {
   RARITIES, RARITY_ORDER, ITEM_TYPES, AFFIXES, RARITY_PREFIX, SLOT_KEYS, SLOTS, rarityIndex,
   ITEM_MODELS, tierMul, benchFor, craftRarityTable,
@@ -763,7 +764,7 @@ export class EquipmentSystem {
         got[k] = v;
       });
     } else got = this.game.grant(gain);
-    const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || '稀有材料'}×${v}`).join('、');
+    const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || '稀有材料'}×${fmtQty(v)}`).join('、');
     return { ok: true, msg: `拆解獲得 ${text || '（倉庫已滿，沒有回收到材料）'}` };
   }
 
@@ -787,7 +788,7 @@ export class EquipmentSystem {
       Object.entries(this.dismantleValue(it)).forEach(([k, v]) => { gain[k] = (gain[k] || 0) + v; });
     });
     const got = this.game.grant(gain);
-    const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || '稀有材料'}×${v}`).join('、');
+    const text = Object.entries(got).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || '稀有材料'}×${fmtQty(v)}`).join('、');
     const lost = Object.entries(gain).reduce((s, [k, v]) => s + Math.max(0, v - (got[k] || 0)), 0);
     this.game.log(`🔨 快速拆解 ${list.length} 件裝備：${text || '（倉庫已滿）'}`, 'info');
     return { ok: true, n: list.length, got, msg: `拆解 ${list.length} 件裝備，獲得 ${text || '（倉庫已滿，沒有回收到材料）'}${lost ? `（倉庫放不下 ${lost} 個材料）` : ''}` };

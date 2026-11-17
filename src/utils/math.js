@@ -98,8 +98,17 @@ export function uid(prefix = 'id') {
 }
 
 /** 數字縮寫：1234 -> 1.2K */
+/**
+ * v17.3.2：物品、資源數量的顯示（一律整數）。倉庫的資源是帶小數的（持續生產），
+ * 加減之後會有浮點誤差（例如 180.00000000000023、41.99999999999999），先修正誤差再無條件捨去。
+ */
+export function fmtQty(n) {
+  const v = Number(n) || 0;
+  return String(Math.floor(v + 1e-6 * Math.sign(v || 1)) || 0);
+}
+
 export function formatNumber(n) {
-  const v = Math.floor(n);
+  const v = Math.floor((Number(n) || 0) + 1e-6);
   if (Math.abs(v) >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
   if (Math.abs(v) >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
   if (Math.abs(v) >= 1e4) return `${(v / 1e3).toFixed(1)}K`;
