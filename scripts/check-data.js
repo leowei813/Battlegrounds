@@ -8546,6 +8546,28 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(res && !FLOAT_NOISE.test(res.text) && Object.values(res.total).every((v) => Number.isInteger(v)), `控制點收益合計是整數（${res?.text?.slice(0, 80)}）`);
 }
 
+// ---- v17.3.3：共用資料同步：伺服器一次只回傳 10 種，種類超過時要分批查（屍王 wb 是第 11 種，以前每次同步都被清掉） ----
+{
+  const { MemoryObjects: MO, OBJ_KINDS_PER_QUERY: KPQ } = await import('../src/multiplayer/SharedWorld.js');
+  const gs = Game.newGame({ playerName: 'SW', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  const mem = new MO();
+  gs.shared.backend = mem;
+  const kinds = [...gs.shared.watched.keys()];
+  assert(kinds.length > KPQ && kinds.includes('wb'), `同步的種類超過一次查詢上限（${kinds.length} 種，上限 ${KPQ}）`);
+  for (const k of kinds) await gs.shared.update(k, `t_${k}`, () => ({ data: { v: 1 } }), { lat: null, lon: null });
+  await gs.shared.poll();
+  const miss = kinds.filter((k) => !gs.shared.get(k, `t_${k}`));
+  assert(!miss.length, `每一種同步資料都會讀回來，不會被當成已刪除（漏掉：${miss.join('、') || '無'}）`);
+  // 屍王：另一位玩家寫入的傷害，同步後看得到
+  const gs2 = Game.newGame({ playerName: 'SW2', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  gs2.shared.backend = mem;
+  const b = gs2.worldBoss.bossOfDay(Math.floor(Date.UTC(2026, 10, 18) / 86400000));
+  await gs2.shared.update('wb', b.id, () => ({ data: { hp: 15000000, s: b.start, h: { other: ['別人', 123456, 1] } } }), { lat: null, lon: null });
+  await gs.shared.poll();
+  await gs.shared.poll();
+  assert(gs.worldBoss.status(b, b.start + 60000).dealt === 123456, '屍王的傷害同步後保留（不會像血量回復一樣消失）');
+}
+
 // ---- v17.3.2：整套測試的文字都沒有浮點誤差 ----
 assert(!textSeen.length, `所有事件紀錄、提示、報告、控制點收益都沒有浮點誤差數字（${textSeen.length} 筆：${textSeen.slice(0, 3).join(' ／ ')}）`);
 
