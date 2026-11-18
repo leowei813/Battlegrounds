@@ -1,3 +1,4 @@
+import { fmtQty } from '../utils/math.js';
 import { TimeSystem } from './TimeSystem.js';
 import {
   CONTROL_POINTS, cpById, cpAt, CP_POWER, CP_GARRISON, CP_LEVEL, CP_MAX_PLAYERS, CP_BUILDINGS, cpDefKey, CP_BUILD, CP_INCOME_MUL, CP_RECOVER_MS, CP_FOLLOW_MS, FACTIONS, FACTION_KEYS, FACTION_SLOW_AT, defaultFaction, hqNeighbors, cpNeighbors, factionHq, CP_REFILL_PER_HOUR, CP_GUARD_MAX, CP_INCOME, CP_PART_QTY, CP_INCOME_HOUR, CP_START, CP_KIND, CP_TURN_KIND, CP_GUARD_XP_PCT, CP_SHIELD, FACTION_FORCE_SCALE,
@@ -36,7 +37,7 @@ const NEUTRAL_TYPES = ['walker', 'infected', 'berserker', 'mutant'];
  */
 /** 地圖提示用：探索隊的目的地名稱 */
 /** 物資清單文字 */
-const goodsText = (got) => Object.entries(got || {}).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || { food: '食物', wood: '木材', fuel: '燃料' }[k] || k} ×${v}`).join('、');
+const goodsText = (got) => Object.entries(got || {}).filter(([, v]) => v > 0).map(([k, v]) => `${SUPPLIES[k]?.name || { food: '食物', wood: '木材', fuel: '燃料' }[k] || k} ×${fmtQty(v)}`).join('、');
 const g0name = (g, e) => `「${g.exploration.poi(e.poiId)?.name || '探索點'}」`;
 
 export class ControlPointSystem {

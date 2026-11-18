@@ -1,3 +1,4 @@
+import { fmtQty } from '../utils/math.js';
 /**
  * 分享探索報告／避難所紀錄到全服聊天室。
  * 聊天每則最多 120 字，所以整理成一行摘要（以「｜」分段），聊天室辨識開頭後顯示成卡片；
@@ -99,7 +100,7 @@ export function shareDefenseText(e, note = '', link = '') {
     const waves = e.success ? (e.waves ? `${e.waves}波` : '') : s.maxWaves ? `撐過${Math.max(0, (s.wave || 1) - 1)}/${s.maxWaves}波` : '';
     const wall = e.success ? (s.wallPct != null ? `城牆剩${s.wallPct}%` : '') : e.wallLost ? `圍牆−${e.wallLost}` : '';
     const stat = [waves, e.kills ? `擊殺${e.kills}` : '', wall, e.success && s.gradeName ? `評價${s.gradeName}` : ''].filter(Boolean).join('・');
-    const gains = e.success ? [s.coins ? `💰+${s.coins}` : '', ...Object.entries(s.items || {}).slice(0, 3).map(([k, v]) => `${metaOf(k).icon}×${v}`)].filter(Boolean).join(' ') : lostText();
+    const gains = e.success ? [s.coins ? `💰+${s.coins}` : '', ...Object.entries(s.items || {}).slice(0, 3).map(([k, v]) => `${metaOf(k).icon}×${fmtQty(v)}`)].filter(Boolean).join(' ') : lostText();
     return compose(['🧟屍潮防守', e.success ? '守住了！' : '被突破了', [base, stat].filter(Boolean).join('・'), gains], note, link);
   }
   const stat = [base, e.kills ? `擊倒${e.kills}` : '', e.wallLost ? `圍牆−${e.wallLost}` : ''].filter(Boolean).join('・');

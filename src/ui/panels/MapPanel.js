@@ -1,3 +1,4 @@
+import { fmtQty } from '../../utils/math.js';
 import { LOCK_ITEM } from '../../config/rebirth.js';
 import { RARITY_ORDER } from '../../config/equipment.js';
 import { DUNGEONS } from '../../config/dungeons.js';
@@ -549,7 +550,7 @@ export class MapPanel {
     const carried = Object.entries(ex.carried?.gained || {}).filter(([, v]) => v > 0);
     const on = ex.chain !== false;
     return `<div class="chain-box">
-      ${carried.length ? `<small class="muted block">🎒 背著前幾站的物資（回到避難所才入庫）：${carried.map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name}×${v}`).join('、')}</small>` : ''}
+      ${carried.length ? `<small class="muted block">🎒 背著前幾站的物資（回到避難所才入庫）：${carried.map(([k, v]) => `${metaOf(k).icon}${metaOf(k).name}×${fmtQty(v)}`).join('、')}</small>` : ''}
       <small class="muted block">🎒 隊伍負重 ${Math.round(load.used)}/${load.cap}</small>${progressBar(load.used / Math.max(1, load.cap), load.used >= load.cap * 0.9 ? 'danger' : 'hp')}
       ${btn(`${on ? '✅' : '⬜'} 有空間就直接前往下一個地點`, 'toggleChain', {}, { cls: 'btn-sm btn-ghost', title: on ? '負重未達 90% 時，探索完直接前往佇列中的下一個地點' : '關閉：每個地點探索完都先回避難所' })}
     </div>`;

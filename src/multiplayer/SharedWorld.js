@@ -11,6 +11,8 @@ const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
 export const OBJ_KEEP_MS = 14 * 24 * 3600 * 1000;
 /** 伺服器每種物件最多回傳的數量；回傳數達到上限時代表結果被截斷 */
 export const OBJ_LIST_LIMIT = 500;
+/** v17.3.3：伺服器一次查詢最多幾種物件（Supabase 與自架伺服器都只取前 10 種，超過的種類不會回傳） */
+export const OBJ_KINDS_PER_QUERY = 10;
 
 /** 本機記憶體版本的共用物件（與伺服器相同的語意，供單機與測試使用；多個遊戲可共用同一個實例模擬多人） */
 export class MemoryObjects {
@@ -42,7 +44,8 @@ export class MemoryObjects {
 
   async objListMany(list, lat, lon) {
     const out = [];
-    for (const { kind, km } of list) out.push(...(await this.objList(kind, lat, lon, km)));
+    // 與伺服器相同：一次最多查 10 種（超過的不回傳），測試時才抓得到
+    for (const { kind, km } of list.slice(0, OBJ_KINDS_PER_QUERY)) out.push(...(await this.objList(kind, lat, lon, km)));
     return out;
   }
 
@@ -143,8 +146,13 @@ export class SharedWorld {
       // 一次查詢所有種類（減少請求數）
       try {
         const at = this.center();
-        const list = await b.objListMany(kinds.map(([kind, { km }]) => ({ kind, km })), at.lat, at.lon);
-        this.replace(kinds.map(([k]) => k), list);
+        // v17.3.3：伺服器一次只回傳前 10 種，種類超過時分批查詢（以前第 11 種之後，例如屍王 wb，每次同步都被當成已刪除）
+        for (let i = 0; i < kinds.length; i += OBJ_KINDS_PER_QUERY) {
+          const part = kinds.slice(i, i + OBJ_KINDS_PER_QUERY);
+          // eslint-disable-next-line no-await-in-loop
+          const list = await b.objListMany(part.map(([kind, { km }]) => ({ kind, km })), at.lat, at.lon);
+          this.replace(part.map(([k]) => k), list);
+        }
       } catch { /* 下次再試 */ }
     } else {
       for (const [kind, { km }] of kinds) {

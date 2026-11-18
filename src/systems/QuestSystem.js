@@ -1,3 +1,4 @@
+import { fmtQty } from '../utils/math.js';
 import {
   MAIN_QUESTS, DAILY_POOL, DAILY_COUNT, ACHIEVEMENTS, DAILY_CHEST,
 } from '../config/quests.js';
@@ -185,8 +186,8 @@ export class QuestSystem {
     g.state.inventory.blueprints.push(...blueprints);
     g.state.stats.chestsOpened = (g.state.stats.chestsOpened || 0) + 1;
     const lines = [
-      ...(got.coins > 0 ? [`💰 金錢 ×${got.coins.toLocaleString()}`] : []),
-      ...Object.entries(got).filter(([k, v]) => v > 0 && SUPPLIES[k]).map(([k, v]) => `${SUPPLIES[k].icon} ${SUPPLIES[k].name} ×${v}`),
+      ...(got.coins > 0 ? [`💰 金錢 ×${Number(fmtQty(got.coins)).toLocaleString()}`] : []),
+      ...Object.entries(got).filter(([k, v]) => v > 0 && SUPPLIES[k]).map(([k, v]) => `${SUPPLIES[k].icon} ${SUPPLIES[k].name} ×${fmtQty(v)}`),
       ...kept.map((it) => `🎁 ${RARITIES[it.rarity].name}「${it.name}」`),
       ...blueprints.map(() => '📜 設計圖'),
     ];
