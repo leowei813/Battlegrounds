@@ -1,3 +1,4 @@
+import { NET } from '../../cloud/netStats.js';
 import { openGuide } from '../GuideDialog.js';
 import { GAME_TITLE, MAP_FPS_OPTIONS, MAP_FPS_DEFAULT } from '../../config/constants.js';
 import { escapeHtml } from '../../utils/dom.js';
@@ -36,8 +37,24 @@ export class SettingsPanel {
     return `<div class="card">
       <p>在地圖上可以看見附近 5 公里內其他玩家的<b>據點</b>與<b>探索隊伍</b>（${status}・目前 ${w.others.length} 位）。</p>
       <small class="muted block">⚠️ 所有玩家的據點與探索隊伍都會公開：附近玩家會看到據點位置與你的玩家名稱「${escapeHtml(this.game.state.player.name)}」。據點是真實地圖上的建築，建議不要設在住家。</small>
+      ${this.renderNet()}
     </div>
     ${this.renderRelations()}`;
+  }
+
+  /** v17.4：本次連線已下載的資料量與同步方式 */
+  renderNet(now = Date.now()) {
+    const mb = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(0, Math.round(b / 1024))} KB`);
+    const ms = Math.max(1, now - NET.since);
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const dur = h ? `${h} 小時 ${m} 分` : `${m} 分`;
+    const perH = ms >= 600000 ? `・平均每小時約 ${mb((NET.down * 3600000) / ms)}` : '';
+    const mode = this.game.shared?.sinceOff ? '完整下載（資料庫尚未更新）' : '只下載有變動的資料（每小時完整同步一次）';
+    return `<div class="net-use">
+      <div class="row-between"><span>📶 本次連線已下載 <b>約 ${mb(NET.down)}</b></span><small class="muted">開啟 ${dur}${perH}</small></div>
+      <small class="muted block">同步方式：${mode}・背景時每 5 分鐘同步一次</small>
+    </div>`;
   }
 
   /** 外交：收到的友好請求、友好與敵對玩家 */

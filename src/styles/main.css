@@ -1882,3 +1882,6 @@ body.fx-on .nav-btn.glow-legend { animation: nav-glow-legend 2.2s ease-in-out in
 .bar.wb .bar-fill { background: linear-gradient(90deg, #b71c1c, #ff5252); }
 .bar.threat .bar-fill { background: linear-gradient(90deg, #fbc02d, #ff6d00, #d50000); }
 .bar.wb span, .bar.threat span { font-size: 11px; }
+
+/* v17.4：設定頁下載量 */
+.net-use { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ffffff22; }
