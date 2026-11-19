@@ -10,7 +10,7 @@ const SYNC_MS = 30000;
 /** 自己或友好玩家正遭到屍潮攻擊（或正在協防）時加快同步，讓對方即時看到狀況 */
 const FAST_SYNC_MS = 10000;
 /** 背景分頁的同步間隔 */
-const HIDDEN_SYNC_MS = 60000;
+const HIDDEN_SYNC_MS = 5 * 60000; // v17.4：60 秒 → 5 分鐘（省流量）
 /** 顯示多遠範圍內的其他玩家（公里） */
 export const WORLD_RADIUS_KM = 5;
 export const WORLD_EVT = 'world:updated';

@@ -8568,6 +8568,55 @@ assert(hashAccessCode('  密碼 test ') === ref, '通行碼雜湊與 Node crypto
   assert(gs.worldBoss.status(b, b.start + 60000).dealt === 123456, '屍王的傷害同步後保留（不會像血量回復一樣消失）');
 }
 
+// ---- v17.4：共用資料只下載有變動的（省流量），每小時完整同步一次；資料庫還沒更新時退回完整同步 ----
+{
+  const { MemoryObjects: MO, FULL_SYNC_MS: FSM } = await import('../src/multiplayer/SharedWorld.js');
+  const mem = new MO();
+  let bytes = 0;
+  let fullCalls = 0;
+  let sinceCalls = 0;
+  const realMany = mem.objListMany.bind(mem);
+  const realSince = mem.objListSince.bind(mem);
+  mem.objListMany = async (...a) => { fullCalls += 1; const r = await realMany(...a); bytes += JSON.stringify(r).length; return r; };
+  mem.objListSince = async (...a) => { sinceCalls += 1; const r = await realSince(...a); bytes += JSON.stringify(r).length; return r; };
+  const ga = Game.newGame({ playerName: 'IA', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  const gb = Game.newGame({ playerName: 'IB', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  ga.shared.backend = mem;
+  gb.shared.backend = mem;
+  // 很多舊資料（例如 300 筆建築搜刮紀錄、更新時間在 1 分鐘以前）
+  const old = Date.now() - 60000;
+  for (let i = 0; i < 300; i += 1) mem.map.set(`poi:p${i}`, { kind: 'poi', id: `p${i}`, lat: null, lon: null, data: { g: 1, e: old, occ: [{ p: 'x', n: '玩家', a: old, l: old }] }, ver: 1, updatedAt: old - i * 10000 });
+  await ga.shared.poll();
+  const fullBytes = bytes;
+  assert(fullCalls > 0 && ga.shared.get('poi', 'p7') && ga.shared.fullAt > 0, '第一次同步：完整下載');
+  bytes = 0;
+  fullCalls = 0;
+  await gb.shared.update('poi', 'new1', () => ({ data: { g: 1 } }), { lat: null, lon: null });
+  await ga.shared.poll();
+  assert(sinceCalls > 0 && fullCalls === 0 && ga.shared.get('poi', 'new1') && ga.shared.get('poi', 'p7'), '之後只下載有變動的：讀到別人新寫的資料、舊資料保留');
+  assert(bytes < fullBytes / 20, `只下載變動的資料量遠小於完整同步（${bytes} vs ${fullBytes} 字元）`);
+  // 別人更新既有資料：讀到新版本
+  await gb.shared.poll();
+  await gb.shared.update('poi', 'p7', (cur) => ({ data: { ...cur, g: 2 } }), { lat: null, lon: null });
+  await ga.shared.poll();
+  assert(ga.shared.get('poi', 'p7')?.g === 2, '別人更新既有資料：只下載變動時也會讀到新內容');
+  // 每小時完整同步一次
+  fullCalls = 0;
+  ga.shared.fullAt = Date.now() - FSM - 1;
+  await ga.shared.poll();
+  assert(fullCalls > 0, '超過 1 小時：完整同步一次');
+  // 資料庫還沒有新的查詢函式（回傳 null）：退回完整同步
+  const gc = Game.newGame({ playerName: 'IC', classId: 'warrior', lat: 25.03, lon: 121.56 });
+  const mem2 = new MO();
+  mem2.objListSince = async () => null;
+  gc.shared.backend = mem2;
+  await gc.shared.poll();
+  await gc.shared.update('poi', 'z1', () => ({ data: { g: 1 } }), { lat: null, lon: null });
+  gc.shared.cache.delete(gc.shared.key('poi', 'z1'));
+  await gc.shared.poll();
+  assert(gc.shared.sinceOff && gc.shared.get('poi', 'z1'), '資料庫還沒更新：自動退回完整同步，資料照樣讀得到');
+}
+
 // ---- v17.3.2：整套測試的文字都沒有浮點誤差 ----
 assert(!textSeen.length, `所有事件紀錄、提示、報告、控制點收益都沒有浮點誤差數字（${textSeen.length} 筆：${textSeen.slice(0, 3).join(' ／ ')}）`);
 

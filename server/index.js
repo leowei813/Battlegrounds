@@ -152,8 +152,10 @@ async function handleWorld(req, res, url) {
     const q = String(url.searchParams.get('q') || '');
     if (q) {
       const objects = q.split(',').slice(0, 10).flatMap((part) => {
-        const [kind, k] = part.split(':');
-        return world.objList(kind, lat, lon, Math.min(20, Math.max(0.5, Number(k) || 5)));
+        const [kind, k, since] = part.split(':');
+        // v17.4：kind:km:since 只回傳 since 之後更新過的
+        const s = Number(since) || 0;
+        return world.objList(kind, lat, lon, Math.min(20, Math.max(0.5, Number(k) || 5))).filter((o) => !s || (o.updatedAt || 0) > s);
       });
       return json(res, 200, { objects });
     }

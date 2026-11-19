@@ -1,3 +1,4 @@
+import { countNet, byteLen } from '../netStats.js';
 /**
  * 雲端操作錯誤。kind：
  *  - conflict  其他裝置已寫入較新版本（附 meta）
@@ -29,7 +30,10 @@ export async function fetchJson(url, { timeout = 8000, ...opts } = {}) {
   }
   let body = null;
   try {
-    body = await res.json();
+    // v17.4：累計下載量（設定頁顯示）
+    const text = await res.text();
+    countNet(byteLen(text), byteLen(typeof opts.body === 'string' ? opts.body : ''));
+    body = text ? JSON.parse(text) : null;
   } catch {
     /* 非 JSON 回應 */
   }
