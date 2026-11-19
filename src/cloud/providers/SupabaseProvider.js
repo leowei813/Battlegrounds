@@ -112,6 +112,28 @@ export class SupabaseProvider {
     return body.objects || [];
   }
 
+  /**
+   * v17.4：共用世界物件：只查詢 since 之後更新過的（[{kind, km, since}]）。
+   * 資料庫還沒有這個函式（還沒執行 SQL 更新）時回傳 null，改用完整查詢。
+   */
+  async objListSince(list, lat, lon) {
+    const { status, body } = await fetchJson(`${this.base}/rest/v1/rpc/jdqs_obj_list_since`, {
+      method: 'POST',
+      headers: {
+        apikey: this.key,
+        ...(this.key.startsWith('eyJ') ? { Authorization: `Bearer ${this.key}` } : {}),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        p_kinds: list.map((x) => x.kind), p_kms: list.map((x) => x.km), p_sinces: list.map((x) => Math.max(0, Math.floor(x.since || 0))), p_lat: lat, p_lon: lon,
+      }),
+      timeout: 15000,
+    });
+    if (status === 404) return null;
+    if (status !== 200) throw new CloudError('server', `Supabase 錯誤（${status}）：${body?.message || ''}`);
+    return body?.objects || [];
+  }
+
   /** 共用世界物件：以版本號寫入；回傳 { status: 'ok'|'conflict', obj }（conflict 不丟錯） */
   async objPut(fromId, token, kind, id, { lat = null, lon = null, data, ver = 0 }) {
     const { status, body } = await fetchJson(`${this.base}/rest/v1/rpc/jdqs_obj_put`, {

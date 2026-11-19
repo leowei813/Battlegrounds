@@ -104,6 +104,13 @@ export class SelfHostProvider {
     return this.check(status, body).objects || [];
   }
 
+  /** v17.4：只查詢 since 之後更新過的（舊版伺服器會忽略 since、回傳全部，結果一樣正確） */
+  async objListSince(list, lat, lon) {
+    const q = new URLSearchParams({ q: list.map((x) => `${x.kind}:${x.km}:${Math.max(0, Math.floor(x.since || 0))}`).join(','), lat, lon });
+    const { status, body } = await fetchJson(this.url(`/world/objects?${q}`));
+    return this.check(status, body).objects || [];
+  }
+
   /** 共用世界物件：以版本號寫入；回傳 { status: 'ok'|'conflict', obj } */
   async objPut(fromId, token, kind, id, { lat = null, lon = null, data, ver = 0 }) {
     const { status, body } = await fetchJson(this.url(`/world/objects/${kind}/${encodeURIComponent(id)}`), {

@@ -13,6 +13,10 @@ export const OBJ_KEEP_MS = 14 * 24 * 3600 * 1000;
 export const OBJ_LIST_LIMIT = 500;
 /** v17.3.3：伺服器一次查詢最多幾種物件（Supabase 與自架伺服器都只取前 10 種，超過的種類不會回傳） */
 export const OBJ_KINDS_PER_QUERY = 10;
+/** v17.4：多久完整同步一次（其他時候只下載有變動的） */
+export const FULL_SYNC_MS = 60 * 60 * 1000;
+/** 只下載變動時往前多抓一點（伺服器時間誤差、同一毫秒寫入） */
+export const SINCE_OVERLAP_MS = 5000;
 
 /** 本機記憶體版本的共用物件（與伺服器相同的語意，供單機與測試使用；多個遊戲可共用同一個實例模擬多人） */
 export class MemoryObjects {
@@ -49,6 +53,13 @@ export class MemoryObjects {
     return out;
   }
 
+  /** v17.4：只回傳 since 之後更新過的（與伺服器相同：一次最多 20 種） */
+  async objListSince(list, lat, lon) {
+    const out = [];
+    for (const { kind, km, since } of list.slice(0, 20)) out.push(...(await this.objList(kind, lat, lon, km)).filter((o) => (o.updatedAt || 0) > (since || 0)));
+    return out;
+  }
+
   async objPut(_from, _token, kind, id, { lat = null, lon = null, data, ver = 0 }) {
     // 與伺服器相同的檢查（種類只能 2～12 個英文小寫字母、資料 16000 位元組以內），測試時才抓得到
     if (!/^[a-z]{2,12}$/.test(kind) || !id || String(id).length > 80) return { status: 'invalid' };
@@ -78,6 +89,9 @@ export class SharedWorld {
     /** 定期同步的種類：kind -> { km, global } */
     this.watched = new Map();
     this.listedAt = {};
+    /** v17.4：每種物件已經讀到的最新更新時間（伺服器時間）；下次只下載這之後的 */
+    this.cursor = {};
+    this.fullAt = 0;
   }
 
   /** 目前使用的後端：伺服器（有登入身分時）或本機 */
@@ -138,10 +152,51 @@ export class SharedWorld {
     this.poll();
   }
 
+  /** 讀到的物件更新每種的游標（最新的更新時間） */
+  advance(list) {
+    (Array.isArray(list) ? list : []).forEach((o) => {
+      if (o?.kind && Number(o.updatedAt) > (this.cursor[o.kind] || 0)) this.cursor[o.kind] = Number(o.updatedAt);
+    });
+  }
+
+  /** v17.4：只下載變動：合併新的物件（不移除沒回傳的），並清掉本機超過保留期限的 */
+  merge(kinds, list) {
+    const now = Date.now();
+    const set = new Set(kinds);
+    (Array.isArray(list) ? list : []).forEach((o) => {
+      if (!o || typeof o !== 'object' || !set.has(o.kind) || !o.id) return;
+      const k = this.key(o.kind, o.id);
+      const cur = this.cache.get(k);
+      if (cur && (cur.ver || 0) > (o.ver || 0)) return;
+      this.cache.set(k, o);
+    });
+    [...this.cache.entries()].forEach(([k, o]) => { if (set.has(o.kind) && o.updatedAt && now - o.updatedAt > OBJ_KEEP_MS) this.cache.delete(k); });
+    kinds.forEach((k) => { this.listedAt[k] = now; });
+    this.advance(list);
+  }
+
   /** 同步所有定期同步的種類（WorldSync 每次同步時呼叫） */
   async poll() {
     const kinds = [...this.watched.entries()];
     const { b } = this.store();
+    const now = Date.now();
+    // v17.4：平常只下載有變動的；每小時（或資料庫還不支援時）完整同步一次
+    if (b.objListSince && !this.sinceOff && this.fullAt && now - this.fullAt < FULL_SYNC_MS && kinds.length) {
+      try {
+        const at = this.center();
+        for (let i = 0; i < kinds.length; i += OBJ_KINDS_PER_QUERY) {
+          const part = kinds.slice(i, i + OBJ_KINDS_PER_QUERY);
+          // eslint-disable-next-line no-await-in-loop
+          const list = await b.objListSince(part.map(([kind, { km }]) => ({ kind, km, since: Math.max(0, (this.cursor[kind] || 0) - SINCE_OVERLAP_MS) })), at.lat, at.lon);
+          if (list === null) { this.sinceOff = true; break; }
+          this.merge(part.map(([k]) => k), list);
+        }
+        if (!this.sinceOff) {
+          this.game.bus.emit('shared:changed');
+          return;
+        }
+      } catch { /* 改用完整同步 */ }
+    }
     if (b.objListMany && kinds.length) {
       // 一次查詢所有種類（減少請求數）
       try {
@@ -152,7 +207,9 @@ export class SharedWorld {
           // eslint-disable-next-line no-await-in-loop
           const list = await b.objListMany(part.map(([kind, { km }]) => ({ kind, km })), at.lat, at.lon);
           this.replace(part.map(([k]) => k), list);
+          this.advance(list);
         }
+        this.fullAt = now;
       } catch { /* 下次再試 */ }
     } else {
       for (const [kind, { km }] of kinds) {
